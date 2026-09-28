@@ -8,12 +8,16 @@
     onCommit: () => void;
     onUndo: () => void;
     onCancel: () => void;
+    onMoveNow: () => void;
+    onEndMatch: () => void;
   }
-  let { view, onCommit, onUndo, onCancel }: Props = $props();
+  let { view, onCommit, onUndo, onCancel, onMoveNow, onEndMatch }: Props = $props();
+  const inMatch = $derived(view.players != null);
+  const browsing = $derived(inMatch && view.movesAfterCursor > 0 && view.result == null);
 
   const side = $derived(view.position.sideToMove === 'gold' ? 'Gold' : 'Silver');
   const turn = $derived(view.turn);
-  const hasDraft = $derived(view.phase === 'setup' && view.movesAfterCursor === 0);
+  const hasDraft = $derived(view.phase === 'setup' && view.movesAfterCursor === 0 && view.canInput);
   const reason: Record<WinReason, string> = {
     goal: 'goal',
     elimination: 'elimination',
@@ -31,6 +35,19 @@
     <div class="status">
       <strong>{view.result.winner === 'gold' ? 'Gold' : 'Silver'} wins</strong> by {reason[view.result.reason]}
     </div>
+    {#if view.endDetail}<div class="note">{view.endDetail}</div>{/if}
+  {:else if view.thinking}
+    <div class="status">
+      <span class="dot {view.thinking}"></span>
+      <strong>{view.players?.[view.thinking].name ?? 'Engine'}</strong> is thinking…
+    </div>
+    {#if browsing}<div class="note">Browsing earlier moves; press End to follow the game.</div>{/if}
+    <div class="buttons">
+      <button onclick={onMoveNow}>Move now</button>
+    </div>
+  {:else if browsing}
+    <div class="status">Browsing earlier moves</div>
+    <div class="note">Press End to return to the live game.</div>
   {:else if view.phase === 'setup'}
     <div class="status">
       <span class="dot {view.position.sideToMove}"></span>
@@ -69,6 +86,11 @@
       </button>
     </div>
   {/if}
+  {#if inMatch && !view.result}
+    <div class="buttons">
+      <button class="subtle" onclick={onEndMatch} title="Stop the match; the game stays for analysis">Stop match</button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -105,6 +127,11 @@
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
+  }
+  .subtle {
+    font-size: 12px;
+    padding: 2px 8px;
+    color: var(--muted);
   }
   kbd {
     font-size: 10px;

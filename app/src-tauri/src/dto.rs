@@ -2,7 +2,7 @@
 //! these with ts-rs (`npm run bindings`); don't hand-edit `src/lib/bindings`.
 
 use arimaa_core::{Color, GameResult, Piece, Square, StepKind};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Stable identity for a piece across plies, so the UI can animate it.
@@ -86,6 +86,137 @@ pub struct SessionView {
     pub moves_after_cursor: usize,
     pub result: Option<GameResult>,
     pub end_marker: Option<String>,
+    /// Why the game ended, when it wasn't on the board (illegal engine move,
+    /// engine crash, ...).
+    pub end_detail: Option<String>,
+    /// Present during a match (a game with an engine or a clock).
+    pub players: Option<PlayersView>,
+    pub clock: Option<ClockView>,
+    /// The side whose engine is thinking.
+    pub thinking: Option<Color>,
+    /// Whether board input is accepted now (a human's turn at the live end
+    /// of a match, or any time outside a match).
+    pub can_input: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum PlayerKind {
+    Human,
+    Engine,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlayerView {
+    pub kind: PlayerKind,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlayersView {
+    pub gold: PlayerView,
+    pub silver: PlayerView,
+}
+
+/// Clock snapshot. The UI counts down locally from `turnElapsedMs` for the
+/// running side.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ClockView {
+    pub time_control: String,
+    #[ts(type = "number")]
+    pub move_time_ms: u64,
+    #[ts(type = "number")]
+    pub gold_reserve_ms: u64,
+    #[ts(type = "number")]
+    pub silver_reserve_ms: u64,
+    /// Side whose clock is running, if any.
+    pub running: Option<Color>,
+    /// Time used so far on the running side's turn.
+    #[ts(type = "number")]
+    pub turn_elapsed_ms: u64,
+    /// Total time the running side may take this turn.
+    #[ts(type = "number")]
+    pub turn_allowance_ms: u64,
+}
+
+/// A player choice when starting a game.
+#[derive(Clone, Debug, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export)]
+pub enum PlayerSpec {
+    Human,
+    #[serde(rename_all = "camelCase")]
+    Engine {
+        engine_id: String,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MatchSpec {
+    pub gold: PlayerSpec,
+    pub silver: PlayerSpec,
+    /// Arimaa time control, e.g. `30s/5m`; `None` for no clock.
+    pub time_control: Option<String>,
+}
+
+/// A configured engine.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct EngineSpec {
+    /// Stable id; empty when adding a new engine.
+    pub id: String,
+    pub name: String,
+    pub program: String,
+    pub args: Vec<String>,
+    pub working_dir: Option<String>,
+}
+
+/// What an engine reported about itself in the handshake.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct EngineIdentity {
+    pub name: Option<String>,
+    pub author: Option<String>,
+    pub version: Option<String>,
+    pub protocol_version: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum EngineOutputKind {
+    /// Parsed `info` line.
+    Info,
+    Log,
+    /// Something the engine shouldn't have sent.
+    Unexpected,
+    /// A controller status message (started, thinking, failed...).
+    Status,
+}
+
+/// Payload of the `engine://output` event.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct EngineOutput {
+    pub side: Color,
+    pub kind: EngineOutputKind,
+    /// Display text, e.g. `depth 12+` or the log line.
+    pub text: String,
+    pub depth: Option<String>,
+    pub score: Option<i32>,
+    pub pv: Option<Vec<String>>,
 }
 
 /// A piece appearing or disappearing during an animation.

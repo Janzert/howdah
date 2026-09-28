@@ -48,6 +48,25 @@ a session and update it at the end.
 - `app/src-tauri`: thin shell.
   - `session.rs` has the pure state logic: cursor ply, in-progress turn,
     setup draft, and stable piece ids for animation. Unit-tested, no Tauri types.
+    - It's either free play or a *match*: a player per side (human or
+      engine), an optional clock, and a `generation` counter bumped on every
+      new game or match change, so stale engine replies are ignored.
+    - In a match, humans may only input on their own turn at the live end
+      (`can_input`).
+    - Engine moves enter through `apply_engine_move`. The board follows them
+      only if you're watching the live position.
+  - `controller.rs`: a background coordinator task, plus one actor task per
+    engine process.
+    - It watches the session (`engine_turn`, `turn_deadline`), asks the
+      engine to think, and keeps the engine's move list in sync (`newgame`
+      plus `makemove`s when the history diverges).
+    - It sends `stop` shortly before the deadline, flags timeouts, and turns
+      engine failures into forfeits.
+    - Commands call `Controller::poke()` after every change.
+    - Engine output goes out as `engine://output`.
+  - `engines.rs`: the engine list (`engines.json` in the app config dir).
+    It defaults to the bundled `aei-test-engine` when that sits next to the
+    app binary (`cargo build -p arimaa-aei --bin aei-test-engine`).
   - `dto.rs` holds the view types sent to the UI, with ts-rs derives.
   - `commands.rs`: commands are **intents**. Mutating commands return
     `Result<(), ApiError>`, and the new state arrives as a `game://changed`

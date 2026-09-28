@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use arimaa_core::{Color, Game, GameResult, Position, TimeControl, WinReason};
+use arimaa_core::{Color, Game, GameResult, TimeControl, WinReason, limit_score_winner};
 use tokio::time::Instant;
 
 use crate::engine::{Engine, EngineId};
@@ -93,7 +93,7 @@ pub async fn play_match(
     let tc = config.time_control;
     for engine in engines.iter_mut() {
         if let Some(tc) = tc {
-            send_time_control(engine, &tc).await?;
+            engine.set_time_control(&tc).await?;
         }
         engine.new_game().await?;
         engine.is_ready(config.ready_timeout).await?;
@@ -115,7 +115,7 @@ pub async fn play_match(
         let mut deadline = None;
         let mut allowance = None;
         if let (Some(tc), Some(res)) = (tc, reserves) {
-            send_clock(engine, res).await.ok();
+            engine.set_clock(res).await.ok();
             let a = tc.turn_allowance(res[me]);
             allowance = Some(a);
             let d = Instant::now() + a;
@@ -140,7 +140,7 @@ pub async fn play_match(
             Ok(None) => {
                 let past_game_limit = game_deadline.is_some_and(|g| Instant::now() >= g);
                 let result = if past_game_limit {
-                    GameResult { winner: score_winner(game.current_position()), reason: WinReason::Score }
+                    GameResult { winner: limit_score_winner(game.current_position()), reason: WinReason::Score }
                 } else {
                     GameResult { winner: opponent, reason: WinReason::Timeout }
                 };
@@ -179,7 +179,7 @@ pub async fn play_match(
             && side == Color::Silver
             && (ply / 2 + 1) as u32 >= tc.turn_limit
         {
-            let winner = score_winner(game.current_position());
+            let winner = limit_score_winner(game.current_position());
             game.end_game(GameResult { winner, reason: WinReason::Score }).ok();
             detail = Some(format!("turn limit of {} reached", tc.turn_limit));
         }
@@ -219,39 +219,6 @@ async fn wait_for_move(
             Some(other) => on_event(MatchEvent::Unexpected { side, line: format!("{other:?}") }),
         }
     }
-}
-
-async fn send_time_control(engine: &mut Engine, tc: &TimeControl) -> Result<(), AeiError> {
-    engine.set_option("tcmove", tc.move_time).await?;
-    engine.set_option("tcreserve", tc.reserve).await?;
-    engine.set_option("tcpercent", tc.percent).await?;
-    engine.set_option("tcmax", tc.max_reserve).await?;
-    engine.set_option("tcturns", tc.turn_limit).await?;
-    engine.set_option("tctotal", tc.time_limit).await?;
-    engine.set_option("tcturntime", tc.max_turn_time).await
-}
-
-/// Per-turn clock options. Protocol-version-0 engines used the old
-/// `wreserve`/`breserve` names.
-async fn send_clock(engine: &mut Engine, reserves: [Duration; 2]) -> Result<(), AeiError> {
-    let [g, s] = reserves.map(|r| r.as_secs());
-    if engine.id().protocol_version == 0 {
-        engine.set_option("wreserve", g).await?;
-        engine.set_option("breserve", s).await?;
-        engine.set_option("tcmoveused", 0).await?;
-    }
-    engine.set_option("greserve", g).await?;
-    engine.set_option("sreserve", s).await?;
-    engine.set_option("moveused", 0).await
-}
-
-/// Winner when a game or turn limit is reached: the side with more pieces.
-// TODO(rules): the official arimaa.com scoring for limit games is more
-// detailed. pyrimaa uses this piece count, with silver winning ties.
-fn score_winner(pos: &Position) -> Color {
-    let gold = pos.occupied_by(Color::Gold).count_ones();
-    let silver = pos.occupied_by(Color::Silver).count_ones();
-    if gold > silver { Color::Gold } else { Color::Silver }
 }
 
 fn secs(s: u32) -> Duration {

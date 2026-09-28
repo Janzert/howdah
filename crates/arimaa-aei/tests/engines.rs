@@ -31,6 +31,12 @@ async fn missing_program_is_a_spawn_error() {
 }
 
 #[tokio::test]
+async fn missing_working_dir_is_reported_as_such() {
+    let err = Engine::start(&config(&[]).working_dir("/nonexistent/dir")).await.err().unwrap();
+    assert!(matches!(err, AeiError::WorkingDir(_)), "{err}");
+}
+
+#[tokio::test]
 async fn setposition_and_go() {
     let mut engine = start(&["--seed", "7"]).await;
     engine.new_game().await.unwrap();

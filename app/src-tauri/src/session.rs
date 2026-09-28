@@ -1,14 +1,68 @@
 //! The game being viewed and edited in a window: pure state logic with no
 //! Tauri types, so it can be unit tested (and reused by other front ends).
+//!
+//! A session is either free play (anyone may enter moves for either side,
+//! at any ply) or a match: each side has a human or engine player, and
+//! optionally a clock. In a match, humans can only move on their own turn at
+//! the live end of the game; engine moves arrive via `apply_engine_move`
+//! from the controller.
+
+use std::time::{Duration, Instant};
 
 use arimaa_core::{
-    Color, Game, Move, Placement, Position, Square, StepEffect, TurnBuilder, default_setup, notation,
+    Color, Game, GameError, GameResult, Move, Placement, Position, Square, StepEffect, TimeControl,
+    TurnBuilder, WinReason, default_setup, limit_score_winner, notation,
 };
 
 use crate::dto::{
-    AnimPiece, AnimStep, ApiError, MoveView, Phase, PieceId, PieceView, PositionView, SessionView,
-    StepTarget, TurnStepView, TurnView,
+    AnimPiece, AnimStep, ApiError, ClockView, MoveView, Phase, PieceId, PieceView, PlayerKind, PlayerView,
+    PlayersView, PositionView, SessionView, StepTarget, TurnStepView, TurnView,
 };
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Player {
+    Human,
+    Engine { id: String, name: String },
+}
+
+impl Player {
+    fn view(&self) -> PlayerView {
+        match self {
+            Player::Human => PlayerView { kind: PlayerKind::Human, name: "Human".into() },
+            Player::Engine { name, .. } => PlayerView { kind: PlayerKind::Engine, name: name.clone() },
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Clock {
+    tc: TimeControl,
+    reserves: [Duration; 2],
+    /// When the current turn (at the end of the game) started.
+    turn_started: Instant,
+}
+
+#[derive(Clone, Debug)]
+struct Match {
+    players: [Player; 2],
+    clock: Option<Clock>,
+    thinking: Option<Color>,
+}
+
+/// What the controller needs to ask an engine for a move.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineTurn {
+    pub generation: u64,
+    pub side: Color,
+    pub engine_id: String,
+    pub ply: usize,
+    /// Every move so far, in notation.
+    pub moves: Vec<String>,
+    pub time_control: Option<TimeControl>,
+    /// Reserves (gold, silver) at the start of this turn.
+    pub reserves: Option<[Duration; 2]>,
+    pub deadline: Option<Instant>,
+}
 
 type IdMap = [Option<PieceId>; 64];
 
@@ -63,6 +117,11 @@ pub struct Session {
     /// Setup being arranged, present when `cursor` is the last ply and a setup is due.
     setup_draft: Option<Vec<Placement>>,
     ids: Vec<IdMap>,
+    matchup: Option<Match>,
+    end_detail: Option<String>,
+    /// Bumped whenever the game is replaced or the match changes, so
+    /// background work for an old game can tell it's stale.
+    generation: u64,
 }
 
 impl Default for Session {
@@ -78,14 +137,70 @@ impl Session {
 
     fn with_game(game: Game) -> Session {
         let cursor = game.ply_count();
-        let mut s = Session { game, cursor, turn: None, setup_draft: None, ids: Vec::new() };
+        let mut s = Session {
+            game,
+            cursor,
+            turn: None,
+            setup_draft: None,
+            ids: Vec::new(),
+            matchup: None,
+            end_detail: None,
+            generation: 0,
+        };
         s.refresh();
         s
     }
 
+    /// Replaces the game, keeping the generation counter moving forward.
+    fn replace(&mut self, game: Game, matchup: Option<Match>) {
+        let generation = self.generation + 1;
+        *self = Session::with_game(game);
+        self.generation = generation;
+        self.matchup = matchup;
+        self.refresh();
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    fn player(&self, side: Color) -> &Player {
+        self.matchup.as_ref().map_or(&Player::Human, |m| &m.players[side.index()])
+    }
+
+    /// Side to move at the live end of the game.
+    fn live_side(&self) -> Color {
+        self.game.current_position().side_to_move()
+    }
+
+    /// Whether board input is accepted now.
+    pub fn can_input(&self) -> bool {
+        match &self.matchup {
+            None => true,
+            Some(_) => {
+                self.game.result().is_none()
+                    && self.cursor == self.game.ply_count()
+                    && *self.player(self.live_side()) == Player::Human
+            }
+        }
+    }
+
+    fn require_input(&self) -> Result<(), ApiError> {
+        if self.can_input() {
+            Ok(())
+        } else if self.cursor != self.game.ply_count() {
+            Err(ApiError::state("the match is live; go to the latest move to play"))
+        } else {
+            Err(ApiError::state("it's not your turn"))
+        }
+    }
+
     fn refresh(&mut self) {
         self.ids = compute_ids(&self.game);
-        let setup_due = Game::is_setup_ply(self.cursor) && self.cursor == self.game.ply_count();
+        let setup_due = Game::is_setup_ply(self.cursor)
+            && self.cursor == self.game.ply_count()
+            && self.game.result().is_none()
+            && *self.player(self.live_side()) == Player::Human;
         if !setup_due {
             self.setup_draft = None;
         } else if self.setup_draft.is_none() {
@@ -99,12 +214,188 @@ impl Session {
     }
 
     pub fn new_game(&mut self) {
-        *self = Session::new();
+        self.replace(Game::new(), None);
     }
 
     pub fn load(&mut self, record: &str) -> Result<(), ApiError> {
-        *self = Session::with_game(Game::parse(record)?);
+        let game = Game::parse(record)?;
+        self.replace(game, None);
         Ok(())
+    }
+
+    /// Starts a new game between the given players, with an optional clock.
+    pub fn start_match(&mut self, players: [Player; 2], time_control: Option<TimeControl>) {
+        let clock = time_control.map(|tc| Clock {
+            tc,
+            reserves: [tc.starting_reserve(); 2],
+            turn_started: Instant::now(),
+        });
+        self.replace(Game::new(), Some(Match { players, clock, thinking: None }));
+    }
+
+    /// Stops the match: the game stays as it is, and both sides become free
+    /// play again.
+    pub fn end_match(&mut self) {
+        if self.matchup.take().is_some() {
+            self.generation += 1;
+            self.refresh();
+        }
+    }
+
+    pub fn set_thinking(&mut self, side: Option<Color>) {
+        if let Some(m) = &mut self.matchup {
+            m.thinking = side;
+        }
+    }
+
+    /// The engine turn to request now, if an engine is to move.
+    pub fn engine_turn(&self) -> Option<EngineTurn> {
+        let m = self.matchup.as_ref()?;
+        if self.game.result().is_some() {
+            return None;
+        }
+        let side = self.live_side();
+        let Player::Engine { id, .. } = &m.players[side.index()] else { return None };
+        Some(EngineTurn {
+            generation: self.generation,
+            side,
+            engine_id: id.clone(),
+            ply: self.game.ply_count(),
+            moves: self.game.moves().iter().map(Move::notation).collect(),
+            time_control: m.clock.as_ref().map(|c| c.tc),
+            reserves: m.clock.as_ref().map(|c| c.reserves),
+            deadline: self.turn_deadline(),
+        })
+    }
+
+    /// When the side to move runs out of time, in a timed match.
+    pub fn turn_deadline(&self) -> Option<Instant> {
+        let m = self.matchup.as_ref()?;
+        let clock = m.clock.as_ref()?;
+        if self.game.result().is_some() {
+            return None;
+        }
+        let side = self.live_side();
+        Some(clock.turn_started + clock.tc.turn_allowance(clock.reserves[side.index()]))
+    }
+
+    /// Ends the game if the side to move is out of time. Returns whether it did.
+    pub fn check_timeout(&mut self, now: Instant) -> bool {
+        if self.turn_deadline().is_some_and(|d| now >= d) {
+            let side = self.live_side();
+            self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Ends the game with a result decided outside the board.
+    fn finish(&mut self, result: GameResult, detail: Option<String>) {
+        if self.game.end_game(result).is_ok() {
+            self.end_detail = detail;
+            self.turn = None;
+            self.setup_draft = None;
+            if let Some(m) = &mut self.matchup {
+                m.thinking = None;
+            }
+        }
+    }
+
+    /// Engine ids playing (gold, silver) in the current match.
+    pub fn engine_players(&self) -> [Option<String>; 2] {
+        let id = |p: &Player| match p {
+            Player::Engine { id, .. } => Some(id.clone()),
+            Player::Human => None,
+        };
+        match &self.matchup {
+            Some(m) => [id(&m.players[0]), id(&m.players[1])],
+            None => [None, None],
+        }
+    }
+
+    /// Ends the game because the engine for `side` failed (crashed, didn't
+    /// start, ...), at any point of the game.
+    pub fn engine_failed(&mut self, generation: u64, side: Color, detail: String) {
+        if generation == self.generation && self.game.result().is_none() {
+            self.finish(GameResult { winner: side.opponent(), reason: WinReason::Forfeit }, Some(detail));
+        }
+    }
+
+    /// Clock bookkeeping for a move by the side to move, before it's added.
+    /// Returns false (and ends the game) if the move came too late.
+    fn clock_move(&mut self, now: Instant) -> bool {
+        let setup = Game::is_setup_ply(self.game.ply_count());
+        let side = self.live_side();
+        let Some(clock) = self.matchup.as_mut().and_then(|m| m.clock.as_mut()) else { return true };
+        let used = now.saturating_duration_since(clock.turn_started);
+        let reserve = clock.reserves[side.index()];
+        if used > clock.tc.turn_allowance(reserve) {
+            self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
+            return false;
+        }
+        if !setup {
+            clock.reserves[side.index()] = clock.tc.reserve_after(reserve, used);
+        }
+        clock.turn_started = now;
+        true
+    }
+
+    /// End-of-turn checks that depend on the match (the turn limit).
+    fn after_move(&mut self, mover: Color, ply: usize) {
+        let Some(tc) = self.matchup.as_ref().and_then(|m| m.clock.as_ref()).map(|c| c.tc) else { return };
+        if tc.turn_limit > 0 && mover == Color::Silver && (ply / 2 + 1) as u32 >= tc.turn_limit {
+            let winner = limit_score_winner(self.game.current_position());
+            self.finish(
+                GameResult { winner, reason: WinReason::Score },
+                Some(format!("turn limit of {} reached", tc.turn_limit)),
+            );
+        }
+    }
+
+    /// Plays a move from the engine for `side` on turn `ply`. A stale reply
+    /// (the game moved on) is ignored. An illegal move loses the game. The
+    /// board follows the new move if the user was watching the live position.
+    pub fn apply_engine_move(
+        &mut self,
+        generation: u64,
+        side: Color,
+        ply: usize,
+        text: &str,
+    ) -> Result<Vec<AnimStep>, ApiError> {
+        if generation != self.generation
+            || ply != self.game.ply_count()
+            || side != self.live_side()
+            || self.game.result().is_some()
+        {
+            return Err(ApiError::state("stale engine move"));
+        }
+        if let Some(m) = &mut self.matchup {
+            m.thinking = None;
+        }
+        if !self.clock_move(Instant::now()) {
+            return Ok(Vec::new());
+        }
+        let following = self.cursor == ply;
+        if text.trim().eq_ignore_ascii_case("resign") {
+            self.finish(GameResult { winner: side.opponent(), reason: WinReason::Resignation }, None);
+            return Ok(Vec::new());
+        }
+        if let Err(e) = self.game.play_notation(text) {
+            let detail = format!("{side:?} engine played {text:?}: {e}");
+            self.finish(GameResult { winner: side.opponent(), reason: WinReason::IllegalMove }, Some(detail));
+            return Ok(Vec::new());
+        }
+        self.after_move(side, ply);
+        let mut anim = Vec::new();
+        if following {
+            self.turn = None;
+            self.cursor = self.game.ply_count();
+            self.ids = compute_ids(&self.game);
+            anim = self.move_animation(ply);
+        }
+        self.refresh();
+        Ok(anim)
     }
 
     pub fn export(&self) -> String {
@@ -165,6 +456,7 @@ impl Session {
     }
 
     pub fn try_step(&mut self, from: Square, to: Square) -> Result<Vec<AnimStep>, ApiError> {
+        self.require_input()?;
         let mut tb = self.turn_builder()?;
         tb.try_move(from, to).map_err(ApiError::illegal)?;
         self.turn = Some(tb);
@@ -202,10 +494,18 @@ impl Session {
         // Check before truncating, so a rejected turn doesn't lose later moves.
         if self.game.is_third_repetition(self.cursor, &turn.end) {
             self.turn = Some(tb);
-            return Err(ApiError::illegal(arimaa_core::GameError::Repetition));
+            return Err(ApiError::illegal(GameError::Repetition));
         }
+        if let Err(e) = self.require_input() {
+            self.turn = Some(tb);
+            return Err(e);
+        }
+        let (mover, ply) = (turn.start.side_to_move(), self.cursor);
         self.game.truncate(self.cursor);
-        self.game.play_turn(turn).map_err(ApiError::illegal)?;
+        if self.clock_move(Instant::now()) {
+            self.game.play_turn(turn).map_err(ApiError::illegal)?;
+            self.after_move(mover, ply);
+        }
         self.cursor = self.game.ply_count();
         self.refresh();
         Ok(())
@@ -213,6 +513,7 @@ impl Session {
 
     /// Swaps two pieces in the setup draft.
     pub fn setup_swap(&mut self, a: Square, b: Square) -> Result<Vec<AnimStep>, ApiError> {
+        self.require_input()?;
         let Some(draft) = &mut self.setup_draft else {
             return Err(ApiError::state("no setup is being arranged"));
         };
@@ -238,10 +539,13 @@ impl Session {
     }
 
     pub fn commit_setup(&mut self) -> Result<(), ApiError> {
+        self.require_input()?;
         let Some(draft) = self.setup_draft.take() else {
             return Err(ApiError::state("no setup is being arranged"));
         };
-        self.game.play_setup(draft).map_err(ApiError::illegal)?;
+        if self.clock_move(Instant::now()) {
+            self.game.play_setup(draft).map_err(ApiError::illegal)?;
+        }
         self.cursor = self.game.ply_count();
         self.refresh();
         Ok(())
@@ -250,6 +554,9 @@ impl Session {
     /// Where the piece on `from` may go next, for drag hints. The core still
     /// validates the actual step.
     pub fn legal_targets(&self, from: Square) -> Vec<StepTarget> {
+        if !self.can_input() {
+            return Vec::new();
+        }
         if let Some(draft) = &self.setup_draft {
             if !draft.iter().any(|p| p.square == from) {
                 return Vec::new();
@@ -336,7 +643,37 @@ impl Session {
             moves_after_cursor: self.game.ply_count() - self.cursor,
             result: if self.cursor == self.game.ply_count() { self.game.result() } else { None },
             end_marker: self.game.end_marker().map(str::to_string),
+            end_detail: self.end_detail.clone(),
+            players: self.matchup.as_ref().map(|m| PlayersView {
+                gold: m.players[0].view(),
+                silver: m.players[1].view(),
+            }),
+            clock: self.clock_view(),
+            thinking: self.matchup.as_ref().and_then(|m| m.thinking),
+            can_input: self.can_input(),
         }
+    }
+
+    fn clock_view(&self) -> Option<ClockView> {
+        let clock = self.matchup.as_ref()?.clock.as_ref()?;
+        let running = self.game.result().is_none().then(|| self.live_side());
+        let ms = |d: Duration| d.as_millis() as u64;
+        let (elapsed, allowance) = match running {
+            Some(side) => (
+                clock.turn_started.elapsed(),
+                clock.tc.turn_allowance(clock.reserves[side.index()]),
+            ),
+            None => (Duration::ZERO, Duration::ZERO),
+        };
+        Some(ClockView {
+            time_control: clock.tc.to_string(),
+            move_time_ms: ms(clock.tc.move_time()),
+            gold_reserve_ms: ms(clock.reserves[0]),
+            silver_reserve_ms: ms(clock.reserves[1]),
+            running,
+            turn_elapsed_ms: ms(elapsed),
+            turn_allowance_ms: ms(allowance),
+        })
     }
 }
 
@@ -476,6 +813,114 @@ mod tests {
         let targets: Vec<Square> = s.legal_targets(sq("g3")).into_iter().map(|t| t.to).collect();
         assert!(targets.contains(&sq("f3")));
         assert!(targets.contains(&sq("h3")));
+    }
+
+    fn engine(name: &str) -> Player {
+        Player::Engine { id: name.into(), name: name.into() }
+    }
+
+    fn setup_text(color: Color) -> String {
+        notation::format_placements(&default_setup(color))
+    }
+
+    #[test]
+    fn human_vs_engine_turn_taking() {
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("bot")], None);
+        let g = s.generation();
+        let v = s.view();
+        assert!(v.can_input);
+        assert_eq!(v.players.unwrap().silver.name, "bot");
+        assert_eq!(v.position.pieces.len(), 16, "gold's setup draft is shown");
+        assert_eq!(s.engine_turn(), None);
+
+        s.commit_setup().unwrap();
+        let turn = s.engine_turn().unwrap();
+        assert_eq!((turn.side, turn.ply, turn.moves.len()), (Color::Silver, 1, 1));
+        assert!(!s.can_input());
+        assert!(s.commit_setup().is_err(), "no draft for the engine's side");
+        assert!(s.try_step(sq("a2"), sq("a3")).is_err());
+
+        s.apply_engine_move(g, Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
+        assert!(s.can_input());
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn().unwrap();
+        assert_eq!(s.engine_turn().unwrap().ply, 3);
+    }
+
+    #[test]
+    fn engine_vs_engine_has_no_draft() {
+        let mut s = Session::new();
+        s.start_match([engine("a"), engine("b")], None);
+        assert_eq!(s.view().position.pieces.len(), 0);
+        assert!(!s.can_input());
+        let t = s.engine_turn().unwrap();
+        assert_eq!((t.side, t.engine_id.as_str()), (Color::Gold, "a"));
+    }
+
+    #[test]
+    fn stale_and_illegal_engine_moves() {
+        let mut s = Session::new();
+        s.start_match([engine("a"), engine("b")], None);
+        let g = s.generation();
+        assert!(s.apply_engine_move(g + 1, Color::Gold, 0, &setup_text(Color::Gold)).is_err(), "old game");
+        assert!(s.apply_engine_move(g, Color::Silver, 0, &setup_text(Color::Silver)).is_err(), "wrong side");
+        s.apply_engine_move(g, Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
+        s.apply_engine_move(g, Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
+        // Gold plays an illegal move and loses.
+        s.apply_engine_move(g, Color::Gold, 2, "Ea1n").unwrap();
+        let v = s.view();
+        assert_eq!(v.result.unwrap(), GameResult { winner: Color::Silver, reason: WinReason::IllegalMove });
+        assert!(v.end_detail.unwrap().contains("Ea1n"));
+        assert_eq!(s.engine_turn(), None);
+    }
+
+    #[test]
+    fn engine_moves_follow_only_when_watching_live() {
+        let mut s = Session::new();
+        s.start_match([engine("a"), engine("b")], None);
+        let g = s.generation();
+        s.apply_engine_move(g, Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
+        s.apply_engine_move(g, Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
+        let anim = s.apply_engine_move(g, Color::Gold, 2, "Ee2n Ee3n").unwrap();
+        assert_eq!(anim.len(), 2, "watching live: animate");
+        assert_eq!(s.view().ply, 3);
+        s.goto(1).unwrap();
+        let anim = s.apply_engine_move(g, Color::Silver, 3, "ee7s").unwrap();
+        assert!(anim.is_empty());
+        assert_eq!(s.view().ply, 1, "browsing: the cursor stays");
+        assert_eq!(s.view().moves.len(), 4);
+    }
+
+    #[test]
+    fn timeouts_and_failures() {
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("b")], Some("1s/0".parse().unwrap()));
+        let v = s.view();
+        let clock = v.clock.unwrap();
+        assert_eq!((clock.running, clock.turn_allowance_ms), (Some(Color::Gold), 1000));
+        assert!(!s.check_timeout(Instant::now()));
+        assert!(s.check_timeout(Instant::now() + Duration::from_secs(2)));
+        assert_eq!(s.view().result.unwrap(), GameResult { winner: Color::Silver, reason: WinReason::Timeout });
+        assert!(s.view().clock.unwrap().running.is_none());
+
+        let mut s = Session::new();
+        s.start_match([engine("a"), engine("b")], None);
+        let g = s.generation();
+        s.engine_failed(g, Color::Gold, "crashed".into());
+        assert_eq!(s.view().result.unwrap().reason, WinReason::Forfeit);
+    }
+
+    #[test]
+    fn end_match_returns_to_free_play() {
+        let mut s = Session::new();
+        s.start_match([engine("a"), engine("b")], None);
+        let g = s.generation();
+        s.end_match();
+        assert!(s.generation() > g);
+        let v = s.view();
+        assert!(v.players.is_none() && v.can_input);
+        assert_eq!(v.position.pieces.len(), 16, "gold's draft is back");
     }
 
     #[test]

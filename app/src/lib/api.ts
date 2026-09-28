@@ -3,6 +3,9 @@
 // `game://changed` event (see events.ts).
 import { invoke } from '@tauri-apps/api/core';
 import type { ApiError } from './bindings/ApiError';
+import type { EngineIdentity } from './bindings/EngineIdentity';
+import type { EngineSpec } from './bindings/EngineSpec';
+import type { MatchSpec } from './bindings/MatchSpec';
 import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
 import type { StepTarget } from './bindings/StepTarget';
@@ -20,6 +23,13 @@ export const api = {
   commitTurn: () => invoke<void>('commit_turn'),
   setupSwap: (a: Square, b: Square) => invoke<void>('setup_swap', { a, b }),
   commitSetup: () => invoke<void>('commit_setup'),
+  startMatch: (spec: MatchSpec) => invoke<void>('start_match', { spec }),
+  endMatch: () => invoke<void>('end_match'),
+  engineMoveNow: () => invoke<void>('engine_move_now'),
+  listEngines: () => invoke<EngineSpec[]>('list_engines'),
+  saveEngine: (spec: EngineSpec) => invoke<EngineSpec>('save_engine', { spec }),
+  deleteEngine: (id: string) => invoke<void>('delete_engine', { id }),
+  testEngine: (spec: EngineSpec) => invoke<EngineIdentity>('test_engine', { spec }),
 };
 
 export function isApiError(e: unknown): e is ApiError {

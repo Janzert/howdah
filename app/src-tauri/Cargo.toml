@@ -16,8 +16,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 arimaa-core = { workspace = true, features = ["ts"] }
+arimaa-aei.workspace = true
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "macros"] }

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-use arimaa_core::Position;
+use arimaa_core::{Position, TimeControl};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::{Instant, timeout_at};
@@ -94,6 +94,11 @@ impl Engine {
             .stderr(Stdio::inherit())
             .kill_on_drop(true);
         if let Some(dir) = &config.working_dir {
+            // A missing directory makes spawn fail with the same "not found"
+            // error as a missing program, so check it separately.
+            if !dir.is_dir() {
+                return Err(AeiError::WorkingDir(dir.display().to_string()));
+            }
             cmd.current_dir(dir);
         }
         let mut child = cmd
@@ -205,6 +210,32 @@ impl Engine {
 
     pub async fn set_option(&mut self, name: &str, value: impl std::fmt::Display) -> Result<(), AeiError> {
         self.send(&format!("setoption name {name} value {value}")).await
+    }
+
+    /// Sends the time-control options (`tcmove`, `tcreserve`, ...).
+    pub async fn set_time_control(&mut self, tc: &TimeControl) -> Result<(), AeiError> {
+        self.set_option("tcmove", tc.move_time).await?;
+        self.set_option("tcreserve", tc.reserve).await?;
+        self.set_option("tcpercent", tc.percent).await?;
+        self.set_option("tcmax", tc.max_reserve).await?;
+        self.set_option("tcturns", tc.turn_limit).await?;
+        self.set_option("tctotal", tc.time_limit).await?;
+        self.set_option("tcturntime", tc.max_turn_time).await
+    }
+
+    /// Sends the per-turn clock options: both reserves (gold, silver) in
+    /// whole seconds, and `moveused` 0. Protocol-version-0 engines also get
+    /// the old `wreserve`/`breserve` names.
+    pub async fn set_clock(&mut self, reserves: [Duration; 2]) -> Result<(), AeiError> {
+        let [g, s] = reserves.map(|r| r.as_secs());
+        if self.id.protocol_version == 0 {
+            self.set_option("wreserve", g).await?;
+            self.set_option("breserve", s).await?;
+            self.set_option("tcmoveused", 0).await?;
+        }
+        self.set_option("greserve", g).await?;
+        self.set_option("sreserve", s).await?;
+        self.set_option("moveused", 0).await
     }
 
     /// Tells the engine a move was played (setup placements or steps).

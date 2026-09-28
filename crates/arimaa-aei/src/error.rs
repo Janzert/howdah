@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum AeiError {
     #[error("couldn't start engine {program}: {source}")]
     Spawn { program: String, source: std::io::Error },
+    #[error("working directory {0} doesn't exist")]
+    WorkingDir(String),
     #[error("engine I/O error: {0}")]
     Io(std::io::Error),
     #[error("engine exited")]

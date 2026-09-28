@@ -112,6 +112,16 @@ pub fn outcome_after_turn(pos: &Position, mover: Color) -> Option<GameResult> {
     None
 }
 
+/// Winner when a game or turn limit is reached: the side with more pieces,
+/// silver on a tie.
+// TODO(rules): arimaa.com's scoring for limit games is more detailed. This
+// is pyrimaa's piece count.
+pub fn limit_score_winner(pos: &Position) -> Color {
+    let gold = pos.occupied_by(Color::Gold).count_ones();
+    let silver = pos.occupied_by(Color::Silver).count_ones();
+    if gold > silver { Color::Gold } else { Color::Silver }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,25 +1,32 @@
 //! Tauri commands. Commands are intents: mutating commands return only
 //! success or an error, and the new state arrives as a `game://changed`
-//! event. Queries (`get_state`, `legal_targets`, `export_game`) return data.
+//! event. Queries (`get_state`, `legal_targets`, `export_game`, the engine
+//! list) return data.
 //!
-//! Every state source (UI intents now; engines, the gameroom and tournaments
-//! later) goes through the same event path, so the frontend has one place
+//! Every state source (UI intents, the engine controller, later the
+//! gameroom) goes through the same event path, so the frontend has one place
 //! where state comes in.
 
-use std::sync::{Mutex, MutexGuard};
+use std::sync::MutexGuard;
 
-use arimaa_core::Square;
+use arimaa_core::{Square, TimeControl};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::dto::{AnimStep, ApiError, SessionUpdate, SessionView, StepTarget};
-use crate::session::Session;
+use crate::controller::{Controller, SharedRegistry, SharedSession};
+use crate::dto::{
+    AnimStep, ApiError, EngineIdentity, EngineSpec, MatchSpec, PlayerSpec, SessionUpdate, SessionView,
+    StepTarget,
+};
+use crate::engines;
+use crate::session::{Player, Session};
 
 /// Event carrying a [`SessionUpdate`] after every change to the session.
 pub const GAME_CHANGED: &str = "game://changed";
 
-#[derive(Default)]
 pub struct AppState {
-    session: Mutex<Session>,
+    pub session: SharedSession,
+    pub engines: SharedRegistry,
+    pub controller: Controller,
 }
 
 impl AppState {
@@ -28,24 +35,31 @@ impl AppState {
         // that matters more than refusing all further commands would.
         self.session.lock().unwrap_or_else(|e| e.into_inner())
     }
+
+    fn engines(&self) -> MutexGuard<'_, engines::EngineRegistry> {
+        self.engines.lock().unwrap_or_else(|e| e.into_inner())
+    }
 }
 
-fn emit(app: &AppHandle, session: &Session, animation: Vec<AnimStep>) {
+pub fn emit_session(app: &AppHandle, session: &Session, animation: Vec<AnimStep>) {
     let update = SessionUpdate { view: session.view(), animation };
     if let Err(e) = app.emit(GAME_CHANGED, update) {
         eprintln!("failed to emit {GAME_CHANGED}: {e}");
     }
 }
 
-/// Runs a mutation and broadcasts the result.
+/// Runs a mutation, broadcasts the result, and lets the controller react.
 fn mutate(
     app: &AppHandle,
     state: &State<AppState>,
     f: impl FnOnce(&mut Session) -> Result<Vec<AnimStep>, ApiError>,
 ) -> Result<(), ApiError> {
-    let mut session = state.lock();
-    let animation = f(&mut session)?;
-    emit(app, &session, animation);
+    {
+        let mut session = state.lock();
+        let animation = f(&mut session)?;
+        emit_session(app, &session, animation);
+    }
+    state.controller.poke();
     Ok(())
 }
 
@@ -110,4 +124,63 @@ pub fn setup_swap(app: AppHandle, state: State<AppState>, a: Square, b: Square) 
 #[tauri::command]
 pub fn commit_setup(app: AppHandle, state: State<AppState>) -> Result<(), ApiError> {
     mutate(&app, &state, |s| s.commit_setup().map(|_| Vec::new()))
+}
+
+#[tauri::command]
+pub fn start_match(app: AppHandle, state: State<AppState>, spec: MatchSpec) -> Result<(), ApiError> {
+    let player = |p: &PlayerSpec| -> Result<Player, ApiError> {
+        match p {
+            PlayerSpec::Human => Ok(Player::Human),
+            PlayerSpec::Engine { engine_id } => {
+                let e = state
+                    .engines()
+                    .get(engine_id)
+                    .ok_or_else(|| ApiError::illegal(format!("unknown engine {engine_id:?}")))?;
+                Ok(Player::Engine { id: e.id, name: e.name })
+            }
+        }
+    };
+    let players = [player(&spec.gold)?, player(&spec.silver)?];
+    let tc = match spec.time_control.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => Some(t.parse::<TimeControl>().map_err(ApiError::illegal)?),
+        None => None,
+    };
+    mutate(&app, &state, |s| {
+        s.start_match(players, tc);
+        Ok(Vec::new())
+    })
+}
+
+#[tauri::command]
+pub fn end_match(app: AppHandle, state: State<AppState>) -> Result<(), ApiError> {
+    mutate(&app, &state, |s| {
+        s.end_match();
+        Ok(Vec::new())
+    })
+}
+
+#[tauri::command]
+pub fn engine_move_now(state: State<AppState>) {
+    state.controller.move_now();
+}
+
+#[tauri::command]
+pub fn list_engines(state: State<AppState>) -> Vec<EngineSpec> {
+    state.engines().list()
+}
+
+#[tauri::command]
+pub fn save_engine(state: State<AppState>, spec: EngineSpec) -> Result<EngineSpec, ApiError> {
+    state.engines().save(spec)
+}
+
+#[tauri::command]
+pub fn delete_engine(state: State<AppState>, id: String) -> Result<(), ApiError> {
+    state.engines().delete(&id)
+}
+
+/// Starts the engine to check it speaks AEI, and reports its identity.
+#[tauri::command]
+pub async fn test_engine(spec: EngineSpec) -> Result<EngineIdentity, ApiError> {
+    engines::probe(&spec).await
 }
