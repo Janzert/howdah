@@ -60,5 +60,5 @@ cd app && npm run check  # svelte-check / TypeScript
 ## Artwork and sounds
 
 The classic board, piece and sound assets come from the original arimaa.com
-client, which released them for public use. See
+client and have been released to the public domain. See
 `app/src/themes/classic/ATTRIBUTION.md`.

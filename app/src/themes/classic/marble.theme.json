@@ -1,7 +1,7 @@
 {
   "id": "classic-marble",
   "name": "Classic marble",
-  "attribution": "Board and piece artwork from arimaa.com, released for public use. See ATTRIBUTION.md.",
+  "attribution": "Classic arimaa.com board and piece artwork (public domain).",
   "board": {
     "kind": "image",
     "src": "BoardMarbleBig.jpg",

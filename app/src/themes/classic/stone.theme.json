@@ -1,7 +1,7 @@
 {
   "id": "classic-stone",
   "name": "Classic stone",
-  "attribution": "Board and piece artwork from arimaa.com, released for public use. See ATTRIBUTION.md.",
+  "attribution": "Classic arimaa.com board and piece artwork (public domain).",
   "board": {
     "kind": "image",
     "src": "BoardStoneBig.jpg",
