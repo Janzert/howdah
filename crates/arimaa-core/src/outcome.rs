@@ -99,6 +99,24 @@ mod tests {
     }
 
     #[test]
+    fn double_goal_goes_to_mover() {
+        // Both sides have a rabbit on goal (pyrimaa's DOUBLE_GOAL_POS idea).
+        let p = pos(Color::Gold, "Rb8 rg1");
+        assert_eq!(outcome_after_turn(&p, Color::Gold).unwrap().winner, Color::Gold);
+        assert_eq!(outcome_after_turn(&p, Color::Silver).unwrap().winner, Color::Silver);
+    }
+
+    #[test]
+    fn double_elimination_goes_to_mover() {
+        // Neither side has rabbits left (pyrimaa's DOUBLE_RABBIT_LOSS).
+        let p = pos(Color::Gold, "Db6 cd6 mf5 dc7 df2");
+        for mover in Color::ALL {
+            let r = outcome_after_turn(&p, mover).unwrap();
+            assert_eq!(r, GameResult { winner: mover, reason: WinReason::Elimination });
+        }
+    }
+
+    #[test]
     fn goal_beats_elimination() {
         let r = outcome_after_turn(&pos(Color::Silver, "Rd8 ed5"), Color::Gold);
         assert_eq!(r.unwrap().reason, WinReason::Goal);
