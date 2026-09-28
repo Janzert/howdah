@@ -18,7 +18,8 @@ the original arimaa.com asset archives.
   - `turn`: `TurnBuilder` is the only place step legality lives: freezing,
     push/pull, rabbit direction, 4 steps, no unfinished push, no net-null turn.
     An ambiguous enemy step is a pull, and push-finish/pull-finish steps can't
-    start a pull. Pusher eligibility is fixed when the push starts.
+    start a pull. Pusher eligibility (stronger, unfrozen) is the same at push
+    start and finish, since the pushed piece's step can't affect friendly pieces.
   - `setup`, `outcome` (goal/elimination; `TODO(rules)` markers for
     repetition and immobilization), `notation` (syntax only), and
     `game::Game` (moves plus cached positions per ply; `parse` validates

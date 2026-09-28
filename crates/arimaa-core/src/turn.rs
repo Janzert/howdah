@@ -30,8 +30,9 @@ data_type! {
 enum Pending {
     None,
     /// A push is under way: one of `pushers` must step into `vacated`.
-    /// The eligible pushers are fixed when the push starts, since that's when
-    /// the pushing piece has to be unfrozen and stronger.
+    /// Recording the eligible pushers at the start is equivalent to checking
+    /// the finishing piece then: the pushed piece's step can't change any
+    /// friendly piece's frozen status (see `enemy_step_cannot_change_pusher_eligibility`).
     Push {
         vacated: Square,
         pushers: u64,
@@ -432,14 +433,58 @@ mod tests {
     }
 
     #[test]
-    fn pusher_eligibility_is_fixed_at_push_start() {
-        // Gold horse on e4 is frozen by the silver camel on e5 when the push
-        // starts. The push is made by the elephant; the horse can't finish it.
+    fn frozen_piece_cannot_finish_a_push() {
+        // Gold horse on e4 is frozen by the silver camel on e5. The push is
+        // made by the elephant; the horse can't finish it.
         let mut tb = builder(Color::Gold, "Ec4 He4 dd4 me5");
         assert!(tb.position().is_frozen(sq("e4")));
         tb.try_step(step("dd4s")).unwrap();
         assert_eq!(tb.try_step(step("He4w")), Err(StepError::PushIncomplete(sq("d4"))));
         tb.try_step(step("Ec4e")).unwrap();
+    }
+
+    /// A push's first step moves an enemy piece from `s` to a neighbour `t`,
+    /// possibly capturing an enemy on a trap next to `s`. Friendly pieces
+    /// next to `s` are never orthogonally adjacent to `t` or to other
+    /// neighbours of `s` (the grid is bipartite), so neither arrival nor
+    /// capture touches a candidate pusher. The pushed piece is weaker than
+    /// any pusher, so it wasn't freezing one and its leaving changes nothing.
+    /// (Other friendly pieces can change status: weaker ones the pushed piece
+    /// froze, or ones next to a captured piece as in
+    /// `capturing_the_freezer_unfreezes`. None of those can push.)
+    /// Check every push start in a few positions: each candidate pusher
+    /// (friendly, adjacent, stronger) keeps its frozen status.
+    #[test]
+    fn enemy_step_cannot_change_pusher_eligibility() {
+        let positions = [
+            "Dd3 hc3 rb3 Ea3",     // pushing the trap guard captures the horse
+            "Ed2 dd3 cc3 Hc4 me4", // pushing a guard away from c3
+            "Ec5 dc4 Hb4 mb5 Rd4", // pushing onto a trap
+            "Ee4 Mf3 rf4 hg3 cf2 De2",
+        ];
+        for spec in positions {
+            let tb = builder(Color::Gold, spec);
+            let before = tb.position().clone();
+            for (step, kind) in tb.legal_steps() {
+                if kind != StepKind::PushStart {
+                    continue;
+                }
+                let mut after = tb.clone();
+                after.try_step(step).unwrap();
+                for (sq, piece) in before.pieces() {
+                    let candidate = piece.color == Color::Gold
+                        && piece.stronger_than(step.piece)
+                        && step.from.neighbors().any(|n| n == sq);
+                    if candidate {
+                        assert_eq!(
+                            before.is_frozen(sq),
+                            after.position().is_frozen(sq),
+                            "{spec}: {step} changed frozen status on {sq}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
