@@ -6,6 +6,9 @@ analysis, tournaments, postal games and bot tooling. This repo is a submodule
 of a private parent repo (`../`) that also holds the AEI reference repo and
 the original arimaa.com asset archives.
 
+**Next steps and open to-dos are in `HANDOFF.md`.** Read it at the start of
+a session and update it at the end.
+
 ## Architecture
 
 - `crates/arimaa-core`: pure Rust, no UI or Tauri deps (`thiserror` only).
