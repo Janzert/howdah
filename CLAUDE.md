@@ -27,10 +27,24 @@ a session and update it at the end.
     An ambiguous enemy step is a pull, and push-finish/pull-finish steps can't
     start a pull. Pusher eligibility (stronger, unfrozen) is the same at push
     start and finish, since the pushed piece's step can't affect friendly pieces.
-  - `setup`, `outcome` (goal/elimination; `TODO(rules)` markers for
-    repetition and immobilization), `notation` (syntax only), and
-    `game::Game` (moves plus cached positions per ply; `parse` validates
-    capture tokens, `to_record` round-trips).
+  - `setup`, `outcome` (goal, elimination, immobilization; `WinReason` also
+    covers timeout/resignation/illegal move/score/forfeit, with arimaa.com
+    letters), `timecontrol` (`M/R/P/L/G/T` format and reserve arithmetic,
+    ported from pyrimaa `util.py`), `notation` (syntax only), and
+    `game::Game`: moves plus cached positions per ply. It rejects third
+    repetitions and plays moves from notation (`play_notation`, used for
+    engine and server moves). `end_game` records external results; `parse`
+    validates capture tokens, and `to_record` round-trips.
+- `crates/arimaa-aei`: async AEI controller (tokio; no UI deps).
+  - `Engine`: spawns the process (no shell), runs the handshake, and sends
+    typed commands. Messages are parsed with deadlines (`recv_until`), and
+    `info pv` is split into turns.
+  - `play_match`: engine vs engine with clocks, following pyrimaa's
+    `game.py` (option names, timeouts, `stop` before the deadline, and
+    losses by illegal move, crash, timeout, resignation or turn limit).
+  - `src/bin/aei-test-engine.rs` is a random-move engine with misbehaviour
+    modes, used by the tests. `examples/match.rs` plays one game from the
+    command line.
 - `app/src-tauri`: thin shell.
   - `session.rs` has the pure state logic: cursor ply, in-progress turn,
     setup draft, and stable piece ids for animation. Unit-tested, no Tauri types.
@@ -72,6 +86,7 @@ a session and update it at the end.
 
 ```bash
 cargo test --workspace            # all Rust tests (test profile uses opt-level 1)
+cargo run -p arimaa-aei --example match -- --gold "CMD" --silver "CMD" [--tc 2s/10s] [--transcript]
 cargo clippy --workspace --all-targets
 cd app && npm install
 npm run check                     # svelte-check
