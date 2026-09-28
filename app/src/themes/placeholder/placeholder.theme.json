@@ -1,0 +1,33 @@
+{
+  "id": "placeholder",
+  "name": "Placeholder",
+  "attribution": null,
+  "board": {
+    "kind": "procedural",
+    "light": "#e8dcc0",
+    "dark": "#d8c8a4",
+    "trap": "#b87a6a",
+    "line": "rgba(80,60,40,0.25)"
+  },
+  "pieces": {
+    "kind": "procedural",
+    "gold": {
+      "fill": "#e3b23c",
+      "stroke": "#7a5410",
+      "text": "#3a2500"
+    },
+    "silver": {
+      "fill": "#c9ced6",
+      "stroke": "#4d5563",
+      "text": "#1d232d"
+    }
+  },
+  "coords": true,
+  "ui": {
+    "highlight": "rgba(255, 170, 0, 0.45)",
+    "arrow": "rgba(30, 110, 200, 0.8)",
+    "target": "rgba(20, 20, 20, 0.35)",
+    "coord": "rgba(40, 30, 20, 0.7)",
+    "pushPending": "rgba(210, 40, 40, 0.8)"
+  }
+}

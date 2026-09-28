@@ -1,0 +1,23 @@
+[package]
+name = "arimaa-desktop"
+version = "0.1.0"
+description = "Arimaa desktop client"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.90"
+
+[lib]
+# The _lib suffix avoids a name clash with the binary on Windows (cargo#8519).
+name = "arimaa_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+arimaa-core = { workspace = true, features = ["ts"] }
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true

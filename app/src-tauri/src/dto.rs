@@ -1,0 +1,182 @@
+//! View types sent to the frontend. TypeScript definitions are generated from
+//! these with ts-rs (`npm run bindings`); don't hand-edit `src/lib/bindings`.
+
+use arimaa_core::{Color, GameResult, Piece, Square, StepKind};
+use serde::Serialize;
+use ts_rs::TS;
+
+/// Stable identity for a piece across plies, so the UI can animate it.
+pub type PieceId = u16;
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PieceView {
+    pub id: PieceId,
+    pub piece: Piece,
+    pub square: Square,
+    pub frozen: bool,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PositionView {
+    pub side_to_move: Color,
+    pub pieces: Vec<PieceView>,
+    /// AEI short format, handy for debugging and engine hand-off.
+    pub short: String,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MoveView {
+    /// Ply after this move; `goto_ply(ply)` shows the position it produced.
+    pub ply: usize,
+    /// Move number label, e.g. `2g`.
+    pub label: String,
+    pub notation: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum Phase {
+    /// The side to move is arranging its setup.
+    Setup,
+    Play,
+    /// The game has a result; no more moves at the end of the record.
+    Over,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TurnStepView {
+    pub notation: String,
+    pub kind: StepKind,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TurnView {
+    pub steps: Vec<TurnStepView>,
+    pub steps_left: usize,
+    /// Square a pushing piece must step into, if a push is under way.
+    pub push_pending: Option<Square>,
+    /// Why the turn can't be committed yet, or `None` if it can.
+    pub commit_blocker: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SessionView {
+    pub moves: Vec<MoveView>,
+    /// Ply being shown (0 = empty board, `moves.len()` = latest).
+    pub ply: usize,
+    pub phase: Phase,
+    /// Position at `ply`, including any in-progress turn or setup draft.
+    pub position: PositionView,
+    /// Present while a turn is being entered.
+    pub turn: Option<TurnView>,
+    /// Moves that committing now would discard (when entering a move before the end).
+    pub moves_after_cursor: usize,
+    pub result: Option<GameResult>,
+    pub end_marker: Option<String>,
+}
+
+/// A piece appearing or disappearing during an animation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AnimPiece {
+    pub id: PieceId,
+    pub piece: Piece,
+    pub square: Square,
+}
+
+/// One step of an animation. Play in order: fade in `restored`, slide `id`
+/// from `from` to `to`, then fade out `captured`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AnimStep {
+    pub id: PieceId,
+    pub from: Square,
+    pub to: Square,
+    pub captured: Option<AnimPiece>,
+    pub restored: Option<AnimPiece>,
+}
+
+impl AnimStep {
+    /// The same step played backward.
+    pub fn reversed(self) -> AnimStep {
+        AnimStep { id: self.id, from: self.to, to: self.from, captured: None, restored: self.captured }
+    }
+}
+
+/// Payload of the `game://changed` event: the new state, plus the steps to
+/// animate from the previous state (empty means snap).
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SessionUpdate {
+    pub view: SessionView,
+    pub animation: Vec<AnimStep>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StepTarget {
+    pub to: Square,
+    /// `None` for setup swaps.
+    pub kind: Option<StepKind>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ErrorKind {
+    /// A game record failed to parse or replay.
+    Record,
+    /// The requested step or move isn't legal.
+    Illegal,
+    /// The request doesn't fit the current state (e.g. a step during setup).
+    State,
+}
+
+/// Error returned by commands.
+#[derive(Clone, Debug, Serialize, TS, thiserror::Error)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+#[error("{message}")]
+pub struct ApiError {
+    pub kind: ErrorKind,
+    pub message: String,
+    /// 1-based record line, for `Record` errors.
+    pub line: Option<usize>,
+}
+
+impl ApiError {
+    pub fn new(kind: ErrorKind, message: impl ToString) -> ApiError {
+        ApiError { kind, message: message.to_string(), line: None }
+    }
+
+    pub fn illegal(message: impl ToString) -> ApiError {
+        ApiError::new(ErrorKind::Illegal, message)
+    }
+
+    pub fn state(message: impl ToString) -> ApiError {
+        ApiError::new(ErrorKind::State, message)
+    }
+}
+
+impl From<arimaa_core::RecordError> for ApiError {
+    fn from(e: arimaa_core::RecordError) -> ApiError {
+        ApiError { kind: ErrorKind::Record, message: e.error.to_string(), line: Some(e.line) }
+    }
+}

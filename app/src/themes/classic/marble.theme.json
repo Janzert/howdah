@@ -1,0 +1,43 @@
+{
+  "id": "classic-marble",
+  "name": "Classic marble",
+  "attribution": "Board and piece artwork from arimaa.com, released for public use. See ATTRIBUTION.md.",
+  "board": {
+    "kind": "image",
+    "src": "BoardMarbleBig.jpg",
+    "width": 650,
+    "height": 650,
+    "grid": {
+      "x": 8,
+      "y": 8,
+      "width": 633,
+      "height": 633
+    }
+  },
+  "pieces": {
+    "kind": "image",
+    "scale": 0.92,
+    "srcs": {
+      "E": "pieces/GoldElephant.png",
+      "e": "pieces/SilverElephant.png",
+      "M": "pieces/GoldCamel.png",
+      "m": "pieces/SilverCamel.png",
+      "H": "pieces/GoldHorse.png",
+      "h": "pieces/SilverHorse.png",
+      "D": "pieces/GoldDog.png",
+      "d": "pieces/SilverDog.png",
+      "C": "pieces/GoldCat.png",
+      "c": "pieces/SilverCat.png",
+      "R": "pieces/GoldRabbit.png",
+      "r": "pieces/SilverRabbit.png"
+    }
+  },
+  "coords": false,
+  "ui": {
+    "highlight": "rgba(255, 170, 0, 0.45)",
+    "arrow": "rgba(40, 150, 60, 0.8)",
+    "target": "rgba(20, 20, 20, 0.35)",
+    "coord": "rgba(40, 30, 20, 0.7)",
+    "pushPending": "rgba(210, 40, 40, 0.8)"
+  }
+}

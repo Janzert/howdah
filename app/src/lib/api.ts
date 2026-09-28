@@ -1,0 +1,32 @@
+// Typed wrappers for the Tauri commands in src-tauri/src/commands.rs.
+// Mutating commands resolve with nothing; the new state arrives as a
+// `game://changed` event (see events.ts).
+import { invoke } from '@tauri-apps/api/core';
+import type { ApiError } from './bindings/ApiError';
+import type { SessionView } from './bindings/SessionView';
+import type { Square } from './bindings/Square';
+import type { StepTarget } from './bindings/StepTarget';
+
+export const api = {
+  getState: () => invoke<SessionView>('get_state'),
+  newGame: () => invoke<void>('new_game'),
+  loadGame: (record: string) => invoke<void>('load_game', { record }),
+  exportGame: () => invoke<string>('export_game'),
+  gotoPly: (ply: number) => invoke<void>('goto_ply', { ply }),
+  legalTargets: (from: Square) => invoke<StepTarget[]>('legal_targets', { from }),
+  tryStep: (from: Square, to: Square) => invoke<void>('try_step', { from, to }),
+  undoStep: () => invoke<void>('undo_step'),
+  cancelTurn: () => invoke<void>('cancel_turn'),
+  commitTurn: () => invoke<void>('commit_turn'),
+  setupSwap: (a: Square, b: Square) => invoke<void>('setup_swap', { a, b }),
+  commitSetup: () => invoke<void>('commit_setup'),
+};
+
+export function isApiError(e: unknown): e is ApiError {
+  return typeof e === 'object' && e !== null && 'kind' in e && 'message' in e;
+}
+
+export function errorMessage(e: unknown): string {
+  if (isApiError(e)) return e.line != null ? `Line ${e.line}: ${e.message}` : e.message;
+  return String(e);
+}

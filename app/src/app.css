@@ -1,0 +1,64 @@
+:root {
+  --bg: #f4f1ea;
+  --panel: #fbfaf6;
+  --text: #22201c;
+  --muted: #7a746a;
+  --border: #ddd6c8;
+  --hover: #ece6da;
+  --accent: #3c6e8f;
+  --accent-text: #ffffff;
+  --warn: #b3412c;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1d1c1a;
+    --panel: #262522;
+    --text: #e9e5dc;
+    --muted: #a19b90;
+    --border: #3a3834;
+    --hover: #33312d;
+    --accent: #4f86aa;
+    --accent-text: #ffffff;
+    --warn: #e0775f;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, sans-serif;
+}
+
+button,
+select,
+.file {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled),
+.file:hover {
+  background: var(--hover);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
