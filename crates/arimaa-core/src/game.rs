@@ -1,0 +1,290 @@
+//! A game: the sequence of moves from the empty board, with positions cached
+//! per ply.
+//!
+//! Ply `n` is the position after `n` moves. Ply 0 is the empty board with
+//! gold to set up, and ply 2 is the first position with both sides placed.
+
+use crate::error::{GameError, RecordError};
+use crate::notation::{self, MoveBody};
+use crate::outcome::{GameResult, outcome_after_turn};
+use crate::position::Position;
+use crate::setup::{Placement, apply_setup};
+use crate::step::StepEffect;
+use crate::turn::{Turn, TurnBuilder};
+use crate::types::Color;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Move {
+    Setup(Vec<Placement>),
+    Steps(Vec<StepEffect>),
+}
+
+impl Move {
+    /// The move's tokens in standard notation, without the move number.
+    pub fn notation(&self) -> String {
+        match self {
+            Move::Setup(p) => notation::format_placements(p),
+            Move::Steps(s) => notation::format_steps(s),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Game {
+    moves: Vec<Move>,
+    /// `positions[n]` is the position at ply `n`; always `moves.len() + 1` long.
+    positions: Vec<Position>,
+    result: Option<GameResult>,
+    /// End marker from a loaded record, such as `resigns`. Not interpreted.
+    end_marker: Option<String>,
+}
+
+impl Default for Game {
+    fn default() -> Self {
+        Game::new()
+    }
+}
+
+impl Game {
+    pub fn new() -> Game {
+        Game {
+            moves: Vec::new(),
+            positions: vec![Position::empty(Color::Gold)],
+            result: None,
+            end_marker: None,
+        }
+    }
+
+    pub fn moves(&self) -> &[Move] {
+        &self.moves
+    }
+
+    /// Number of moves played, which is also the last ply.
+    pub fn ply_count(&self) -> usize {
+        self.moves.len()
+    }
+
+    pub fn position_at(&self, ply: usize) -> Option<&Position> {
+        self.positions.get(ply)
+    }
+
+    pub fn current_position(&self) -> &Position {
+        self.positions.last().expect("positions is never empty")
+    }
+
+    /// True if the move made from `ply` is a setup move.
+    pub fn is_setup_ply(ply: usize) -> bool {
+        ply < 2
+    }
+
+    pub fn result(&self) -> Option<GameResult> {
+        self.result
+    }
+
+    pub fn end_marker(&self) -> Option<&str> {
+        self.end_marker.as_deref()
+    }
+
+    /// Drops every move after `ply` (for playing a new line from an earlier position).
+    pub fn truncate(&mut self, ply: usize) {
+        if ply < self.moves.len() {
+            self.moves.truncate(ply);
+            self.positions.truncate(ply + 1);
+            self.result = None;
+            self.end_marker = None;
+        }
+    }
+
+    fn check_can_move(&self) -> Result<(), GameError> {
+        if self.result.is_some() { Err(GameError::GameOver) } else { Ok(()) }
+    }
+
+    pub fn play_setup(&mut self, placements: Vec<Placement>) -> Result<(), GameError> {
+        self.check_can_move()?;
+        if !Game::is_setup_ply(self.ply_count()) {
+            return Err(GameError::ExpectedTurn);
+        }
+        let next = apply_setup(self.current_position(), &placements)?;
+        self.moves.push(Move::Setup(placements));
+        self.positions.push(next);
+        Ok(())
+    }
+
+    /// Starts a turn from the current position.
+    pub fn begin_turn(&self) -> Result<TurnBuilder, GameError> {
+        self.check_can_move()?;
+        if Game::is_setup_ply(self.ply_count()) {
+            return Err(GameError::ExpectedSetup);
+        }
+        Ok(TurnBuilder::new(self.current_position()))
+    }
+
+    /// Adds a turn built with [`Game::begin_turn`].
+    pub fn play_turn(&mut self, turn: Turn) -> Result<Option<GameResult>, GameError> {
+        self.check_can_move()?;
+        if Game::is_setup_ply(self.ply_count()) {
+            return Err(GameError::ExpectedSetup);
+        }
+        if &turn.start != self.current_position() {
+            return Err(GameError::StaleTurn);
+        }
+        let mover = turn.start.side_to_move();
+        self.result = outcome_after_turn(&turn.end, mover);
+        self.moves.push(Move::Steps(turn.effects()));
+        self.positions.push(turn.end);
+        Ok(self.result)
+    }
+
+    /// Parses and validates a game record: one move per line, e.g.
+    /// `1g Ra1 Rb1 ...`, `2g Ed2n Ed3n`. Blank lines are skipped. Trailing
+    /// empty move lines and end markers such as `resigns` are accepted.
+    pub fn parse(record: &str) -> Result<Game, RecordError> {
+        let mut game = Game::new();
+        let mut finished = false;
+        for (i, raw) in record.lines().enumerate() {
+            let line_no = i + 1;
+            let at = |error: GameError| RecordError { line: line_no, error };
+            let text = raw.trim();
+            if text.is_empty() || text.starts_with('#') {
+                continue;
+            }
+            if finished {
+                return Err(at(GameError::GameOver));
+            }
+            let line = notation::parse_move_line(text).map_err(|e| at(e.into()))?;
+            let ply = game.ply_count();
+            let expected = notation::move_label(ply);
+            if line.number != (ply / 2 + 1) as u32 || line.color != game.current_position().side_to_move() {
+                let found = format!("{}{}", line.number, line.color.letter());
+                return Err(at(GameError::OutOfSequence { expected, found }));
+            }
+            let empty = matches!(line.body, MoveBody::Empty);
+            match line.body {
+                MoveBody::Empty => {}
+                MoveBody::Setup(p) => game.play_setup(p).map_err(at)?,
+                MoveBody::Steps(steps) => {
+                    let mut tb = game.begin_turn().map_err(at)?;
+                    for rs in steps {
+                        let effect = tb
+                            .try_step(rs.step)
+                            .map_err(|source| at(GameError::Step { step: rs.step.to_string(), source }))?
+                            .effect;
+                        // Missing capture tokens are tolerated; wrong ones are not.
+                        if let Some(written) = rs.capture
+                            && effect.capture != Some(written)
+                        {
+                            return Err(at(GameError::CaptureMismatch(written.to_string())));
+                        }
+                    }
+                    let turn = tb.finish().map_err(|e| at(e.into()))?;
+                    game.play_turn(turn).map_err(at)?;
+                }
+            }
+            if let Some(m) = line.marker {
+                game.end_marker = Some(m);
+                finished = true;
+            }
+            if empty || game.result.is_some() {
+                // An empty move line or a decided game must be the end of the record.
+                finished = true;
+            }
+        }
+        Ok(game)
+    }
+
+    /// Formats the game as a record, one move per line, each ending in `\n`.
+    pub fn to_record(&self) -> String {
+        let mut out = String::new();
+        for (ply, m) in self.moves.iter().enumerate() {
+            out.push_str(&notation::move_label(ply));
+            out.push(' ');
+            out.push_str(&m.notation());
+            out.push('\n');
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::setup::default_setup;
+
+    fn started() -> Game {
+        let mut g = Game::new();
+        g.play_setup(default_setup(Color::Gold)).unwrap();
+        g.play_setup(default_setup(Color::Silver)).unwrap();
+        g
+    }
+
+    #[test]
+    fn setup_then_turns() {
+        let mut g = started();
+        assert_eq!(g.ply_count(), 2);
+        assert!(matches!(g.play_setup(default_setup(Color::Gold)), Err(GameError::ExpectedTurn)));
+        let mut tb = g.begin_turn().unwrap();
+        tb.try_move("e2".parse().unwrap(), "e3".parse().unwrap()).unwrap();
+        g.play_turn(tb.finish().unwrap()).unwrap();
+        assert_eq!(g.current_position().side_to_move(), Color::Silver);
+        assert!(g.to_record().ends_with("2g Ee2n\n"));
+    }
+
+    #[test]
+    fn turn_before_setup_rejected() {
+        assert!(matches!(Game::new().begin_turn(), Err(GameError::ExpectedSetup)));
+    }
+
+    #[test]
+    fn stale_turn_rejected() {
+        let mut g = started();
+        let mut tb = g.begin_turn().unwrap();
+        tb.try_move("e2".parse().unwrap(), "e3".parse().unwrap()).unwrap();
+        let turn = tb.finish().unwrap();
+        g.play_turn(turn.clone()).unwrap();
+        assert!(matches!(g.play_turn(turn), Err(GameError::StaleTurn)));
+    }
+
+    #[test]
+    fn truncate_rewinds() {
+        let mut g = started();
+        g.truncate(1);
+        assert_eq!(g.ply_count(), 1);
+        assert_eq!(g.current_position().side_to_move(), Color::Silver);
+    }
+
+    #[test]
+    fn parse_rejects_out_of_sequence() {
+        let rec = "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2\n1g Ra7\n";
+        let err = Game::parse(rec).unwrap_err();
+        assert_eq!(err.line, 2);
+        assert!(matches!(err.error, GameError::OutOfSequence { .. }));
+    }
+
+    #[test]
+    fn parse_reports_illegal_step_line() {
+        let mut rec = started().to_record();
+        rec.push_str("2g Ra1n\n"); // a2 is occupied
+        let err = Game::parse(&rec).unwrap_err();
+        assert_eq!(err.line, 3);
+        assert!(matches!(err.error, GameError::Step { .. }));
+    }
+
+    #[test]
+    fn parse_rejects_wrong_capture_token() {
+        let mut rec = started().to_record();
+        rec.push_str("2g Ee2n Ee3x\n");
+        let err = Game::parse(&rec).unwrap_err();
+        assert!(matches!(err.error, GameError::CaptureMismatch(_)));
+    }
+
+    #[test]
+    fn parse_accepts_trailing_empty_move_and_marker() {
+        let mut rec = started().to_record();
+        rec.push_str("2g Ee2n\n2s resigns\n");
+        let g = Game::parse(&rec).unwrap();
+        assert_eq!(g.ply_count(), 3);
+        assert_eq!(g.end_marker(), Some("resigns"));
+        rec.push_str("3g Ee3n\n");
+        assert!(Game::parse(&rec).is_err());
+    }
+}

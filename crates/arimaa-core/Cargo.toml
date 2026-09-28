@@ -1,0 +1,19 @@
+[package]
+name = "arimaa-core"
+version = "0.1.0"
+description = "Arimaa rules, position representation and notation"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# Serde derives for the public data types.
+serde = ["dep:serde"]
+# TypeScript binding derives (ts-rs). Implies serde; only UI crates enable this.
+ts = ["serde", "dep:ts-rs"]
+
+[dependencies]
+thiserror.workspace = true
+serde = { workspace = true, optional = true }
+ts-rs = { workspace = true, optional = true }
