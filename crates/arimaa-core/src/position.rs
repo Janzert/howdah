@@ -69,10 +69,16 @@ fn piece_key(piece: Piece, sq: Square) -> u64 {
 }
 
 /// A board position and the side to move.
+///
+/// Pieces are stored as cumulative strength bitboards: `at_least[c][k]` holds
+/// every piece of color `c` with strength `k` or greater. Arimaa mostly asks
+/// "which pieces are stronger (or weaker) than this one?" (freezing, pushes,
+/// pulls), and those are single lookups here. Index 0 (rabbit) is the side's
+/// occupancy, and index 6 is always empty, so "stronger than an elephant"
+/// needs no special case. A single piece type is `at_least[k] & !at_least[k + 1]`.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Position {
-    boards: [[u64; 6]; 2],
-    occupied: [u64; 2],
+    at_least: [[u64; 7]; 2],
     side: Color,
     /// Zobrist hash of the pieces only; the side to move is mixed in by [`Position::hash`].
     board_hash: u64,
@@ -81,7 +87,7 @@ pub struct Position {
 impl Position {
     /// An empty board with `side` to move.
     pub fn empty(side: Color) -> Position {
-        Position { boards: [[0; 6]; 2], occupied: [0; 2], side, board_hash: 0 }
+        Position { at_least: [[0; 7]; 2], side, board_hash: 0 }
     }
 
     /// Builds a position from `(piece, square)` pairs.
@@ -118,48 +124,55 @@ impl Position {
     /// True if both positions have the same pieces on the same squares,
     /// regardless of side to move.
     pub fn same_board(&self, other: &Position) -> bool {
-        self.board_hash == other.board_hash && self.boards == other.boards
+        self.board_hash == other.board_hash && self.at_least == other.at_least
     }
 
     pub fn piece_at(&self, sq: Square) -> Option<Piece> {
         let bit = sq.bit();
-        for color in Color::ALL {
-            if self.occupied[color.index()] & bit != 0 {
-                for kind in PieceKind::ALL {
-                    if self.boards[color.index()][kind.index()] & bit != 0 {
-                        return Some(Piece::new(color, kind));
-                    }
-                }
-            }
-        }
-        None
+        let color = Color::ALL.into_iter().find(|c| self.at_least[c.index()][0] & bit != 0)?;
+        // The piece's strength is the last board (from rabbit up) that contains it.
+        let boards = &self.at_least[color.index()];
+        let strength = (1..6).take_while(|&k| boards[k] & bit != 0).count();
+        Some(Piece::new(color, PieceKind::ALL[strength]))
     }
 
     /// Every piece on the board, ordered by square.
     pub fn pieces(&self) -> impl Iterator<Item = (Square, Piece)> + '_ {
-        squares(self.occupied[0] | self.occupied[1])
-            .map(|sq| (sq, self.piece_at(sq).expect("occupied square has a piece")))
+        squares(self.occupied()).map(|sq| (sq, self.piece_at(sq).expect("occupied square has a piece")))
     }
 
+    /// Pieces of exactly this type.
     pub fn bitboard(&self, piece: Piece) -> u64 {
-        self.boards[piece.color.index()][piece.kind.index()]
+        let (c, k) = (piece.color.index(), piece.kind.index());
+        self.at_least[c][k] & !self.at_least[c][k + 1]
     }
 
     pub fn occupied_by(&self, color: Color) -> u64 {
-        self.occupied[color.index()]
+        self.at_least[color.index()][0]
     }
 
     pub fn occupied(&self) -> u64 {
-        self.occupied[0] | self.occupied[1]
+        self.at_least[0][0] | self.at_least[1][0]
     }
 
     pub fn count(&self, piece: Piece) -> u32 {
         self.bitboard(piece).count_ones()
     }
 
-    /// Bitboard of `color`'s pieces strictly stronger than `kind`.
-    pub(crate) fn stronger_than(&self, color: Color, kind: PieceKind) -> u64 {
-        self.boards[color.index()][kind.index() + 1..].iter().fold(0, |acc, b| acc | b)
+    /// `color`'s pieces with strength `kind` or greater.
+    pub fn at_least(&self, color: Color, kind: PieceKind) -> u64 {
+        self.at_least[color.index()][kind.index()]
+    }
+
+    /// `color`'s pieces strictly stronger than `kind`.
+    pub fn stronger_than(&self, color: Color, kind: PieceKind) -> u64 {
+        self.at_least[color.index()][kind.index() + 1]
+    }
+
+    /// `color`'s pieces strictly weaker than `kind`.
+    pub fn weaker_than(&self, color: Color, kind: PieceKind) -> u64 {
+        let boards = &self.at_least[color.index()];
+        boards[0] & !boards[kind.index()]
     }
 
     /// True if the piece on `sq` is next to a stronger enemy and has no friend
@@ -167,7 +180,7 @@ impl Position {
     pub fn is_frozen(&self, sq: Square) -> bool {
         let Some(piece) = self.piece_at(sq) else { return false };
         let adj = neighbors(sq.bit());
-        adj & self.occupied[piece.color.index()] == 0
+        adj & self.occupied_by(piece.color) == 0
             && adj & self.stronger_than(piece.color.opponent(), piece.kind) != 0
     }
 
@@ -181,18 +194,35 @@ impl Position {
         }
     }
 
+    /// The boards a piece of this type appears on: rabbit up to its own strength.
+    fn boards_mut(&mut self, piece: Piece) -> &mut [u64] {
+        &mut self.at_least[piece.color.index()][..=piece.kind.index()]
+    }
+
     fn put(&mut self, piece: Piece, sq: Square) {
         debug_assert!(self.occupied() & sq.bit() == 0);
-        self.boards[piece.color.index()][piece.kind.index()] |= sq.bit();
-        self.occupied[piece.color.index()] |= sq.bit();
+        for b in self.boards_mut(piece) {
+            *b |= sq.bit();
+        }
         self.board_hash ^= piece_key(piece, sq);
     }
 
     fn remove(&mut self, piece: Piece, sq: Square) {
         debug_assert!(self.bitboard(piece) & sq.bit() != 0);
-        self.boards[piece.color.index()][piece.kind.index()] &= !sq.bit();
-        self.occupied[piece.color.index()] &= !sq.bit();
+        for b in self.boards_mut(piece) {
+            *b &= !sq.bit();
+        }
         self.board_hash ^= piece_key(piece, sq);
+    }
+
+    /// Moves a piece between two squares; `to` must be empty.
+    fn shift(&mut self, piece: Piece, from: Square, to: Square) {
+        debug_assert!(self.bitboard(piece) & from.bit() != 0 && self.occupied() & to.bit() == 0);
+        let bits = from.bit() | to.bit();
+        for b in self.boards_mut(piece) {
+            *b ^= bits;
+        }
+        self.board_hash ^= piece_key(piece, from) ^ piece_key(piece, to);
     }
 
     /// Moves a piece one square and resolves traps. Only checks the mechanics
@@ -207,16 +237,19 @@ impl Position {
         if self.occupied() & to.bit() != 0 {
             return Err(StepError::Occupied(to));
         }
-        self.remove(step.piece, step.from);
-        self.put(step.piece, to);
-        let capture = self.resolve_trap(step.piece.color);
+        self.shift(step.piece, step.from, to);
+        let capture = self.resolve_trap(step.piece.color, step.from);
         Ok(StepEffect { step, to, capture })
     }
 
-    /// Removes a piece of `color` sitting on a trap with no friend next to it.
-    fn resolve_trap(&mut self, color: Color) -> Option<Capture> {
-        let own = self.occupied[color.index()];
-        let unguarded = own & TRAP_BITS & !neighbors(own);
+    /// After a `color` step from `from`, removes a piece of that color left
+    /// alone on a trap. Only traps next to `from` can be affected (the
+    /// destination is one of them), and no square touches two traps. Loaded
+    /// positions may already hold unguarded trap pieces elsewhere; like
+    /// pyrimaa, those stay until a step next to them.
+    fn resolve_trap(&mut self, color: Color, from: Square) -> Option<Capture> {
+        let own = self.occupied_by(color);
+        let unguarded = own & TRAP_BITS & neighbors(from.bit()) & !neighbors(own);
         let sq = squares(unguarded).next()?;
         debug_assert_eq!(unguarded.count_ones(), 1, "a step can capture at most one piece");
         let piece = self.piece_at(sq).expect("trap square is occupied");
@@ -230,8 +263,7 @@ impl Position {
         if let Some(c) = effect.capture {
             self.put(c.piece, c.square);
         }
-        self.remove(effect.step.piece, effect.to);
-        self.put(effect.step.piece, effect.step.from);
+        self.shift(effect.step.piece, effect.to, effect.step.from);
     }
 
     /// AEI short format, e.g. `[rrrrrrrr...RRRRRRRR]`: 64 characters from a8
@@ -336,6 +368,57 @@ pub(crate) mod tests {
         assert_eq!(neighbors(sq("a5").bit()) & sq("h4").bit(), 0);
     }
 
+    /// Checks the cumulative-board invariants against a plain square list.
+    fn assert_consistent(p: &Position) {
+        for c in Color::ALL {
+            let boards = &p.at_least[c.index()];
+            assert_eq!(boards[6], 0, "sentinel board must stay empty");
+            for k in 1..7 {
+                assert_eq!(boards[k] & !boards[k - 1], 0, "each board is a subset of the one below");
+            }
+        }
+        assert_eq!(p.at_least[0][0] & p.at_least[1][0], 0, "a square holds one piece");
+        for sq in Square::all() {
+            match p.piece_at(sq) {
+                Some(piece) => {
+                    assert_ne!(p.bitboard(piece) & sq.bit(), 0);
+                    for kind in PieceKind::ALL {
+                        let expected = kind <= piece.kind;
+                        assert_eq!(p.at_least(piece.color, kind) & sq.bit() != 0, expected);
+                    }
+                }
+                None => assert_eq!(p.occupied() & sq.bit(), 0),
+            }
+        }
+    }
+
+    #[test]
+    fn strength_boards() {
+        let start = pos(Color::Gold, "Ed4 Me3 Hb5 Dg4 Ca2 Rh2 ed6 rc5 cb4 mg6");
+        let mut p = start.clone();
+        assert_consistent(&p);
+        assert_eq!(p.stronger_than(Color::Gold, PieceKind::Horse), sq("d4").bit() | sq("e3").bit());
+        assert_eq!(p.stronger_than(Color::Gold, PieceKind::Elephant), 0);
+        assert_eq!(p.weaker_than(Color::Silver, PieceKind::Camel), sq("c5").bit() | sq("b4").bit());
+        assert_eq!(p.weaker_than(Color::Gold, PieceKind::Rabbit), 0);
+        assert_eq!(p.at_least(Color::Gold, PieceKind::Rabbit), p.occupied_by(Color::Gold));
+        assert_eq!(p.bitboard(Piece::from_letter('m').unwrap()), sq("g6").bit());
+
+        // Steps, a capture (the rabbit on c3 loses its guard) and undo all
+        // keep the boards consistent.
+        let mut effects = Vec::new();
+        for s in ["Ed4e", "Me3w", "rc5s", "cb4s", "rc4s", "cb3w", "Ca2e"] {
+            effects.push(p.apply_step(step(s)).unwrap());
+            assert_consistent(&p);
+        }
+        assert_eq!(effects[5].capture.map(|c| c.to_string()), Some("rc3x".to_string()));
+        for e in effects.iter().rev() {
+            p.undo_step(e);
+            assert_consistent(&p);
+        }
+        assert_eq!(p, start);
+    }
+
     #[test]
     fn frozen_by_stronger_enemy() {
         let p = pos(Color::Gold, "Dd4 hd5");
@@ -404,6 +487,20 @@ pub(crate) mod tests {
         let mut p = pos(Color::Gold, "Rb3 Rd3 dc4");
         let e = p.apply_step(step("dc4s")).unwrap();
         assert!(e.capture.is_some());
+    }
+
+    #[test]
+    fn unrelated_unguarded_trap_piece_is_left_alone() {
+        // A loaded position can hold an unguarded piece on a trap (here Cc3).
+        // A step elsewhere doesn't capture it; only a step next to the trap does.
+        let mut p = pos(Color::Gold, "Cc3 Rh2 Rb4");
+        assert_eq!(p.apply_step(step("Rh2n")).unwrap().capture, None);
+        let e = p.apply_step(step("Rb4n")).unwrap();
+        assert_eq!(e.capture, None, "b4 isn't next to c3");
+        let mut p = pos(Color::Gold, "Cc3 Rd4");
+        assert_eq!(p.apply_step(step("Rd4n")).unwrap().capture, None, "d4 isn't next to c3");
+        let mut p = pos(Color::Gold, "Cc3 Rd3");
+        assert!(p.apply_step(step("Rd3n")).unwrap().capture.is_some());
     }
 
     #[test]

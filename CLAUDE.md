@@ -12,9 +12,13 @@ the original arimaa.com asset archives.
   It will also back a headless CLI and PyO3 bindings, so keep the API clean.
   - `types`: Color, PieceKind (Ord = strength), Piece, Square (0 = a1,
     63 = h8), Dir, TRAPS.
-  - `position`: bitboard `Position` with a zobrist hash. `apply_step` and
-    `undo_step` are raw mechanics: they move a piece and resolve traps, with
-    no legality checks.
+  - `position`: `Position` with a zobrist hash. Pieces are stored as
+    cumulative strength bitboards: `at_least[color][k]` is every piece of
+    strength k or greater (index 0 = occupancy, index 6 = empty sentinel), so
+    `stronger_than`/`weaker_than` are single lookups and one piece type is
+    `at_least[k] & !at_least[k+1]`. `apply_step` and `undo_step` are raw
+    mechanics: they move a piece and resolve traps (only traps next to the
+    vacated square, as in pyrimaa), with no legality checks.
   - `turn`: `TurnBuilder` is the only place step legality lives: freezing,
     push/pull, rabbit direction, 4 steps, no unfinished push, no net-null turn.
     An ambiguous enemy step is a pull, and push-finish/pull-finish steps can't
@@ -57,7 +61,9 @@ the original arimaa.com asset archives.
 - rustfmt: `max_width = 110`. Conventional commits.
 - The reference implementation for rules questions is `../AEI/pyrimaa/board.py`.
   `crates/arimaa-core/tests/movegen.rs` checks move-generation counts
-  against it. To add cases, compute counts with pyrimaa's `get_moves()`.
+  against it (both sides to move). To add cases, compute counts with
+  pyrimaa's `get_moves()`. `tests/pyrimaa_cases.rs` ports the step-level
+  cases from `pyrimaa/tests/test_board.py`.
 
 ## Build / test / run
 
