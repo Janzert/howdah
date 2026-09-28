@@ -124,6 +124,8 @@
   style:--arrow={theme.ui.arrow}
   style:--target={theme.ui.target}
   style:--push={theme.ui.pushPending}
+  style:--step-ms="{model.stepMs}ms"
+  style:--fade-ms="{model.fadeMs}ms"
 >
   <svg
     bind:this={svg}

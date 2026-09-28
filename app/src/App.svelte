@@ -109,7 +109,8 @@
       const setupCommitted = view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;
       setView(u.view);
       model.apply(u.view.position.pieces, u.animation, {
-        onSlide: () => play('slide'),
+        // The arimaa.com clients play place.wav for every step.
+        onSlide: () => play('place'),
         onCapture: () => play('trapped'),
       });
       if (setupCommitted) play('place');

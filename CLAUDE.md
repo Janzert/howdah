@@ -77,6 +77,13 @@ a session and update it at the end.
   - `lib/events.ts`: typed `on()`.
   - `lib/board/`: SVG board. `BoardModel` plays `AnimStep`s: slide, then
     fade out on capture, with fade-in for restored pieces going backward.
+    - Animated updates are queued. Each move waiting behind the current one
+      speeds up the animation, and more than `MAX_BEHIND` (6) waiting jumps
+      straight to the latest.
+    - An update without animation that doesn't change the position (a clock
+      or "thinking" change) doesn't interrupt; any other one cancels the
+      queue and snaps.
+    - Every step plays `place.wav`, as the arimaa.com clients do.
   - `lib/theme.ts` plus `themes/<dir>/*.theme.json`: data-driven themes
     (image or procedural board/pieces).
 
@@ -109,6 +116,7 @@ cargo run -p arimaa-aei --example match -- --gold "CMD" --silver "CMD" [--tc 2s/
 cargo clippy --workspace --all-targets
 cd app && npm install
 npm run check                     # svelte-check
+npm test                          # vitest (frontend unit tests, e.g. BoardModel)
 npm run bindings                  # regenerate TS types
 npm run tauri dev                 # run the app
 ```
