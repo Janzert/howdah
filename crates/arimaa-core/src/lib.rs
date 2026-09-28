@@ -20,6 +20,7 @@ mod outcome;
 mod position;
 mod setup;
 mod step;
+mod timecontrol;
 mod turn;
 mod types;
 
@@ -29,5 +30,6 @@ pub use outcome::{GameResult, WinReason, outcome_after_turn};
 pub use position::Position;
 pub use setup::{Placement, apply_setup, default_setup, validate_setup};
 pub use step::{Capture, Step, StepEffect};
+pub use timecontrol::TimeControl;
 pub use turn::{MAX_STEPS, StepKind, Turn, TurnBuilder, TurnStep};
 pub use types::{Color, Dir, Piece, PieceKind, Square, TRAPS};

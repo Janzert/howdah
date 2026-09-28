@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { SessionView } from './bindings/SessionView';
+  import type { WinReason } from './bindings/WinReason';
   import { squareName } from './geometry';
 
   interface Props {
@@ -13,7 +14,16 @@
   const side = $derived(view.position.sideToMove === 'gold' ? 'Gold' : 'Silver');
   const turn = $derived(view.turn);
   const hasDraft = $derived(view.phase === 'setup' && view.movesAfterCursor === 0);
-  const reason = { goal: 'goal', elimination: 'elimination' };
+  const reason: Record<WinReason, string> = {
+    goal: 'goal',
+    elimination: 'elimination',
+    immobilization: 'immobilization',
+    timeout: 'timeout',
+    resignation: 'resignation',
+    illegalMove: 'illegal move',
+    score: 'score',
+    forfeit: 'forfeit',
+  };
 </script>
 
 <div class="turnbar">

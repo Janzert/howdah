@@ -1,15 +1,61 @@
 //! Game-ending conditions.
 
 use crate::position::Position;
+use crate::turn::TurnBuilder;
 use crate::types::{Color, Piece, PieceKind, data_type};
 
 data_type! {
+    /// How a game ended. The first three come from the position; the rest
+    /// are decided outside the rules (clocks, players, controllers).
     #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
     pub enum WinReason {
         /// A rabbit reached its goal rank.
         Goal,
         /// The other side lost all its rabbits.
         Elimination,
+        /// The other side had no legal move.
+        Immobilization,
+        /// The other side ran out of time.
+        Timeout,
+        /// The other side resigned.
+        Resignation,
+        /// The other side tried an illegal move (including a third repetition).
+        IllegalMove,
+        /// A game or turn limit was reached and the winner was decided by score.
+        Score,
+        /// The other side forfeited (e.g. left the game).
+        Forfeit,
+    }
+}
+
+impl WinReason {
+    /// The letter arimaa.com and AEI tools use for this end condition.
+    pub fn letter(self) -> char {
+        match self {
+            WinReason::Goal => 'g',
+            WinReason::Elimination => 'e',
+            WinReason::Immobilization => 'm',
+            WinReason::Timeout => 't',
+            WinReason::Resignation => 'r',
+            WinReason::IllegalMove => 'i',
+            WinReason::Score => 's',
+            WinReason::Forfeit => 'f',
+        }
+    }
+
+    pub fn from_letter(c: char) -> Option<WinReason> {
+        [
+            WinReason::Goal,
+            WinReason::Elimination,
+            WinReason::Immobilization,
+            WinReason::Timeout,
+            WinReason::Resignation,
+            WinReason::IllegalMove,
+            WinReason::Score,
+            WinReason::Forfeit,
+        ]
+        .into_iter()
+        .find(|r| r.letter() == c.to_ascii_lowercase())
     }
 }
 
@@ -29,9 +75,19 @@ fn has_rabbits(pos: &Position, color: Color) -> bool {
     pos.count(Piece::new(color, PieceKind::Rabbit)) > 0
 }
 
+/// True if the side to move in `pos` has no legal step. Any legal first
+/// step can be extended into a legal turn (a lone step changes the position,
+/// and a push can always be finished), so this is "has no legal move",
+/// ignoring the repetition rule.
+pub fn is_immobilized(pos: &Position) -> bool {
+    TurnBuilder::new(pos).legal_steps().is_empty()
+}
+
 /// Checks for the end of the game after `mover` completes a turn, in the
 /// official order: mover's goal, opponent's goal, opponent eliminated, mover
-/// eliminated.
+/// eliminated, opponent immobilized. `pos` has the opponent to move.
+///
+/// Repetition is enforced by [`crate::Game`], which has the position history.
 pub fn outcome_after_turn(pos: &Position, mover: Color) -> Option<GameResult> {
     let opp = mover.opponent();
     let win = |winner, reason| Some(GameResult { winner, reason });
@@ -47,10 +103,12 @@ pub fn outcome_after_turn(pos: &Position, mover: Color) -> Option<GameResult> {
     if !has_rabbits(pos, mover) {
         return win(opp, WinReason::Elimination);
     }
-    // TODO(rules): immobilization. If the opponent has no legal move, the
-    // mover wins. Needs full move generation (not just steps).
-    // TODO(rules): repetition. A turn may not produce the same position with
-    // the same side to move for the third time. Needs the game's hash history.
+    if is_immobilized(pos) {
+        // TODO(rules): strictly, a player whose only legal moves would all be
+        // third repetitions is also immobilized. That needs full move
+        // generation plus the game history; pyrimaa doesn't check it either.
+        return win(mover, WinReason::Immobilization);
+    }
     None
 }
 
@@ -114,6 +172,30 @@ mod tests {
             let r = outcome_after_turn(&p, mover).unwrap();
             assert_eq!(r, GameResult { winner: mover, reason: WinReason::Elimination });
         }
+    }
+
+    #[test]
+    fn immobilization() {
+        // Silver's only piece is a rabbit on a8, frozen by the gold cats next
+        // to it, so silver has no legal step.
+        let p = pos(Color::Silver, "ra8 Ca7 Cb8 Rd4");
+        assert!(is_immobilized(&p));
+        let r = outcome_after_turn(&p, Color::Gold);
+        assert_eq!(r, Some(GameResult { winner: Color::Gold, reason: WinReason::Immobilization }));
+        // One cat is enough to freeze it.
+        assert!(is_immobilized(&pos(Color::Silver, "ra8 Ca7 Rd4")));
+        // Unfrozen, it can step east.
+        assert!(!is_immobilized(&pos(Color::Silver, "ra8 Rd4")));
+        // Any other silver piece that can move is enough.
+        assert!(!is_immobilized(&pos(Color::Silver, "ra8 Ca7 Cb8 rh8 Rd4")));
+    }
+
+    #[test]
+    fn reason_letters_round_trip() {
+        for c in "gemtrisf".chars() {
+            assert_eq!(WinReason::from_letter(c).unwrap().letter(), c);
+        }
+        assert_eq!(WinReason::from_letter('x'), None);
     }
 
     #[test]

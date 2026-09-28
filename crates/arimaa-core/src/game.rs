@@ -5,7 +5,7 @@
 //! gold to set up, and ply 2 is the first position with both sides placed.
 
 use crate::error::{GameError, RecordError};
-use crate::notation::{self, MoveBody};
+use crate::notation::{self, MoveBody, RecordStep};
 use crate::outcome::{GameResult, outcome_after_turn};
 use crate::position::Position;
 use crate::setup::{Placement, apply_setup};
@@ -119,6 +119,15 @@ impl Game {
         Ok(TurnBuilder::new(self.current_position()))
     }
 
+    /// True if a turn from the position at `ply` ending in `end` would repeat
+    /// a position (same pieces, same side to move) for the third time.
+    /// Only positions from `ply` back are counted, so this also answers
+    /// "what if I play this instead of the moves after `ply`?".
+    pub fn is_third_repetition(&self, ply: usize, end: &Position) -> bool {
+        let history = self.positions.get(2..=ply).unwrap_or(&[]);
+        history.iter().filter(|p| *p == end).count() >= 2
+    }
+
     /// Adds a turn built with [`Game::begin_turn`].
     pub fn play_turn(&mut self, turn: Turn) -> Result<Option<GameResult>, GameError> {
         self.check_can_move()?;
@@ -128,11 +137,51 @@ impl Game {
         if &turn.start != self.current_position() {
             return Err(GameError::StaleTurn);
         }
+        if self.is_third_repetition(self.ply_count(), &turn.end) {
+            return Err(GameError::Repetition);
+        }
         let mover = turn.start.side_to_move();
         self.result = outcome_after_turn(&turn.end, mover);
         self.moves.push(Move::Steps(turn.effects()));
         self.positions.push(turn.end);
         Ok(self.result)
+    }
+
+    /// Ends the game for a reason outside the rules (timeout, resignation,
+    /// illegal move, ...).
+    pub fn end_game(&mut self, result: GameResult) -> Result<(), GameError> {
+        self.check_can_move()?;
+        self.result = Some(result);
+        Ok(())
+    }
+
+    /// Plays one move given in notation without a move number: a setup
+    /// (`Ra1 Rb1 ...`) or steps with optional capture tokens (`Ed2n Ed3n`).
+    /// This is how moves from engines and servers enter the game.
+    pub fn play_notation(&mut self, text: &str) -> Result<Option<GameResult>, GameError> {
+        let (body, _marker) = notation::parse_move_body(text)?;
+        match body {
+            MoveBody::Empty => Err(GameError::EmptyMove),
+            MoveBody::Setup(p) => self.play_setup(p).map(|_| None),
+            MoveBody::Steps(steps) => self.play_steps(&steps),
+        }
+    }
+
+    fn play_steps(&mut self, steps: &[RecordStep]) -> Result<Option<GameResult>, GameError> {
+        let mut tb = self.begin_turn()?;
+        for rs in steps {
+            let effect = tb
+                .try_step(rs.step)
+                .map_err(|source| GameError::Step { step: rs.step.to_string(), source })?
+                .effect;
+            // Missing capture tokens are tolerated; wrong ones are not.
+            if let Some(written) = rs.capture
+                && effect.capture != Some(written)
+            {
+                return Err(GameError::CaptureMismatch(written.to_string()));
+            }
+        }
+        self.play_turn(tb.finish()?)
     }
 
     /// Parses and validates a game record: one move per line, e.g.
@@ -163,21 +212,7 @@ impl Game {
                 MoveBody::Empty => {}
                 MoveBody::Setup(p) => game.play_setup(p).map_err(at)?,
                 MoveBody::Steps(steps) => {
-                    let mut tb = game.begin_turn().map_err(at)?;
-                    for rs in steps {
-                        let effect = tb
-                            .try_step(rs.step)
-                            .map_err(|source| at(GameError::Step { step: rs.step.to_string(), source }))?
-                            .effect;
-                        // Missing capture tokens are tolerated; wrong ones are not.
-                        if let Some(written) = rs.capture
-                            && effect.capture != Some(written)
-                        {
-                            return Err(at(GameError::CaptureMismatch(written.to_string())));
-                        }
-                    }
-                    let turn = tb.finish().map_err(|e| at(e.into()))?;
-                    game.play_turn(turn).map_err(at)?;
+                    game.play_steps(&steps).map_err(at)?;
                 }
             }
             if let Some(m) = line.marker {
@@ -227,6 +262,43 @@ mod tests {
         g.play_turn(tb.finish().unwrap()).unwrap();
         assert_eq!(g.current_position().side_to_move(), Color::Silver);
         assert!(g.to_record().ends_with("2g Ee2n\n"));
+    }
+
+    #[test]
+    fn third_repetition_is_illegal() {
+        let mut g = started();
+        // A gold horse and a silver horse shuffle back and forth. The
+        // position after 2s (gold to move) first occurs at ply 2 (after the
+        // setups) and again after each 4 plies.
+        for (i, m) in ["Ha2n", "ha7s", "Ha3s", "ha6n"].iter().cycle().take(4).enumerate() {
+            assert_eq!(g.play_notation(m).unwrap(), None, "move {i}");
+        }
+        // Back at the post-setup position for the second time; one more cycle
+        // would make it the third.
+        for m in ["Ha2n", "ha7s", "Ha3s"] {
+            g.play_notation(m).unwrap();
+        }
+        let before = g.ply_count();
+        assert_eq!(g.play_notation("ha6n"), Err(GameError::Repetition));
+        assert_eq!(g.ply_count(), before, "rejected move isn't added");
+        // A different move is fine.
+        g.play_notation("ha6e").unwrap();
+    }
+
+    #[test]
+    fn play_notation_and_end_game() {
+        let mut g = Game::new();
+        g.play_notation(&notation::format_placements(&default_setup(Color::Gold))).unwrap();
+        g.play_notation(&notation::format_placements(&default_setup(Color::Silver))).unwrap();
+        assert!(matches!(g.play_notation("Ee2n Ee3x"), Err(GameError::CaptureMismatch(_))));
+        assert!(matches!(g.play_notation("Ra1n"), Err(GameError::Step { .. })));
+        assert_eq!(g.play_notation(""), Err(GameError::EmptyMove));
+        g.play_notation("Ee2n Ee3n").unwrap();
+        let resign = GameResult { winner: Color::Gold, reason: crate::WinReason::Resignation };
+        g.end_game(resign).unwrap();
+        assert_eq!(g.result(), Some(resign));
+        assert_eq!(g.play_notation("ee7s"), Err(GameError::GameOver));
+        assert_eq!(g.end_game(resign), Err(GameError::GameOver));
     }
 
     #[test]

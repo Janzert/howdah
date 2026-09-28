@@ -198,7 +198,12 @@ impl Session {
             self.turn = Some(tb);
             return Err(ApiError::illegal(e));
         }
-        let turn = tb.finish().expect("checked above");
+        let turn = tb.clone().finish().expect("checked above");
+        // Check before truncating, so a rejected turn doesn't lose later moves.
+        if self.game.is_third_repetition(self.cursor, &turn.end) {
+            self.turn = Some(tb);
+            return Err(ApiError::illegal(arimaa_core::GameError::Repetition));
+        }
         self.game.truncate(self.cursor);
         self.game.play_turn(turn).map_err(ApiError::illegal)?;
         self.cursor = self.game.ply_count();
@@ -262,6 +267,18 @@ impl Session {
             .collect()
     }
 
+    /// Why the in-progress turn can't be committed, if it can't.
+    fn commit_blocker(&self, tb: &TurnBuilder) -> Option<String> {
+        if let Err(e) = tb.can_finish() {
+            return Some(e.to_string());
+        }
+        let mut end = tb.position().clone();
+        end.set_side_to_move(end.side_to_move().opponent());
+        self.game
+            .is_third_repetition(self.cursor, &end)
+            .then(|| arimaa_core::GameError::Repetition.to_string())
+    }
+
     fn phase(&self) -> Phase {
         if Game::is_setup_ply(self.cursor) {
             Phase::Setup
@@ -307,7 +324,7 @@ impl Session {
                 .collect(),
             steps_left: tb.steps_left(),
             push_pending: tb.push_pending(),
-            commit_blocker: tb.can_finish().err().map(|e| e.to_string()),
+            commit_blocker: self.commit_blocker(tb),
         });
 
         SessionView {

@@ -108,6 +108,10 @@ pub enum GameError {
     OutOfSequence { expected: String, found: String },
     #[error("the turn was built from a different position")]
     StaleTurn,
+    #[error("the move repeats a position for the third time")]
+    Repetition,
+    #[error("the move has no steps or placements")]
+    EmptyMove,
 }
 
 /// A [`GameError`] located on a line of a game record.
