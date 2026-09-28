@@ -74,12 +74,18 @@ a session and update it at the end.
     `legal_targets`, `export_game`) return data.
 - `app/src`: Svelte 5 (runes) + Vite, no SvelteKit.
   - `lib/api.ts`: typed invoke wrappers.
+  - `MoveList.svelte` stays scrolled to the bottom while following the
+    latest move, until the user scrolls up.
   - `lib/events.ts`: typed `on()`.
   - `lib/board/`: SVG board. `BoardModel` plays `AnimStep`s: slide, then
     fade out on capture, with fade-in for restored pieces going backward.
-    - Animated updates are queued. Each move waiting behind the current one
-      speeds up the animation, and more than `MAX_BEHIND` (6) waiting jumps
-      straight to the latest.
+    - Animated updates are queued and played in order. Duration per step is
+      the base speed (`setBaseSpeed`; default `STEP_MS`, 220 ms), made
+      faster for each move waiting behind the current one.
+    - A live move's animation is also capped at the time the move took off
+      the clock (`SessionUpdate.animationBudgetMs`).
+    - With more than `MAX_BEHIND` (6) moves waiting, each is shown instantly,
+      `INSTANT_GAP_MS` apart, until it catches up.
     - An update without animation that doesn't change the position (a clock
       or "thinking" change) doesn't interrupt; any other one cancels the
       queue and snaps.

@@ -22,10 +22,13 @@ export interface AnimHooks {
   onCapture?: () => void;
 }
 
+/** Default slide duration per step; see `BoardModel.setBaseSpeed`. */
 export const STEP_MS = 220;
-export const FADE_MS = 260;
-/** More plies than this waiting to be shown: skip straight to the latest. */
+/** Capture/restore fades last this much longer than a slide. */
+const FADE_RATIO = 260 / 220;
+/** More moves than this waiting: show each one instantly, `INSTANT_GAP_MS` apart. */
 export const MAX_BEHIND = 6;
+export const INSTANT_GAP_MS = 150;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise((r) => requestAnimationFrame(() => r(undefined)));
@@ -34,6 +37,8 @@ interface QueuedUpdate {
   final: PieceView[];
   anim: AnimStep[];
   hooks: AnimHooks;
+  /** Longest the animation may take (the move's time off the clock). */
+  budgetMs: number | null;
 }
 
 /** Same pieces on the same squares (ignoring frozen flags). */
@@ -46,13 +51,27 @@ function samePosition(a: PieceView[], b: PieceView[]): boolean {
 export class BoardModel {
   pieces = $state<DisplayPiece[]>([]);
   animating = $state(false);
-  /** Current slide and fade durations; shortened when moves queue up. */
+  /** Slide duration per step at normal speed. */
+  baseStepMs = $state(STEP_MS);
+  /** Current slide and fade durations: the base speed, shortened when moves
+   * queue up or a move's time budget is short. */
   stepMs = $state(STEP_MS);
-  fadeMs = $state(FADE_MS);
+  fadeMs = $state(Math.round(STEP_MS * FADE_RATIO));
   private generation = 0;
   /** Final state of the latest update; what the board settles on. */
   private target: PieceView[] = [];
   private queue: QueuedUpdate[] = [];
+
+  /** Sets the normal animation speed (slide duration per step, in ms). */
+  setBaseSpeed(stepMs: number) {
+    this.baseStepMs = Math.max(0, stepMs);
+    if (!this.animating) this.resetSpeed();
+  }
+
+  private resetSpeed() {
+    this.stepMs = this.baseStepMs;
+    this.fadeMs = Math.round(this.baseStepMs * FADE_RATIO);
+  }
 
   /** Shows `pieces` immediately, without transitions. */
   snap(pieces: PieceView[]) {
@@ -71,8 +90,9 @@ export class BoardModel {
    * faster the further behind the display is. An update without animation
    * either leaves the board alone (same position: e.g. a clock or "thinking"
    * change) or cancels everything and jumps (a real jump in the game).
+   * `budgetMs` caps how long this move's animation may take.
    */
-  apply(final: PieceView[], anim: AnimStep[], hooks: AnimHooks = {}) {
+  apply(final: PieceView[], anim: AnimStep[], hooks: AnimHooks = {}, budgetMs: number | null = null) {
     if (anim.length === 0) {
       if (samePosition(final, this.target)) {
         this.target = final;
@@ -82,13 +102,12 @@ export class BoardModel {
       this.generation++;
       this.queue = [];
       this.animating = false;
-      this.stepMs = STEP_MS;
-      this.fadeMs = FADE_MS;
+      this.resetSpeed();
       this.snap(final);
       return;
     }
     this.target = final;
-    this.queue.push({ final, anim, hooks });
+    this.queue.push({ final, anim, hooks, budgetMs });
     if (!this.animating) this.drain();
   }
 
@@ -103,21 +122,20 @@ export class BoardModel {
     this.animating = true;
     while (this.queue.length > 0 && gen === this.generation) {
       const behind = this.queue.length;
-      if (behind > MAX_BEHIND) {
-        // Too far behind: show the latest position and carry on from there.
-        const latest = this.queue[this.queue.length - 1];
-        this.queue = [];
-        this.snap(latest.final);
-        break;
-      }
       const item = this.queue.shift()!;
+      if (behind > MAX_BEHIND) {
+        // Far behind: show each move instantly, briefly, until caught up.
+        this.snap(item.final);
+        item.hooks.onSlide?.();
+        await sleep(INSTANT_GAP_MS);
+        continue;
+      }
       await this.play(item, gen);
       if (gen !== this.generation) return;
       this.settle(item.final);
     }
     if (gen !== this.generation) return;
-    this.stepMs = STEP_MS;
-    this.fadeMs = FADE_MS;
+    this.resetSpeed();
     this.animating = false;
     this.refreshFlags(this.target);
   }
@@ -131,20 +149,31 @@ export class BoardModel {
     else this.snap(final);
   }
 
-  /** Normal speed when only the current move is showing; each move waiting
-   * behind it makes the animation faster. */
-  private updateSpeed() {
+  /** Speed for the next step: the base speed, faster for each move waiting
+   * behind the current one, and scaled by `budgetScale`. */
+  private updateSpeed(budgetScale: number) {
     const behind = this.queue.length + 1;
-    const speed = 1 / (1 + 0.6 * (behind - 1));
-    this.stepMs = Math.round(STEP_MS * speed);
-    this.fadeMs = Math.round(FADE_MS * speed);
+    const backlog = 1 / (1 + 0.6 * (behind - 1));
+    this.stepMs = Math.round(this.baseStepMs * backlog * budgetScale);
+    this.fadeMs = Math.round(this.baseStepMs * FADE_RATIO * backlog * budgetScale);
   }
 
-  private async play({ anim, hooks }: QueuedUpdate, gen: number) {
+  /** Factor that fits the move's animation into its time budget (≤ 1). */
+  private budgetScale({ anim, budgetMs }: QueuedUpdate): number {
+    if (budgetMs == null) return 1;
+    this.updateSpeed(1);
+    const fades = anim.filter((a) => a.captured || a.restored).length;
+    const planned = anim.length * this.stepMs + fades * this.fadeMs;
+    return planned > budgetMs ? budgetMs / planned : 1;
+  }
+
+  private async play(item: QueuedUpdate, gen: number) {
+    const { anim, hooks } = item;
+    const scale = this.budgetScale(item);
     for (const p of this.pieces) p.instant = false;
     for (const a of anim) {
       if (gen !== this.generation) return;
-      this.updateSpeed();
+      this.updateSpeed(scale);
       if (a.restored) {
         this.pieces.push({ ...a.restored, frozen: false, fading: 'in', instant: true });
         await sleep(this.fadeMs);

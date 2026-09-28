@@ -8,6 +8,7 @@
 //! where state comes in.
 
 use std::sync::MutexGuard;
+use std::time::Duration;
 
 use arimaa_core::{Square, TimeControl};
 use tauri::{AppHandle, Emitter, State};
@@ -41,8 +42,12 @@ impl AppState {
     }
 }
 
-pub fn emit_session(app: &AppHandle, session: &Session, animation: Vec<AnimStep>) {
-    let update = SessionUpdate { view: session.view(), animation };
+pub fn emit_session(app: &AppHandle, session: &Session, animation: Vec<AnimStep>, budget: Option<Duration>) {
+    let update = SessionUpdate {
+        view: session.view(),
+        animation,
+        animation_budget_ms: budget.map(|d| d.as_millis() as u64),
+    };
     if let Err(e) = app.emit(GAME_CHANGED, update) {
         eprintln!("failed to emit {GAME_CHANGED}: {e}");
     }
@@ -57,7 +62,7 @@ fn mutate(
     {
         let mut session = state.lock();
         let animation = f(&mut session)?;
-        emit_session(app, &session, animation);
+        emit_session(app, &session, animation, None);
     }
     state.controller.poke();
     Ok(())

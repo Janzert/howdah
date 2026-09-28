@@ -108,11 +108,16 @@
       const hadResult = view?.result != null;
       const setupCommitted = view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;
       setView(u.view);
-      model.apply(u.view.position.pieces, u.animation, {
-        // The arimaa.com clients play place.wav for every step.
-        onSlide: () => play('place'),
-        onCapture: () => play('trapped'),
-      });
+      model.apply(
+        u.view.position.pieces,
+        u.animation,
+        {
+          // The arimaa.com clients play place.wav for every step.
+          onSlide: () => play('place'),
+          onCapture: () => play('trapped'),
+        },
+        u.animationBudgetMs,
+      );
       if (setupCommitted) play('place');
       if (!hadResult && u.view.result) play('win');
     });

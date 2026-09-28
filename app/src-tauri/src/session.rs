@@ -38,8 +38,6 @@ impl Player {
 struct Clock {
     tc: TimeControl,
     reserves: [Duration; 2],
-    /// When the current turn (at the end of the game) started.
-    turn_started: Instant,
 }
 
 #[derive(Clone, Debug)]
@@ -47,6 +45,11 @@ struct Match {
     players: [Player; 2],
     clock: Option<Clock>,
     thinking: Option<Color>,
+    /// When the current turn (at the live end of the game) started. Kept
+    /// even without a clock, to time moves.
+    turn_started: Instant,
+    /// How long the most recent move took.
+    last_move_time: Option<Duration>,
 }
 
 /// What the controller needs to ask an engine for a move.
@@ -225,12 +228,9 @@ impl Session {
 
     /// Starts a new game between the given players, with an optional clock.
     pub fn start_match(&mut self, players: [Player; 2], time_control: Option<TimeControl>) {
-        let clock = time_control.map(|tc| Clock {
-            tc,
-            reserves: [tc.starting_reserve(); 2],
-            turn_started: Instant::now(),
-        });
-        self.replace(Game::new(), Some(Match { players, clock, thinking: None }));
+        let clock = time_control.map(|tc| Clock { tc, reserves: [tc.starting_reserve(); 2] });
+        let matchup = Match { players, clock, thinking: None, turn_started: Instant::now(), last_move_time: None };
+        self.replace(Game::new(), Some(matchup));
     }
 
     /// Stops the match: the game stays as it is, and both sides become free
@@ -276,7 +276,7 @@ impl Session {
             return None;
         }
         let side = self.live_side();
-        Some(clock.turn_started + clock.tc.turn_allowance(clock.reserves[side.index()]))
+        Some(m.turn_started + clock.tc.turn_allowance(clock.reserves[side.index()]))
     }
 
     /// Ends the game if the side to move is out of time. Returns whether it did.
@@ -322,13 +322,16 @@ impl Session {
         }
     }
 
-    /// Clock bookkeeping for a move by the side to move, before it's added.
-    /// Returns false (and ends the game) if the move came too late.
+    /// Timing and clock bookkeeping for a move by the side to move, before
+    /// it's added. Returns false (and ends the game) if the move came too late.
     fn clock_move(&mut self, now: Instant) -> bool {
         let setup = Game::is_setup_ply(self.game.ply_count());
         let side = self.live_side();
-        let Some(clock) = self.matchup.as_mut().and_then(|m| m.clock.as_mut()) else { return true };
-        let used = now.saturating_duration_since(clock.turn_started);
+        let Some(m) = self.matchup.as_mut() else { return true };
+        let used = now.saturating_duration_since(m.turn_started);
+        m.last_move_time = Some(used);
+        m.turn_started = now;
+        let Some(clock) = m.clock.as_mut() else { return true };
         let reserve = clock.reserves[side.index()];
         if used > clock.tc.turn_allowance(reserve) {
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
@@ -337,8 +340,13 @@ impl Session {
         if !setup {
             clock.reserves[side.index()] = clock.tc.reserve_after(reserve, used);
         }
-        clock.turn_started = now;
         true
+    }
+
+    /// How long the most recent move in the match took. Live animations of
+    /// that move shouldn't take longer than this.
+    pub fn last_move_time(&self) -> Option<Duration> {
+        self.matchup.as_ref().and_then(|m| m.last_move_time)
     }
 
     /// End-of-turn checks that depend on the match (the turn limit).
@@ -655,12 +663,13 @@ impl Session {
     }
 
     fn clock_view(&self) -> Option<ClockView> {
-        let clock = self.matchup.as_ref()?.clock.as_ref()?;
+        let m = self.matchup.as_ref()?;
+        let clock = m.clock.as_ref()?;
         let running = self.game.result().is_none().then(|| self.live_side());
         let ms = |d: Duration| d.as_millis() as u64;
         let (elapsed, allowance) = match running {
             Some(side) => (
-                clock.turn_started.elapsed(),
+                m.turn_started.elapsed(),
                 clock.tc.turn_allowance(clock.reserves[side.index()]),
             ),
             None => (Duration::ZERO, Duration::ZERO),
@@ -909,6 +918,17 @@ mod tests {
         let g = s.generation();
         s.engine_failed(g, Color::Gold, "crashed".into());
         assert_eq!(s.view().result.unwrap().reason, WinReason::Forfeit);
+    }
+
+    #[test]
+    fn moves_are_timed_without_a_clock() {
+        let mut s = Session::new();
+        s.start_match([engine("a"), engine("b")], None);
+        assert_eq!(s.last_move_time(), None);
+        std::thread::sleep(Duration::from_millis(20));
+        s.apply_engine_move(s.generation(), Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
+        assert!(s.last_move_time().unwrap() >= Duration::from_millis(20));
+        assert!(s.view().clock.is_none());
     }
 
     #[test]

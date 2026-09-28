@@ -6,4 +6,9 @@ import type { SessionView } from "./SessionView";
  * Payload of the `game://changed` event: the new state, plus the steps to
  * animate from the previous state (empty means snap).
  */
-export type SessionUpdate = { view: SessionView, animation: Array<AnimStep>, };
+export type SessionUpdate = { view: SessionView, animation: Array<AnimStep>, 
+/**
+ * For a live move: how long it took off the clock. Its animation
+ * shouldn't take longer than this.
+ */
+animationBudgetMs: number | null, };

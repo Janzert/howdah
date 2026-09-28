@@ -257,6 +257,10 @@ impl AnimStep {
 pub struct SessionUpdate {
     pub view: SessionView,
     pub animation: Vec<AnimStep>,
+    /// For a live move: how long it took off the clock. Its animation
+    /// shouldn't take longer than this.
+    #[ts(type = "number | null")]
+    pub animation_budget_ms: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, TS)]

@@ -1,18 +1,40 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { SessionView } from './bindings/SessionView';
 
   let { view, onGoto }: { view: SessionView; onGoto: (ply: number) => void } = $props();
 
   let list: HTMLOListElement;
+  // Stay scrolled to the bottom while following the latest move, unless the
+  // user scrolls up; scrolling back to the bottom (or pressing End) resumes it.
+  let stick = true;
+  let lastPly = -1;
 
-  // Keep the current move in view while stepping through a game.
+  function onscroll() {
+    stick = list.scrollTop + list.clientHeight >= list.scrollHeight - 4;
+  }
+
   $effect(() => {
-    const el = list?.querySelector('.current');
-    el?.scrollIntoView({ block: 'nearest' });
+    // Re-run when moves arrive, the in-progress turn changes, or the ply moves.
+    const ply = view.ply;
+    const atEnd = ply === view.moves.length;
+    void view.moves.length;
+    void view.turn?.steps.length;
+    tick().then(() => {
+      if (!list) return;
+      const navigated = ply !== lastPly;
+      lastPly = ply;
+      if (atEnd && (stick || navigated)) {
+        list.scrollTop = list.scrollHeight;
+        stick = true;
+      } else if (navigated) {
+        list.querySelector('.current')?.scrollIntoView({ block: 'nearest' });
+      }
+    });
   });
 </script>
 
-<ol class="moves" bind:this={list}>
+<ol class="moves" bind:this={list} {onscroll}>
   <li>
     <button class="move" class:current={view.ply === 0} onclick={() => onGoto(0)}>
       <span class="label">start</span>

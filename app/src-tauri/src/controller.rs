@@ -130,7 +130,7 @@ impl Coordinator {
     }
 
     fn emit(&self, session: &Session, animation: Vec<crate::dto::AnimStep>) {
-        emit_session(&self.app, session, animation);
+        emit_session(&self.app, session, animation, None);
     }
 
     fn output(&self, side: Color, kind: EngineOutputKind, text: String) {
@@ -258,7 +258,7 @@ impl Coordinator {
                 self.output(side, EngineOutputKind::Status, format!("bestmove {text}"));
                 let mut s = lock(&self.session);
                 if let Ok(anim) = s.apply_engine_move(generation, p.side, p.ply, &text) {
-                    self.emit(&s, anim);
+                    emit_session(&self.app, &s, anim, s.last_move_time());
                 }
             }
             ActorEvent::Failed(detail) => {

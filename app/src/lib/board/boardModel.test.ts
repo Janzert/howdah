@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnimStep } from '../bindings/AnimStep';
 import type { PieceView } from '../bindings/PieceView';
-import { BoardModel, MAX_BEHIND, STEP_MS } from './boardModel.svelte';
+import { BoardModel, INSTANT_GAP_MS, MAX_BEHIND, STEP_MS } from './boardModel.svelte';
 
 // One gold rabbit, id 1, walking up the a-file one square per "move".
 const rabbit = (square: number): PieceView[] => [
@@ -60,13 +60,43 @@ describe('BoardModel', () => {
     expect(m.stepMs).toBe(STEP_MS);
   });
 
-  it('jumps to the latest position when more than MAX_BEHIND moves are waiting', async () => {
+  it('shows each move instantly, a short gap apart, when more than MAX_BEHIND are waiting', async () => {
     const m = new BoardModel();
     m.snap(rabbit(0));
-    // The first move starts playing at once; the rest queue up behind it.
-    for (let i = 0; i <= MAX_BEHIND + 1; i++) m.apply(rabbit(i + 1), step(i, i + 1));
-    await vi.advanceTimersByTimeAsync(STEP_MS + 50);
-    expect(m.pieces[0].square).toBe(MAX_BEHIND + 2);
+    // Move 1 starts animating at once; moves 2..9 queue up behind it (8 > 6).
+    const moves = MAX_BEHIND + 3;
+    for (let i = 0; i < moves; i++) m.apply(rabbit(i + 1), step(i, i + 1));
+    await vi.advanceTimersByTimeAsync(STEP_MS + 5);
+    expect(m.pieces[0].square).toBe(2); // move 2 shown instantly
+    await vi.advanceTimersByTimeAsync(INSTANT_GAP_MS);
+    expect(m.pieces[0].square).toBe(3); // then move 3, one gap later
+    await vi.advanceTimersByTimeAsync(20 * STEP_MS);
+    expect(m.pieces[0].square).toBe(moves);
+    expect(m.animating).toBe(false);
+  });
+
+  it("fits a move's animation into its time budget", async () => {
+    const m = new BoardModel();
+    m.snap(rabbit(0));
+    // Two steps at 220 ms would take 440 ms; the move only took 100 ms.
+    const anim = [...step(0, 8), ...step(8, 16)];
+    m.apply(rabbit(16), anim, {}, 100);
+    expect(m.stepMs).toBeLessThanOrEqual(50);
+    await vi.advanceTimersByTimeAsync(110);
+    expect(m.animating).toBe(false);
+    // A generous budget doesn't slow anything down.
+    m.apply(rabbit(24), step(16, 24), {}, 10_000);
+    expect(m.stepMs).toBe(STEP_MS);
+  });
+
+  it('base speed is settable', async () => {
+    const m = new BoardModel();
+    m.setBaseSpeed(100);
+    expect(m.stepMs).toBe(100);
+    m.snap(rabbit(0));
+    m.apply(rabbit(8), step(0, 8));
+    expect(m.stepMs).toBe(100);
+    await vi.advanceTimersByTimeAsync(110);
     expect(m.animating).toBe(false);
   });
 
