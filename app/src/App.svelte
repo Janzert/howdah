@@ -251,7 +251,6 @@
         {/each}
       </select>
     </div>
-    {#if theme.attribution}<div class="attribution">{theme.attribution}</div>{/if}
   </aside>
 </main>
 
@@ -335,9 +334,5 @@
     color: #fff;
     font-size: 13px;
     pointer-events: none;
-  }
-  .attribution {
-    font-size: 11px;
-    color: var(--muted);
   }
 </style>
