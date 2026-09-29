@@ -27,13 +27,14 @@
   }
 
   const times = $derived.by(() => {
-    if (!clock) return null;
-    const reserve = side === 'gold' ? clock.goldReserveMs : clock.silverReserveMs;
-    if (clock.running !== side) return { move: clock.moveTimeMs, reserve, running: false, low: false };
+    const mine = clock?.[side];
+    if (!clock || !mine) return null;
+    const { moveTimeMs, reserveMs } = mine;
+    if (clock.running !== side) return { move: moveTimeMs, reserve: reserveMs, running: false, low: false };
     const elapsed = clock.turnElapsedMs + (now - receivedAt);
     const left = Math.max(0, clock.turnAllowanceMs - elapsed);
-    const move = Math.min(left, Math.max(0, clock.moveTimeMs - elapsed));
-    const reserveLeft = Math.min(left, Math.max(0, reserve - Math.max(0, elapsed - clock.moveTimeMs)));
+    const move = Math.min(left, Math.max(0, moveTimeMs - elapsed));
+    const reserveLeft = Math.min(left, Math.max(0, reserveMs - Math.max(0, elapsed - moveTimeMs)));
     return { move, reserve: reserveLeft, running: true, low: left < 10_000 };
   });
 </script>

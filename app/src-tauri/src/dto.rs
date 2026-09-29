@@ -123,19 +123,27 @@ pub struct PlayersView {
     pub silver: PlayerView,
 }
 
+/// One side's clock.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SideClockView {
+    pub time_control: String,
+    #[ts(type = "number")]
+    pub move_time_ms: u64,
+    #[ts(type = "number")]
+    pub reserve_ms: u64,
+}
+
 /// Clock snapshot. The UI counts down locally from `turnElapsedMs` for the
 /// running side.
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ClockView {
-    pub time_control: String,
-    #[ts(type = "number")]
-    pub move_time_ms: u64,
-    #[ts(type = "number")]
-    pub gold_reserve_ms: u64,
-    #[ts(type = "number")]
-    pub silver_reserve_ms: u64,
+    /// Per side; `None` for an untimed side.
+    pub gold: Option<SideClockView>,
+    pub silver: Option<SideClockView>,
     /// Side whose clock is running, if any.
     pub running: Option<Color>,
     /// Time used so far on the running side's turn.
@@ -144,6 +152,9 @@ pub struct ClockView {
     /// Total time the running side may take this turn.
     #[ts(type = "number")]
     pub turn_allowance_ms: u64,
+    /// Time left before the game time limit, if there is one.
+    #[ts(type = "number | null")]
+    pub game_remaining_ms: Option<u64>,
 }
 
 /// A player choice when starting a game.
@@ -164,8 +175,10 @@ pub enum PlayerSpec {
 pub struct MatchSpec {
     pub gold: PlayerSpec,
     pub silver: PlayerSpec,
-    /// Arimaa time control, e.g. `30s/5m`; `None` for no clock.
-    pub time_control: Option<String>,
+    /// Arimaa time control per side, e.g. `30s/5m`; `None` leaves that side
+    /// untimed.
+    pub gold_time_control: Option<String>,
+    pub silver_time_control: Option<String>,
 }
 
 /// A configured engine.

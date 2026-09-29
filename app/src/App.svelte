@@ -74,7 +74,8 @@
 
   async function startGame(spec: MatchSpec): Promise<string | null> {
     try {
-      const free = spec.gold.kind === 'human' && spec.silver.kind === 'human' && !spec.timeControl;
+      const free =
+        spec.gold.kind === 'human' && spec.silver.kind === 'human' && !spec.goldTimeControl && !spec.silverTimeControl;
       await (free ? api.newGame() : api.startMatch(spec));
       return null;
     } catch (e) {

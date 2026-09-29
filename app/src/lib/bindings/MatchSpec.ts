@@ -3,6 +3,7 @@ import type { PlayerSpec } from "./PlayerSpec";
 
 export type MatchSpec = { gold: PlayerSpec, silver: PlayerSpec, 
 /**
- * Arimaa time control, e.g. `30s/5m`; `None` for no clock.
+ * Arimaa time control per side, e.g. `30s/5m`; `None` leaves that side
+ * untimed.
  */
-timeControl: string | null, };
+goldTimeControl: string | null, silverTimeControl: string | null, };

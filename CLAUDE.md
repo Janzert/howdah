@@ -49,7 +49,8 @@ a session and update it at the end.
   - `session.rs` has the pure state logic: cursor ply, in-progress turn,
     setup draft, and stable piece ids for animation. Unit-tested, no Tauri types.
     - It's either free play or a *match*: a player per side (human or
-      engine), an optional clock, and a `generation` counter bumped on every
+      engine), an optional time control per side (with the game time limit
+      and turn limit enforced), and a `generation` counter bumped on every
       new game or match change, so stale engine replies are ignored.
     - In a match, humans may only input on their own turn at the live end
       (`can_input`).

@@ -16,7 +16,7 @@ use arimaa_core::{
 
 use crate::dto::{
     AnimPiece, AnimStep, ApiError, ClockView, MoveView, Phase, PieceId, PieceView, PlayerKind, PlayerView,
-    PlayersView, PositionView, SessionView, StepTarget, TurnStepView, TurnView,
+    PlayersView, PositionView, SessionView, SideClockView, StepTarget, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,8 +36,31 @@ impl Player {
 
 #[derive(Clone, Debug)]
 struct Clock {
-    tc: TimeControl,
+    /// Time control per side (gold, silver); `None` means that side is untimed.
+    tcs: [Option<TimeControl>; 2],
     reserves: [Duration; 2],
+    game_started: Instant,
+}
+
+impl Clock {
+    fn tc(&self, side: Color) -> Option<TimeControl> {
+        self.tcs[side.index()]
+    }
+
+    /// When the game time limit (`G`) runs out: the earliest of the sides'.
+    fn game_deadline(&self) -> Option<Instant> {
+        self.tcs
+            .iter()
+            .flatten()
+            .filter(|tc| tc.time_limit > 0)
+            .map(|tc| self.game_started + Duration::from_secs(tc.time_limit.into()))
+            .min()
+    }
+
+    /// The turn limit: the smaller of the sides' nonzero limits.
+    fn turn_limit(&self) -> Option<u32> {
+        self.tcs.iter().flatten().map(|tc| tc.turn_limit).filter(|&t| t > 0).min()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -226,9 +249,15 @@ impl Session {
         Ok(())
     }
 
-    /// Starts a new game between the given players, with an optional clock.
-    pub fn start_match(&mut self, players: [Player; 2], time_control: Option<TimeControl>) {
-        let clock = time_control.map(|tc| Clock { tc, reserves: [tc.starting_reserve(); 2] });
+    /// Starts a new game between the given players, with a time control per
+    /// side (gold, silver); `None` leaves that side untimed.
+    pub fn start_match(&mut self, players: [Player; 2], time_controls: [Option<TimeControl>; 2]) {
+        let now = Instant::now();
+        let clock = time_controls.iter().any(Option::is_some).then(|| Clock {
+            tcs: time_controls,
+            reserves: time_controls.map(|tc| tc.map_or(Duration::ZERO, |t| t.starting_reserve())),
+            game_started: now,
+        });
         let matchup = Match { players, clock, thinking: None, turn_started: Instant::now(), last_move_time: None };
         self.replace(Game::new(), Some(matchup));
     }
@@ -262,13 +291,14 @@ impl Session {
             engine_id: id.clone(),
             ply: self.game.ply_count(),
             moves: self.game.moves().iter().map(Move::notation).collect(),
-            time_control: m.clock.as_ref().map(|c| c.tc),
+            time_control: m.clock.as_ref().and_then(|c| c.tc(side)),
             reserves: m.clock.as_ref().map(|c| c.reserves),
             deadline: self.turn_deadline(),
         })
     }
 
-    /// When the side to move runs out of time, in a timed match.
+    /// When the side to move runs out of time (its turn allowance or the
+    /// game time limit, whichever comes first), in a timed match.
     pub fn turn_deadline(&self) -> Option<Instant> {
         let m = self.matchup.as_ref()?;
         let clock = m.clock.as_ref()?;
@@ -276,18 +306,29 @@ impl Session {
             return None;
         }
         let side = self.live_side();
-        Some(m.turn_started + clock.tc.turn_allowance(clock.reserves[side.index()]))
+        let turn = clock.tc(side).map(|tc| m.turn_started + tc.turn_allowance(clock.reserves[side.index()]));
+        match (turn, clock.game_deadline()) {
+            (Some(t), Some(g)) => Some(t.min(g)),
+            (t, g) => t.or(g),
+        }
     }
 
-    /// Ends the game if the side to move is out of time. Returns whether it did.
+    /// Ends the game if time has run out: the side to move loses on time, or
+    /// if the game time limit passed, the game is decided by score. Returns
+    /// whether it ended.
     pub fn check_timeout(&mut self, now: Instant) -> bool {
-        if self.turn_deadline().is_some_and(|d| now >= d) {
+        if !self.turn_deadline().is_some_and(|d| now >= d) {
+            return false;
+        }
+        let game_limit = self.matchup.as_ref().and_then(|m| m.clock.as_ref()).and_then(Clock::game_deadline);
+        if game_limit.is_some_and(|g| now >= g) {
+            let winner = limit_score_winner(self.game.current_position());
+            self.finish(GameResult { winner, reason: WinReason::Score }, Some("game time limit reached".into()));
+        } else {
             let side = self.live_side();
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
-            true
-        } else {
-            false
         }
+        true
     }
 
     /// Ends the game with a result decided outside the board.
@@ -332,13 +373,14 @@ impl Session {
         m.last_move_time = Some(used);
         m.turn_started = now;
         let Some(clock) = m.clock.as_mut() else { return true };
+        let Some(tc) = clock.tc(side) else { return true };
         let reserve = clock.reserves[side.index()];
-        if used > clock.tc.turn_allowance(reserve) {
+        if used > tc.turn_allowance(reserve) {
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
             return false;
         }
         if !setup {
-            clock.reserves[side.index()] = clock.tc.reserve_after(reserve, used);
+            clock.reserves[side.index()] = tc.reserve_after(reserve, used);
         }
         true
     }
@@ -351,12 +393,15 @@ impl Session {
 
     /// End-of-turn checks that depend on the match (the turn limit).
     fn after_move(&mut self, mover: Color, ply: usize) {
-        let Some(tc) = self.matchup.as_ref().and_then(|m| m.clock.as_ref()).map(|c| c.tc) else { return };
-        if tc.turn_limit > 0 && mover == Color::Silver && (ply / 2 + 1) as u32 >= tc.turn_limit {
+        let limit = self.matchup.as_ref().and_then(|m| m.clock.as_ref()).and_then(Clock::turn_limit);
+        if let Some(limit) = limit
+            && mover == Color::Silver
+            && (ply / 2 + 1) as u32 >= limit
+        {
             let winner = limit_score_winner(self.game.current_position());
             self.finish(
                 GameResult { winner, reason: WinReason::Score },
-                Some(format!("turn limit of {} reached", tc.turn_limit)),
+                Some(format!("turn limit of {limit} reached")),
             );
         }
     }
@@ -665,23 +710,29 @@ impl Session {
     fn clock_view(&self) -> Option<ClockView> {
         let m = self.matchup.as_ref()?;
         let clock = m.clock.as_ref()?;
-        let running = self.game.result().is_none().then(|| self.live_side());
         let ms = |d: Duration| d.as_millis() as u64;
+        let running = self.game.result().is_none().then(|| self.live_side()).filter(|s| clock.tc(*s).is_some());
         let (elapsed, allowance) = match running {
-            Some(side) => (
-                m.turn_started.elapsed(),
-                clock.tc.turn_allowance(clock.reserves[side.index()]),
-            ),
+            Some(side) => {
+                let tc = clock.tc(side).expect("running side is timed");
+                (m.turn_started.elapsed(), tc.turn_allowance(clock.reserves[side.index()]))
+            }
             None => (Duration::ZERO, Duration::ZERO),
         };
+        let side_view = |side: Color| {
+            clock.tc(side).map(|tc| SideClockView {
+                time_control: tc.to_string(),
+                move_time_ms: ms(tc.move_time()),
+                reserve_ms: ms(clock.reserves[side.index()]),
+            })
+        };
         Some(ClockView {
-            time_control: clock.tc.to_string(),
-            move_time_ms: ms(clock.tc.move_time()),
-            gold_reserve_ms: ms(clock.reserves[0]),
-            silver_reserve_ms: ms(clock.reserves[1]),
+            gold: side_view(Color::Gold),
+            silver: side_view(Color::Silver),
             running,
             turn_elapsed_ms: ms(elapsed),
             turn_allowance_ms: ms(allowance),
+            game_remaining_ms: clock.game_deadline().map(|d| ms(d.saturating_duration_since(Instant::now()))),
         })
     }
 }
@@ -835,7 +886,7 @@ mod tests {
     #[test]
     fn human_vs_engine_turn_taking() {
         let mut s = Session::new();
-        s.start_match([Player::Human, engine("bot")], None);
+        s.start_match([Player::Human, engine("bot")], [None, None]);
         let g = s.generation();
         let v = s.view();
         assert!(v.can_input);
@@ -860,7 +911,7 @@ mod tests {
     #[test]
     fn engine_vs_engine_has_no_draft() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], None);
+        s.start_match([engine("a"), engine("b")], [None, None]);
         assert_eq!(s.view().position.pieces.len(), 0);
         assert!(!s.can_input());
         let t = s.engine_turn().unwrap();
@@ -870,7 +921,7 @@ mod tests {
     #[test]
     fn stale_and_illegal_engine_moves() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], None);
+        s.start_match([engine("a"), engine("b")], [None, None]);
         let g = s.generation();
         assert!(s.apply_engine_move(g + 1, Color::Gold, 0, &setup_text(Color::Gold)).is_err(), "old game");
         assert!(s.apply_engine_move(g, Color::Silver, 0, &setup_text(Color::Silver)).is_err(), "wrong side");
@@ -887,7 +938,7 @@ mod tests {
     #[test]
     fn engine_moves_follow_only_when_watching_live() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], None);
+        s.start_match([engine("a"), engine("b")], [None, None]);
         let g = s.generation();
         s.apply_engine_move(g, Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
         s.apply_engine_move(g, Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
@@ -904,7 +955,7 @@ mod tests {
     #[test]
     fn timeouts_and_failures() {
         let mut s = Session::new();
-        s.start_match([Player::Human, engine("b")], Some("1s/0".parse().unwrap()));
+        s.start_match([Player::Human, engine("b")], [Some("1s/0".parse().unwrap()); 2]);
         let v = s.view();
         let clock = v.clock.unwrap();
         assert_eq!((clock.running, clock.turn_allowance_ms), (Some(Color::Gold), 1000));
@@ -914,16 +965,46 @@ mod tests {
         assert!(s.view().clock.unwrap().running.is_none());
 
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], None);
+        s.start_match([engine("a"), engine("b")], [None, None]);
         let g = s.generation();
         s.engine_failed(g, Color::Gold, "crashed".into());
         assert_eq!(s.view().result.unwrap().reason, WinReason::Forfeit);
     }
 
     #[test]
+    fn separate_time_controls_per_side() {
+        let mut s = Session::new();
+        let gold: TimeControl = "1s/0".parse().unwrap();
+        s.start_match([engine("a"), engine("b")], [Some(gold), None]);
+        let clock = s.view().clock.unwrap();
+        assert_eq!(clock.gold.unwrap().move_time_ms, 1000);
+        assert!(clock.silver.is_none());
+        assert_eq!(s.engine_turn().unwrap().time_control, Some(gold));
+        s.apply_engine_move(s.generation(), Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
+        // Silver is untimed: no deadline, no running clock.
+        assert_eq!(s.turn_deadline(), None);
+        assert_eq!(s.engine_turn().unwrap().time_control, None);
+        assert!(s.view().clock.unwrap().running.is_none());
+        assert!(!s.check_timeout(Instant::now() + Duration::from_secs(3600)));
+    }
+
+    #[test]
+    fn game_time_limit_ends_by_score() {
+        let mut s = Session::new();
+        // 1 h per move, but a 1 s game limit.
+        let tc: TimeControl = "1h/0/100/0/1s".parse().unwrap();
+        s.start_match([engine("a"), engine("b")], [Some(tc); 2]);
+        assert!(s.view().clock.unwrap().game_remaining_ms.unwrap() <= 1000);
+        assert!(s.check_timeout(Instant::now() + Duration::from_secs(2)));
+        let v = s.view();
+        assert_eq!(v.result.unwrap().reason, WinReason::Score);
+        assert_eq!(v.end_detail.as_deref(), Some("game time limit reached"));
+    }
+
+    #[test]
     fn moves_are_timed_without_a_clock() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], None);
+        s.start_match([engine("a"), engine("b")], [None, None]);
         assert_eq!(s.last_move_time(), None);
         std::thread::sleep(Duration::from_millis(20));
         s.apply_engine_move(s.generation(), Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
@@ -934,7 +1015,7 @@ mod tests {
     #[test]
     fn end_match_returns_to_free_play() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], None);
+        s.start_match([engine("a"), engine("b")], [None, None]);
         let g = s.generation();
         s.end_match();
         assert!(s.generation() > g);

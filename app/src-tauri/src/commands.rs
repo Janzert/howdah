@@ -146,12 +146,15 @@ pub fn start_match(app: AppHandle, state: State<AppState>, spec: MatchSpec) -> R
         }
     };
     let players = [player(&spec.gold)?, player(&spec.silver)?];
-    let tc = match spec.time_control.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
-        Some(t) => Some(t.parse::<TimeControl>().map_err(ApiError::illegal)?),
-        None => None,
+    let parse = |tc: &Option<String>| -> Result<Option<TimeControl>, ApiError> {
+        match tc.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+            Some(t) => t.parse().map(Some).map_err(|e| ApiError::illegal(format!("time control {t:?}: {e}"))),
+            None => Ok(None),
+        }
     };
+    let tcs = [parse(&spec.gold_time_control)?, parse(&spec.silver_time_control)?];
     mutate(&app, &state, |s| {
-        s.start_match(players, tc);
+        s.start_match(players, tcs);
         Ok(Vec::new())
     })
 }

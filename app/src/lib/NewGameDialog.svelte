@@ -2,6 +2,7 @@
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { MatchSpec } from './bindings/MatchSpec';
   import type { PlayerSpec } from './bindings/PlayerSpec';
+  import TimeControlInput from './TimeControlInput.svelte';
 
   interface Props {
     engines: EngineSpec[];
@@ -30,6 +31,9 @@
   let gold = $state(pref('newgame.gold', 'human'));
   let silver = $state(pref('newgame.silver', 'human'));
   let timeControl = $state(pref('newgame.tc', ''));
+  let separate = $state(pref('newgame.separate', '0') === '1');
+  let goldTc = $state(pref('newgame.tc.gold', ''));
+  let silverTc = $state(pref('newgame.tc.silver', ''));
   let error = $state<string | null>(null);
   let dialog: HTMLDialogElement;
 
@@ -37,7 +41,15 @@
     dialog.showModal();
   });
 
-  const presets = ['15s/1m', '30s/2m', '1m/5m', '2m/10m/100/20m', '30s/0/100/0/0t'];
+  function toggleSeparate() {
+    // Start both sides from the shared control, or go back to gold's.
+    if (separate) {
+      goldTc = timeControl;
+      silverTc = timeControl;
+    } else {
+      timeControl = goldTc;
+    }
+  }
 
   function player(value: string): PlayerSpec {
     return value === 'human' ? { kind: 'human' } : { kind: 'engine', engineId: value };
@@ -47,10 +59,15 @@
     savePref('newgame.gold', gold);
     savePref('newgame.silver', silver);
     savePref('newgame.tc', timeControl);
+    savePref('newgame.separate', separate ? '1' : '0');
+    savePref('newgame.tc.gold', goldTc);
+    savePref('newgame.tc.silver', silverTc);
+    const [g, s] = separate ? [goldTc, silverTc] : [timeControl, timeControl];
     error = await onStart({
       gold: player(gold),
       silver: player(silver),
-      timeControl: timeControl.trim() || null,
+      goldTimeControl: g.trim() || null,
+      silverTimeControl: s.trim() || null,
     });
     if (!error) onClose();
   }
@@ -69,12 +86,21 @@
       <option value="human">Human</option>
       {#each engines as e (e.id)}<option value={e.id}>{e.name}</option>{/each}
     </select>
-    <label for="ng-tc">Time control</label>
+    {#if separate}
+      <label for="ng-tc-gold"><span class="dot gold"></span> Gold clock</label>
+      <TimeControlInput id="ng-tc-gold" bind:value={goldTc} />
+      <label for="ng-tc-silver"><span class="dot silver"></span> Silver clock</label>
+      <TimeControlInput id="ng-tc-silver" bind:value={silverTc} />
+    {:else}
+      <label for="ng-tc">Time control</label>
+      <TimeControlInput id="ng-tc" bind:value={timeControl} />
+    {/if}
+    <span></span>
     <div>
-      <input id="ng-tc" list="ng-tc-presets" bind:value={timeControl} placeholder="none (e.g. 30s/2m)" />
-      <datalist id="ng-tc-presets">
-        {#each presets as p (p)}<option value={p}></option>{/each}
-      </datalist>
+      <label class="check">
+        <input type="checkbox" bind:checked={separate} onchange={toggleSeparate} />
+        Separate time control for each player
+      </label>
       <p class="hint">move/reserve[/percent/max reserve/game limit/max turn], e.g. <code>30s/2m</code></p>
     </div>
   </div>
@@ -118,15 +144,9 @@
     gap: 6px;
     padding-top: 5px;
   }
-  input {
-    width: 100%;
-    box-sizing: border-box;
-    font: inherit;
-    padding: 4px 8px;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    background: var(--bg);
-    color: var(--text);
+  .check {
+    padding-top: 0;
+    font-size: 13px;
   }
   .dot {
     width: 11px;
