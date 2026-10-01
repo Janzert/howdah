@@ -5,6 +5,8 @@ description = "Arimaa desktop client"
 edition.workspace = true
 license.workspace = true
 rust-version = "1.90"
+# The app; `dev-bridge` is a second, feature-gated binary.
+default-run = "arimaa-desktop"
 
 [lib]
 # The _lib suffix avoids a name clash with the binary on Windows (cargo#8519).
@@ -23,3 +25,17 @@ serde_json.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
 tokio = { workspace = true, features = ["sync", "time", "macros"] }
+# Only for the dev bridge (see src/bin/dev-bridge.rs).
+axum = { version = "0.8", optional = true }
+tokio-stream = { version = "0.1", features = ["sync"], optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[features]
+# Builds `dev-bridge`, which serves the commands over HTTP for the browser preview.
+dev-bridge = ["dep:axum", "dep:tokio-stream", "tokio/rt-multi-thread", "tokio/net"]
+
+[[bin]]
+name = "dev-bridge"
+required-features = ["dev-bridge"]

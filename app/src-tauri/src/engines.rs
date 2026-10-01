@@ -71,11 +71,8 @@ fn validate(spec: &EngineSpec) -> Result<(), ApiError> {
 }
 
 fn new_id(name: &str) -> String {
-    let slug: String = name
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
+    let slug: String =
+        name.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis());
     format!("{}-{stamp}", slug.trim_matches('-'))
 }
@@ -126,7 +123,13 @@ mod tests {
     use super::*;
 
     fn spec(name: &str) -> EngineSpec {
-        EngineSpec { id: String::new(), name: name.into(), program: "/bin/true".into(), args: vec![], working_dir: None }
+        EngineSpec {
+            id: String::new(),
+            name: name.into(),
+            program: "/bin/true".into(),
+            args: vec![],
+            working_dir: None,
+        }
     }
 
     #[test]

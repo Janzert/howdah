@@ -1,12 +1,14 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { Square } from '../bindings/Square';
   import type { StepTarget } from '../bindings/StepTarget';
-  import { SQ, squareAt, squareXY } from '../geometry';
+  import { registerBoard } from '../devHooks';
+  import { SQ, squareAt, squareName, squareXY } from '../geometry';
   import { viewBox, type Theme } from '../theme';
   import AnnotationLayer from './AnnotationLayer.svelte';
   import { Annotations, colorFor, type AnnotationColor } from './annotations.svelte';
   import BoardSurface from './BoardSurface.svelte';
-  import type { BoardModel } from './boardModel.svelte';
+  import type { BoardModel, DisplayPiece } from './boardModel.svelte';
   import { DragPath } from './dragPath';
   import PieceGlyph from './PieceGlyph.svelte';
 
@@ -149,6 +151,27 @@
     annotations.preview = null;
   }
 
+  /** Accessible name, e.g. "gold elephant e2, frozen". */
+  function pieceLabel(p: DisplayPiece): string {
+    return `${p.piece.color} ${p.piece.kind} ${squareName(p.square)}${p.frozen ? ', frozen' : ''}`;
+  }
+
+  if (import.meta.env.DEV) {
+    onMount(() => {
+      registerBoard({
+        svg,
+        clientPoint: (sq) => {
+          const p = squareXY(sq, flipped);
+          const ctm = svg.getScreenCTM();
+          if (!ctm) throw new Error('board not laid out');
+          const c = new DOMPoint(p.x + SQ / 2, p.y + SQ / 2).matrixTransform(ctm);
+          return { x: c.x, y: c.y };
+        },
+      });
+      return () => registerBoard(null);
+    });
+  }
+
   function center(sq: Square): string {
     const p = squareXY(sq, flipped);
     return `${p.x + SQ / 2},${p.y + SQ / 2}`;
@@ -191,6 +214,8 @@
       {#each targets as t (t.to)}
         {@const p = squareXY(t.to, flipped)}
         <circle
+          data-target={squareName(t.to)}
+          data-steps={t.steps}
           class="target"
           class:enemy={t.kind === 'pushStart' || t.kind === 'pullFinish'}
           class:far={t.steps > 1}
@@ -208,6 +233,11 @@
       {#each model.pieces as p (p.id)}
         <g
           class="piece"
+          role="img"
+          aria-label={pieceLabel(p)}
+          aria-hidden={p.fading === 'out'}
+          data-square={squareName(p.square)}
+          data-piece="{p.piece.color} {p.piece.kind}"
           class:instant={p.instant}
           class:hidden={drag?.id === p.id}
           style={translate(p.square)}

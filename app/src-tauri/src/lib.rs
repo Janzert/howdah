@@ -2,28 +2,35 @@
 //! engine controller, commands and events. Game logic lives in the core
 //! crates; this crate only adapts it for the UI.
 
+pub mod backend;
 mod commands;
 mod controller;
 pub mod dto;
 pub mod engines;
 pub mod session;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use tauri::Manager;
+use serde_json::Value;
+use tauri::{AppHandle, Emitter, Manager};
 
-use commands::AppState;
+use backend::{Backend, EventSink};
 use engines::EngineRegistry;
-use session::Session;
+
+impl EventSink for AppHandle {
+    fn emit(&self, event: &str, payload: Value) {
+        if let Err(e) = Emitter::emit(self, event, payload) {
+            eprintln!("failed to emit {event}: {e}");
+        }
+    }
+}
 
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
-            let engines = Arc::new(Mutex::new(EngineRegistry::load(config_dir.join("engines.json"))));
-            let session = Arc::new(Mutex::new(Session::new()));
-            let controller = controller::spawn(app.handle().clone(), session.clone(), engines.clone());
-            app.manage(AppState { session, engines, controller });
+            let registry = EngineRegistry::load(config_dir.join("engines.json"));
+            app.manage(Backend::new(registry, Arc::new(app.handle().clone())));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

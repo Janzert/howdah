@@ -71,12 +71,30 @@ ideas from other Arimaa and chess clients.
     It defaults to the bundled `aei-test-engine` when that sits next to the
     app binary (`cargo build -p arimaa-aei --bin aei-test-engine`).
   - `dto.rs` holds the view types sent to the UI, with ts-rs derives.
-  - `commands.rs`: commands are **intents**. Mutating commands return
+  - `backend.rs`: `Backend` holds the command logic, free of Tauri types.
+    Commands are **intents**. Mutating commands return
     `Result<(), ApiError>`, and the new state arrives as a `game://changed`
     event (`SessionUpdate {view, animation}`). Queries (`get_state`,
-    `legal_targets`, `export_game`) return data.
+    `legal_targets`, `export_game`) return data. Events go out through an
+    `EventSink` (the `AppHandle` in the app). `dispatch` runs a command by
+    name with JSON args for the dev bridge; a test checks it covers every
+    command in `api.ts`, but a new command still needs adding to both
+    `dispatch` and `commands.rs`/`lib.rs`.
+  - `commands.rs`: thin `#[tauri::command]` wrappers over `Backend`.
+  - `src/bin/dev-bridge.rs` (feature `dev-bridge`): serves `Backend` over
+    HTTP on 127.0.0.1:1421 (`POST /invoke/<cmd>`, SSE `GET /events`), so the
+    frontend can run in a plain browser against the real session and
+    engines. Its engine list lives in `target/debug/dev-bridge-config/`.
 - `app/src`: Svelte 5 (runes) + Vite, no SvelteKit.
   - `lib/api.ts`: typed invoke wrappers.
+  - `lib/devBridge.ts`: in dev outside Tauri (`main.ts` checks), `mockIPC`
+    forwards every `invoke` to the dev bridge (Vite proxies `/bridge`) and
+    replays its event stream as Tauri events.
+  - `lib/devHooks.ts`: in dev builds, `window.__arimaa` for scripted UI
+    checks: `state()`, `board()` (text diagram), `message()`, `idle()`,
+    `drag('d2','d5',['d3','d4'])`, `click(sq)`, `squareCenter(sq)`, `api`.
+    Input goes through the board's own pointer handlers. Board pieces carry
+    accessible names ("gold camel d5, frozen") and `data-square`.
   - `MoveList.svelte` stays scrolled to the bottom while following the
     latest move, until the user scrolls up.
   - `lib/events.ts`: typed `on()`.
@@ -140,7 +158,18 @@ npm run check                     # svelte-check
 npm test                          # vitest (frontend unit tests, e.g. BoardModel)
 npm run bindings                  # regenerate TS types
 npm run tauri dev                 # run the app
+npm run bridge                    # dev bridge for the browser preview (port 1421)
+npm run dev                       # Vite on 1420; in a browser it uses the bridge
+npm run e2e                       # Playwright smoke tests (starts both if needed)
 ```
+
+- **Checking UI changes:** run `npm run bridge` and `npm run dev`, then use
+  a browser: the accessibility tree reads the board, and `window.__arimaa`
+  drives it. Use the full Tauri app only for what differs in the webview
+  (WebKitGTK rendering, sound, window behavior).
+- Playwright uses a system Chromium when it finds one (`CHROMIUM_PATH`
+  overrides); otherwise run `npx playwright install chromium`. The bridge
+  holds one session, so tests run serially and start with `newGame`.
 
 - Linux system packages: see README.md (WebKitGTK 4.1 is the essential one).
 - TypeScript is pinned to 6.x because svelte-check doesn't support TS 7 yet.

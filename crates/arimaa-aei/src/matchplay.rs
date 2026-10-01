@@ -140,7 +140,10 @@ pub async fn play_match(
             Ok(None) => {
                 let past_game_limit = game_deadline.is_some_and(|g| Instant::now() >= g);
                 let result = if past_game_limit {
-                    GameResult { winner: limit_score_winner(game.current_position()), reason: WinReason::Score }
+                    GameResult {
+                        winner: limit_score_winner(game.current_position()),
+                        reason: WinReason::Score,
+                    }
                 } else {
                     GameResult { winner: opponent, reason: WinReason::Timeout }
                 };

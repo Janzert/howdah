@@ -8,10 +8,13 @@
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "bindings": "cargo test -p arimaa-desktop --lib export_bindings",
+    "bridge": "cargo build -p arimaa-aei --bin aei-test-engine && cargo run -p arimaa-desktop --features dev-bridge --bin dev-bridge",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tauri-apps/cli": "^2.12.0",
     "@tsconfig/svelte": "^5.0.8",

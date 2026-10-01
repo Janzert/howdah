@@ -9,6 +9,7 @@
   import { BoardModel } from './lib/board/boardModel.svelte';
   import EnginePanel from './lib/EnginePanel.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
+  import { registerApp } from './lib/devHooks';
   import { on } from './lib/events';
   import MoveList from './lib/MoveList.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
@@ -103,6 +104,8 @@
       return false;
     }
   }
+
+  if (import.meta.env.DEV) registerApp({ state: () => view, message: () => message, model });
 
   onMount(() => {
     unlockOnInteraction();

@@ -1,0 +1,142 @@
+// Dev builds only: `window.__arimaa`, for driving and inspecting the UI from
+// scripts (the browser pane's JavaScript tool, Playwright) without
+// screenshots or pixel coordinates. Input goes through the board's own
+// pointer handlers, so it exercises the same code as a real mouse.
+import { api } from './api';
+import type { SessionView } from './bindings/SessionView';
+import type { Square } from './bindings/Square';
+import type { BoardModel } from './board/boardModel.svelte';
+import { on } from './events';
+import { squareName, TRAPS } from './geometry';
+
+interface AppParts {
+  state: () => SessionView | null;
+  message: () => string | null;
+  model: BoardModel;
+}
+
+interface BoardParts {
+  svg: SVGSVGElement;
+  /** Client (CSS pixel) coordinates of a square's center. */
+  clientPoint: (sq: Square) => { x: number; y: number };
+}
+
+let app: AppParts | null = null;
+let board: BoardParts | null = null;
+let lastEvent = 0;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const frame = () => new Promise((r) => requestAnimationFrame(() => r(undefined)));
+
+function parseSquare(name: string): Square {
+  const m = /^([a-h])([1-8])$/.exec(name.trim().toLowerCase());
+  if (!m) throw new Error(`not a square: ${JSON.stringify(name)}`);
+  return (Number(m[2]) - 1) * 8 + 'abcdefgh'.indexOf(m[1]);
+}
+
+const LETTERS = { rabbit: 'r', cat: 'c', dog: 'd', horse: 'h', camel: 'm', elephant: 'e' } as const;
+
+function need<T>(part: T | null, what: string): T {
+  if (!part) throw new Error(`__arimaa: the ${what} isn't mounted yet`);
+  return part;
+}
+
+function pointer(type: string, sq: Square, buttons: number) {
+  const b = need(board, 'board');
+  const p = b.clientPoint(sq);
+  b.svg.dispatchEvent(
+    new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true,
+      button: 0,
+      buttons,
+      clientX: p.x,
+      clientY: p.y,
+    }),
+  );
+}
+
+/** Resolves once no animation is playing and no update has arrived for a short while. */
+async function idle(quietMs = 150, timeoutMs = 10_000): Promise<void> {
+  const parts = need(app, 'app');
+  const start = performance.now();
+  await frame();
+  await frame();
+  while (parts.model.animating || performance.now() - lastEvent < quietMs) {
+    if (performance.now() - start > timeoutMs) throw new Error('__arimaa.idle: timed out');
+    await sleep(25);
+  }
+}
+
+const hooks = {
+  /** The typed command wrappers, as the UI uses them. */
+  api,
+  /** The latest `SessionView` the UI received, as a plain copy (the
+   * reactive proxy doesn't serialize in some tools). */
+  state: (): SessionView | null => JSON.parse(JSON.stringify(need(app, 'app').state())),
+  /** The error or notice the UI is currently showing, if any. */
+  message: (): string | null => need(app, 'app').message(),
+  /** The board as displayed (mid-animation included), as text: gold upper
+   * case, silver lower case, `x` an empty trap, rank 8 at the top. */
+  board(): string {
+    const parts = need(app, 'app');
+    const cells: string[] = Array.from({ length: 64 }, (_, sq) => (TRAPS.includes(sq) ? 'x' : '.'));
+    for (const p of parts.model.pieces) {
+      if (p.fading === 'out') continue;
+      const l = LETTERS[p.piece.kind];
+      cells[p.square] = p.piece.color === 'gold' ? l.toUpperCase() : l;
+    }
+    const rows = [' +-----------------+'];
+    for (let r = 7; r >= 0; r--) rows.push(`${r + 1}| ${cells.slice(r * 8, r * 8 + 8).join(' ')} |`);
+    rows.push(' +-----------------+', '   a b c d e f g h');
+    return rows.join('\n');
+  },
+  idle,
+  /** Drags the piece on `from` to `to`, passing over `via` squares on the
+   * way (which steers the route), then waits for the board to settle. */
+  async drag(from: string, to: string, via: string[] = []): Promise<void> {
+    const squares = [from, ...via, to].map(parseSquare);
+    pointer('pointerdown', squares[0], 1);
+    await frame();
+    for (const sq of squares.slice(1)) {
+      pointer('pointermove', sq, 1);
+      await frame();
+    }
+    pointer('pointerup', squares[squares.length - 1], 0);
+    await idle();
+  },
+  /** Presses and releases the left button on a square. */
+  async click(square: string): Promise<void> {
+    const sq = parseSquare(square);
+    pointer('pointerdown', sq, 1);
+    await frame();
+    pointer('pointerup', sq, 0);
+    await idle();
+  },
+  /** Client coordinates of a square's center, for tools that click by position. */
+  squareCenter: (square: string) => need(board, 'board').clientPoint(parseSquare(square)),
+  squareName,
+};
+
+export type ArimaaHooks = typeof hooks;
+
+declare global {
+  interface Window {
+    __arimaa?: ArimaaHooks;
+  }
+}
+
+export function registerApp(parts: AppParts): void {
+  app = parts;
+  if (!window.__arimaa) {
+    window.__arimaa = hooks;
+    void on('game://changed', () => (lastEvent = performance.now()));
+  }
+}
+
+export function registerBoard(parts: BoardParts | null): void {
+  board = parts;
+}

@@ -15,10 +15,9 @@ use std::time::{Duration, Instant};
 
 use arimaa_aei::{Engine, EngineMessage, Info};
 use arimaa_core::{Color, TimeControl};
-use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use crate::commands::emit_session;
+use crate::backend::{Events, emit, emit_session};
 use crate::dto::{EngineOutput, EngineOutputKind, EngineSpec};
 use crate::engines::{EngineRegistry, engine_config};
 use crate::session::Session;
@@ -84,10 +83,10 @@ struct Pending {
     stop_sent: bool,
 }
 
-pub fn spawn(app: AppHandle, session: SharedSession, registry: SharedRegistry) -> Controller {
+pub fn spawn(events: Events, session: SharedSession, registry: SharedRegistry) -> Controller {
     let (tx, rx) = unbounded_channel();
     let coordinator = Coordinator {
-        app,
+        events,
         session,
         registry,
         tx: tx.clone(),
@@ -102,7 +101,7 @@ pub fn spawn(app: AppHandle, session: SharedSession, registry: SharedRegistry) -
 }
 
 struct Coordinator {
-    app: AppHandle,
+    events: Events,
     session: SharedSession,
     registry: SharedRegistry,
     tx: UnboundedSender<ControlMsg>,
@@ -130,12 +129,12 @@ impl Coordinator {
     }
 
     fn emit(&self, session: &Session, animation: Vec<crate::dto::AnimStep>) {
-        emit_session(&self.app, session, animation, None);
+        emit_session(&self.events, session, animation, None);
     }
 
     fn output(&self, side: Color, kind: EngineOutputKind, text: String) {
         let out = EngineOutput { side, kind, text, depth: None, score: None, pv: None };
-        let _ = self.app.emit(ENGINE_OUTPUT, out);
+        emit(&self.events, ENGINE_OUTPUT, out);
     }
 
     /// Brings actors and the pending request in line with the session.
@@ -155,7 +154,8 @@ impl Coordinator {
             let wanted = &engines[side.index()];
             let current = self.actors[side.index()].as_ref().map(|a| &a.engine_id);
             if wanted.as_ref() != current && !self.failed[side.index()] {
-                self.actors[side.index()] = wanted.as_ref().and_then(|id| self.start_actor(generation, side, id));
+                self.actors[side.index()] =
+                    wanted.as_ref().and_then(|id| self.start_actor(generation, side, id));
             }
         }
         if let Some(turn) = turn
@@ -168,9 +168,15 @@ impl Coordinator {
                 let allowance = d.saturating_duration_since(Instant::now());
                 d - STOP_MARGIN.min(allowance / 4)
             });
-            let cmd = ActorCmd::Think { request, moves: turn.moves, tc: turn.time_control, reserves: turn.reserves };
+            let cmd = ActorCmd::Think {
+                request,
+                moves: turn.moves,
+                tc: turn.time_control,
+                reserves: turn.reserves,
+            };
             if actor.cmd.send(cmd).is_ok() {
-                self.pending = Some(Pending { request, side: turn.side, ply: turn.ply, stop_at, stop_sent: false });
+                self.pending =
+                    Some(Pending { request, side: turn.side, ply: turn.ply, stop_at, stop_sent: false });
                 let mut s = lock(&self.session);
                 s.set_thinking(Some(turn.side));
                 self.emit(&s, Vec::new());
@@ -249,7 +255,7 @@ impl Coordinator {
         match event {
             ActorEvent::Line(msg) => {
                 if let Some(out) = engine_output(side, msg) {
-                    let _ = self.app.emit(ENGINE_OUTPUT, out);
+                    emit(&self.events, ENGINE_OUTPUT, out);
                 }
             }
             ActorEvent::Started(name) => self.output(side, EngineOutputKind::Status, format!("{name} ready")),
@@ -258,7 +264,7 @@ impl Coordinator {
                 self.output(side, EngineOutputKind::Status, format!("bestmove {text}"));
                 let mut s = lock(&self.session);
                 if let Ok(anim) = s.apply_engine_move(generation, p.side, p.ply, &text) {
-                    emit_session(&self.app, &s, anim, s.last_move_time());
+                    emit_session(&self.events, &s, anim, s.last_move_time());
                 }
             }
             ActorEvent::Failed(detail) => {
@@ -378,7 +384,14 @@ async fn prepare(
 }
 
 fn engine_output(side: Color, msg: EngineMessage) -> Option<EngineOutput> {
-    let mut out = EngineOutput { side, kind: EngineOutputKind::Info, text: String::new(), depth: None, score: None, pv: None };
+    let mut out = EngineOutput {
+        side,
+        kind: EngineOutputKind::Info,
+        text: String::new(),
+        depth: None,
+        score: None,
+        pv: None,
+    };
     match msg {
         EngineMessage::Info(info) => {
             out.text = match info {
