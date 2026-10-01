@@ -1,7 +1,9 @@
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
-// Tauri expects a fixed dev port and doesn't want the terminal cleared.
+// Tauri expects a fixed dev port (1420) and doesn't want the terminal
+// cleared. Browser-only runs (the preview pane, Playwright) use `--port 1430`
+// so they don't block `tauri dev`.
 export default defineConfig({
   plugins: [svelte()],
   clearScreen: false,

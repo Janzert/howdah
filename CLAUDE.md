@@ -166,11 +166,12 @@ npm test                          # vitest (frontend unit tests, e.g. BoardModel
 npm run bindings                  # regenerate TS types
 npm run tauri dev                 # run the app
 npm run bridge                    # dev bridge for the browser preview (port 1421)
-npm run dev                       # Vite on 1420; in a browser it uses the bridge
+npm run dev -- --port 1430        # Vite for a browser; it uses the bridge (1420 is for tauri dev)
 npm run e2e                       # Playwright smoke tests (starts both if needed)
 ```
 
-- **Checking UI changes:** run `npm run bridge` and `npm run dev`, then use
+- **Checking UI changes:** run `npm run bridge` and `npm run dev -- --port 1430`
+  (not 1420, which `tauri dev` needs for its own Vite), then use
   a browser: the accessibility tree reads the board, and `window.__arimaa`
   drives it. Use the full Tauri app only for what differs in the webview
   (WebKitGTK rendering, sound, window behavior).

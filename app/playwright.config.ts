@@ -1,6 +1,7 @@
 // UI smoke tests: the frontend in Chromium against the dev bridge (the real
 // backend, run natively). `npm run e2e` starts both servers, or reuses ones
-// already running. See e2e/.
+// already running. See e2e/. Vite runs on 1430 here, leaving 1420 to
+// `tauri dev`.
 import { existsSync } from 'node:fs';
 import { defineConfig } from '@playwright/test';
 
@@ -17,7 +18,7 @@ export default defineConfig({
   fullyParallel: false,
   timeout: 30_000,
   use: {
-    baseURL: 'http://localhost:1420',
+    baseURL: 'http://localhost:1430',
     viewport: { width: 1180, height: 800 },
     launchOptions: chromium ? { executablePath: chromium } : {},
     trace: 'retain-on-failure',
@@ -30,6 +31,6 @@ export default defineConfig({
       // The first run compiles the backend.
       timeout: 600_000,
     },
-    { command: 'npm run dev', port: 1420, reuseExistingServer: true },
+    { command: 'npm run dev -- --port 1430', port: 1430, reuseExistingServer: true },
   ],
 });
