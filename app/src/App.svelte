@@ -15,8 +15,10 @@
   import NewGameDialog from './lib/NewGameDialog.svelte';
   import PlayerBar from './lib/PlayerBar.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
-  import { isMuted, play, setMuted, unlockOnInteraction } from './lib/sound';
-  import { findTheme, themes } from './lib/theme';
+  import { settings } from './lib/settings.svelte';
+  import SettingsDialog from './lib/SettingsDialog.svelte';
+  import { play, setMuted, unlockOnInteraction } from './lib/sound';
+  import { findTheme } from './lib/theme';
   import TurnBar from './lib/TurnBar.svelte';
 
   function pref(key: string): string | null {
@@ -36,14 +38,13 @@
 
   const model = new BoardModel();
   let view = $state<SessionView | null>(null);
-  let themeId = $state(findTheme(pref('theme')).id);
-  const theme = $derived(findTheme(themeId));
+  const theme = $derived(findTheme(settings.theme));
   let flipped = $state(pref('flipped') === '1');
-  let muted = $state(isMuted());
   let message = $state<string | null>(null);
   let record = $state<string | null>(null);
   let showNewGame = $state(false);
   let showEngines = $state(false);
+  let showSettings = $state(false);
   let engines = $state<EngineSpec[]>([]);
   let messageTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -84,9 +85,8 @@
     }
   }
 
-  $effect(() => savePref('theme', themeId));
   $effect(() => savePref('flipped', flipped ? '1' : '0'));
-  $effect(() => setMuted(muted));
+  $effect(() => setMuted(!settings.sound));
 
   function flash(text: string) {
     message = text;
@@ -170,7 +170,7 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
-    if (!view || record != null || showNewGame || showEngines) return;
+    if (!view || record != null || showNewGame || showEngines || showSettings) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, select')) return;
     switch (e.key) {
@@ -218,6 +218,7 @@
           {interactive}
           pushPending={view?.turn?.pushPending ?? null}
           lastMove={view?.turn?.steps.length ? null : (view?.lastMove ?? null)}
+          coordinates={settings.coordinates}
           {onDrop}
           legalTargets={(from) => api.legalTargets(from)}
           planRoute={(from, to, path) => (view?.phase === 'setup' ? Promise.resolve(null) : api.planRoute(from, to, path))}
@@ -256,12 +257,7 @@
       <button onclick={() => (showEngines = true)}>Engines…</button>
       <button onclick={openRecord}>Record…</button>
       <button onclick={() => (flipped = !flipped)}>Flip</button>
-      <button onclick={() => (muted = !muted)}>{muted ? 'Sound off' : 'Sound on'}</button>
-      <select bind:value={themeId} aria-label="Theme">
-        {#each themes as t (t.id)}
-          <option value={t.id}>{t.name}</option>
-        {/each}
-      </select>
+      <button onclick={() => (showSettings = true)}>Settings…</button>
     </div>
   </aside>
 </main>
@@ -282,6 +278,9 @@
 {/if}
 {#if showEngines}
   <EnginesDialog onChanged={reloadEngines} onClose={() => (showEngines = false)} />
+{/if}
+{#if showSettings}
+  <SettingsDialog onClose={() => (showSettings = false)} />
 {/if}
 
 <style>

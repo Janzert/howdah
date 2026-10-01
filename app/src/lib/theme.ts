@@ -37,7 +37,6 @@ export interface Theme {
   attribution: string | null;
   board: BoardSpec;
   pieces: PieceSpec;
-  coords: boolean;
   ui: ThemeUi;
 }
 

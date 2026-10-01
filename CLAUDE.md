@@ -131,6 +131,10 @@ ideas from other Arimaa and chess clients.
       overlapping plays were often silent.
   - `lib/theme.ts` plus `themes/<dir>/*.theme.json`: data-driven themes
     (image or procedural board/pieces).
+  - `lib/settings.svelte.ts`: display preferences (theme, coordinates,
+    sound) as one reactive `settings` object, saved to localStorage as JSON
+    (`parse` validates and reads the older `theme`/`muted` keys).
+    `SettingsDialog.svelte` binds to it directly; add new options to both.
 
 ## Conventions
 

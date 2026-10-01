@@ -102,7 +102,8 @@ cover it.
   opponent's pieces off the board, rabbits as one icon with ×n. arimaa.com shows the captured pieces below
   the board, and 4steps has "pieces off board" docks. Add a material
   summary. A FAME/HarLog-style material score is a possible stretch.
-- **[P1] Coordinates: none, traps only, or all (4steps).** arimaa.com
+- **[have] Coordinates: none, traps only, or all (4steps)**, in Settings,
+  with traps as the default. arimaa.com
   labels the four traps (C3/F3/C6/F6) on the board.
 - **[P1] Auto-rotate (4steps):** in a game, put the human's side at the
   bottom. Flip stays available (lichess key `f`).
@@ -309,8 +310,8 @@ From Cute Chess. Our `play_match` plus the app's BvB are the seed.
 
 ## 9. Settings, layout and accessibility
 
-- **[P1] Settings dialog** (already a to-do): theme, piece set, sound and
-  volume, animation speed (4steps exposes a delay in ms), coordinates,
+- **[have] Settings dialog**, with theme, coordinates and sound so far.
+  Still to add: piece set, volume, animation speed (4steps exposes a delay in ms), coordinates,
   step mode, confirm move, and auto-rotate.
 - **[P2] Dockable or resizable panels** (4steps docks for the move list,
   player bars and off-board pieces, with the layout saved). A lighter
@@ -349,13 +350,13 @@ Not adopted:
 The **[P1]** items, roughly in this order, since they make HvB against
 Sharp pleasant, which is the next planned milestone:
 
-1. Trap coordinates, hover arrows, and Show (replay the last move).
-   (Last-move arrows and the captured tray are done.)
+1. Hover arrows, and Show (replay the last move). (Last-move arrows, the
+   captured tray and coordinates are done.)
 2. Wheel step scrubbing, then step mode. (Drag-to-route is done.)
 3. Game-end dialog, low-time tick, and unfocused-window alert.
 4. The keyboard map and `?` help overlay.
 5. Analysis mode with an eval bar, PV arrows, and interactive PV.
-6. Settings dialog.
+6. More settings (the dialog exists; see section 9).
 
 Then the variation tree. Analysis, comments and threat mode all depend on
 it, so it's worth designing (including the record format) before analysis

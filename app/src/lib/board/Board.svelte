@@ -5,6 +5,7 @@
   import { registerBoard } from '../devHooks';
   import { SQ, squareAt, squareName, squareXY } from '../geometry';
   import type { LastMoveView } from '../bindings/LastMoveView';
+  import type { Coordinates } from '../settings.svelte';
   import { LAST_MOVE_COLORS, viewBox, type Theme } from '../theme';
   import AnnotationLayer from './AnnotationLayer.svelte';
   import { Annotations, colorFor, type AnnotationColor } from './annotations.svelte';
@@ -23,6 +24,7 @@
     pushPending: Square | null;
     /** The move that produced the shown position, drawn when the board is at rest. */
     lastMove: LastMoveView | null;
+    coordinates: Coordinates;
     /** Called with a dropped piece's move and the squares it was dragged
      * across; resolve false to slide it back. */
     onDrop: (from: Square, to: Square, path: Square[]) => Promise<boolean>;
@@ -31,7 +33,7 @@
     planRoute: (from: Square, to: Square, path: Square[]) => Promise<Square[] | null>;
   }
 
-  let { model, theme, flipped, interactive, pushPending, lastMove, onDrop, legalTargets, planRoute }: Props = $props();
+  let { model, theme, flipped, interactive, pushPending, lastMove, coordinates, onDrop, legalTargets, planRoute }: Props = $props();
 
   const annotations = new Annotations();
   let svg: SVGSVGElement;
@@ -210,7 +212,7 @@
     {onpointercancel}
     oncontextmenu={(e) => e.preventDefault()}
   >
-    <BoardSurface {theme} {flipped} />
+    <BoardSurface {theme} {flipped} {coordinates} />
 
     {#if lastMove && !model.animating}
       <LastMoveLayer {lastMove} {theme} {flipped} />

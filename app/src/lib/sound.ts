@@ -1,4 +1,5 @@
-// Sound effects (classic arimaa.com set). Mute state is a per-viewer preference.
+// Sound effects (classic arimaa.com set). Whether sound is on is a setting
+// (settings.svelte.ts); the app passes it in with `setMuted`.
 //
 // Sounds are played through Web Audio from buffers decoded once at startup
 // (by our own WAV decoder, so every platform behaves the same). Each play is
@@ -16,17 +17,9 @@ export type SoundName = 'slide' | 'place' | 'trapped' | 'win';
 
 const sources: Record<SoundName, string> = { slide, place, trapped, win };
 
-let muted = readPref('muted') === '1';
+let muted = false;
 let context: AudioContext | null = null;
 const buffers = new Map<SoundName, AudioBuffer>();
-
-function readPref(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
 
 export function isMuted() {
   return muted;
@@ -34,11 +27,6 @@ export function isMuted() {
 
 export function setMuted(m: boolean) {
   muted = m;
-  try {
-    localStorage.setItem('muted', m ? '1' : '0');
-  } catch {
-    /* preference just won't persist */
-  }
 }
 
 /** Creates the audio context and decodes every sound. Safe to call repeatedly. */

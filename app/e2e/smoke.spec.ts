@@ -120,3 +120,25 @@ test('last move arrows and captured pieces', async ({ page }) => {
   await page.evaluate(() => window.__arimaa!.drag('a2', 'a3'));
   await expect(page.locator('.last-move')).toHaveCount(0);
 });
+
+test('coordinates setting changes the board labels and persists', async ({ page }) => {
+  await freshGame(page);
+  await page.evaluate(() => localStorage.removeItem('settings'));
+  await page.reload();
+  const labels = page.locator('svg[aria-label="Arimaa board"] .coord');
+  await expect(labels).toHaveText(['c3', 'f3', 'c6', 'f6']); // the default: traps
+
+  await page.getByRole('button', { name: 'Settings…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  await dialog.getByLabel('Files and ranks').check();
+  await expect(labels).toHaveCount(16);
+  await dialog.getByLabel('None').check();
+  await expect(labels).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.reload();
+  await page.waitForFunction(() => window.__arimaa?.state() != null);
+  await expect(labels).toHaveCount(0);
+  await page.evaluate(() => localStorage.removeItem('settings'));
+});

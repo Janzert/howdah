@@ -32,7 +32,6 @@
       "r": "pieces/SilverRabbit.png"
     }
   },
-  "coords": false,
   "ui": {
     "highlight": "rgba(255, 170, 0, 0.45)",
     "arrow": "rgba(40, 150, 60, 0.8)",
