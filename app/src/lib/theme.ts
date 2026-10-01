@@ -23,7 +23,13 @@ export interface ThemeUi {
   target: string;
   coord: string;
   pushPending: string;
+  /** Last-move paths; defaults in `LAST_MOVE_COLORS`. */
+  lastMove?: string;
+  /** Last-move paths of pushed or pulled enemy pieces. */
+  lastMoveDisplaced?: string;
 }
+
+export const LAST_MOVE_COLORS = { lastMove: 'rgba(255, 205, 40, 0.6)', lastMoveDisplaced: 'rgba(235, 90, 40, 0.75)' };
 
 export interface Theme {
   id: string;

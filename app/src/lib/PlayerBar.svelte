@@ -1,6 +1,10 @@
 <script lang="ts">
+  import PieceGlyph from './board/PieceGlyph.svelte';
   import type { Color } from './bindings/Color';
+  import type { PieceKind } from './bindings/PieceKind';
   import type { SessionView } from './bindings/SessionView';
+  import { SQ } from './geometry';
+  import type { Theme } from './theme';
 
   interface Props {
     view: SessionView;
@@ -9,13 +13,32 @@
     receivedAt: number;
     /** Current `performance.now()`, updated by the parent's ticker. */
     now: number;
+    theme: Theme;
   }
-  let { view, side, receivedAt, now }: Props = $props();
+  let { view, side, receivedAt, now, theme }: Props = $props();
 
   const player = $derived(view.players?.[side]);
   const clock = $derived(view.clock);
   const toMove = $derived(view.result == null && view.position.sideToMove === side);
   const thinking = $derived(view.thinking === side);
+
+  // The opponent's pieces this side has taken off the board (captures
+  // include a side's own pieces lost on traps, so this is material, not who
+  // made the capture). Rabbits are grouped with a count, since there can be
+  // up to eight; other kinds (at most two) are repeated.
+  const opponent = $derived<Color>(side === 'gold' ? 'silver' : 'gold');
+  const captured = $derived.by(() => {
+    const groups: { kind: PieceKind; n: number }[] = [];
+    for (const kind of view.captured[opponent]) {
+      const last = groups[groups.length - 1];
+      if (kind === 'rabbit' && last?.kind === kind) last.n++;
+      else groups.push({ kind, n: 1 });
+    }
+    return groups;
+  });
+  const capturedLabel = $derived(
+    captured.map((g) => (g.n > 1 ? `${g.n} ${opponent} ${g.kind}s` : `${opponent} ${g.kind}`)).join(', '),
+  );
 
   function fmt(ms: number): string {
     const total = Math.max(0, Math.ceil(ms / 1000));
@@ -46,6 +69,18 @@
     {#if player?.kind === 'engine'}<span class="tag">engine</span>{/if}
   </span>
   {#if thinking}<span class="thinking">thinking…</span>{/if}
+  {#if captured.length > 0}
+    <span class="captured" role="img" aria-label="captured: {capturedLabel}" title="Captured: {capturedLabel}">
+      {#each captured as g, i (i)}
+        <span class="cap">
+          <svg viewBox="0 0 {SQ} {SQ}" aria-hidden="true">
+            <PieceGlyph piece={{ color: opponent, kind: g.kind }} {theme} />
+          </svg>
+          {#if g.n > 1}<span class="count">×{g.n}</span>{/if}
+        </span>
+      {/each}
+    </span>
+  {/if}
   <span class="spacer"></span>
   {#if times}
     <span class="clock" class:running={times.running} class:low={times.low} title="move time · reserve">
@@ -103,6 +138,25 @@
     50% {
       opacity: 0.4;
     }
+  }
+  .captured {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cap {
+    display: flex;
+    align-items: center;
+  }
+  .cap svg {
+    width: 24px;
+    height: 24px;
+  }
+  .count {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-left: 1px;
   }
   .spacer {
     flex: 1;

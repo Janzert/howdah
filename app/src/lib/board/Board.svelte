@@ -4,10 +4,12 @@
   import type { StepTarget } from '../bindings/StepTarget';
   import { registerBoard } from '../devHooks';
   import { SQ, squareAt, squareName, squareXY } from '../geometry';
-  import { viewBox, type Theme } from '../theme';
+  import type { LastMoveView } from '../bindings/LastMoveView';
+  import { LAST_MOVE_COLORS, viewBox, type Theme } from '../theme';
   import AnnotationLayer from './AnnotationLayer.svelte';
   import { Annotations, colorFor, type AnnotationColor } from './annotations.svelte';
   import BoardSurface from './BoardSurface.svelte';
+  import LastMoveLayer from './LastMoveLayer.svelte';
   import type { BoardModel, DisplayPiece } from './boardModel.svelte';
   import { DragPath } from './dragPath';
   import PieceGlyph from './PieceGlyph.svelte';
@@ -19,6 +21,8 @@
     /** Whether pieces can be dragged right now. */
     interactive: boolean;
     pushPending: Square | null;
+    /** The move that produced the shown position, drawn when the board is at rest. */
+    lastMove: LastMoveView | null;
     /** Called with a dropped piece's move and the squares it was dragged
      * across; resolve false to slide it back. */
     onDrop: (from: Square, to: Square, path: Square[]) => Promise<boolean>;
@@ -27,7 +31,7 @@
     planRoute: (from: Square, to: Square, path: Square[]) => Promise<Square[] | null>;
   }
 
-  let { model, theme, flipped, interactive, pushPending, onDrop, legalTargets, planRoute }: Props = $props();
+  let { model, theme, flipped, interactive, pushPending, lastMove, onDrop, legalTargets, planRoute }: Props = $props();
 
   const annotations = new Annotations();
   let svg: SVGSVGElement;
@@ -189,6 +193,8 @@
   style:--arrow={theme.ui.arrow}
   style:--target={theme.ui.target}
   style:--push={theme.ui.pushPending}
+  style:--last-move={theme.ui.lastMove ?? LAST_MOVE_COLORS.lastMove}
+  style:--last-move-displaced={theme.ui.lastMoveDisplaced ?? LAST_MOVE_COLORS.lastMoveDisplaced}
   style:--step-ms="{model.stepMs}ms"
   style:--fade-ms="{model.fadeMs}ms"
 >
@@ -205,6 +211,10 @@
     oncontextmenu={(e) => e.preventDefault()}
   >
     <BoardSurface {theme} {flipped} />
+
+    {#if lastMove && !model.animating}
+      <LastMoveLayer {lastMove} {theme} {flipped} />
+    {/if}
 
     <g class="hints">
       {#if pushPending != null}

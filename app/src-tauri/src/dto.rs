@@ -1,7 +1,7 @@
 //! View types sent to the frontend. TypeScript definitions are generated from
 //! these with ts-rs (`npm run bindings`); don't hand-edit `src/lib/bindings`.
 
-use arimaa_core::{Color, GameResult, Piece, Square, StepKind};
+use arimaa_core::{Color, GameResult, Piece, PieceKind, Square, StepKind};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -37,6 +37,46 @@ pub struct MoveView {
     /// Move number label, e.g. `2g`.
     pub label: String,
     pub notation: String,
+}
+
+/// A piece on a square.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PieceAt {
+    pub piece: Piece,
+    pub square: Square,
+}
+
+/// One step of the move that produced the shown position.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LastStepView {
+    /// The piece that stepped; an enemy of the mover when pushed or pulled.
+    pub piece: Piece,
+    pub from: Square,
+    pub to: Square,
+    /// A piece captured on a trap as a result of this step.
+    pub captured: Option<PieceAt>,
+}
+
+/// The move that produced the shown position, for the last-move display.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LastMoveView {
+    pub color: Color,
+    pub steps: Vec<LastStepView>,
+}
+
+/// Pieces of each color captured so far, strongest first.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CapturedView {
+    pub gold: Vec<PieceKind>,
+    pub silver: Vec<PieceKind>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
@@ -82,6 +122,10 @@ pub struct SessionView {
     pub position: PositionView,
     /// Present while a turn is being entered.
     pub turn: Option<TurnView>,
+    /// The move that produced the position at `ply`, unless it was a setup.
+    pub last_move: Option<LastMoveView>,
+    /// Pieces captured up to `ply`, including in the turn being entered.
+    pub captured: CapturedView,
     /// Moves that committing now would discard (when entering a move before the end).
     pub moves_after_cursor: usize,
     pub result: Option<GameResult>,

@@ -88,3 +88,35 @@ test('engine vs engine match plays moves', async ({ page }) => {
     .toBeGreaterThanOrEqual(6);
   await page.evaluate(() => window.__arimaa!.api.endMatch());
 });
+
+test('last move arrows and captured pieces', async ({ page }) => {
+  await freshGame(page);
+  const record = [
+    '1g Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2 Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1',
+    '1s ha7 db7 cc7 md7 ee7 cf7 dg7 hh7 ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8',
+    '2g Ee2n Ee3n Ee4n Ee5e',
+    '2s hh7s hh6s hh5w',
+    '3g hg5s Ef5e hg4s Eg5s',
+    '3s rh8s rh7s rh6s',
+    // The elephant pushes the horse onto the f3 trap, where it's captured.
+    '4g hg3w hf3x Eg4s Eg3n',
+  ].join('\n');
+  await page.evaluate(async (r) => {
+    await window.__arimaa!.api.loadGame(r);
+    await window.__arimaa!.idle();
+  }, record);
+  // The push: a dashed trail for the horse, a solid one for the elephant.
+  await expect(page.locator('.last-move .trail')).toHaveCount(2);
+  await expect(page.locator('.last-move .trail.displaced')).toHaveCount(1);
+  await expect(page.locator('.last-move .ghost')).toHaveCount(1);
+  await expect(page.getByRole('img', { name: 'captured: silver horse' })).toBeVisible();
+
+  // Taking a step hides the opponent's last move.
+  await page.evaluate(async () => {
+    await window.__arimaa!.api.gotoPly(6);
+    await window.__arimaa!.idle();
+  });
+  await expect(page.getByRole('img', { name: /^captured/ })).toHaveCount(0);
+  await page.evaluate(() => window.__arimaa!.drag('a2', 'a3'));
+  await expect(page.locator('.last-move')).toHaveCount(0);
+});

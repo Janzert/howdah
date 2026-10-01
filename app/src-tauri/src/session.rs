@@ -15,8 +15,9 @@ use arimaa_core::{
 };
 
 use crate::dto::{
-    AnimPiece, AnimStep, ApiError, ClockView, MoveView, Phase, PieceId, PieceView, PlayerKind, PlayerView,
-    PlayersView, PositionView, SessionView, SideClockView, StepTarget, TurnStepView, TurnView,
+    AnimPiece, AnimStep, ApiError, CapturedView, ClockView, LastMoveView, LastStepView, MoveView, Phase,
+    PieceAt, PieceId, PieceView, PlayerKind, PlayerView, PlayersView, PositionView, SessionView,
+    SideClockView, StepTarget, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -747,6 +748,8 @@ impl Session {
             phase: self.phase(),
             position: position_view(&position, &ids),
             turn,
+            last_move: self.last_move_view(),
+            captured: self.captured_view(),
             moves_after_cursor: self.game.ply_count() - self.cursor,
             result: if self.cursor == self.game.ply_count() { self.game.result() } else { None },
             end_marker: self.game.end_marker().map(str::to_string),
@@ -759,6 +762,40 @@ impl Session {
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
             can_input: self.can_input(),
         }
+    }
+
+    fn last_move_view(&self) -> Option<LastMoveView> {
+        let ply = self.cursor.checked_sub(1)?;
+        let Move::Steps(steps) = &self.game.moves()[ply] else { return None };
+        let color = self.game.position_at(ply)?.side_to_move();
+        let steps = steps
+            .iter()
+            .map(|e| LastStepView {
+                piece: e.step.piece,
+                from: e.step.from,
+                to: e.to,
+                captured: e.capture.map(|c| PieceAt { piece: c.piece, square: c.square }),
+            })
+            .collect();
+        Some(LastMoveView { color, steps })
+    }
+
+    fn captured_view(&self) -> CapturedView {
+        let played = self.game.moves()[..self.cursor].iter().flat_map(|m| match m {
+            Move::Steps(steps) => steps.as_slice(),
+            Move::Setup(_) => &[],
+        });
+        let entering = self.turn.iter().flat_map(|tb| tb.steps().iter().map(|s| &s.effect));
+        let mut view = CapturedView::default();
+        for c in played.chain(entering).filter_map(|e| e.capture) {
+            match c.piece.color {
+                Color::Gold => view.gold.push(c.piece.kind),
+                Color::Silver => view.silver.push(c.piece.kind),
+            }
+        }
+        view.gold.sort_by(|a, b| b.cmp(a));
+        view.silver.sort_by(|a, b| b.cmp(a));
+        view
     }
 
     fn clock_view(&self) -> Option<ClockView> {
@@ -953,6 +990,36 @@ mod tests {
         let anim = s.try_step(sq("g3"), sq("f3")).unwrap();
         assert_eq!(anim[0].captured.map(|c| c.square), Some(sq("f3")));
         assert_eq!(s.view().turn.unwrap().push_pending, Some(sq("g3")));
+    }
+
+    #[test]
+    fn last_move_and_captures() {
+        use arimaa_core::PieceKind;
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        s.goto(2).unwrap();
+        assert_eq!(s.view().last_move, None, "setups have no last move");
+
+        // After 4g: the silver horse is pushed onto f3 and captured.
+        s.goto(7).unwrap();
+        let v = s.view();
+        let last = v.last_move.unwrap();
+        assert_eq!(last.color, Color::Gold);
+        assert_eq!(last.steps.len(), 3);
+        assert_eq!(last.steps[0].piece.color, Color::Silver);
+        assert_eq!((last.steps[0].from, last.steps[0].to), (sq("g3"), sq("f3")));
+        assert_eq!(
+            last.steps[0].captured.map(|c| (c.piece.kind, c.square)),
+            Some((PieceKind::Horse, sq("f3")))
+        );
+        assert_eq!(v.captured.silver, vec![PieceKind::Horse]);
+        assert!(v.captured.gold.is_empty());
+
+        // Before 4g nothing is captured, until the turn being entered captures.
+        s.goto(6).unwrap();
+        assert!(s.view().captured.silver.is_empty());
+        s.try_step(sq("g3"), sq("f3")).unwrap();
+        assert_eq!(s.view().captured.silver, vec![PieceKind::Horse]);
     }
 
     #[test]

@@ -137,7 +137,6 @@
   });
 
   const interactive = $derived(view != null && view.phase !== 'over' && view.canInput);
-  const showPlayers = $derived(view?.players != null || view?.clock != null);
   const hasEngine = $derived(
     view?.players != null && (view.players.gold.kind === 'engine' || view.players.silver.kind === 'engine'),
   );
@@ -207,8 +206,8 @@
 
 <main>
   <section class="board-area">
-    {#if view && showPlayers}
-      <PlayerBar {view} side={flipped ? 'gold' : 'silver'} {receivedAt} {now} />
+    {#if view}
+      <PlayerBar {view} side={flipped ? 'gold' : 'silver'} {receivedAt} {now} {theme} />
     {/if}
     <div class="board-wrap">
       <div class="board-box">
@@ -218,14 +217,15 @@
           {flipped}
           {interactive}
           pushPending={view?.turn?.pushPending ?? null}
+          lastMove={view?.turn?.steps.length ? null : (view?.lastMove ?? null)}
           {onDrop}
           legalTargets={(from) => api.legalTargets(from)}
           planRoute={(from, to, path) => (view?.phase === 'setup' ? Promise.resolve(null) : api.planRoute(from, to, path))}
         />
       </div>
     </div>
-    {#if view && showPlayers}
-      <PlayerBar {view} side={flipped ? 'silver' : 'gold'} {receivedAt} {now} />
+    {#if view}
+      <PlayerBar {view} side={flipped ? 'silver' : 'gold'} {receivedAt} {now} {theme} />
     {/if}
     {#if message}<div class="message" role="status">{message}</div>{/if}
   </section>

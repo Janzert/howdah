@@ -117,6 +117,13 @@ ideas from other Arimaa and chess clients.
       or "thinking" change) doesn't interrupt; any other one cancels the
       queue and snaps.
     - Every step plays `place.wav`, as the arimaa.com clients do.
+    - `LastMoveLayer` draws `SessionView.lastMove` under the pieces once the
+      board is at rest: `lastMoveTrails` joins each piece's steps into one
+      trail (dashed when pushed or pulled), and captured pieces show as
+      ghosts. It's hidden once the player takes a step.
+  - `PlayerBar.svelte` shows names, clocks and captures (from
+    `SessionView.captured`: the opponent's pieces, rabbits grouped as ×n).
+    The bars show in free play too.
   - `lib/sound.ts`: Web Audio. Sounds are embedded (`?inline`), decoded
     once by our own `lib/wav.ts` (8/16-bit PCM), and played as buffer
     sources, so overlapping sounds mix.

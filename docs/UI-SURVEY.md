@@ -93,11 +93,13 @@ cover it.
 
 - **[have]** Themes, animation, frozen marker, annotation arrows, and
   sounds.
-- **[P1] Last-move highlight.** lichess tints the from and to squares. For
+- **[have] Last-move highlight.** Done as a trail per moved piece (dashed
+  for pushed/pulled pieces) with a ghost of captured pieces. lichess tints the from and to squares. For
   Arimaa, show each step of the last turn as a faint arrow (pushes and
   pulls drawn distinctly), and show a ghost of any piece captured on a
   trap. "Show last move" (4steps) replays its animation.
-- **[P1] Captured pieces tray.** arimaa.com shows the captured pieces below
+- **[have] Captured pieces tray**, in the player bars: each bar shows the
+  opponent's pieces off the board, rabbits as one icon with ×n. arimaa.com shows the captured pieces below
   the board, and 4steps has "pieces off board" docks. Add a material
   summary. A FAME/HarLog-style material score is a possible stretch.
 - **[P1] Coordinates: none, traps only, or all (4steps).** arimaa.com
@@ -347,8 +349,8 @@ Not adopted:
 The **[P1]** items, roughly in this order, since they make HvB against
 Sharp pleasant, which is the next planned milestone:
 
-1. Last-move arrows, the captured tray, trap coordinates, hover arrows,
-   and Show (replay the last move).
+1. Trap coordinates, hover arrows, and Show (replay the last move).
+   (Last-move arrows and the captured tray are done.)
 2. Wheel step scrubbing, then step mode. (Drag-to-route is done.)
 3. Game-end dialog, low-time tick, and unfocused-window alert.
 4. The keyboard map and `?` help overlay.
