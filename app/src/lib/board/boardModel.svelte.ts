@@ -118,6 +118,27 @@ export class BoardModel {
     if (!this.animating) this.drain();
   }
 
+  /**
+   * Shows `before`, then plays `anim` to `final` (which should be what's
+   * displayed already): replaying the shown move. Cancels any animation.
+   */
+  async replay(before: PieceView[], final: PieceView[], anim: AnimStep[], hooks: AnimHooks = {}) {
+    const gen = ++this.generation;
+    this.dropped = null;
+    this.queue = [];
+    this.resetSpeed();
+    // Animating from here on, so the last-move display stays hidden.
+    this.animating = true;
+    this.snap(before);
+    // Let the jump back paint without transitions before sliding.
+    await frame();
+    await frame();
+    await frame();
+    if (gen !== this.generation) return;
+    this.animating = false;
+    this.apply(final, anim, hooks);
+  }
+
   /** Updates frozen flags without touching positions. */
   private refreshFlags(final: PieceView[]) {
     const frozen = new Map(final.map((p) => [p.id, p.frozen]));

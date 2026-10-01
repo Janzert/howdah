@@ -21,8 +21,8 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, EngineIdentity, EngineSpec, MatchSpec, PlayerSpec, SessionUpdate, SessionView,
-    StepTarget,
+    AnimStep, ApiError, EngineIdentity, EngineSpec, MatchSpec, MoveReplay, PlayerSpec, SessionUpdate,
+    SessionView, StepTarget,
 };
 use crate::engines::{self, EngineRegistry};
 use crate::session::{Player, Session};
@@ -117,6 +117,10 @@ impl Backend {
 
     pub fn goto_ply(&self, ply: usize) -> Result<(), ApiError> {
         self.mutate(|s| s.goto(ply))
+    }
+
+    pub fn move_replay(&self) -> Option<MoveReplay> {
+        self.lock().move_replay()
     }
 
     pub fn legal_targets(&self, from: Square) -> Vec<StepTarget> {
@@ -226,6 +230,7 @@ impl Backend {
             "load_game" => ok(self.load_game(&arg::<String>(args, "record")?)?),
             "export_game" => ok(self.export_game()),
             "goto_ply" => ok(self.goto_ply(arg(args, "ply")?)?),
+            "move_replay" => ok(self.move_replay()),
             "legal_targets" => ok(self.legal_targets(arg(args, "from")?)),
             "try_step" => ok(self.try_step(arg(args, "from")?, arg(args, "to")?)?),
             "plan_route" => {

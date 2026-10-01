@@ -113,16 +113,7 @@
       const hadResult = view?.result != null;
       const setupCommitted = view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;
       setView(u.view);
-      model.apply(
-        u.view.position.pieces,
-        u.animation,
-        {
-          // The arimaa.com clients play place.wav for every step.
-          onSlide: () => play('place'),
-          onCapture: () => play('trapped'),
-        },
-        u.animationBudgetMs,
-      );
+      model.apply(u.view.position.pieces, u.animation, animHooks, u.animationBudgetMs);
       if (setupCommitted) play('place');
       if (!hadResult && u.view.result) play('win');
     });
@@ -152,8 +143,25 @@
     else if (view.turn) run(api.commitTurn());
   }
 
+  const animHooks = {
+    // The arimaa.com clients play place.wav for every step.
+    onSlide: () => play('place'),
+    onCapture: () => play('trapped'),
+  };
+
   function goto(ply: number) {
-    if (view && ply >= 0 && ply <= view.moves.length && ply !== view.ply) run(api.gotoPly(ply));
+    if (!view) return;
+    // Forward from the latest move replays it, since there's nothing after it.
+    if (ply === view.ply + 1 && view.ply === view.moves.length) replayShownMove();
+    else if (ply >= 0 && ply <= view.moves.length && ply !== view.ply) run(api.gotoPly(ply));
+  }
+
+  async function replayShownMove() {
+    if (!view || view.turn?.steps.length || model.animating) return;
+    const replay = await api.moveReplay();
+    if (replay && view && !model.animating) {
+      model.replay(replay.before, view.position.pieces, replay.animation, animHooks);
+    }
   }
 
   async function openRecord() {
@@ -219,6 +227,9 @@
           pushPending={view?.turn?.pushPending ?? null}
           lastMove={view?.turn?.steps.length ? null : (view?.lastMove ?? null)}
           coordinates={settings.coordinates}
+          hoverArrows={settings.hoverArrows}
+          positionKey={view ? `${view.ply}|${view.position.short}|${view.canInput}|${view.turn?.steps.length ?? 0}` : ''}
+          onStep={(from, to) => run(api.tryStep(from, to))}
           {onDrop}
           legalTargets={(from) => api.legalTargets(from)}
           planRoute={(from, to, path) => (view?.phase === 'setup' ? Promise.resolve(null) : api.planRoute(from, to, path))}
@@ -246,10 +257,10 @@
         <EnginePanel players={view.players} resetKey={matchKey} />
       {/if}
       <div class="nav">
-        <button onclick={() => goto(0)} title="Start (Home)">⏮</button>
-        <button onclick={() => goto(view!.ply - 1)} title="Back (←)">◀</button>
-        <button onclick={() => goto(view!.ply + 1)} title="Forward (→)">▶</button>
-        <button onclick={() => goto(view!.moves.length)} title="End (End)">⏭</button>
+        <button aria-label="Start" onclick={() => goto(0)} title="Start (Home)">⏮</button>
+        <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (←)">◀</button>
+        <button aria-label="Forward" onclick={() => goto(view!.ply + 1)} title="Forward (→); at the latest move, replays it">▶</button>
+        <button aria-label="End" onclick={() => goto(view!.moves.length)} title="End (End)">⏭</button>
       </div>
     {/if}
     <div class="tools">

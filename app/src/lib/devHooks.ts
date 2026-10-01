@@ -17,6 +17,8 @@ interface AppParts {
 
 interface BoardParts {
   svg: SVGSVGElement;
+  /** Waiting on the backend for something it will draw (hover arrows). */
+  busy: () => boolean;
   /** Client (CSS pixel) coordinates of a square's center. */
   clientPoint: (sq: Square) => { x: number; y: number };
 }
@@ -26,7 +28,8 @@ let board: BoardParts | null = null;
 let lastEvent = 0;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const frame = () => new Promise((r) => requestAnimationFrame(() => r(undefined)));
+// A frame, or a short wait when the page is hidden and frames don't run.
+const frame = () => Promise.race([new Promise((r) => requestAnimationFrame(() => r(undefined))), sleep(50)]);
 
 function parseSquare(name: string): Square {
   const m = /^([a-h])([1-8])$/.exec(name.trim().toLowerCase());
@@ -59,13 +62,14 @@ function pointer(type: string, sq: Square, buttons: number) {
   );
 }
 
-/** Resolves once no animation is playing and no update has arrived for a short while. */
+/** Resolves once no animation is playing, the board isn't waiting on the
+ * backend, and no update has arrived for a short while. */
 async function idle(quietMs = 150, timeoutMs = 10_000): Promise<void> {
   const parts = need(app, 'app');
   const start = performance.now();
   await frame();
   await frame();
-  while (parts.model.animating || performance.now() - lastEvent < quietMs) {
+  while (parts.model.animating || board?.busy() || performance.now() - lastEvent < quietMs) {
     if (performance.now() - start > timeoutMs) throw new Error('__arimaa.idle: timed out');
     await sleep(25);
   }
@@ -108,6 +112,14 @@ const hooks = {
     pointer('pointerup', squares[squares.length - 1], 0);
     await idle();
   },
+  /** Moves the mouse (no button) over a square, as for hover arrows. */
+  async hover(square: string): Promise<void> {
+    pointer('pointermove', parseSquare(square), 0);
+    await idle();
+  },
+  /** Squares the hover arrows currently point to. */
+  hoverTargets: (): string[] =>
+    [...document.querySelectorAll('[data-hover-target]')].map((e) => e.getAttribute('data-hover-target')!),
   /** Presses and releases the left button on a square. */
   async click(square: string): Promise<void> {
     const sq = parseSquare(square);

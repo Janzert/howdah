@@ -48,6 +48,14 @@
   </section>
 
   <section>
+    <h3>Input</h3>
+    <label class="check">
+      <input type="checkbox" bind:checked={settings.hoverArrows} />
+      Hover arrows: show a piece's legal steps, click an arrow to step
+    </label>
+  </section>
+
+  <section>
     <h3>Sound</h3>
     <label class="check">
       <input type="checkbox" bind:checked={settings.sound} />

@@ -51,7 +51,8 @@ cover it.
     toward the drag path.
 - **[P2] Click-to-route.** Click a piece, then a destination. It's the same
   `try_route` call with an empty path.
-- **[P1] Hover arrows (arimaa.com's main input).** Hovering over any
+- **[have] Hover arrows (arimaa.com's main input)**, as a setting (off by
+  default). Hovering over any
   piece, yours or the opponent's, draws arrows on the squares it can step
   to legally right now. For an enemy piece, that means only the steps that
   start or finish a legal push or pull. Clicking an arrow takes the step.
@@ -140,7 +141,8 @@ cover it.
 - **[P1] Move times in the move list.** arimaa.com records them and shows
   average move times per player. lichess has a move-time chart (`ui/chart`)
   under analysis.
-- **[P1] "Show" replays the last move** slowly. arimaa.com has four
+- **[have] "Show" replays the last move**: Forward (→) at the latest move
+  replays it, instead of a separate button. arimaa.com has four
   speeds (S1–S4), and it's the documented way to see the opponent's move.
 - **[P2] Real-time replay (arimaa.com "auto" and "real-time").** With
   "auto", Show chains from move to move, each one waiting that ply's
@@ -350,8 +352,8 @@ Not adopted:
 The **[P1]** items, roughly in this order, since they make HvB against
 Sharp pleasant, which is the next planned milestone:
 
-1. Hover arrows, and Show (replay the last move). (Last-move arrows, the
-   captured tray and coordinates are done.)
+1. (Done: last-move arrows, the captured tray, coordinates, hover arrows,
+   and replaying the last move.)
 2. Wheel step scrubbing, then step mode. (Drag-to-route is done.)
 3. Game-end dialog, low-time tick, and unfocused-window alert.
 4. The keyboard map and `?` help overlay.

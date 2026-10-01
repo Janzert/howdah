@@ -10,11 +10,13 @@ export interface SettingsData {
   /** Board labels: none, the four trap squares, or files and ranks along the edges. */
   coordinates: Coordinates;
   sound: boolean;
+  /** Hovering a piece shows arrows for its legal single steps; clicking one takes it. */
+  hoverArrows: boolean;
 }
 
 const KEY = 'settings';
 
-export const DEFAULTS: SettingsData = { theme: findTheme(null).id, coordinates: 'traps', sound: true };
+export const DEFAULTS: SettingsData = { theme: findTheme(null).id, coordinates: 'traps', sound: true, hoverArrows: false };
 
 function read(key: string): string | null {
   try {
@@ -41,6 +43,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
     s.coordinates = raw.coordinates;
   }
   if (typeof raw.sound === 'boolean') s.sound = raw.sound;
+  if (typeof raw.hoverArrows === 'boolean') s.hoverArrows = raw.hoverArrows;
   s.theme = findTheme(s.theme).id;
   return s;
 }
@@ -65,6 +68,13 @@ class Settings {
   }
   set sound(v: boolean) {
     this.update({ sound: v });
+  }
+
+  get hoverArrows() {
+    return this.#data.hoverArrows;
+  }
+  set hoverArrows(v: boolean) {
+    this.update({ hoverArrows: v });
   }
 
   update(patch: Partial<SettingsData>) {

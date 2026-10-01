@@ -89,22 +89,27 @@ test('engine vs engine match plays moves', async ({ page }) => {
   await page.evaluate(() => window.__arimaa!.api.endMatch());
 });
 
-test('last move arrows and captured pieces', async ({ page }) => {
-  await freshGame(page);
-  const record = [
-    '1g Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2 Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1',
-    '1s ha7 db7 cc7 md7 ee7 cf7 dg7 hh7 ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8',
-    '2g Ee2n Ee3n Ee4n Ee5e',
-    '2s hh7s hh6s hh5w',
-    '3g hg5s Ef5e hg4s Eg5s',
-    '3s rh8s rh7s rh6s',
-    // The elephant pushes the horse onto the f3 trap, where it's captured.
-    '4g hg3w hf3x Eg4s Eg3n',
-  ].join('\n');
+// Gold to move after 3s: the gold elephant on g4 stands over the silver horse on g3.
+const SAMPLE_TO_3S = [
+  '1g Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2 Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1',
+  '1s ha7 db7 cc7 md7 ee7 cf7 dg7 hh7 ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8',
+  '2g Ee2n Ee3n Ee4n Ee5e',
+  '2s hh7s hh6s hh5w',
+  '3g hg5s Ef5e hg4s Eg5s',
+  '3s rh8s rh7s rh6s',
+];
+
+async function load(page: Page, lines: string[]) {
   await page.evaluate(async (r) => {
     await window.__arimaa!.api.loadGame(r);
     await window.__arimaa!.idle();
-  }, record);
+  }, lines.join('\n'));
+}
+
+test('last move arrows and captured pieces', async ({ page }) => {
+  await freshGame(page);
+  // The elephant pushes the horse onto the f3 trap, where it's captured.
+  await load(page, [...SAMPLE_TO_3S, '4g hg3w hf3x Eg4s Eg3n']);
   // The push: a dashed trail for the horse, a solid one for the elephant.
   await expect(page.locator('.last-move .trail')).toHaveCount(2);
   await expect(page.locator('.last-move .trail.displaced')).toHaveCount(1);
@@ -141,4 +146,43 @@ test('coordinates setting changes the board labels and persists', async ({ page 
   await page.waitForFunction(() => window.__arimaa?.state() != null);
   await expect(labels).toHaveCount(0);
   await page.evaluate(() => localStorage.removeItem('settings'));
+});
+
+test('hover arrows show legal steps and a click takes one', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => localStorage.setItem('settings', JSON.stringify({ hoverArrows: true })));
+  await freshGame(page);
+  await load(page, SAMPLE_TO_3S);
+  const hover = (sq: string) =>
+    page.evaluate(async (s) => {
+      await window.__arimaa!.hover(s);
+      return window.__arimaa!.hoverTargets().sort();
+    }, sq);
+  expect(await hover('g4')).toEqual(['f4', 'g5', 'h4']);
+  // An enemy piece shows the pushes that would start from it.
+  expect(await hover('g3')).toEqual(['f3', 'h3']);
+  await expect(page.locator('.hover-arrow.enemy')).toHaveCount(2);
+  // The arrows stay while the pointer is on one, and a click takes the step.
+  expect(await hover('f3')).toEqual(['f3', 'h3']);
+  await page.evaluate(() => window.__arimaa!.click('f3'));
+  expect(await page.evaluate(() => window.__arimaa!.state()!.turn!.steps.map((s) => s.notation))).toEqual([
+    'hg3w hf3x',
+  ]);
+  // Only the push finish is left for the elephant.
+  expect(await hover('g4')).toEqual(['g3']);
+  await page.evaluate(() => localStorage.removeItem('settings'));
+});
+
+test('forward at the latest move replays it', async ({ page }) => {
+  await freshGame(page);
+  await load(page, SAMPLE_TO_3S);
+  const h8 = () => page.evaluate(() => window.__arimaa!.board().split('\n')[1].slice(-3, -2));
+  const h5 = () => page.evaluate(() => window.__arimaa!.board().split('\n')[4].slice(-3, -2));
+  expect(await h8()).toBe('.');
+  await page.getByRole('button', { name: 'Forward' }).click();
+  // 3s walked the rabbit h8-h5: it jumps back to h8, then walks again.
+  await expect.poll(h5, { intervals: [20] }).toBe('.');
+  await page.evaluate(() => window.__arimaa!.idle());
+  expect(await h5()).toBe('r');
+  expect(await page.evaluate(() => window.__arimaa!.state()!.ply)).toBe(6);
 });

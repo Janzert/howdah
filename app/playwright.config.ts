@@ -20,7 +20,8 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:1430',
     viewport: { width: 1180, height: 800 },
-    launchOptions: chromium ? { executablePath: chromium } : {},
+    // Muted: the app plays sounds for steps, captures and wins.
+    launchOptions: { args: ['--mute-audio'], ...(chromium ? { executablePath: chromium } : {}) },
     trace: 'retain-on-failure',
   },
   webServer: [

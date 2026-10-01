@@ -39,6 +39,7 @@ pub fn run() {
             commands::load_game,
             commands::export_game,
             commands::goto_ply,
+            commands::move_replay,
             commands::legal_targets,
             commands::plan_route,
             commands::try_route,

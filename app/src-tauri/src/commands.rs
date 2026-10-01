@@ -5,7 +5,7 @@ use arimaa_core::Square;
 use tauri::State;
 
 use crate::backend::Backend;
-use crate::dto::{ApiError, EngineIdentity, EngineSpec, MatchSpec, SessionView, StepTarget};
+use crate::dto::{ApiError, EngineIdentity, EngineSpec, MatchSpec, MoveReplay, SessionView, StepTarget};
 
 #[tauri::command]
 pub fn get_state(state: State<Backend>) -> SessionView {
@@ -30,6 +30,11 @@ pub fn export_game(state: State<Backend>) -> String {
 #[tauri::command]
 pub fn goto_ply(state: State<Backend>, ply: usize) -> Result<(), ApiError> {
     state.goto_ply(ply)
+}
+
+#[tauri::command]
+pub fn move_replay(state: State<Backend>) -> Option<MoveReplay> {
+    state.move_replay()
 }
 
 #[tauri::command]

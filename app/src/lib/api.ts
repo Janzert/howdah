@@ -6,6 +6,7 @@ import type { ApiError } from './bindings/ApiError';
 import type { EngineIdentity } from './bindings/EngineIdentity';
 import type { EngineSpec } from './bindings/EngineSpec';
 import type { MatchSpec } from './bindings/MatchSpec';
+import type { MoveReplay } from './bindings/MoveReplay';
 import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
 import type { StepTarget } from './bindings/StepTarget';
@@ -16,7 +17,10 @@ export const api = {
   loadGame: (record: string) => invoke<void>('load_game', { record }),
   exportGame: () => invoke<string>('export_game'),
   gotoPly: (ply: number) => invoke<void>('goto_ply', { ply }),
+  /** The shown move's starting pieces and animation, or null after a setup. */
+  moveReplay: () => invoke<MoveReplay | null>('move_replay'),
   legalTargets: (from: Square) => invoke<StepTarget[]>('legal_targets', { from }),
+  tryStep: (from: Square, to: Square) => invoke<void>('try_step', { from, to }),
   /** Squares a drop would walk the piece through, or null if it can't get there. */
   planRoute: (from: Square, to: Square, path: Square[]) =>
     invoke<Square[] | null>('plan_route', { from, to, path }),

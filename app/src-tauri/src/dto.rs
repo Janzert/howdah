@@ -79,6 +79,16 @@ pub struct CapturedView {
     pub silver: Vec<PieceKind>,
 }
 
+/// What the board needs to replay the move that produced the shown position.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MoveReplay {
+    /// Pieces before the move.
+    pub before: Vec<PieceView>,
+    pub animation: Vec<AnimStep>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]

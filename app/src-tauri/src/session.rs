@@ -15,8 +15,8 @@ use arimaa_core::{
 };
 
 use crate::dto::{
-    AnimPiece, AnimStep, ApiError, CapturedView, ClockView, LastMoveView, LastStepView, MoveView, Phase,
-    PieceAt, PieceId, PieceView, PlayerKind, PlayerView, PlayersView, PositionView, SessionView,
+    AnimPiece, AnimStep, ApiError, CapturedView, ClockView, LastMoveView, LastStepView, MoveReplay, MoveView,
+    Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView, PlayersView, PositionView, SessionView,
     SideClockView, StepTarget, TurnStepView, TurnView,
 };
 
@@ -477,6 +477,19 @@ impl Session {
         self.cursor = ply;
         self.refresh();
         Ok(anim)
+    }
+
+    /// The move that produced the position at the cursor, for replaying it:
+    /// the pieces before it and its animation. `None` at the start and after
+    /// a setup.
+    pub fn move_replay(&self) -> Option<MoveReplay> {
+        let ply = self.cursor.checked_sub(1)?;
+        let animation = self.move_animation(ply);
+        if animation.is_empty() {
+            return None;
+        }
+        let before = self.game.position_at(ply)?;
+        Some(MoveReplay { before: position_view(before, &self.ids[ply]).pieces, animation })
     }
 
     /// Forward animation of the move made from `ply`.
@@ -1020,6 +1033,29 @@ mod tests {
         assert!(s.view().captured.silver.is_empty());
         s.try_step(sq("g3"), sq("f3")).unwrap();
         assert_eq!(s.view().captured.silver, vec![PieceKind::Horse]);
+    }
+
+    #[test]
+    fn move_replay_animates_the_shown_move() {
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        s.goto(2).unwrap();
+        assert!(s.move_replay().is_none(), "setups aren't replayed");
+        s.goto(7).unwrap();
+        let r = s.move_replay().unwrap();
+        let shown = s.view();
+        // Replaying from `before` reproduces the shown pieces.
+        let mut squares: std::collections::HashMap<PieceId, Square> =
+            r.before.iter().map(|p| (p.id, p.square)).collect();
+        for a in &r.animation {
+            squares.insert(a.id, a.to);
+            if let Some(c) = a.captured {
+                squares.remove(&c.id);
+            }
+        }
+        let expected: std::collections::HashMap<PieceId, Square> =
+            shown.position.pieces.iter().map(|p| (p.id, p.square)).collect();
+        assert_eq!(squares, expected);
     }
 
     #[test]

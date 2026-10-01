@@ -92,7 +92,8 @@ ideas from other Arimaa and chess clients.
     replays its event stream as Tauri events.
   - `lib/devHooks.ts`: in dev builds, `window.__arimaa` for scripted UI
     checks: `state()`, `board()` (text diagram), `message()`, `idle()`,
-    `drag('d2','d5',['d3','d4'])`, `click(sq)`, `squareCenter(sq)`, `api`.
+    `drag('d2','d5',['d3','d4'])`, `click(sq)`, `hover(sq)`, `hoverTargets()`,
+    `squareCenter(sq)`, `api`. `idle()` also waits for pending hover arrows.
     Input goes through the board's own pointer handlers. Board pieces carry
     accessible names ("gold camel d5, frozen") and `data-square`.
   - `MoveList.svelte` stays scrolled to the bottom while following the
@@ -117,6 +118,13 @@ ideas from other Arimaa and chess clients.
       or "thinking" change) doesn't interrupt; any other one cancels the
       queue and snaps.
     - Every step plays `place.wav`, as the arimaa.com clients do.
+    - Hover arrows (setting `hoverArrows`): hovering a piece shows its legal
+      single steps from `legal_targets` (red for pushes/pulls of an enemy
+      piece), kept while the pointer is on one of them; a click on an arrow
+      calls `try_step`. `positionKey` from App refreshes them.
+    - Forward at the latest move replays it: `move_replay` gives the pieces
+      before the move and its animation, and `BoardModel.replay` jumps back
+      and plays it.
     - `LastMoveLayer` draws `SessionView.lastMove` under the pieces once the
       board is at rest: `lastMoveTrails` joins each piece's steps into one
       trail (dashed when pushed or pulled), and captured pieces show as

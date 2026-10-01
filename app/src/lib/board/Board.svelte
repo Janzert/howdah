@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import type { Square } from '../bindings/Square';
   import type { StepTarget } from '../bindings/StepTarget';
   import { registerBoard } from '../devHooks';
@@ -25,6 +25,12 @@
     /** The move that produced the shown position, drawn when the board is at rest. */
     lastMove: LastMoveView | null;
     coordinates: Coordinates;
+    /** Show a hovered piece's legal single steps as arrows; a click on one takes it. */
+    hoverArrows: boolean;
+    /** Changes whenever legal steps may have changed, to refresh the hover arrows. */
+    positionKey: string;
+    /** Takes a single step (a click on a hover arrow); resolves whether it was accepted. */
+    onStep: (from: Square, to: Square) => Promise<boolean>;
     /** Called with a dropped piece's move and the squares it was dragged
      * across; resolve false to slide it back. */
     onDrop: (from: Square, to: Square, path: Square[]) => Promise<boolean>;
@@ -33,7 +39,21 @@
     planRoute: (from: Square, to: Square, path: Square[]) => Promise<Square[] | null>;
   }
 
-  let { model, theme, flipped, interactive, pushPending, lastMove, coordinates, onDrop, legalTargets, planRoute }: Props = $props();
+  let {
+    model,
+    theme,
+    flipped,
+    interactive,
+    pushPending,
+    lastMove,
+    coordinates,
+    hoverArrows,
+    positionKey,
+    onStep,
+    onDrop,
+    legalTargets,
+    planRoute,
+  }: Props = $props();
 
   const annotations = new Annotations();
   let svg: SVGSVGElement;
@@ -54,6 +74,64 @@
   let rightStart: { square: Square; color: AnnotationColor } | null = null;
 
   const dragged = $derived(drag ? model.find(drag.id) : undefined);
+
+  // Hover arrows. `hover` is the piece under (or last under) the pointer and
+  // its single steps; it stays while the pointer is over one of its arrows.
+  interface Hover {
+    from: Square;
+    arrows: { to: Square; enemy: boolean }[];
+  }
+  let hover = $state<Hover | null>(null);
+  let pointerSquare = $state<Square | null>(null);
+  let hoverToken = 0;
+  /** A legal-targets request for the hover arrows is in flight. */
+  let hoverPending = false;
+  const hoverActive = $derived(hoverArrows && interactive && !model.animating && drag == null);
+  const overArrow = $derived(hover?.arrows.some((a) => a.to === pointerSquare) ?? false);
+
+  function setHover(h: Hover | null) {
+    hoverToken++;
+    hoverPending = false;
+    hover = h;
+  }
+
+  async function updateHover(sq: Square | null) {
+    pointerSquare = sq;
+    if (!hoverActive || sq == null) return setHover(null);
+    if (hover && (hover.from === sq || hover.arrows.some((a) => a.to === sq))) return;
+    if (!model.pieces.some((p) => p.square === sq && p.fading === null)) return setHover(null);
+    setHover(null);
+    const token = hoverToken;
+    hoverPending = true;
+    const targets = await legalTargets(sq).finally(() => {
+      if (token === hoverToken) hoverPending = false;
+    });
+    if (token !== hoverToken) return;
+    hover = {
+      from: sq,
+      arrows: targets
+        .filter((t) => t.steps === 1 && t.kind != null)
+        .map((t) => ({ to: t.to, enemy: t.kind === 'pushStart' || t.kind === 'pullFinish' })),
+    };
+  }
+
+  // Legal steps change with the position; recompute for the square under the pointer.
+  $effect(() => {
+    void positionKey;
+    void hoverActive;
+    untrack(() => {
+      setHover(null);
+      updateHover(pointerSquare);
+    });
+  });
+
+  /** Arrow inside the target square, pointing away from the hovered piece. */
+  function hoverArrowTransform(from: Square, to: Square): string {
+    const a = squareXY(from, flipped);
+    const b = squareXY(to, flipped);
+    const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+    return `translate(${b.x + SQ / 2}, ${b.y + SQ / 2}) rotate(${angle})`;
+  }
 
   /** Pointer position in board units (the playing grid spans 0..800). */
   function toBoard(e: PointerEvent): { x: number; y: number } {
@@ -78,6 +156,12 @@
     }
     if (e.button !== 0) return;
     annotations.clear();
+    if (hover && sq != null && hover.arrows.some((a) => a.to === sq)) {
+      const from = hover.from;
+      setHover(null);
+      onStep(from, sq);
+      return;
+    }
     if (!interactive || model.animating || sq == null) return;
     const piece = model.pieces.find((p) => p.square === sq && p.fading === null);
     if (!piece) return;
@@ -92,6 +176,7 @@
   }
 
   function onpointermove(e: PointerEvent) {
+    if (!drag && !rightStart && e.pointerType === 'mouse') updateHover(squareFor(e));
     if (drag && e.pointerId === drag.pointerId) {
       const p = toBoard(e);
       drag.x = p.x;
@@ -166,6 +251,7 @@
     onMount(() => {
       registerBoard({
         svg,
+        busy: () => hoverPending,
         clientPoint: (sq) => {
           const p = squareXY(sq, flipped);
           const ctm = svg.getScreenCTM();
@@ -210,6 +296,8 @@
     {onpointermove}
     {onpointerup}
     {onpointercancel}
+    onpointerleave={() => updateHover(null)}
+    class:over-arrow={overArrow}
     oncontextmenu={(e) => e.preventDefault()}
   >
     <BoardSurface {theme} {flipped} {coordinates} />
@@ -263,6 +351,20 @@
         </g>
       {/each}
     </g>
+
+    {#if hover && hoverActive}
+      <g class="hover-arrows">
+        {#each hover.arrows as a (a.to)}
+          <polygon
+            class="hover-arrow"
+            class:enemy={a.enemy}
+            data-hover-target={squareName(a.to)}
+            transform={hoverArrowTransform(hover.from, a.to)}
+            points="-34,-11 4,-11 4,-25 34,0 4,25 4,11 -34,11"
+          />
+        {/each}
+      </g>
+    {/if}
 
     <AnnotationLayer {annotations} {flipped} />
 
@@ -364,6 +466,20 @@
     fill: white;
     font: bold 18px sans-serif;
     text-anchor: middle;
+  }
+  svg.over-arrow {
+    cursor: pointer;
+  }
+  .hover-arrows {
+    pointer-events: none;
+  }
+  .hover-arrow {
+    fill: rgba(20, 140, 110, 0.8);
+    stroke: rgba(255, 255, 255, 0.7);
+    stroke-width: 2;
+  }
+  .hover-arrow.enemy {
+    fill: var(--push);
   }
   .push {
     fill: none;
