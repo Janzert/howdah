@@ -33,6 +33,8 @@ pub fn run() {
             commands::export_game,
             commands::goto_ply,
             commands::legal_targets,
+            commands::plan_route,
+            commands::try_route,
             commands::try_step,
             commands::undo_step,
             commands::cancel_turn,

@@ -17,7 +17,10 @@ export const api = {
   exportGame: () => invoke<string>('export_game'),
   gotoPly: (ply: number) => invoke<void>('goto_ply', { ply }),
   legalTargets: (from: Square) => invoke<StepTarget[]>('legal_targets', { from }),
-  tryStep: (from: Square, to: Square) => invoke<void>('try_step', { from, to }),
+  /** Squares a drop would walk the piece through, or null if it can't get there. */
+  planRoute: (from: Square, to: Square, path: Square[]) =>
+    invoke<Square[] | null>('plan_route', { from, to, path }),
+  tryRoute: (from: Square, to: Square, path: Square[]) => invoke<void>('try_route', { from, to, path }),
   undoStep: () => invoke<void>('undo_step'),
   cancelTurn: () => invoke<void>('cancel_turn'),
   commitTurn: () => invoke<void>('commit_turn'),

@@ -29,6 +29,8 @@ const FADE_RATIO = 260 / 220;
 /** More moves than this waiting: show each one instantly, `INSTANT_GAP_MS` apart. */
 export const MAX_BEHIND = 6;
 export const INSTANT_GAP_MS = 150;
+/** Slide duration per step when replaying the route of a dropped piece. */
+export const ROUTE_STEP_MS = 110;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise((r) => requestAnimationFrame(() => r(undefined)));
@@ -61,6 +63,10 @@ export class BoardModel {
   /** Final state of the latest update; what the board settles on. */
   private target: PieceView[] = [];
   private queue: QueuedUpdate[] = [];
+  /** A piece the user just dropped on its destination. If the next update
+   * walks it there in one step, it's already in place; if it took a route of
+   * several steps, the piece jumps back and replays them quickly. */
+  private dropped: number | null = null;
 
   /** Sets the normal animation speed (slide duration per step, in ms). */
   setBaseSpeed(stepMs: number) {
@@ -100,6 +106,7 @@ export class BoardModel {
         return;
       }
       this.generation++;
+      this.dropped = null;
       this.queue = [];
       this.animating = false;
       this.resetSpeed();
@@ -131,6 +138,7 @@ export class BoardModel {
         continue;
       }
       await this.play(item, gen);
+      this.dropped = null;
       if (gen !== this.generation) return;
       this.settle(item.final);
     }
@@ -170,10 +178,14 @@ export class BoardModel {
   private async play(item: QueuedUpdate, gen: number) {
     const { anim, hooks } = item;
     const scale = this.budgetScale(item);
+    const dropped = this.dropped;
+    const route = anim.filter((a) => a.id === dropped);
     for (const p of this.pieces) p.instant = false;
+    if (route.length > 1) await this.rewind(dropped!, route[0].from);
     for (const a of anim) {
       if (gen !== this.generation) return;
       this.updateSpeed(scale);
+      if (route.length > 1) this.stepMs = Math.min(this.stepMs, ROUTE_STEP_MS);
       if (a.restored) {
         this.pieces.push({ ...a.restored, frozen: false, fading: 'in', instant: true });
         await sleep(this.fadeMs);
@@ -201,6 +213,17 @@ export class BoardModel {
     }
   }
 
+  /** Puts a piece back on `square` without a transition, ready to slide again. */
+  private async rewind(id: number, square: Square) {
+    const p = this.find(id);
+    if (!p) return;
+    p.instant = true;
+    p.square = square;
+    await frame();
+    await frame();
+    p.instant = false;
+  }
+
   find(id: number): DisplayPiece | undefined {
     return this.pieces.find((p) => p.id === id);
   }
@@ -211,12 +234,14 @@ export class BoardModel {
     if (!p) return;
     p.instant = true;
     p.square = to;
+    this.dropped = id;
   }
 
   /** Slides a rejected drop back to where it came from. */
   async revert(id: number, from: Square) {
     const p = this.find(id);
     if (!p) return;
+    this.dropped = null;
     await frame();
     p.instant = false;
     await frame();

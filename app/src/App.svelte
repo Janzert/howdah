@@ -139,9 +139,9 @@
     view?.players != null && (view.players.gold.kind === 'engine' || view.players.silver.kind === 'engine'),
   );
 
-  function onDrop(from: Square, to: Square): Promise<boolean> {
+  function onDrop(from: Square, to: Square, path: Square[]): Promise<boolean> {
     if (!view) return Promise.resolve(false);
-    return run(view.phase === 'setup' ? api.setupSwap(from, to) : api.tryStep(from, to));
+    return run(view.phase === 'setup' ? api.setupSwap(from, to) : api.tryRoute(from, to, path));
   }
 
   function commit() {
@@ -217,6 +217,7 @@
           pushPending={view?.turn?.pushPending ?? null}
           {onDrop}
           legalTargets={(from) => api.legalTargets(from)}
+          planRoute={(from, to, path) => (view?.phase === 'setup' ? Promise.resolve(null) : api.planRoute(from, to, path))}
         />
       </div>
     </div>

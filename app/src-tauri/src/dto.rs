@@ -283,6 +283,8 @@ pub struct StepTarget {
     pub to: Square,
     /// `None` for setup swaps.
     pub kind: Option<StepKind>,
+    /// Steps the piece needs to get there (more than 1 for a multi-step route).
+    pub steps: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]

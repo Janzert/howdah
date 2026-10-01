@@ -107,6 +107,27 @@ pub fn try_step(app: AppHandle, state: State<AppState>, from: Square, to: Square
 }
 
 #[tauri::command]
+pub fn plan_route(
+    state: State<AppState>,
+    from: Square,
+    to: Square,
+    path: Vec<Square>,
+) -> Option<Vec<Square>> {
+    state.lock().plan_route(from, to, &path)
+}
+
+#[tauri::command]
+pub fn try_route(
+    app: AppHandle,
+    state: State<AppState>,
+    from: Square,
+    to: Square,
+    path: Vec<Square>,
+) -> Result<(), ApiError> {
+    mutate(&app, &state, |s| s.try_route(from, to, &path))
+}
+
+#[tauri::command]
 pub fn undo_step(app: AppHandle, state: State<AppState>) -> Result<(), ApiError> {
     mutate(&app, &state, |s| s.undo_step())
 }

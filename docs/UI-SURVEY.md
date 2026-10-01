@@ -31,51 +31,26 @@ cover it.
 
 - **[have]** Drag with push/pull, legal-target hints, undo step, reset turn,
   and commit.
-- **[P1] Drag-to-route, with click-to-route as a by-product.** Drag a piece
-  to any square it can reach with the steps left, and the client fills in
-  the steps. Clicking a piece and then a destination uses the same backend
-  call without a path hint.
-  - **What 4steps does** (`Board::mouseMoveEvent`,
-    `GameState::preferredRoute`):
-    - Each time the pointer enters a new square, it recomputes a route.
-    - `legalRoutes` lists every sequence of the piece's own steps from
-      origin to destination, checking legality after each step, so
-      freezing and trap captures along the way are handled.
-    - It picks the shortest route. Ties are broken toward the previous
-      route, which makes the route loosely follow the drag.
-    - The drag path is only a tie-breaker: a longer path you trace on
-      purpose is replaced by a shortest one.
-  - **Proposed: follow the traced path.** Record the path as the drag
-    runs, and use it whenever it's legal:
-    - **Path recording:** each newly entered square is appended to the
-      path. Re-entering a square already on the path cuts the path back to
-      it, so jitter and deliberate backtracking both clean themselves up.
-    - **Diagonal jumps:** when the pointer crosses a corner, insert the
-      corner square closer to the pointer's track. If that square isn't
-      legal, use the other one.
-    - **Choosing the route:** if the recorded path is a legal sequence of
-      the piece's steps within the steps left, use it as traced, even if
-      it's longer than the shortest route. Otherwise use the shortest legal
-      route, with ties broken toward the traced path as 4steps does. After
-      that, prefer routes where nothing of your own is captured: neither
-      the moving piece, nor a friendly piece left unsupported on a trap.
-    - **Scope:** routes move only the dragged piece. Pushes and pulls stay
-      as they are now: drag onto an enemy to push, step away to pull.
-  - **Feedback while dragging:**
-    - Draw the route the drop would play as step arrows. Color the
-      destination invalid when no route exists.
-    - Show the number of steps used ("3/4").
-    - On pointer-down, extend `legal_targets` to every square reachable
-      with the steps left, with each square's distance, so the hints can
-      show the multi-step targets.
-  - **Backend:** add `try_route(from, to, path_hint)` next to `try_step`,
-    in the session or in `arimaa-core`. It searches with a cloned
-    `TurnBuilder`, so legality stays in Rust: at most 4 steps from a single
-    piece is a tiny search.
-    - Apply the route as ordinary steps, so Backspace and the wheel undo it
-      one step at a time.
-    - Snap the dragged piece rather than replaying its slide, but still
-      animate any captures.
+- **[have] Drag-to-route.** Drag a piece to any square it can reach with
+  the steps left, and the steps are filled in.
+  - The route is always a shortest one. When there are several, it takes
+    the one that enters the most squares of the dragged path, then the one
+    that loses the fewest friendly pieces on traps.
+  - The path is recorded as the pointer crosses squares. Re-entering a
+    square cuts the path back to it, and fast moves or cut corners are
+    subdivided to the squares actually crossed.
+  - While dragging, the route the drop would take is drawn on the board,
+    with its step count beside the piece. Squares more than one step away
+    are shown as smaller target dots.
+  - Routes move only the dragged piece. A drop on an adjacent square is a
+    single step of any kind, so pushes and pulls work as before.
+  - After the drop, the route's steps are replayed quickly so the player
+    sees the steps actually taken. Undo takes them back one at a time.
+  - For comparison, 4steps (`GameState::preferredRoute`) also takes a
+    shortest route, but breaks ties toward its previous route rather than
+    toward the drag path.
+- **[P2] Click-to-route.** Click a piece, then a destination. It's the same
+  `try_route` call with an empty path.
 - **[P1] Hover arrows (arimaa.com's main input).** Hovering over any
   piece, yours or the opponent's, draws arrows on the squares it can step
   to legally right now. For an enemy piece, that means only the steps that
@@ -374,7 +349,7 @@ Sharp pleasant, which is the next planned milestone:
 
 1. Last-move arrows, the captured tray, trap coordinates, hover arrows,
    and Show (replay the last move).
-2. Drag-to-route (click-to-route comes with it) and wheel step scrubbing, then step mode.
+2. Wheel step scrubbing, then step mode. (Drag-to-route is done.)
 3. Game-end dialog, low-time tick, and unfocused-window alert.
 4. The keyboard map and `?` help overlay.
 5. Analysis mode with an eval bar, PV arrows, and interactive PV.

@@ -25,6 +25,10 @@ ideas from other Arimaa and chess clients.
     An ambiguous enemy step is a pull, and push-finish/pull-finish steps can't
     start a pull. Pusher eligibility (stronger, unfrozen) is the same at push
     start and finish, since the pushed piece's step can't affect friendly pieces.
+    `shortest_routes`/`reachable` find a friendly piece's walks on its own
+    (simple steps only, the piece must survive), and `Route::best_along`
+    picks the one entering the most squares of a dragged path, then the
+    one losing the fewest friends on traps.
   - `setup`, `outcome` (goal, elimination, immobilization; `WinReason` also
     covers timeout/resignation/illegal move/score/forfeit, with arimaa.com
     letters), `timecontrol` (`M/R/P/L/G/T` format and reserve arithmetic,
@@ -78,6 +82,12 @@ ideas from other Arimaa and chess clients.
   - `lib/events.ts`: typed `on()`.
   - `lib/board/`: SVG board. `BoardModel` plays `AnimStep`s: slide, then
     fade out on capture, with fade-in for restored pieces going backward.
+    - Drag-to-route: `DragPath` records the squares the pointer crosses
+      (cutting back on revisits, subdividing fast moves). The board previews
+      `plan_route` while dragging, and a drop calls `try_route`, which always
+      takes a shortest route. A piece dropped one step away stays where it
+      was dropped; after a longer route it jumps back and replays the steps
+      at `ROUTE_STEP_MS` each (`BoardModel.dropAt`).
     - Animated updates are queued and played in order. Duration per step is
       the base speed (`setBaseSpeed`; default `STEP_MS`, 220 ms), made
       faster for each move waiting behind the current one.
@@ -100,7 +110,8 @@ ideas from other Arimaa and chess clients.
 ## Conventions
 
 - **The frontend never decides legality.** It renders state and sends intents.
-  Drag hints come from `legal_targets`, but `try_step` is authoritative.
+  Drag hints come from `legal_targets` and `plan_route`, but `try_route`
+  (or `try_step`) is authoritative.
 - Event names are `domain://event`. Planned: `engine://info`,
   `gameroom://update`, `tournament://progress`. Use Tauri `Channel<T>` for
   per-request high-rate streams (e.g. one analysis run).

@@ -6,4 +6,8 @@ export type StepTarget = { to: Square,
 /**
  * `None` for setup swaps.
  */
-kind: StepKind | null, };
+kind: StepKind | null, 
+/**
+ * Steps the piece needs to get there (more than 1 for a multi-step route).
+ */
+steps: number, };

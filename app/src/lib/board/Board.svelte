@@ -7,6 +7,7 @@
   import { Annotations, colorFor, type AnnotationColor } from './annotations.svelte';
   import BoardSurface from './BoardSurface.svelte';
   import type { BoardModel } from './boardModel.svelte';
+  import { DragPath } from './dragPath';
   import PieceGlyph from './PieceGlyph.svelte';
 
   interface Props {
@@ -16,12 +17,15 @@
     /** Whether pieces can be dragged right now. */
     interactive: boolean;
     pushPending: Square | null;
-    /** Called with a dropped piece's move; resolve false to slide it back. */
-    onDrop: (from: Square, to: Square) => Promise<boolean>;
+    /** Called with a dropped piece's move and the squares it was dragged
+     * across; resolve false to slide it back. */
+    onDrop: (from: Square, to: Square, path: Square[]) => Promise<boolean>;
     legalTargets: (from: Square) => Promise<StepTarget[]>;
+    /** Squares a drop on `to` would walk the piece through, or null. */
+    planRoute: (from: Square, to: Square, path: Square[]) => Promise<Square[] | null>;
   }
 
-  let { model, theme, flipped, interactive, pushPending, onDrop, legalTargets }: Props = $props();
+  let { model, theme, flipped, interactive, pushPending, onDrop, legalTargets, planRoute }: Props = $props();
 
   const annotations = new Annotations();
   let svg: SVGSVGElement;
@@ -35,6 +39,10 @@
   }
   let drag = $state<Drag | null>(null);
   let targets = $state<StepTarget[]>([]);
+  /** Where a drop on the hovered square would walk the dragged piece. */
+  let route = $state<{ to: Square; squares: Square[] } | null>(null);
+  let path: DragPath | null = null;
+  let planned: { to: Square; hint: string } | null = null;
   let rightStart: { square: Square; color: AnnotationColor } | null = null;
 
   const dragged = $derived(drag ? model.find(drag.id) : undefined);
@@ -68,6 +76,9 @@
     svg.setPointerCapture(e.pointerId);
     const p = toBoard(e);
     drag = { id: piece.id, from: sq, x: p.x, y: p.y, pointerId: e.pointerId };
+    path = new DragPath(sq, p, (q) => squareAt(q.x, q.y, flipped));
+    planned = null;
+    route = null;
     const t = await legalTargets(sq);
     if (drag?.id === piece.id) targets = t;
   }
@@ -77,6 +88,8 @@
       const p = toBoard(e);
       drag.x = p.x;
       drag.y = p.y;
+      path?.moveTo(p);
+      updateRoute(drag.from, squareFor(e));
     }
     if (rightStart) {
       const sq = squareFor(e);
@@ -85,6 +98,31 @@
           ? { from: rightStart.square, to: sq, color: rightStart.color }
           : null;
     }
+  }
+
+  /** Asks for the route to `to` when the target or the dragged path changes. */
+  function updateRoute(from: Square, to: Square | null) {
+    if (to == null || to === from || !path) {
+      planned = null;
+      route = null;
+      return;
+    }
+    const hint = path.hint;
+    const key = { to, hint: hint.join() };
+    if (planned && planned.to === key.to && planned.hint === key.hint) return;
+    planned = key;
+    planRoute(from, to, hint).then((squares) => {
+      if (planned !== key) return;
+      route = squares ? { to, squares } : null;
+    });
+  }
+
+  function endDrag() {
+    drag = null;
+    targets = [];
+    path = null;
+    planned = null;
+    route = null;
   }
 
   async function onpointerup(e: PointerEvent) {
@@ -98,18 +136,22 @@
     }
     if (e.button !== 0 || !drag) return;
     const d = drag;
-    drag = null;
-    targets = [];
+    const hint = path?.hint ?? [];
+    endDrag();
     if (sq == null || sq === d.from) return;
     model.dropAt(d.id, sq);
-    if (!(await onDrop(d.from, sq))) model.revert(d.id, d.from);
+    if (!(await onDrop(d.from, sq, hint))) model.revert(d.id, d.from);
   }
 
   function onpointercancel() {
-    drag = null;
-    targets = [];
+    endDrag();
     rightStart = null;
     annotations.preview = null;
+  }
+
+  function center(sq: Square): string {
+    const p = squareXY(sq, flipped);
+    return `${p.x + SQ / 2},${p.y + SQ / 2}`;
   }
 
   function translate(sq: Square) {
@@ -151,11 +193,15 @@
         <circle
           class="target"
           class:enemy={t.kind === 'pushStart' || t.kind === 'pullFinish'}
+          class:far={t.steps > 1}
           cx={p.x + SQ / 2}
           cy={p.y + SQ / 2}
-          r="14"
+          r={t.steps > 1 ? 8 : 14}
         />
       {/each}
+      {#if drag && route}
+        <polyline class="route" points={[drag.from, ...route.squares].map(center).join(' ')} />
+      {/if}
     </g>
 
     <g class="pieces">
@@ -182,6 +228,13 @@
       <g class="ghost" transform="translate({drag.x - SQ / 2}, {drag.y - SQ / 2}) scale(1.08)">
         <PieceGlyph piece={dragged.piece} {theme} />
       </g>
+      {#if route && route.squares.length > 1}
+        <!-- Steps the drop would take, beside the dragged piece. -->
+        <g class="route-count" transform="translate({drag.x + SQ / 2}, {drag.y - SQ / 2})">
+          <circle r="16" />
+          <text dy="0.35em">{route.squares.length}</text>
+        </g>
+      {/if}
     {/if}
   </svg>
 </div>
@@ -245,6 +298,30 @@
   }
   .target.enemy {
     fill: var(--push);
+  }
+  .target.far {
+    opacity: 0.6;
+  }
+  .route {
+    fill: none;
+    stroke: var(--target);
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 2 14;
+  }
+  .route-count {
+    pointer-events: none;
+  }
+  .route-count circle {
+    fill: rgba(20, 20, 20, 0.75);
+    stroke: white;
+    stroke-width: 2;
+  }
+  .route-count text {
+    fill: white;
+    font: bold 18px sans-serif;
+    text-anchor: middle;
   }
   .push {
     fill: none;

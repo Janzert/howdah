@@ -70,6 +70,41 @@ impl Turn {
     }
 }
 
+/// One piece walking on its own, as found by [`TurnBuilder::shortest_routes`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Route {
+    pub steps: Vec<Step>,
+    /// Friendly pieces lost along the way: left alone on a trap when the
+    /// walking piece stepped away.
+    pub captures: usize,
+}
+
+impl Route {
+    /// The square the walk ends on.
+    pub fn end(&self) -> Option<Square> {
+        self.steps.last().and_then(Step::to)
+    }
+
+    /// The squares the piece enters, in order.
+    pub fn squares(&self) -> Vec<Square> {
+        self.steps.iter().filter_map(Step::to).collect()
+    }
+
+    /// The route that enters the most squares of `path` (e.g. the squares a
+    /// piece was dragged across), then the one losing the fewest friendly
+    /// pieces. Ties go to the earliest route.
+    pub fn best_along(routes: Vec<Route>, path: &[Square]) -> Option<Route> {
+        let score = |r: &Route| {
+            let followed = r.squares().iter().filter(|sq| path.contains(sq)).count();
+            (followed, std::cmp::Reverse(r.captures))
+        };
+        routes.into_iter().fold(None, |best: Option<Route>, r| match best {
+            Some(b) if score(&b) >= score(&r) => Some(b),
+            _ => Some(r),
+        })
+    }
+}
+
 /// An in-progress turn for the side to move in `start`.
 ///
 /// Push/pull interpretation: when an enemy step could be either the second
@@ -222,6 +257,65 @@ impl TurnBuilder {
             .map(|dir| Step::new(piece, from, dir))
             .filter_map(|step| self.classify(step).ok().map(|kind| (step, kind)))
             .collect()
+    }
+
+    /// Every way the friendly piece on `from` can walk to `to` on its own, with
+    /// the fewest steps that the steps left allow. Routes are made of simple
+    /// steps only (no pushes or pulls), each legal at the time it's taken, and
+    /// the piece must survive every step. Empty if `to` can't be reached.
+    pub fn shortest_routes(&self, from: Square, to: Square) -> Vec<Route> {
+        let walks = self.walks(from);
+        let shortest = walks.iter().filter(|r| r.end() == Some(to)).map(|r| r.steps.len()).min();
+        walks.into_iter().filter(|r| r.end() == Some(to) && Some(r.steps.len()) == shortest).collect()
+    }
+
+    /// Squares the friendly piece on `from` can walk to on its own (as in
+    /// [`TurnBuilder::shortest_routes`]), each with the fewest steps needed.
+    pub fn reachable(&self, from: Square) -> Vec<(Square, usize)> {
+        let mut best: Vec<(Square, usize)> = Vec::new();
+        for route in self.walks(from) {
+            let (end, len) = (route.end().expect("walks are non-empty"), route.steps.len());
+            match best.iter_mut().find(|(sq, _)| *sq == end) {
+                Some(entry) => entry.1 = entry.1.min(len),
+                None => best.push((end, len)),
+            }
+        }
+        best
+    }
+
+    /// Every walk of the friendly piece on `from` that never revisits a square
+    /// (a shortest route never does), up to the steps left.
+    fn walks(&self, from: Square) -> Vec<Route> {
+        let mut out = Vec::new();
+        let mut route = Route { steps: Vec::new(), captures: 0 };
+        self.extend_walk(from, &mut route, &mut out);
+        out
+    }
+
+    fn extend_walk(&self, at: Square, route: &mut Route, out: &mut Vec<Route>) {
+        let Some(piece) = self.pos.piece_at(at) else { return };
+        if piece.color != self.pos.side_to_move() {
+            return;
+        }
+        for dir in Dir::ALL {
+            let step = Step::new(piece, at, dir);
+            let Some(next) = step.to() else { continue };
+            let revisit = route.steps.iter().any(|s| s.from == next);
+            if revisit || !matches!(self.classify(step), Ok(StepKind::Simple)) {
+                continue;
+            }
+            let mut tb = self.clone();
+            let captured = tb.try_step(step).expect("classified as legal").effect.capture.is_some();
+            if tb.pos.piece_at(next) != Some(piece) {
+                continue; // the piece itself was captured on a trap
+            }
+            route.steps.push(step);
+            route.captures += usize::from(captured);
+            out.push(route.clone());
+            tb.extend_walk(next, route, out);
+            route.captures -= usize::from(captured);
+            route.steps.pop();
+        }
     }
 
     /// Checks whether the turn could end now.
@@ -657,5 +751,101 @@ mod tests {
             .map(|(s, _)| s.to_string())
             .collect();
         assert_eq!(pulls, vec!["rd5s".to_string()]);
+    }
+
+    // --- routes ---
+
+    fn route_squares(r: &Route) -> String {
+        r.squares().iter().map(|s| s.to_string()).collect::<Vec<_>>().join(" ")
+    }
+
+    #[test]
+    fn shortest_routes_are_all_minimal_walks() {
+        let tb = builder(Color::Gold, "Ed4");
+        let mut routes: Vec<_> = tb.shortest_routes(sq("d4"), sq("e6")).iter().map(route_squares).collect();
+        routes.sort();
+        assert_eq!(routes, vec!["d5 d6 e6", "d5 e5 e6", "e4 e5 e6"]);
+    }
+
+    #[test]
+    fn routes_avoid_losing_the_piece_on_a_trap() {
+        // Straight through c3 the lone rabbit would be captured.
+        let tb = builder(Color::Gold, "Rc2");
+        let routes = tb.shortest_routes(sq("c2"), sq("c4"));
+        assert!(!routes.is_empty());
+        assert!(routes.iter().all(|r| r.steps.len() == 4 && !r.squares().contains(&sq("c3"))));
+    }
+
+    #[test]
+    fn routes_stop_where_the_piece_freezes() {
+        // The dog freezes on d6 next to the horse, so it can't walk on to d7.
+        let tb = builder(Color::Gold, "Dd4 he6");
+        assert_eq!(tb.shortest_routes(sq("d4"), sq("d6")).len(), 1);
+        assert!(tb.shortest_routes(sq("d4"), sq("d7")).is_empty());
+    }
+
+    #[test]
+    fn routes_use_only_the_steps_left() {
+        let mut tb = builder(Color::Gold, "Ed4 Ra1");
+        tb.try_step(step("Ra1n")).unwrap();
+        tb.try_step(step("Ra2n")).unwrap();
+        assert_eq!(tb.shortest_routes(sq("d4"), sq("d6")).len(), 1);
+        assert!(tb.shortest_routes(sq("d4"), sq("d7")).is_empty());
+    }
+
+    #[test]
+    fn routes_count_friends_left_on_traps() {
+        let tb = builder(Color::Gold, "Dd3 Cc3");
+        let routes = tb.shortest_routes(sq("d3"), sq("e4"));
+        assert_eq!(routes.len(), 2);
+        assert!(routes.iter().all(|r| r.captures == 1));
+    }
+
+    #[test]
+    fn no_routes_for_enemy_pieces_or_during_a_push() {
+        let tb = builder(Color::Gold, "Ed4 rd5");
+        assert!(tb.shortest_routes(sq("d5"), sq("d7")).is_empty());
+        let mut tb = tb;
+        tb.try_step(step("rd5n")).unwrap();
+        assert!(tb.shortest_routes(sq("d4"), sq("c5")).is_empty());
+    }
+
+    #[test]
+    fn reachable_gives_fewest_steps() {
+        let tb = builder(Color::Gold, "Ed4");
+        let reach = tb.reachable(sq("d4"));
+        let dist = |s: &str| reach.iter().find(|(q, _)| *q == sq(s)).map(|(_, d)| *d);
+        assert_eq!(dist("d5"), Some(1));
+        assert_eq!(dist("e6"), Some(3));
+        assert_eq!(dist("h4"), Some(4));
+        assert_eq!(dist("d4"), None);
+        assert_eq!(dist("c3"), None); // unguarded trap
+        assert_eq!(dist("h5"), None); // 5 steps away
+    }
+
+    #[test]
+    fn best_route_follows_the_most_dragged_squares() {
+        let tb = builder(Color::Gold, "Ed4");
+        let routes = || tb.shortest_routes(sq("d4"), sq("e6"));
+        let along = |path: &str| {
+            let path: Vec<Square> = path.split_whitespace().map(sq).collect();
+            route_squares(&Route::best_along(routes(), &path).unwrap())
+        };
+        assert_eq!(along("e4 e5 e6"), "e4 e5 e6");
+        assert_eq!(along("d5 e5 e6"), "d5 e5 e6");
+        // A longer dragged path: the shortest route sharing the most squares.
+        assert_eq!(along("c4 c5 d5 d6 e6"), "d5 d6 e6");
+        assert_eq!(along("e4 f4 f5 e5 e6"), "e4 e5 e6");
+    }
+
+    #[test]
+    fn best_route_prefers_fewer_losses_on_ties() {
+        let walk =
+            |steps: &[&str], captures| Route { steps: steps.iter().map(|s| step(s)).collect(), captures };
+        let lossy = walk(&["Dd3n", "Dd4e"], 1);
+        let safe = walk(&["Dd3e", "De3n"], 0);
+        assert_eq!(Route::best_along(vec![lossy.clone(), safe.clone()], &[]), Some(safe));
+        assert_eq!(Route::best_along(vec![lossy.clone()], &[]), Some(lossy));
+        assert_eq!(Route::best_along(vec![], &[]), None);
     }
 }

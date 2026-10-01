@@ -10,8 +10,8 @@
 use std::time::{Duration, Instant};
 
 use arimaa_core::{
-    Color, Game, GameError, GameResult, Move, Placement, Position, Square, StepEffect, TimeControl,
-    TurnBuilder, WinReason, default_setup, limit_score_winner, notation,
+    Color, Game, GameError, GameResult, Move, Placement, Position, Route, Square, Step, StepEffect, StepKind,
+    TimeControl, TurnBuilder, WinReason, default_setup, limit_score_winner, notation,
 };
 
 use crate::dto::{
@@ -258,7 +258,8 @@ impl Session {
             reserves: time_controls.map(|tc| tc.map_or(Duration::ZERO, |t| t.starting_reserve())),
             game_started: now,
         });
-        let matchup = Match { players, clock, thinking: None, turn_started: Instant::now(), last_move_time: None };
+        let matchup =
+            Match { players, clock, thinking: None, turn_started: Instant::now(), last_move_time: None };
         self.replace(Game::new(), Some(matchup));
     }
 
@@ -323,7 +324,10 @@ impl Session {
         let game_limit = self.matchup.as_ref().and_then(|m| m.clock.as_ref()).and_then(Clock::game_deadline);
         if game_limit.is_some_and(|g| now >= g) {
             let winner = limit_score_winner(self.game.current_position());
-            self.finish(GameResult { winner, reason: WinReason::Score }, Some("game time limit reached".into()));
+            self.finish(
+                GameResult { winner, reason: WinReason::Score },
+                Some("game time limit reached".into()),
+            );
         } else {
             let side = self.live_side();
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
@@ -517,6 +521,49 @@ impl Session {
         Ok(anim.last().copied().into_iter().collect())
     }
 
+    /// The route a drop from `from` on `to` would take: the shortest walk of
+    /// that piece, following as many squares of the dragged `path` as it can.
+    /// A drop on an adjacent square is a single step of any kind (including
+    /// pushes and pulls), as in [`Session::try_step`].
+    fn route(&self, tb: &TurnBuilder, from: Square, to: Square, path: &[Square]) -> Option<Vec<Step>> {
+        if from.direction_to(to).is_some() {
+            let piece = tb.position().piece_at(from)?;
+            let step = Step::new(piece, from, from.direction_to(to)?);
+            return tb.classify(step).is_ok().then(|| vec![step]);
+        }
+        Route::best_along(tb.shortest_routes(from, to), path).map(|r| r.steps)
+    }
+
+    /// Squares the piece would enter if dropped on `to` (see [`Session::try_route`]).
+    pub fn plan_route(&self, from: Square, to: Square, path: &[Square]) -> Option<Vec<Square>> {
+        if !self.can_input() || self.setup_draft.is_some() {
+            return None;
+        }
+        let tb = self.turn_builder().ok()?;
+        let steps = self.route(&tb, from, to, path)?;
+        Some(steps.iter().filter_map(Step::to).collect())
+    }
+
+    /// Moves the piece on `from` to `to` by the route [`Session::plan_route`] shows.
+    pub fn try_route(
+        &mut self,
+        from: Square,
+        to: Square,
+        path: &[Square],
+    ) -> Result<Vec<AnimStep>, ApiError> {
+        self.require_input()?;
+        let mut tb = self.turn_builder()?;
+        let Some(steps) = self.route(&tb, from, to, path) else {
+            return Err(ApiError::illegal("that piece can't get there this turn"));
+        };
+        for &step in &steps {
+            tb.try_step(step).map_err(ApiError::illegal)?;
+        }
+        self.turn = Some(tb);
+        let (anim, _) = self.turn_animation();
+        Ok(anim[anim.len() - steps.len()..].to_vec())
+    }
+
     pub fn undo_step(&mut self) -> Result<Vec<AnimStep>, ApiError> {
         if self.turn.is_none() {
             return Err(ApiError::state("no step to undo"));
@@ -617,14 +664,21 @@ impl Session {
             return draft
                 .iter()
                 .filter(|p| p.square != from)
-                .map(|p| StepTarget { to: p.square, kind: None })
+                .map(|p| StepTarget { to: p.square, kind: None, steps: 1 })
                 .collect();
         }
         let Ok(tb) = self.turn_builder() else { return Vec::new() };
-        tb.legal_steps_from(from)
+        let mut targets: Vec<StepTarget> = tb
+            .legal_steps_from(from)
             .into_iter()
-            .filter_map(|(step, kind)| step.to().map(|to| StepTarget { to, kind: Some(kind) }))
-            .collect()
+            .filter_map(|(step, kind)| step.to().map(|to| StepTarget { to, kind: Some(kind), steps: 1 }))
+            .collect();
+        for (to, steps) in tb.reachable(from) {
+            if steps > 1 {
+                targets.push(StepTarget { to, kind: Some(StepKind::Simple), steps: steps as u8 });
+            }
+        }
+        targets
     }
 
     /// Why the in-progress turn can't be committed, if it can't.
@@ -697,10 +751,10 @@ impl Session {
             result: if self.cursor == self.game.ply_count() { self.game.result() } else { None },
             end_marker: self.game.end_marker().map(str::to_string),
             end_detail: self.end_detail.clone(),
-            players: self.matchup.as_ref().map(|m| PlayersView {
-                gold: m.players[0].view(),
-                silver: m.players[1].view(),
-            }),
+            players: self
+                .matchup
+                .as_ref()
+                .map(|m| PlayersView { gold: m.players[0].view(), silver: m.players[1].view() }),
             clock: self.clock_view(),
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
             can_input: self.can_input(),
@@ -711,7 +765,8 @@ impl Session {
         let m = self.matchup.as_ref()?;
         let clock = m.clock.as_ref()?;
         let ms = |d: Duration| d.as_millis() as u64;
-        let running = self.game.result().is_none().then(|| self.live_side()).filter(|s| clock.tc(*s).is_some());
+        let running =
+            self.game.result().is_none().then(|| self.live_side()).filter(|s| clock.tc(*s).is_some());
         let (elapsed, allowance) = match running {
             Some(side) => {
                 let tc = clock.tc(side).expect("running side is timed");
@@ -806,6 +861,41 @@ mod tests {
         s.commit_turn().unwrap();
         assert_eq!(s.view().moves.last().unwrap().notation, "Ee2n");
         assert_eq!(id_at(&s.view(), "e3"), e);
+    }
+
+    #[test]
+    fn route_follows_the_dragged_path() {
+        let mut s = Session::new();
+        s.commit_setup().unwrap();
+        s.commit_setup().unwrap();
+        let squares = |v: Vec<Square>| v.iter().map(|q| q.to_string()).collect::<Vec<_>>().join(" ");
+        let plan = |s: &Session, path: &[&str]| {
+            let path: Vec<Square> = path.iter().map(|p| sq(p)).collect();
+            s.plan_route(sq("e2"), sq("f4"), &path).map(squares)
+        };
+        assert_eq!(plan(&s, &["e3", "f3", "f4"]).as_deref(), Some("e3 f3 f4"));
+        assert_eq!(plan(&s, &["e3", "e4", "f4"]).as_deref(), Some("e3 e4 f4"));
+        assert_eq!(s.plan_route(sq("e2"), sq("e7"), &[]), None, "five steps away");
+
+        let e = id_at(&s.view(), "e2");
+        let anim = s.try_route(sq("e2"), sq("f4"), &[sq("e3"), sq("e4"), sq("f4")]).unwrap();
+        assert_eq!(anim.iter().map(|a| a.to).collect::<Vec<_>>(), vec![sq("e3"), sq("e4"), sq("f4")]);
+        assert!(anim.iter().all(|a| a.id == e));
+        assert_eq!(id_at(&s.view(), "f4"), e);
+        assert!(s.try_route(sq("f4"), sq("f7"), &[]).is_err(), "only one step left");
+        assert_eq!(s.try_route(sq("f4"), sq("g4"), &[]).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn multi_step_targets_have_distances() {
+        let mut s = Session::new();
+        s.commit_setup().unwrap();
+        s.commit_setup().unwrap();
+        let targets = s.legal_targets(sq("e2"));
+        let steps = |q: &str| targets.iter().find(|t| t.to == sq(q)).map(|t| t.steps);
+        assert_eq!(steps("e3"), Some(1));
+        assert_eq!(steps("e5"), Some(3));
+        assert_eq!(steps("e7"), None);
     }
 
     #[test]
@@ -961,7 +1051,10 @@ mod tests {
         assert_eq!((clock.running, clock.turn_allowance_ms), (Some(Color::Gold), 1000));
         assert!(!s.check_timeout(Instant::now()));
         assert!(s.check_timeout(Instant::now() + Duration::from_secs(2)));
-        assert_eq!(s.view().result.unwrap(), GameResult { winner: Color::Silver, reason: WinReason::Timeout });
+        assert_eq!(
+            s.view().result.unwrap(),
+            GameResult { winner: Color::Silver, reason: WinReason::Timeout }
+        );
         assert!(s.view().clock.unwrap().running.is_none());
 
         let mut s = Session::new();

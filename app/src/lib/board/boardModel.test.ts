@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnimStep } from '../bindings/AnimStep';
 import type { PieceView } from '../bindings/PieceView';
-import { BoardModel, INSTANT_GAP_MS, MAX_BEHIND, STEP_MS } from './boardModel.svelte';
+import { BoardModel, INSTANT_GAP_MS, MAX_BEHIND, ROUTE_STEP_MS, STEP_MS } from './boardModel.svelte';
 
 // One gold rabbit, id 1, walking up the a-file one square per "move".
 const rabbit = (square: number): PieceView[] => [
@@ -29,6 +29,42 @@ describe('BoardModel', () => {
     await vi.advanceTimersByTimeAsync(STEP_MS + 50);
     expect(m.animating).toBe(false);
     expect(slides).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays the route of a piece dropped several steps away, quickly', async () => {
+    const m = new BoardModel();
+    m.snap(rabbit(0));
+    await vi.advanceTimersByTimeAsync(50);
+    m.dropAt(1, 24);
+    const slides = vi.fn();
+    const route: AnimStep[] = [...step(0, 8), ...step(8, 16), ...step(16, 24)];
+    m.apply(rabbit(24), route, { onSlide: slides });
+    expect(m.pieces[0].square).toBe(0); // jumped back to the start
+    await vi.advanceTimersByTimeAsync(40); // two frames
+    const seen: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      seen.push(m.pieces[0].square);
+      expect(m.stepMs).toBe(ROUTE_STEP_MS);
+      await vi.advanceTimersByTimeAsync(ROUTE_STEP_MS);
+    }
+    expect(seen).toEqual([8, 16, 24]);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(m.animating).toBe(false);
+    expect(slides).toHaveBeenCalledTimes(3);
+    expect(m.stepMs).toBe(STEP_MS);
+  });
+
+  it('leaves a piece dropped one step away where it was dropped', async () => {
+    const m = new BoardModel();
+    m.snap(rabbit(0));
+    m.dropAt(1, 8);
+    m.apply(rabbit(8), step(0, 8));
+    expect(m.pieces[0].square).toBe(8);
+    await vi.advanceTimersByTimeAsync(STEP_MS + 50);
+    expect(m.animating).toBe(false);
+    // Later moves of the same piece animate normally.
+    m.apply(rabbit(16), step(8, 16));
+    expect(m.pieces[0].square).toBe(16);
   });
 
   it("isn't interrupted by an update that doesn't change the board", async () => {
