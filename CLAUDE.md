@@ -2,12 +2,10 @@
 
 Cross-platform Arimaa client. It's a Tauri 2 spike, but it's structured the
 way the real project will be. Long term it covers gameroom play, AEI bots,
-analysis, tournaments, postal games and bot tooling. This repo is a submodule
-of a private parent repo (`../`) that also holds the AEI reference repo and
-the original arimaa.com asset archives.
+analysis, tournaments, postal games and bot tooling.
 
-**Next steps and open to-dos are in `HANDOFF.md`.** Read it at the start of
-a session and update it at the end.
+Design notes live in `docs/`. `docs/UI-SURVEY.md` collects UI and feature
+ideas from other Arimaa and chess clients.
 
 ## Architecture
 
