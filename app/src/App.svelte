@@ -14,7 +14,7 @@
   import NewGameDialog from './lib/NewGameDialog.svelte';
   import PlayerBar from './lib/PlayerBar.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
-  import { isMuted, play, setMuted } from './lib/sound';
+  import { isMuted, play, setMuted, unlockOnInteraction } from './lib/sound';
   import { findTheme, themes } from './lib/theme';
   import TurnBar from './lib/TurnBar.svelte';
 
@@ -105,6 +105,7 @@
   }
 
   onMount(() => {
+    unlockOnInteraction();
     const unlisten = on('game://changed', (u) => {
       const hadResult = view?.result != null;
       const setupCommitted = view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;

@@ -91,6 +91,11 @@ a session and update it at the end.
       or "thinking" change) doesn't interrupt; any other one cancels the
       queue and snaps.
     - Every step plays `place.wav`, as the arimaa.com clients do.
+  - `lib/sound.ts`: Web Audio. Sounds are embedded (`?inline`), decoded
+    once by our own `lib/wav.ts` (8/16-bit PCM), and played as buffer
+    sources, so overlapping sounds mix.
+    - Don't go back to `HTMLAudioElement`: in WebKitGTK, short clips and
+      overlapping plays were often silent.
   - `lib/theme.ts` plus `themes/<dir>/*.theme.json`: data-driven themes
     (image or procedural board/pieces).
 
