@@ -66,11 +66,11 @@ cover it.
   - Click an opponent's piece: pass the remaining steps.
 
   They're fast once learned, but too surprising to be on by default.
-- **[P1] Step mode (4steps, Ctrl+S).** As the cursor moves, the piece under
+- **[have] Step mode (4steps, Ctrl+S)**, as the third choice of the Hover
+  setting (off, arrows, step mode). As the cursor moves, the piece under
   it is highlighted, along with an arrow toward the closest adjacent square.
   A single click makes that step. It's very fast for experienced players.
-  Offer it as a setting.
-- **[P1] Mouse wheel scrubs steps (4steps).** Wheel down undoes a step;
+- **[P2] Mouse wheel scrubs steps (4steps).** Wheel down undoes a step;
   wheel up redoes it. Redo needs us to keep the undone steps until a
   different step replaces them. In exploration mode, scrolling past the
   start of the turn continues back into the previous move.
@@ -354,7 +354,7 @@ Sharp pleasant, which is the next planned milestone:
 
 1. (Done: last-move arrows, the captured tray, coordinates, hover arrows,
    and replaying the last move.)
-2. Wheel step scrubbing, then step mode. (Drag-to-route is done.)
+2. (Done: step mode. Wheel step scrubbing moved to P2.)
 3. Game-end dialog, low-time tick, and unfocused-window alert.
 4. The keyboard map and `?` help overlay.
 5. Analysis mode with an eval bar, PV arrows, and interactive PV.

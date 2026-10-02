@@ -44,9 +44,14 @@ function need<T>(part: T | null, what: string): T {
   return part;
 }
 
-function pointer(type: string, sq: Square, buttons: number) {
+/** Sends a pointer event at a square's center, or 35% of the way toward `toward`. */
+function pointer(type: string, sq: Square, buttons: number, toward?: Square) {
   const b = need(board, 'board');
-  const p = b.clientPoint(sq);
+  let p = b.clientPoint(sq);
+  if (toward != null) {
+    const t = b.clientPoint(toward);
+    p = { x: p.x + 0.35 * (t.x - p.x), y: p.y + 0.35 * (t.y - p.y) };
+  }
   b.svg.dispatchEvent(
     new PointerEvent(type, {
       bubbles: true,
@@ -112,20 +117,26 @@ const hooks = {
     pointer('pointerup', squares[squares.length - 1], 0);
     await idle();
   },
-  /** Moves the mouse (no button) over a square, as for hover arrows. */
-  async hover(square: string): Promise<void> {
-    pointer('pointermove', parseSquare(square), 0);
+  /** Moves the mouse (no button) over a square, as for hover arrows. For
+   * step mode, `toward` leans the pointer toward a neighbouring square. */
+  async hover(square: string, toward?: string): Promise<void> {
+    pointer('pointermove', parseSquare(square), 0, toward == null ? undefined : parseSquare(toward));
     await idle();
   },
   /** Squares the hover arrows currently point to. */
   hoverTargets: (): string[] =>
     [...document.querySelectorAll('[data-hover-target]')].map((e) => e.getAttribute('data-hover-target')!),
-  /** Presses and releases the left button on a square. */
-  async click(square: string): Promise<void> {
+  /** Presses and releases the left button on a square (leaning toward
+   * `toward`, as `hover` does). */
+  async click(square: string, toward?: string): Promise<void> {
     const sq = parseSquare(square);
-    pointer('pointerdown', sq, 1);
+    const t = toward == null ? undefined : parseSquare(toward);
+    // A real mouse arrives before it clicks; hover input depends on that.
+    pointer('pointermove', sq, 0, t);
     await frame();
-    pointer('pointerup', sq, 0);
+    pointer('pointerdown', sq, 1, t);
+    await frame();
+    pointer('pointerup', sq, 0, t);
     await idle();
   },
   /** Client coordinates of a square's center, for tools that click by position. */

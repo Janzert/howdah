@@ -1,6 +1,6 @@
 <script lang="ts">
   // Display preferences. Changes apply immediately and are saved as they're made.
-  import { settings, type Coordinates } from './settings.svelte';
+  import { settings, type Coordinates, type HoverInput } from './settings.svelte';
   import { findTheme, themes } from './theme';
 
   let { onClose }: { onClose: () => void } = $props();
@@ -16,6 +16,21 @@
     { value: 'traps', label: 'Traps' },
     { value: 'all', label: 'Files and ranks' },
   ];
+
+  const hoverChoices: { value: HoverInput; label: string; hint: string }[] = [
+    { value: 'off', label: 'Off', hint: 'Drag pieces to move them.' },
+    {
+      value: 'arrows',
+      label: 'Arrows',
+      hint: "Hovering a piece shows its legal steps; click an arrow to take one.",
+    },
+    {
+      value: 'step',
+      label: 'Step mode',
+      hint: 'Shows the step toward the edge of the square the pointer is near; click to take it.',
+    },
+  ];
+  const hoverHint = $derived(hoverChoices.find((c) => c.value === settings.hoverInput)?.hint);
 
   const attribution = $derived(findTheme(settings.theme).attribution);
 </script>
@@ -49,10 +64,18 @@
 
   <section>
     <h3>Input</h3>
-    <label class="check">
-      <input type="checkbox" bind:checked={settings.hoverArrows} />
-      Hover arrows: show a piece's legal steps, click an arrow to step
-    </label>
+    <fieldset class="row">
+      <legend>Hover</legend>
+      <div class="choices">
+        {#each hoverChoices as c (c.value)}
+          <label>
+            <input type="radio" name="hover-input" value={c.value} bind:group={settings.hoverInput} />
+            {c.label}
+          </label>
+        {/each}
+      </div>
+    </fieldset>
+    <p class="hint">{hoverHint} Dragging always works.</p>
   </section>
 
   <section>
@@ -131,6 +154,11 @@
   .attribution {
     margin: -2px 0 10px 108px;
     font-size: 11px;
+    color: var(--muted);
+  }
+  .hint {
+    margin: -2px 0 0 108px;
+    font-size: 12px;
     color: var(--muted);
   }
   .buttons {

@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import type { Square } from '../bindings/Square';
   import type { StepTarget } from '../bindings/StepTarget';
   import { registerBoard } from '../devHooks';
   import { SQ, squareAt, squareName, squareXY } from '../geometry';
   import type { LastMoveView } from '../bindings/LastMoveView';
-  import type { Coordinates } from '../settings.svelte';
+  import type { Coordinates, HoverInput } from '../settings.svelte';
   import { LAST_MOVE_COLORS, viewBox, type Theme } from '../theme';
   import AnnotationLayer from './AnnotationLayer.svelte';
   import { Annotations, colorFor, type AnnotationColor } from './annotations.svelte';
@@ -13,6 +14,7 @@
   import LastMoveLayer from './LastMoveLayer.svelte';
   import type { BoardModel, DisplayPiece } from './boardModel.svelte';
   import { DragPath } from './dragPath';
+  import { stepChoice, type StepArrow } from './hoverInput';
   import PieceGlyph from './PieceGlyph.svelte';
 
   interface Props {
@@ -25,8 +27,9 @@
     /** The move that produced the shown position, drawn when the board is at rest. */
     lastMove: LastMoveView | null;
     coordinates: Coordinates;
-    /** Show a hovered piece's legal single steps as arrows; a click on one takes it. */
-    hoverArrows: boolean;
+    /** Input from pointer movement: arrows for a hovered piece's legal steps,
+     * or step mode (the step toward the pointer, taken with a click). */
+    hoverInput: HoverInput;
     /** Changes whenever legal steps may have changed, to refresh the hover arrows. */
     positionKey: string;
     /** Takes a single step (a click on a hover arrow); resolves whether it was accepted. */
@@ -47,7 +50,7 @@
     pushPending,
     lastMove,
     coordinates,
-    hoverArrows,
+    hoverInput,
     positionKey,
     onStep,
     onDrop,
@@ -72,60 +75,98 @@
   let path: DragPath | null = null;
   let planned: { to: Square; hint: string } | null = null;
   let rightStart: { square: Square; color: AnnotationColor } | null = null;
+  /** Step mode: the step a click on a piece takes if it's released on the piece's square. */
+  let stepAtDown: { from: Square; to: Square } | null = null;
 
   const dragged = $derived(drag ? model.find(drag.id) : undefined);
 
-  // Hover arrows. `hover` is the piece under (or last under) the pointer and
-  // its single steps; it stays while the pointer is over one of its arrows.
-  interface Hover {
-    from: Square;
-    arrows: { to: Square; enemy: boolean }[];
-  }
-  let hover = $state<Hover | null>(null);
-  let pointerSquare = $state<Square | null>(null);
-  let hoverToken = 0;
-  /** A legal-targets request for the hover arrows is in flight. */
-  let hoverPending = false;
-  const hoverActive = $derived(hoverArrows && interactive && !model.animating && drag == null);
-  const overArrow = $derived(hover?.arrows.some((a) => a.to === pointerSquare) ?? false);
+  // Input from pointer movement alone: hover arrows or step mode. Both read
+  // each square's legal single steps from `stepsCache`, fetched on demand and
+  // cleared when the position changes.
+  const stepsCache = new SvelteMap<Square, StepArrow[]>();
+  const requested = new Set<Square>();
+  let cacheKey = '';
+  /** Legal-step requests in flight (for the dev hook's `idle`). */
+  let pendingRequests = 0;
+  /** The pointer over the board, in board units (mouse only). */
+  let pointer = $state<{ x: number; y: number } | null>(null);
+  /** Hover arrows: the piece whose arrows are shown. It stays while the
+   * pointer is over one of its arrows. */
+  let hoverFrom = $state<Square | null>(null);
+  const hoverActive = $derived(hoverInput !== 'off' && interactive && !model.animating && drag == null);
 
-  function setHover(h: Hover | null) {
-    hoverToken++;
-    hoverPending = false;
-    hover = h;
+  const hasPiece = (sq: Square) => model.pieces.some((p) => p.square === sq && p.fading === null);
+
+  /** A square's legal single steps, or undefined while they're fetched. */
+  function stepsFrom(sq: Square): StepArrow[] | undefined {
+    if (!hasPiece(sq)) return [];
+    const cached = stepsCache.get(sq);
+    if (cached || requested.has(sq)) return cached;
+    requested.add(sq);
+    const key = cacheKey;
+    pendingRequests++;
+    legalTargets(sq)
+      .then((targets) => {
+        if (key !== cacheKey) return;
+        stepsCache.set(
+          sq,
+          targets
+            .filter((t) => t.steps === 1 && t.kind != null)
+            .map((t) => ({ to: t.to, enemy: t.kind === 'pushStart' || t.kind === 'pullFinish' })),
+        );
+      })
+      .finally(() => pendingRequests--);
+    return undefined;
   }
 
-  async function updateHover(sq: Square | null) {
-    pointerSquare = sq;
-    if (!hoverActive || sq == null) return setHover(null);
-    if (hover && (hover.from === sq || hover.arrows.some((a) => a.to === sq))) return;
-    if (!model.pieces.some((p) => p.square === sq && p.fading === null)) return setHover(null);
-    setHover(null);
-    const token = hoverToken;
-    hoverPending = true;
-    const targets = await legalTargets(sq).finally(() => {
-      if (token === hoverToken) hoverPending = false;
-    });
-    if (token !== hoverToken) return;
-    hover = {
-      from: sq,
-      arrows: targets
-        .filter((t) => t.steps === 1 && t.kind != null)
-        .map((t) => ({ to: t.to, enemy: t.kind === 'pushStart' || t.kind === 'pullFinish' })),
-    };
+  const hover = $derived(
+    hoverInput === 'arrows' && hoverActive && hoverFrom != null
+      ? { from: hoverFrom, arrows: stepsFrom(hoverFrom) ?? [] }
+      : null,
+  );
+  const step = $derived(
+    hoverInput === 'step' && hoverActive && pointer ? stepChoice(pointer, flipped, stepsFrom) : null,
+  );
+  const pointerSquare = $derived(pointer ? squareAt(pointer.x, pointer.y, flipped) : null);
+  const overStep = $derived(
+    (hover?.arrows.some((a) => a.to === pointerSquare) ?? false) || (step != null && step.to != null),
+  );
+
+  function updatePointer(p: { x: number; y: number } | null) {
+    pointer = p;
+    const sq = p ? squareAt(p.x, p.y, flipped) : null;
+    if (sq == null) {
+      hoverFrom = null;
+      return;
+    }
+    const keep =
+      hoverFrom != null && (sq === hoverFrom || stepsCache.get(hoverFrom)?.some((a) => a.to === sq));
+    if (!keep) hoverFrom = hasPiece(sq) ? sq : null;
   }
 
-  // Legal steps change with the position; recompute for the square under the pointer.
+  // Legal steps change with the position: start over for the square under the pointer.
   $effect(() => {
-    void positionKey;
-    void hoverActive;
+    cacheKey = positionKey;
     untrack(() => {
-      setHover(null);
-      updateHover(pointerSquare);
+      stepsCache.clear();
+      requested.clear();
+      hoverFrom = null;
+      updatePointer(pointer);
     });
   });
 
-  /** Arrow inside the target square, pointing away from the hovered piece. */
+  /** The step a click on `sq` takes, if any: a hover arrow on it, or step
+   * mode's offer for the pointer there. */
+  function clickStep(sq: Square): { from: Square; to: Square } | null {
+    if (hover?.arrows.some((a) => a.to === sq)) return { from: hover.from, to: sq };
+    if (step?.to != null) return { from: step.from, to: step.to };
+    return null;
+  }
+
+  /** Triangle in the half of the target square next to the hovered piece,
+   * pointing away from it, its tip short of the square's center (in a frame
+   * centered on the target and pointing away from the piece). */
+  const ARROW_POINTS = '-40,-17 -8,0 -40,17';
   function hoverArrowTransform(from: Square, to: Square): string {
     const a = squareXY(from, flipped);
     const b = squareXY(to, flipped);
@@ -156,12 +197,15 @@
     }
     if (e.button !== 0) return;
     annotations.clear();
-    if (hover && sq != null && hover.arrows.some((a) => a.to === sq)) {
-      const from = hover.from;
-      setHover(null);
-      onStep(from, sq);
+    const clicked = sq == null ? null : clickStep(sq);
+    // A step from another square (an arrow, or step mode over an empty
+    // square) is taken now; a piece's own step waits for the button to come
+    // up on its square, so the piece can still be dragged.
+    if (clicked && clicked.from !== sq) {
+      onStep(clicked.from, clicked.to);
       return;
     }
+    stepAtDown = clicked;
     if (!interactive || model.animating || sq == null) return;
     const piece = model.pieces.find((p) => p.square === sq && p.fading === null);
     if (!piece) return;
@@ -176,7 +220,7 @@
   }
 
   function onpointermove(e: PointerEvent) {
-    if (!drag && !rightStart && e.pointerType === 'mouse') updateHover(squareFor(e));
+    if (!drag && !rightStart && e.pointerType === 'mouse') updatePointer(toBoard(e));
     if (drag && e.pointerId === drag.pointerId) {
       const p = toBoard(e);
       drag.x = p.x;
@@ -231,6 +275,12 @@
     const d = drag;
     const hint = path?.hint ?? [];
     endDrag();
+    const clicked = stepAtDown;
+    stepAtDown = null;
+    if (sq === d.from && clicked?.from === d.from) {
+      onStep(clicked.from, clicked.to);
+      return;
+    }
     if (sq == null || sq === d.from) return;
     model.dropAt(d.id, sq);
     if (!(await onDrop(d.from, sq, hint))) model.revert(d.id, d.from);
@@ -251,7 +301,7 @@
     onMount(() => {
       registerBoard({
         svg,
-        busy: () => hoverPending,
+        busy: () => pendingRequests > 0,
         clientPoint: (sq) => {
           const p = squareXY(sq, flipped);
           const ctm = svg.getScreenCTM();
@@ -296,8 +346,8 @@
     {onpointermove}
     {onpointerup}
     {onpointercancel}
-    onpointerleave={() => updateHover(null)}
-    class:over-arrow={overArrow}
+    onpointerleave={() => updatePointer(null)}
+    class:over-arrow={overStep}
     oncontextmenu={(e) => e.preventDefault()}
   >
     <BoardSurface {theme} {flipped} {coordinates} />
@@ -352,17 +402,32 @@
       {/each}
     </g>
 
-    {#if hover && hoverActive}
+    {#if hover || step}
       <g class="hover-arrows">
-        {#each hover.arrows as a (a.to)}
-          <polygon
-            class="hover-arrow"
-            class:enemy={a.enemy}
-            data-hover-target={squareName(a.to)}
-            transform={hoverArrowTransform(hover.from, a.to)}
-            points="-34,-11 4,-11 4,-25 34,0 4,25 4,11 -34,11"
-          />
-        {/each}
+        {#if hover}
+          {#each hover.arrows as a (a.to)}
+            <polygon
+              class="hover-arrow"
+              class:enemy={a.enemy}
+              data-hover-target={squareName(a.to)}
+              transform={hoverArrowTransform(hover.from, a.to)}
+              points={ARROW_POINTS}
+            />
+          {/each}
+        {/if}
+        {#if step}
+          {@const o = squareXY(step.from, flipped)}
+          <rect class="step-origin" x={o.x + 4} y={o.y + 4} width={SQ - 8} height={SQ - 8} rx="10" />
+          {#if step.to != null}
+            <polygon
+              class="hover-arrow"
+              class:enemy={step.enemy}
+              data-hover-target={squareName(step.to)}
+              transform={hoverArrowTransform(step.from, step.to)}
+              points={ARROW_POINTS}
+            />
+          {/if}
+        {/if}
       </g>
     {/if}
 
@@ -480,6 +545,11 @@
   }
   .hover-arrow.enemy {
     fill: var(--push);
+  }
+  .step-origin {
+    fill: none;
+    stroke: rgba(20, 140, 110, 0.8);
+    stroke-width: 5;
   }
   .push {
     fill: none;

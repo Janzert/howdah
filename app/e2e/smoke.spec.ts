@@ -150,7 +150,7 @@ test('coordinates setting changes the board labels and persists', async ({ page 
 
 test('hover arrows show legal steps and a click takes one', async ({ page }) => {
   await page.goto('/');
-  await page.evaluate(() => localStorage.setItem('settings', JSON.stringify({ hoverArrows: true })));
+  await page.evaluate(() => localStorage.setItem('settings', JSON.stringify({ hoverInput: 'arrows' })));
   await freshGame(page);
   await load(page, SAMPLE_TO_3S);
   const hover = (sq: string) =>
@@ -185,4 +185,34 @@ test('forward at the latest move replays it', async ({ page }) => {
   await page.evaluate(() => window.__arimaa!.idle());
   expect(await h5()).toBe('r');
   expect(await page.evaluate(() => window.__arimaa!.state()!.ply)).toBe(6);
+});
+
+test('step mode offers the step toward the pointer and a click takes it', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => localStorage.setItem('settings', JSON.stringify({ hoverInput: 'step' })));
+  await freshGame(page);
+  await load(page, SAMPLE_TO_3S);
+  const offer = (sq: string, toward: string) =>
+    page.evaluate(
+      async ([s, t]) => {
+        await window.__arimaa!.hover(s, t);
+        return window.__arimaa!.hoverTargets();
+      },
+      [sq, toward],
+    );
+  expect(await offer('g4', 'g5')).toEqual(['g5']);
+  expect(await offer('g4', 'g3')).toEqual([]); // occupied by the horse: not a step
+  // The horse, leaning toward the f3 trap: the push starting there.
+  expect(await offer('g3', 'f3')).toEqual(['f3']);
+  await expect(page.locator('.hover-arrow.enemy')).toHaveCount(1);
+  // Over an empty square, the neighbour stepping in: the elephant into f4.
+  expect(await offer('f4', 'g4')).toEqual(['f4']);
+
+  // A click on the elephant takes its step; dragging still works.
+  await page.evaluate(() => window.__arimaa!.click('g4', 'g5'));
+  const steps = () => page.evaluate(() => window.__arimaa!.state()!.turn!.steps.map((s) => s.notation));
+  expect(await steps()).toEqual(['Eg4n']);
+  await page.evaluate(() => window.__arimaa!.drag('g5', 'g6'));
+  expect(await steps()).toEqual(['Eg4n', 'Eg5n']);
+  await page.evaluate(() => localStorage.removeItem('settings'));
 });

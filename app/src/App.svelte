@@ -227,7 +227,7 @@
           pushPending={view?.turn?.pushPending ?? null}
           lastMove={view?.turn?.steps.length ? null : (view?.lastMove ?? null)}
           coordinates={settings.coordinates}
-          hoverArrows={settings.hoverArrows}
+          hoverInput={settings.hoverInput}
           positionKey={view ? `${view.ply}|${view.position.short}|${view.canInput}|${view.turn?.steps.length ?? 0}` : ''}
           onStep={(from, to) => run(api.tryStep(from, to))}
           {onDrop}

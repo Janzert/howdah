@@ -92,7 +92,8 @@ ideas from other Arimaa and chess clients.
     replays its event stream as Tauri events.
   - `lib/devHooks.ts`: in dev builds, `window.__arimaa` for scripted UI
     checks: `state()`, `board()` (text diagram), `message()`, `idle()`,
-    `drag('d2','d5',['d3','d4'])`, `click(sq)`, `hover(sq)`, `hoverTargets()`,
+    `drag('d2','d5',['d3','d4'])`, `click(sq, toward?)`, `hover(sq, toward?)` (`toward` leans the
+    pointer toward a neighbour, for step mode), `hoverTargets()`,
     `squareCenter(sq)`, `api`. `idle()` also waits for pending hover arrows.
     Input goes through the board's own pointer handlers. Board pieces carry
     accessible names ("gold camel d5, frozen") and `data-square`.
@@ -118,10 +119,15 @@ ideas from other Arimaa and chess clients.
       or "thinking" change) doesn't interrupt; any other one cancels the
       queue and snaps.
     - Every step plays `place.wav`, as the arimaa.com clients do.
-    - Hover arrows (setting `hoverArrows`): hovering a piece shows its legal
-      single steps from `legal_targets` (red for pushes/pulls of an enemy
-      piece), kept while the pointer is on one of them; a click on an arrow
-      calls `try_step`. `positionKey` from App refreshes them.
+    - Hover input (setting `hoverInput`: off, arrows or step mode) reads
+      each square's legal single steps from a cache filled from
+      `legal_targets` and cleared when `positionKey` changes. Arrows: a
+      hovered piece's steps (red for pushes/pulls of an enemy piece), kept
+      while the pointer is on one; a click on an arrow calls `try_step`. Step
+      mode (`hoverInput.ts`, after 4steps): the step toward the nearest edge
+      of the square under the pointer, or a neighbour's step into an empty
+      square. A click on a piece takes its step only if released on the
+      same square, so dragging still works.
     - Forward at the latest move replays it: `move_replay` gives the pieces
       before the move and its animation, and `BoardModel.replay` jumps back
       and plays it.

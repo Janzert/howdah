@@ -4,19 +4,21 @@
 import { findTheme } from './theme';
 
 export type Coordinates = 'none' | 'traps' | 'all';
+/** Input from pointer movement without a button: none, arrows for a hovered
+ * piece's legal steps, or step mode (the step toward the pointer, by click). */
+export type HoverInput = 'off' | 'arrows' | 'step';
 
 export interface SettingsData {
   theme: string;
   /** Board labels: none, the four trap squares, or files and ranks along the edges. */
   coordinates: Coordinates;
   sound: boolean;
-  /** Hovering a piece shows arrows for its legal single steps; clicking one takes it. */
-  hoverArrows: boolean;
+  hoverInput: HoverInput;
 }
 
 const KEY = 'settings';
 
-export const DEFAULTS: SettingsData = { theme: findTheme(null).id, coordinates: 'traps', sound: true, hoverArrows: false };
+export const DEFAULTS: SettingsData = { theme: findTheme(null).id, coordinates: 'traps', sound: true, hoverInput: 'off' };
 
 function read(key: string): string | null {
   try {
@@ -32,7 +34,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   const s: SettingsData = { ...DEFAULTS };
   if (legacy.theme) s.theme = legacy.theme;
   if (legacy.muted != null) s.sound = legacy.muted !== '1';
-  let raw: Partial<Record<keyof SettingsData, unknown>> = {};
+  let raw: Partial<Record<keyof SettingsData | 'hoverArrows', unknown>> = {};
   try {
     raw = stored ? JSON.parse(stored) : {};
   } catch {
@@ -43,7 +45,10 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
     s.coordinates = raw.coordinates;
   }
   if (typeof raw.sound === 'boolean') s.sound = raw.sound;
-  if (typeof raw.hoverArrows === 'boolean') s.hoverArrows = raw.hoverArrows;
+  if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
+  if (raw.hoverInput === 'off' || raw.hoverInput === 'arrows' || raw.hoverInput === 'step') {
+    s.hoverInput = raw.hoverInput;
+  }
   s.theme = findTheme(s.theme).id;
   return s;
 }
@@ -70,11 +75,11 @@ class Settings {
     this.update({ sound: v });
   }
 
-  get hoverArrows() {
-    return this.#data.hoverArrows;
+  get hoverInput() {
+    return this.#data.hoverInput;
   }
-  set hoverArrows(v: boolean) {
-    this.update({ hoverArrows: v });
+  set hoverInput(v: HoverInput) {
+    this.update({ hoverInput: v });
   }
 
   update(patch: Partial<SettingsData>) {
