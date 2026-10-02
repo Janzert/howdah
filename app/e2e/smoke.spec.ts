@@ -133,7 +133,7 @@ test('coordinates setting changes the board labels and persists', async ({ page 
   const labels = page.locator('svg[aria-label="Arimaa board"] .coord');
   await expect(labels).toHaveText(['c3', 'f3', 'c6', 'f6']); // the default: traps
 
-  await page.getByRole('button', { name: 'Settings…' }).click();
+  await page.getByRole('button', { name: 'Settings' }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings' });
   await dialog.getByLabel('Files and ranks').check();
   await expect(labels).toHaveCount(16);

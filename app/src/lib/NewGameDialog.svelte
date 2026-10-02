@@ -109,7 +109,7 @@
   {/if}
   {#if error}<p class="error">{error}</p>{/if}
   <div class="buttons">
-    <button onclick={onManageEngines}>Engines…</button>
+    <button onclick={onManageEngines}>Engines</button>
     <span class="spacer"></span>
     <button onclick={onClose}>Cancel</button>
     <button class="primary" onclick={start}>Start</button>

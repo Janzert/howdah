@@ -370,11 +370,11 @@
       </div>
     {/if}
     <div class="tools">
-      <button onclick={() => (showNewGame = true)}>New game…</button>
-      <button onclick={() => (showEngines = true)}>Engines…</button>
-      <button onclick={openRecord}>Record…</button>
+      <button onclick={() => (showNewGame = true)}>New game</button>
+      <button onclick={() => (showEngines = true)}>Engines</button>
+      <button onclick={openRecord}>Record</button>
       <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
-      <button onclick={() => (showSettings = true)}>Settings…</button>
+      <button onclick={() => (showSettings = true)}>Settings</button>
       <button onclick={() => (showHelp = true)} title="Keyboard and mouse help (?)">Help</button>
     </div>
   </aside>
