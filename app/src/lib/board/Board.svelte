@@ -209,6 +209,9 @@
     if (!interactive || model.animating || sq == null) return;
     const piece = model.pieces.find((p) => p.square === sq && p.fading === null);
     if (!piece) return;
+    // Keeps WebKit from starting a native drag of the piece image, which
+    // stops pointer events mid-drag and swallows the pointerup.
+    e.preventDefault();
     svg.setPointerCapture(e.pointerId);
     const p = toBoard(e);
     drag = { id: piece.id, from: sq, x: p.x, y: p.y, pointerId: e.pointerId };
@@ -222,6 +225,12 @@
   function onpointermove(e: PointerEvent) {
     if (!drag && !rightStart && e.pointerType === 'mouse') updatePointer(toBoard(e));
     if (drag && e.pointerId === drag.pointerId) {
+      // The button came up without a pointerup reaching us: drop the drag
+      // rather than leave the piece stuck to the pointer.
+      if (e.pointerType === 'mouse' && (e.buttons & 1) === 0) {
+        onpointercancel();
+        return;
+      }
       const p = toBoard(e);
       drag.x = p.x;
       drag.y = p.y;
@@ -346,6 +355,7 @@
     {onpointermove}
     {onpointerup}
     {onpointercancel}
+    ondragstart={(e) => e.preventDefault()}
     onpointerleave={() => updatePointer(null)}
     class:over-arrow={overStep}
     oncontextmenu={(e) => e.preventDefault()}
@@ -454,11 +464,15 @@
     height: 100%;
   }
   svg {
+    -webkit-user-drag: none;
     display: block;
     width: 100%;
     height: 100%;
     touch-action: none;
     user-select: none;
+  }
+  .piece :global(image) {
+    -webkit-user-drag: none;
   }
   .piece {
     transition: transform var(--step-ms, 220ms) ease-in-out;
