@@ -20,6 +20,15 @@ const sources: Record<SoundName, string> = { slide, place, trapped, win };
 let muted = false;
 let context: AudioContext | null = null;
 const buffers = new Map<SoundName, AudioBuffer>();
+// Sources still playing. WebKit can garbage-collect a source node nothing
+// refers to before it finishes, cutting the sound off part way.
+const playing = new Set<AudioBufferSourceNode>();
+// Every sound goes through one long-lived node, and a silent loop plays
+// into it the whole time. Without the loop, WebKitGTK's GStreamer output
+// goes idle between sounds and clips the next ones while it starts up
+// again (tested: the shared node alone doesn't help).
+let output: GainNode | null = null;
+let keepAlive: AudioBufferSourceNode | null = null;
 
 export function isMuted() {
   return muted;
@@ -34,6 +43,13 @@ function init(): AudioContext | null {
   if (context) return context;
   if (typeof AudioContext === 'undefined') return null;
   context = new AudioContext();
+  output = context.createGain();
+  output.connect(context.destination);
+  keepAlive = context.createBufferSource();
+  keepAlive.buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
+  keepAlive.loop = true;
+  keepAlive.connect(output);
+  keepAlive.start();
   for (const [name, url] of Object.entries(sources) as [SoundName, string][]) {
     try {
       const wav = decodeWav(dataUrlBytes(url));
@@ -65,11 +81,16 @@ export function play(name: SoundName) {
   if (muted) return;
   const ctx = init();
   const buffer = buffers.get(name);
-  if (!ctx || !buffer) return;
+  if (!ctx || !buffer || !output) return;
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   const source = ctx.createBufferSource();
   source.buffer = buffer;
-  source.connect(ctx.destination);
+  source.connect(output);
+  playing.add(source);
+  source.onended = () => {
+    playing.delete(source);
+    source.disconnect();
+  };
   source.start();
 }
 

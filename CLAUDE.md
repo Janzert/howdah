@@ -143,6 +143,12 @@ ideas from other Arimaa and chess clients.
     sources, so overlapping sounds mix.
     - Don't go back to `HTMLAudioElement`: in WebKitGTK, short clips and
       overlapping plays were often silent.
+    - Clipped sounds in WebKitGTK: playing sources are kept in a set until
+      they end (unreferenced ones were cut short, probably collected
+      mid-play; that fixed most of it). Sounds also go through one
+      long-lived gain node with a silent loop playing into it, so the
+      output never goes idle between sounds. The loop is what fixed the
+      rest; the shared node alone didn't. Keep both.
   - `lib/theme.ts` plus `themes/<dir>/*.theme.json`: data-driven themes
     (image or procedural board/pieces).
   - `lib/settings.svelte.ts`: display preferences (theme, coordinates,
