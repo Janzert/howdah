@@ -60,6 +60,11 @@
         {/each}
       </div>
     </fieldset>
+    <label class="check">
+      <input type="checkbox" bind:checked={settings.humanAtBottom} />
+      Put the human player at the bottom
+    </label>
+    <p class="hint">When a game against an engine starts. Flip still turns the board any time.</p>
   </section>
 
   <section>

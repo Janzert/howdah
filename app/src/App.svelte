@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api, errorMessage } from './lib/api';
   import { requestAttention } from './lib/attention';
+  import type { Color } from './lib/bindings/Color';
   import type { EngineSpec } from './lib/bindings/EngineSpec';
   import type { MatchSpec } from './lib/bindings/MatchSpec';
   import type { SessionView } from './lib/bindings/SessionView';
@@ -72,11 +73,25 @@
 
   function setView(v: SessionView) {
     const sig = v.players ? `${v.players.gold.name}|${v.players.silver.name}` : '';
-    if (sig !== matchSig || (v.players && v.moves.length === 0 && (view?.moves.length ?? 0) > 0)) matchKey++;
+    if (sig !== matchSig || (v.players && v.moves.length === 0 && (view?.moves.length ?? 0) > 0)) {
+      matchKey++;
+      if (settings.humanAtBottom) {
+        const side = loneHuman(v);
+        if (side) flipped = side === 'silver';
+      }
+    }
     matchSig = sig;
     view = v;
     receivedAt = performance.now();
     now = receivedAt;
+  }
+
+  /** The only human side in a match, if there's exactly one. */
+  function loneHuman(v: SessionView): Color | null {
+    if (!v.players) return null;
+    const gold = v.players.gold.kind === 'human';
+    const silver = v.players.silver.kind === 'human';
+    return gold === silver ? null : gold ? 'gold' : 'silver';
   }
 
   async function reloadEngines() {

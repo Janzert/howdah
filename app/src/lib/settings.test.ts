@@ -11,10 +11,22 @@ describe('settings parse', () => {
 
   it('keeps valid values and drops invalid ones', () => {
     const s = parse(
-      JSON.stringify({ coordinates: 'all', sound: false, theme: 'placeholder', hoverInput: 'step' }),
+      JSON.stringify({
+        coordinates: 'all',
+        sound: false,
+        theme: 'placeholder',
+        hoverInput: 'step',
+        humanAtBottom: false,
+      }),
       none,
     );
-    expect(s).toEqual({ theme: 'placeholder', coordinates: 'all', sound: false, hoverInput: 'step' });
+    expect(s).toEqual({
+      theme: 'placeholder',
+      coordinates: 'all',
+      sound: false,
+      hoverInput: 'step',
+      humanAtBottom: false,
+    });
     const bad = parse(JSON.stringify({ coordinates: 'diagonal', sound: 'yes', theme: 'gone' }), none);
     expect(bad).toEqual(DEFAULTS);
   });

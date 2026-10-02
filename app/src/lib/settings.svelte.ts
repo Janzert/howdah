@@ -14,11 +14,19 @@ export interface SettingsData {
   coordinates: Coordinates;
   sound: boolean;
   hoverInput: HoverInput;
+  /** Turn the board so a lone human player is at the bottom when a game starts. */
+  humanAtBottom: boolean;
 }
 
 const KEY = 'settings';
 
-export const DEFAULTS: SettingsData = { theme: findTheme(null).id, coordinates: 'traps', sound: true, hoverInput: 'off' };
+export const DEFAULTS: SettingsData = {
+  theme: findTheme(null).id,
+  coordinates: 'traps',
+  sound: true,
+  hoverInput: 'off',
+  humanAtBottom: true,
+};
 
 function read(key: string): string | null {
   try {
@@ -45,6 +53,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
     s.coordinates = raw.coordinates;
   }
   if (typeof raw.sound === 'boolean') s.sound = raw.sound;
+  if (typeof raw.humanAtBottom === 'boolean') s.humanAtBottom = raw.humanAtBottom;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
   if (raw.hoverInput === 'off' || raw.hoverInput === 'arrows' || raw.hoverInput === 'step') {
     s.hoverInput = raw.hoverInput;
@@ -80,6 +89,13 @@ class Settings {
   }
   set hoverInput(v: HoverInput) {
     this.update({ hoverInput: v });
+  }
+
+  get humanAtBottom() {
+    return this.#data.humanAtBottom;
+  }
+  set humanAtBottom(v: boolean) {
+    this.update({ humanAtBottom: v });
   }
 
   update(patch: Partial<SettingsData>) {
