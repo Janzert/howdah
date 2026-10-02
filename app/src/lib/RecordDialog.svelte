@@ -41,14 +41,24 @@
   <h2>Game record</h2>
   <p class="hint">Paste a record (one move per line, e.g. <code>2g Ed2n Ed3n</code>) or open a file.</p>
   <!-- svelte-ignore a11y_autofocus -->
-  <textarea bind:value={text} spellcheck="false" autofocus></textarea>
+  <textarea
+    bind:value={text}
+    spellcheck="false"
+    autofocus
+    onkeydown={(e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        load();
+      }
+    }}
+  ></textarea>
   {#if error}<p class="error">{error}</p>{/if}
   <div class="buttons">
     <label class="file">Open file… <input type="file" accept=".txt,text/plain" onchange={openFile} /></label>
     <button onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
     <span class="spacer"></span>
     <button onclick={onClose}>Close</button>
-    <button class="primary" onclick={load}>Load</button>
+    <button class="primary" onclick={load} title="Load (Ctrl+Enter)">Load</button>
   </div>
 </dialog>
 

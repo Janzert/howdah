@@ -43,7 +43,7 @@
     </div>
     {#if browsing}<div class="note">Browsing earlier moves; press End to follow the game.</div>{/if}
     <div class="buttons">
-      <button onclick={onMoveNow}>Move now</button>
+      <button onclick={onMoveNow}>Move now <kbd>Space</kbd></button>
     </div>
   {:else if browsing}
     <div class="status">Browsing earlier moves</div>

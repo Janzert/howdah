@@ -159,6 +159,10 @@ ideas from other Arimaa and chess clients.
     isn't focused, the OS attention request (Tauri permission
     `core:window:allow-request-user-attention`), or a title prefix in a
     browser.
+  - Keyboard: `lib/shortcuts.ts` is the one table of shortcuts; the key
+    handler in `App.svelte` and the `?` help (`HelpDialog.svelte`) both
+    read it. Add a key there, with its action in `shortcutActions`. The
+    help's mouse section is a list in `HelpDialog.svelte`.
   - `lib/theme.ts` plus `themes/<dir>/*.theme.json`: data-driven themes
     (image or procedural board/pieces).
   - `lib/settings.svelte.ts`: display preferences (theme, coordinates,

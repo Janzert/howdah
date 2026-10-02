@@ -359,7 +359,8 @@ Sharp pleasant, which is the next planned milestone:
    tick, and the unfocused-window alert. Still open from those items:
    "analyse" in the dialog, waiting on analysis mode; the clock colors
    and a game-start sound.)
-4. The keyboard map and `?` help overlay.
+4. (Done: the keyboard map, from one table in `lib/shortcuts.ts`, and the
+   `?` help overlay. The variation and engine keys wait on those features.)
 5. Analysis mode with an eval bar, PV arrows, and interactive PV.
 6. More settings (the dialog exists; see section 9).
 

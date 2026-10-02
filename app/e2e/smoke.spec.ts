@@ -241,3 +241,26 @@ test('a game ending in play shows the result once', async ({ page }) => {
   await page.evaluate(() => window.__arimaa!.idle());
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+
+test('? opens and closes the keyboard help; k and j step through moves', async ({ page }) => {
+  await freshGame(page);
+  await load(page, SAMPLE_TO_3S);
+  const help = page.getByRole('dialog', { name: 'Keyboard and mouse' });
+  await page.keyboard.press('?');
+  await expect(help).toBeVisible();
+  await expect(help.getByText('Flip the board')).toBeVisible();
+  // Keys meant for the board do nothing while the help is open.
+  const ply = () => page.evaluate(() => window.__arimaa!.state()!.ply);
+  const before = await ply();
+  await page.keyboard.press('k');
+  expect(await ply()).toBe(before);
+  await page.keyboard.press('?');
+  await expect(help).toHaveCount(0);
+  // Focus returns to the page once the dialog is gone.
+  await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('BODY');
+
+  await page.keyboard.press('k');
+  await expect.poll(ply).toBe(before - 1);
+  await page.keyboard.press('j');
+  await expect.poll(ply).toBe(before);
+});

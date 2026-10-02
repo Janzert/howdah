@@ -13,6 +13,7 @@
   import EnginePanel from './lib/EnginePanel.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
   import GameEndDialog from './lib/GameEndDialog.svelte';
+  import HelpDialog from './lib/HelpDialog.svelte';
   import { registerApp } from './lib/devHooks';
   import { on } from './lib/events';
   import MoveList from './lib/MoveList.svelte';
@@ -20,8 +21,9 @@
   import PlayerBar from './lib/PlayerBar.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
   import { justEnded } from './lib/result';
-  import { settings } from './lib/settings.svelte';
+  import { settings, type HoverInput } from './lib/settings.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
+  import { shortcutFor, type ShortcutId } from './lib/shortcuts';
   import { play, setMuted, unlockOnInteraction } from './lib/sound';
   import { findTheme } from './lib/theme';
   import TurnBar from './lib/TurnBar.svelte';
@@ -50,6 +52,7 @@
   let showNewGame = $state(false);
   let showEngines = $state(false);
   let showSettings = $state(false);
+  let showHelp = $state(false);
   // The game-end dialog waits for the final move's animation.
   let gameEndPending = $state(false);
   let showGameEnd = $state(false);
@@ -267,35 +270,48 @@
     }
   }
 
+  const HOVER_ORDER: HoverInput[] = ['off', 'arrows', 'step'];
+  const HOVER_NAMES: Record<HoverInput, string> = { off: 'off', arrows: 'arrows', step: 'step mode' };
+
+  const shortcutActions: Record<ShortcutId, (v: SessionView) => void> = {
+    back: (v) => goto(v.ply - 1),
+    forward: (v) => goto(v.ply + 1),
+    start: () => goto(0),
+    end: (v) => goto(v.moves.length),
+    commit: (v) => {
+      if (v.canInput) commit();
+    },
+    undoStep: (v) => {
+      if (v.turn && v.canInput) run(api.undoStep());
+    },
+    resetTurn: (v) => {
+      if (v.turn && v.canInput) run(api.cancelTurn());
+    },
+    moveNow: (v) => {
+      if (v.thinking) run(api.engineMoveNow());
+    },
+    flip: () => (flipped = !flipped),
+    cycleHover: () => {
+      const next = HOVER_ORDER[(HOVER_ORDER.indexOf(settings.hoverInput) + 1) % HOVER_ORDER.length];
+      settings.hoverInput = next;
+      flash(`Hover input: ${HOVER_NAMES[next]}`);
+    },
+    mute: () => {
+      settings.sound = !settings.sound;
+      flash(settings.sound ? 'Sound on' : 'Sound off');
+    },
+    help: () => (showHelp = true),
+  };
+
   function onkeydown(e: KeyboardEvent) {
-    if (!view || record != null || showNewGame || showEngines || showSettings || showGameEnd) return;
+    if (!view || record != null || showNewGame || showEngines || showSettings || showGameEnd || showHelp) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, select')) return;
-    switch (e.key) {
-      case 'ArrowLeft':
-        goto(view.ply - 1);
-        break;
-      case 'ArrowRight':
-        goto(view.ply + 1);
-        break;
-      case 'Home':
-        goto(0);
-        break;
-      case 'End':
-        goto(view.moves.length);
-        break;
-      case 'Enter':
-        if (view.canInput) commit();
-        break;
-      case 'Backspace':
-        if (view.turn && view.canInput) run(api.undoStep());
-        break;
-      case 'Escape':
-        if (view.turn && view.canInput) run(api.cancelTurn());
-        break;
-      default:
-        return;
-    }
+    const shortcut = shortcutFor(e);
+    if (!shortcut) return;
+    // Enter and Space on a focused button press the button instead.
+    if ((e.key === 'Enter' || e.key === ' ') && target.closest('button')) return;
+    shortcutActions[shortcut.id](view);
     e.preventDefault();
   }
 </script>
@@ -347,18 +363,19 @@
         <EnginePanel players={view.players} resetKey={matchKey} />
       {/if}
       <div class="nav">
-        <button aria-label="Start" onclick={() => goto(0)} title="Start (Home)">⏮</button>
-        <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (←)">◀</button>
-        <button aria-label="Forward" onclick={() => goto(view!.ply + 1)} title="Forward (→); at the latest move, replays it">▶</button>
-        <button aria-label="End" onclick={() => goto(view!.moves.length)} title="End (End)">⏭</button>
+        <button aria-label="Start" onclick={() => goto(0)} title="Start (Home or 0)">⏮</button>
+        <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (← or k)">◀</button>
+        <button aria-label="Forward" onclick={() => goto(view!.ply + 1)} title="Forward (→ or j); at the latest move, replays it">▶</button>
+        <button aria-label="End" onclick={() => goto(view!.moves.length)} title="End (End or $)">⏭</button>
       </div>
     {/if}
     <div class="tools">
       <button onclick={() => (showNewGame = true)}>New game…</button>
       <button onclick={() => (showEngines = true)}>Engines…</button>
       <button onclick={openRecord}>Record…</button>
-      <button onclick={() => (flipped = !flipped)}>Flip</button>
+      <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
       <button onclick={() => (showSettings = true)}>Settings…</button>
+      <button onclick={() => (showHelp = true)} title="Keyboard and mouse help (?)">Help</button>
     </div>
   </aside>
 </main>
@@ -390,6 +407,9 @@
 {/if}
 {#if showSettings}
   <SettingsDialog onClose={() => (showSettings = false)} />
+{/if}
+{#if showHelp}
+  <HelpDialog onClose={() => (showHelp = false)} />
 {/if}
 
 <style>
