@@ -149,6 +149,16 @@ ideas from other Arimaa and chess clients.
       long-lived gain node with a silent loop playing into it, so the
       output never goes idle between sounds. The loop is what fixed the
       rest; the shared node alone didn't. Keep both.
+    - The low-time tick is synthesized (the classic set has none). It plays
+      while a human's clock runs, on 4steps' schedule (`lib/clock.ts`).
+  - Game end: `GameEndDialog.svelte` shows the result in words
+    (`lib/result.ts`) after the final move's animation, with rematch and
+    swap sides (repeating the last New game spec). `justEnded` keeps it to
+    games ending as they're played, not loaded records or going to the end.
+  - `lib/attention.ts`: when a human's opponent has moved and the window
+    isn't focused, the OS attention request (Tauri permission
+    `core:window:allow-request-user-attention`), or a title prefix in a
+    browser.
   - `lib/theme.ts` plus `themes/<dir>/*.theme.json`: data-driven themes
     (image or procedural board/pieces).
   - `lib/settings.svelte.ts`: display preferences (theme, coordinates,

@@ -355,7 +355,10 @@ Sharp pleasant, which is the next planned milestone:
 1. (Done: last-move arrows, the captured tray, coordinates, hover arrows,
    and replaying the last move.)
 2. (Done: step mode. Wheel step scrubbing moved to P2.)
-3. Game-end dialog, low-time tick, and unfocused-window alert.
+3. (Done: the game-end dialog with rematch and swap sides, the low-time
+   tick, and the unfocused-window alert. Still open from those items:
+   "analyse" in the dialog, waiting on analysis mode; the clock colors
+   and a game-start sound.)
 4. The keyboard map and `?` help overlay.
 5. Analysis mode with an eval bar, PV arrows, and interactive PV.
 6. More settings (the dialog exists; see section 9).

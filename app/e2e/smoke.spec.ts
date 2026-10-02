@@ -216,3 +216,28 @@ test('step mode offers the step toward the pointer and a click takes it', async 
   expect(await steps()).toEqual(['Eg4n', 'Eg5n']);
   await page.evaluate(() => localStorage.removeItem('settings'));
 });
+
+test('a game ending in play shows the result once', async ({ page }) => {
+  await freshGame(page);
+  await page.evaluate(() =>
+    window.__arimaa!.api.startMatch({
+      gold: { kind: 'human' },
+      silver: { kind: 'human' },
+      goldTimeControl: '1s/1s',
+      silverTimeControl: null,
+    }),
+  );
+  const dialog = page.getByRole('dialog', { name: 'Silver wins' });
+  await expect(dialog).toBeVisible({ timeout: 5000 });
+  await expect(dialog.getByText('Gold ran out of time.')).toBeVisible();
+  // Started without the New game dialog, so there's no match to swap.
+  await expect(dialog.getByRole('button', { name: 'Swap sides' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Review game' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // Returning to the end of the finished game doesn't announce it again.
+  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
+  await page.evaluate(() => window.__arimaa!.idle());
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});

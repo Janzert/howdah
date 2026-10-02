@@ -13,9 +13,9 @@ import trapped from '../sounds/classic/trapped.wav?inline';
 import win from '../sounds/classic/win.wav?inline';
 import { dataUrlBytes, decodeWav } from './wav';
 
-export type SoundName = 'slide' | 'place' | 'trapped' | 'win';
+export type SoundName = 'slide' | 'place' | 'trapped' | 'win' | 'tick';
 
-const sources: Record<SoundName, string> = { slide, place, trapped, win };
+const sources: Record<Exclude<SoundName, 'tick'>, string> = { slide, place, trapped, win };
 
 let muted = false;
 let context: AudioContext | null = null;
@@ -50,6 +50,7 @@ function init(): AudioContext | null {
   keepAlive.loop = true;
   keepAlive.connect(output);
   keepAlive.start();
+  buffers.set('tick', tickBuffer(context));
   for (const [name, url] of Object.entries(sources) as [SoundName, string][]) {
     try {
       const wav = decodeWav(dataUrlBytes(url));
@@ -61,6 +62,20 @@ function init(): AudioContext | null {
     }
   }
   return context;
+}
+
+/** The low-time clock tick: a short, quickly decaying click. The classic
+ * set has no tick, so it's synthesized. */
+function tickBuffer(ctx: AudioContext): AudioBuffer {
+  const rate = ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, Math.round(rate * 0.04), rate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    const t = i / rate;
+    const tone = Math.sin(2 * Math.PI * 1900 * t) + 0.5 * Math.sin(2 * Math.PI * 3100 * t);
+    data[i] = 0.35 * tone * Math.exp(-t / 0.006);
+  }
+  return buffer;
 }
 
 /**

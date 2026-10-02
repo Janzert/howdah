@@ -1,20 +1,24 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api, errorMessage } from './lib/api';
+  import { requestAttention } from './lib/attention';
   import type { EngineSpec } from './lib/bindings/EngineSpec';
   import type { MatchSpec } from './lib/bindings/MatchSpec';
   import type { SessionView } from './lib/bindings/SessionView';
   import type { Square } from './lib/bindings/Square';
   import Board from './lib/board/Board.svelte';
   import { BoardModel } from './lib/board/boardModel.svelte';
+  import { nextTick, turnTimeLeft } from './lib/clock';
   import EnginePanel from './lib/EnginePanel.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
+  import GameEndDialog from './lib/GameEndDialog.svelte';
   import { registerApp } from './lib/devHooks';
   import { on } from './lib/events';
   import MoveList from './lib/MoveList.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
   import PlayerBar from './lib/PlayerBar.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
+  import { justEnded } from './lib/result';
   import { settings } from './lib/settings.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
   import { play, setMuted, unlockOnInteraction } from './lib/sound';
@@ -45,6 +49,11 @@
   let showNewGame = $state(false);
   let showEngines = $state(false);
   let showSettings = $state(false);
+  // The game-end dialog waits for the final move's animation.
+  let gameEndPending = $state(false);
+  let showGameEnd = $state(false);
+  /** The last match started from the new-game dialog, for a rematch. */
+  let lastSpec = $state<MatchSpec | null>(null);
   let engines = $state<EngineSpec[]>([]);
   let messageTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -79,11 +88,62 @@
       const free =
         spec.gold.kind === 'human' && spec.silver.kind === 'human' && !spec.goldTimeControl && !spec.silverTimeControl;
       await (free ? api.newGame() : api.startMatch(spec));
+      lastSpec = free ? null : spec;
       return null;
     } catch (e) {
       return errorMessage(e);
     }
   }
+
+  /** The same game again: the last match while one is on, else free play. */
+  function rematch(): Promise<string | null> {
+    if (view?.players && lastSpec) return startGame(lastSpec);
+    const human = { kind: 'human' } as const;
+    return startGame({ gold: human, silver: human, goldTimeControl: null, silverTimeControl: null });
+  }
+
+  const swappedSpec = $derived.by((): MatchSpec | null => {
+    if (!view?.players || !lastSpec) return null;
+    const s = lastSpec;
+    const swapped = {
+      gold: s.silver,
+      silver: s.gold,
+      goldTimeControl: s.silverTimeControl,
+      silverTimeControl: s.goldTimeControl,
+    };
+    return JSON.stringify(swapped) === JSON.stringify(s) ? null : swapped;
+  });
+
+  $effect(() => {
+    if (!view?.result) {
+      // A new game (or going back) drops an announcement not yet made.
+      gameEndPending = false;
+      showGameEnd = false;
+    } else if (gameEndPending && !model.animating) {
+      gameEndPending = false;
+      showGameEnd = true;
+    }
+  });
+
+  // Low-time ticks while a human's clock runs, at the times in TICK_TIMES_MS.
+  $effect(() => {
+    const clock = view?.clock;
+    const side = clock?.running;
+    if (!clock || !side || view?.result || view?.players?.[side].kind !== 'human') return;
+    const arrived = receivedAt;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = (lastTick?: number) => {
+      const left = turnTimeLeft(clock, performance.now() - arrived);
+      const tick = nextTick(left, lastTick);
+      if (tick == null) return;
+      timer = setTimeout(() => {
+        play('tick');
+        schedule(tick);
+      }, left - tick);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  });
 
   $effect(() => savePref('flipped', flipped ? '1' : '0'));
   $effect(() => setMuted(!settings.sound));
@@ -110,12 +170,19 @@
   onMount(() => {
     unlockOnInteraction();
     const unlisten = on('game://changed', (u) => {
-      const hadResult = view?.result != null;
+      const prev = view;
+      const ended = justEnded(prev, u.view);
       const setupCommitted = view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;
       setView(u.view);
       model.apply(u.view.position.pieces, u.animation, animHooks, u.animationBudgetMs);
       if (setupCommitted) play('place');
-      if (!hadResult && u.view.result) play('win');
+      if (ended) {
+        play('win');
+        gameEndPending = true;
+      }
+      if (prev && u.view.moves.length > prev.moves.length && awaitsHumanAgainstEngine(u.view)) {
+        requestAttention();
+      }
     });
     api.getState().then((v) => {
       setView(v);
@@ -126,6 +193,14 @@
       unlisten.then((f) => f());
     };
   });
+
+  /** Whether a human is to move at the live end, playing a non-human. */
+  function awaitsHumanAgainstEngine(v: SessionView): boolean {
+    if (!v.players || !v.canInput || v.result || v.ply !== v.moves.length) return false;
+    const toMove = v.position.sideToMove;
+    const other = toMove === 'gold' ? 'silver' : 'gold';
+    return v.players[toMove].kind === 'human' && v.players[other].kind !== 'human';
+  }
 
   const interactive = $derived(view != null && view.phase !== 'over' && view.canInput);
   const hasEngine = $derived(
@@ -178,7 +253,7 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
-    if (!view || record != null || showNewGame || showEngines || showSettings) return;
+    if (!view || record != null || showNewGame || showEngines || showSettings || showGameEnd) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, select')) return;
     switch (e.key) {
@@ -289,6 +364,14 @@
 {/if}
 {#if showEngines}
   <EnginesDialog onChanged={reloadEngines} onClose={() => (showEngines = false)} />
+{/if}
+{#if showGameEnd && view?.result}
+  <GameEndDialog
+    {view}
+    onRematch={rematch}
+    onSwapSides={swappedSpec ? () => startGame(swappedSpec!) : undefined}
+    onClose={() => (showGameEnd = false)}
+  />
 {/if}
 {#if showSettings}
   <SettingsDialog onClose={() => (showSettings = false)} />
