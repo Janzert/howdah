@@ -16,12 +16,23 @@ export const api = {
   getState: () => invoke<SessionView>('get_state'),
   newGame: () => invoke<void>('new_game'),
   loadGame: (record: string) => invoke<void>('load_game', { record }),
-  exportGame: () => invoke<string>('export_game'),
+  /** The game as a record: in full, or only its main line as a plain record. */
+  exportGame: (mainLineOnly = false) => invoke<string>('export_game', { mainLineOnly }),
   gotoPly: (ply: number) => invoke<void>('goto_ply', { ply }),
   /** Shows the live position of a match (the end of the line in free play). */
   gotoLive: () => invoke<void>('goto_live'),
   /** Shows any move of the game tree, switching to its line if needed. */
   gotoNode: (node: NodeId) => invoke<void>('goto_node', { node }),
+  /** Shows the previous (-1) or next (1) alternative to the shown move. */
+  gotoSibling: (offset: number) => invoke<void>('goto_sibling', { offset }),
+  /** Shows the next or previous move with alternatives on the shown line. */
+  gotoBranch: (forward: boolean) => invoke<void>('goto_branch', { forward }),
+  /** Sets the comment after a move (the game comment for the root); empty removes it. */
+  setComment: (node: NodeId, text: string) => invoke<void>('set_comment', { node, text }),
+  /** Adds or removes a glyph, numbered as in PGN (1 = `!`). */
+  toggleGlyph: (node: NodeId, glyph: number) => invoke<void>('toggle_glyph', { node, glyph }),
+  /** Folds a variation to its first move, or unfolds it. */
+  toggleCollapsed: (node: NodeId) => invoke<void>('toggle_collapsed', { node }),
   promote: (node: NodeId) => invoke<void>('promote', { node }),
   demote: (node: NodeId) => invoke<void>('demote', { node }),
   makeMainLine: (node: NodeId) => invoke<void>('make_main_line', { node }),

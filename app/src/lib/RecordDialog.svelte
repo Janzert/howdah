@@ -3,14 +3,28 @@
 
   let {
     initial,
+    onExport,
     onLoad,
     onClose,
-  }: { initial: string; onLoad: (record: string) => Promise<string | null>; onClose: () => void } = $props();
+  }: {
+    initial: string;
+    /** The game's record again, in full or only the main line. */
+    onExport: (mainLineOnly: boolean) => Promise<string>;
+    onLoad: (record: string) => Promise<string | null>;
+    onClose: () => void;
+  } = $props();
 
   // The dialog edits its own copy of the record.
   let text = $state(untrack(() => initial));
   let error = $state<string | null>(null);
   let copied = $state(false);
+  let mainLineOnly = $state(false);
+
+  async function setMainLineOnly(on: boolean) {
+    mainLineOnly = on;
+    text = await onExport(on);
+    copied = false;
+  }
   let dialog: HTMLDialogElement;
 
   $effect(() => {
@@ -56,6 +70,10 @@
   <div class="buttons">
     <label class="file">Open file… <input type="file" accept=".txt,text/plain" onchange={openFile} /></label>
     <button onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+    <label class="check" title="A plain record without variations, comments or tags, for tools that read only those">
+      <input type="checkbox" checked={mainLineOnly} onchange={(e) => setMainLineOnly(e.currentTarget.checked)} />
+      Main line only
+    </label>
     <span class="spacer"></span>
     <button onclick={onClose}>Close</button>
     <button class="primary" onclick={load} title="Load (Ctrl+Enter)">Load</button>
@@ -107,6 +125,12 @@
   }
   .spacer {
     flex: 1;
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
   }
   .file {
     position: relative;

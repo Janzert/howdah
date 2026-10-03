@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { SHORTCUTS, shortcutFor, shortcutGroups } from './shortcuts';
+import { SHORTCUTS, keyName, shortcutFor, shortcutGroups } from './shortcuts';
 
-const press = (key: string, mods: { ctrlKey?: boolean; altKey?: boolean; metaKey?: boolean } = {}) =>
-  shortcutFor({ key, ctrlKey: false, altKey: false, metaKey: false, ...mods })?.id ?? null;
+const press = (
+  key: string,
+  mods: { shiftKey?: boolean; ctrlKey?: boolean; altKey?: boolean; metaKey?: boolean } = {},
+) => shortcutFor({ key, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods })?.id ?? null;
 
 describe('shortcutFor', () => {
   it('maps each key to its shortcut', () => {
@@ -12,6 +14,19 @@ describe('shortcutFor', () => {
     expect(press('?')).toBe('help');
     expect(press(' ')).toBe('moveNow');
     expect(press('x')).toBeNull();
+  });
+
+  it('tells Shift with a named key apart', () => {
+    expect(press('ArrowRight', { shiftKey: true })).toBe('nextBranch');
+    expect(press('ArrowLeft', { shiftKey: true })).toBe('prevBranch');
+    expect(press('ArrowLeft')).toBe('back');
+    expect(press('ArrowDown')).toBe('nextVariation');
+    expect(press('Home', { shiftKey: true })).toBeNull();
+  });
+
+  it('names Shift combinations for the help', () => {
+    expect(keyName('Shift+ArrowLeft')).toBe('Shift+←');
+    expect(keyName('ArrowUp')).toBe('↑');
   });
 
   it('ignores case, so Caps Lock and Shift still work', () => {

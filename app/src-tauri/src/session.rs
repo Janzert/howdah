@@ -13,10 +13,11 @@
 //! and is never sent. Engine moves arrive via `apply_engine_move` from the
 //! controller.
 
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use arimaa_core::{
-    Color, Game, GameError, GameRecord, GameResult, GameTree, Move, NodeId, Placement, Position, Route,
+    Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position, Route,
     Square, Step, StepEffect, StepKind, TimeControl, TurnBuilder, WinReason, default_setup,
     limit_score_winner, notation,
 };
@@ -150,6 +151,11 @@ pub struct Session {
     tags: Vec<(String, String)>,
     /// The line being shown: the root, then one node per ply.
     line: Vec<NodeId>,
+    /// The child last shown after each node, so that coming back to a node
+    /// follows the line the user was in rather than its main continuation.
+    followed: HashMap<NodeId, NodeId>,
+    /// First moves of variations shown folded.
+    collapsed: HashSet<NodeId>,
     /// The line being shown as a plain game.
     game: Game,
     /// Ply being shown (an index into `line`).
@@ -186,6 +192,8 @@ impl Session {
             tree,
             tags,
             line,
+            followed: HashMap::new(),
+            collapsed: HashSet::new(),
             game,
             cursor,
             turn: None,
@@ -269,17 +277,43 @@ impl Session {
         match self.line.iter().position(|&n| n == node) {
             Some(i) => self.cursor = i,
             None => {
-                self.line = self.tree.line_through(node);
+                self.line = self.line_through(node);
                 self.cursor = self.tree[node].ply();
             }
         }
         self.refresh();
     }
 
+    /// The path to `node`, then on to the end of a line: the line last
+    /// shown after each node where there is one, otherwise the main
+    /// continuation.
+    fn line_through(&self, node: NodeId) -> Vec<NodeId> {
+        let mut line = self.tree.path(node);
+        let mut at = node;
+        loop {
+            let n = &self.tree[at];
+            let followed = self.followed.get(&at).filter(|c| n.children().contains(c));
+            let next = match followed {
+                Some(&c) => c,
+                None if n.result().is_some() => break,
+                None => match n.children().first() {
+                    Some(&c) => c,
+                    None => break,
+                },
+            };
+            line.push(next);
+            at = next;
+        }
+        line
+    }
+
     /// Brings the shown line up to date with the tree (it grows when moves
     /// are added at its end) and recomputes what depends on it.
     fn refresh(&mut self) {
-        self.line = self.tree.line_through(self.line_end());
+        self.line = self.line_through(self.line_end());
+        for pair in self.line.windows(2) {
+            self.followed.insert(pair[0], pair[1]);
+        }
         self.game = self.tree.to_game(self.line_end()).expect("the line exists");
         self.ids = compute_ids(&self.game);
         let setup_due = Game::is_setup_ply(self.cursor)
@@ -548,9 +582,10 @@ impl Session {
     }
 
     /// The game as a record: a plain record when it's one line without
-    /// comments or tags, otherwise the full record with variations.
-    pub fn export(&self) -> String {
-        if self.tags.is_empty() && self.tree.is_plain() {
+    /// comments or tags (or `main_line_only` is set), otherwise the full
+    /// record with variations.
+    pub fn export(&self, main_line_only: bool) -> String {
+        if main_line_only || (self.tags.is_empty() && self.tree.is_plain()) {
             return self.tree.main_game().to_record();
         }
         GameRecord { tags: self.tags.clone(), tree: self.tree.clone() }.to_record()
@@ -580,6 +615,78 @@ impl Session {
         // Off the line, only a step forward can be next to the old cursor.
         let forward = self.tree[node].parent() == Some(from);
         Ok(if forward && !had_turn { self.move_animation(self.cursor - 1) } else { Vec::new() })
+    }
+
+    /// Shows the move `offset` places away among the alternatives for the
+    /// shown move (the previous or next variation), if there is one.
+    pub fn goto_sibling(&mut self, offset: isize) -> Result<Vec<AnimStep>, ApiError> {
+        let node = self.cursor_node();
+        let Some(parent) = self.tree[node].parent() else { return Ok(Vec::new()) };
+        let siblings = self.tree[parent].children();
+        let i = siblings.iter().position(|&c| c == node).expect("a child of its parent");
+        match i.checked_add_signed(offset).and_then(|j| siblings.get(j)) {
+            Some(&other) => self.goto_node(other),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Shows the next (or previous) move on the shown line that has
+    /// alternatives, or the end (or start) of the line if there's none.
+    pub fn goto_branch(&mut self, forward: bool) -> Result<Vec<AnimStep>, ApiError> {
+        let branches = |ply: &usize| {
+            let node = &self.tree[self.line[*ply]];
+            node.parent().is_some_and(|p| self.tree[p].children().len() > 1)
+        };
+        let ply = if forward {
+            (self.cursor + 1..self.line.len()).find(branches).unwrap_or(self.line.len() - 1)
+        } else {
+            (1..self.cursor).rev().find(branches).unwrap_or(0)
+        };
+        if ply == self.cursor { Ok(Vec::new()) } else { self.goto(ply) }
+    }
+
+    /// Sets the comment after `node` (the game comment for the root). An
+    /// empty comment removes it.
+    pub fn set_comment(&mut self, node: NodeId, text: &str) -> Result<Vec<AnimStep>, ApiError> {
+        let text = text.trim_end();
+        let annotation = self.tree.annotation_mut(node).map_err(ApiError::illegal)?;
+        annotation.comment = (!text.is_empty()).then(|| text.to_string());
+        Ok(Vec::new())
+    }
+
+    /// Adds a glyph to `node`'s move, replacing one of the same kind, or
+    /// removes it if the move has it already.
+    pub fn toggle_glyph(&mut self, node: NodeId, glyph: Glyph) -> Result<Vec<AnimStep>, ApiError> {
+        if node == GameTree::ROOT {
+            return Err(ApiError::state("glyphs go on moves"));
+        }
+        let annotation = self.tree.annotation_mut(node).map_err(ApiError::illegal)?;
+        if annotation.glyphs.contains(&glyph) {
+            annotation.remove_glyph(glyph);
+        } else {
+            annotation.set_glyph(glyph);
+        }
+        Ok(Vec::new())
+    }
+
+    /// True if `node` is the first move of a variation: not its parent's
+    /// main continuation, or after the end of the game.
+    fn starts_variation(&self, node: NodeId) -> bool {
+        self.tree[node].parent().is_some_and(|p| {
+            let parent = &self.tree[p];
+            parent.result().is_some() || parent.children().first() != Some(&node)
+        })
+    }
+
+    /// Folds the variation starting at `node` to its first move, or unfolds it.
+    pub fn toggle_collapsed(&mut self, node: NodeId) -> Result<Vec<AnimStep>, ApiError> {
+        if !self.tree.contains(node) || !self.starts_variation(node) {
+            return Err(ApiError::state("only variations can be folded"));
+        }
+        if !self.collapsed.remove(&node) {
+            self.collapsed.insert(node);
+        }
+        Ok(Vec::new())
     }
 
     /// Applies an edit to the tree's lines (promote, delete, ...). While a
@@ -1000,6 +1107,14 @@ impl Session {
         out.push(self.node_view(first, depth));
         out[start].starts_variation = true;
         self.tree_view_from(first, depth, out);
+        let rest = (out.len() - start - 1) as u32;
+        out[start].collapsible = rest > 0;
+        // A folded variation still opens while the board shows a move inside it.
+        let inside = self.line[..self.cursor].contains(&first);
+        if rest > 0 && self.collapsed.contains(&first) && !inside {
+            out.truncate(start + 1);
+            out[start].folded = rest;
+        }
         out.last_mut().expect("the first move").closes += 1;
     }
 
@@ -1020,6 +1135,8 @@ impl Session {
             intro: annotation.intro.clone(),
             on_line: self.line.contains(&id),
             result: node.result(),
+            collapsible: false,
+            folded: 0,
         }
     }
 
@@ -1241,7 +1358,7 @@ mod tests {
         assert_eq!((v.ply, v.moves.len()), (3, 3));
         assert_eq!(v.moves[2].notation, "Ha2n");
         assert_eq!(s.tree.main_line().len(), 11);
-        let record = s.export();
+        let record = s.export(false);
         assert!(record.contains("(\n2g Ha2n\n)"), "{record}");
         // Playing the game's own move (2g Ee2n Ee3n Ee4n Ee5e) goes back
         // onto the main line instead of adding a copy.
@@ -1330,6 +1447,84 @@ mod tests {
     }
 
     #[test]
+    fn returning_to_a_move_follows_the_line_last_shown() {
+        let mut s = with_variations();
+        let alt = s.tree[s.tree.main_line()[2]].children()[1];
+        let deep = s.cursor_node();
+        s.goto_node(s.tree.main_line()[4]).unwrap();
+        assert_eq!(s.line, s.tree.main_line());
+        // Back to the variation: its deeper line, not its main continuation.
+        s.goto_node(alt).unwrap();
+        assert_eq!(s.line_end(), deep);
+        assert_eq!(s.view().moves[3].notation.split(' ').next(), Some("ha7s"));
+    }
+
+    #[test]
+    fn sibling_and_branch_navigation() {
+        let mut s = with_variations();
+        let main = s.tree.main_line();
+        let alt = s.tree[main[2]].children()[1];
+        let deep = s.cursor_node();
+        s.goto_node(alt).unwrap();
+        s.goto_sibling(-1).unwrap();
+        assert_eq!(s.cursor_node(), main[3]);
+        s.goto_sibling(-1).unwrap();
+        assert_eq!(s.cursor_node(), main[3], "no earlier alternative");
+        s.goto_sibling(1).unwrap();
+        assert_eq!((s.cursor_node(), s.line_end()), (alt, deep));
+
+        s.goto_node(main[4]).unwrap();
+        s.goto(0).unwrap();
+        s.goto_branch(true).unwrap();
+        assert_eq!(s.cursor, 3, "the first move with alternatives");
+        s.goto_branch(true).unwrap();
+        assert_eq!(s.cursor, main.len() - 1, "no more: the end of the line");
+        s.goto_branch(false).unwrap();
+        assert_eq!(s.cursor, 3);
+        s.goto_branch(false).unwrap();
+        assert_eq!(s.cursor, 0);
+    }
+
+    #[test]
+    fn comments_and_glyphs() {
+        let mut s = with_variations();
+        let alt = s.tree[s.tree.main_line()[2]].children()[1];
+        let row = |s: &Session| s.view().tree.into_iter().find(|m| m.id == alt).unwrap();
+        s.set_comment(alt, "Try this.\n").unwrap();
+        assert_eq!(row(&s).comment.as_deref(), Some("Try this."));
+        s.set_comment(alt, "  ").unwrap();
+        assert_eq!(row(&s).comment, None);
+        s.set_comment(GameTree::ROOT, "A game").unwrap();
+        assert_eq!(s.view().game_comment.as_deref(), Some("A game"));
+        s.toggle_glyph(alt, Glyph::GOOD).unwrap();
+        s.toggle_glyph(alt, Glyph::MISTAKE).unwrap();
+        assert_eq!(row(&s).glyphs, ["?"], "one move glyph replaces another");
+        s.toggle_glyph(alt, Glyph::MISTAKE).unwrap();
+        assert!(row(&s).glyphs.is_empty());
+        assert!(s.toggle_glyph(GameTree::ROOT, Glyph::GOOD).is_err());
+        assert!(s.set_comment(NodeId(999), "x").is_err());
+        assert!(s.export(false).contains("{A game}"));
+        assert_eq!(s.export(true), s.tree.main_game().to_record());
+    }
+
+    #[test]
+    fn folding_variations() {
+        let mut s = with_variations();
+        let main = s.tree.main_line();
+        let alt = s.tree[main[2]].children()[1];
+        assert!(s.toggle_collapsed(main[3]).is_err(), "main line moves don't fold");
+        s.toggle_collapsed(alt).unwrap();
+        let row = |s: &Session| s.view().tree.into_iter().find(|m| m.id == alt).unwrap();
+        assert_eq!((row(&s).collapsible, row(&s).folded), (true, 0), "open while the board is inside it");
+        s.goto_node(main[4]).unwrap();
+        let v = s.view();
+        assert_eq!(row(&s).folded, 2);
+        assert_eq!(v.tree.iter().filter(|m| m.depth > 0).count(), 1, "only its first move shows");
+        s.toggle_collapsed(alt).unwrap();
+        assert_eq!(row(&s).folded, 0);
+    }
+
+    #[test]
     fn a_running_match_keeps_its_line() {
         let mut s = human_vs_engine_started();
         s.try_step(sq("e2"), sq("e3")).unwrap();
@@ -1359,10 +1554,10 @@ mod tests {
         let mut text = SAMPLE.lines().take(3).collect::<Vec<_>>().join("\n");
         text.push_str(" {first} !?\n");
         s.load(&text).unwrap();
-        assert!(s.export().contains("{first}"));
+        assert!(s.export(false).contains("{first}"));
         let mut s = Session::new();
         s.load(SAMPLE).unwrap();
-        assert_eq!(s.export(), Game::parse(SAMPLE).unwrap().to_record(), "a plain game stays plain");
+        assert_eq!(s.export(false), Game::parse(SAMPLE).unwrap().to_record(), "a plain game stays plain");
     }
 
     #[test]
@@ -1615,7 +1810,7 @@ mod tests {
         let live = s.matchup.as_ref().unwrap().live;
         assert_eq!(s.tree[live].children().len(), 2);
         assert_eq!(s.tree.line_end(GameTree::ROOT), live);
-        let record = s.export();
+        let record = s.export(false);
         assert_eq!(record.matches("(\n2s ").count(), 2, "{record}");
         assert!(record.ends_with(")\n1-0\n"), "{record}");
     }

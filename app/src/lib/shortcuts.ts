@@ -7,6 +7,10 @@ export type ShortcutId =
   | 'forward'
   | 'start'
   | 'end'
+  | 'prevVariation'
+  | 'nextVariation'
+  | 'prevBranch'
+  | 'nextBranch'
   | 'commit'
   | 'undoStep'
   | 'resetTurn'
@@ -29,6 +33,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'forward', group: 'Moves', keys: ['ArrowRight', 'j'], label: 'Next move; at the latest, replay it' },
   { id: 'start', group: 'Moves', keys: ['Home', '0'], label: 'Start of the game' },
   { id: 'end', group: 'Moves', keys: ['End', '$'], label: 'Latest move' },
+  { id: 'prevVariation', group: 'Moves', keys: ['ArrowUp'], label: 'Previous alternative to the shown move' },
+  { id: 'nextVariation', group: 'Moves', keys: ['ArrowDown'], label: 'Next alternative to the shown move' },
+  { id: 'prevBranch', group: 'Moves', keys: ['Shift+ArrowLeft'], label: 'Previous move with alternatives' },
+  { id: 'nextBranch', group: 'Moves', keys: ['Shift+ArrowRight'], label: 'Next move with alternatives' },
   { id: 'commit', group: 'Your turn', keys: ['Enter'], label: 'Commit the move or setup' },
   { id: 'undoStep', group: 'Your turn', keys: ['Backspace'], label: 'Undo a step' },
   { id: 'resetTurn', group: 'Your turn', keys: ['Escape'], label: 'Undo the whole turn' },
@@ -42,6 +50,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
 const KEY_NAMES: Record<string, string> = {
   ArrowLeft: '←',
   ArrowRight: '→',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
   Enter: 'Enter',
   Backspace: 'Backspace',
   Escape: 'Esc',
@@ -50,14 +60,22 @@ const KEY_NAMES: Record<string, string> = {
 
 /** How the help shows a key. */
 export function keyName(key: string): string {
+  if (key.startsWith('Shift+')) return `Shift+${keyName(key.slice(6))}`;
   return KEY_NAMES[key] ?? key;
 }
 
 /** The shortcut a key press means, if any. Presses with Ctrl, Alt or Meta
- * are left to the browser and the OS; Shift is part of `?` and `$`. */
-export function shortcutFor(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKey'>): Shortcut | null {
+ * are left to the browser and the OS. Shift is part of a character (`?`,
+ * `$`), and is written out for named keys (`Shift+ArrowLeft`). */
+export function shortcutFor(
+  e: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKey' | 'altKey' | 'metaKey'>,
+): Shortcut | null {
   if (e.ctrlKey || e.altKey || e.metaKey) return null;
-  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (e.key.length > 1) {
+    const key = e.shiftKey ? `Shift+${e.key}` : e.key;
+    return SHORTCUTS.find((s) => s.keys.includes(key)) ?? null;
+  }
+  const key = e.key.toLowerCase();
   return SHORTCUTS.find((s) => s.keys.includes(key) || s.keys.includes(e.key)) ?? null;
 }
 

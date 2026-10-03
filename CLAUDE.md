@@ -43,7 +43,7 @@ ideas from other Arimaa and chess clients.
     child reuses it, repetition counts only the path to the node, and
     `from_game`/`to_game`/`main_game` convert to and from `Game`. Nodes
     carry an `Annotation` (comment, variation intro and PGN-numbered
-    `Glyph`s). The app doesn't use it yet.
+    `Glyph`s). The session keeps its game as one.
   - `record::GameRecord`: tags plus a `GameTree`, read from and written to
     the PGN-style record format (`parse`, `parse_all`, `to_record`). The
     reader is lenient (arimaa.com `Name: value` tags, `White`/`Black`
@@ -65,6 +65,13 @@ ideas from other Arimaa and chess clients.
     turn, setup draft, and stable piece ids for animation (computed along
     the line). Committing anywhere adds a branch (`show` moves to it);
     nothing is truncated. Unit-tested, no Tauri types.
+    - `followed` remembers the child last shown after each node, so a line
+      through a node (`Session::line_through`) continues the way the user
+      last went rather than down the main continuation, as lichess does.
+    - `goto_sibling` (`↑`/`↓`) and `goto_branch` (`Shift+←`/`→`, the
+      previous or next move on the line with alternatives) navigate the
+      tree; `set_comment`, `toggle_glyph` and `toggle_collapsed` (folded
+      variations, which stay open while the cursor is inside one) edit it.
     - It's either free play or a *match*: a player per side (human or
       engine), an optional time control per side (with the game time limit
       and turn limit enforced), and a `generation` counter bumped on every
@@ -126,7 +133,13 @@ ideas from other Arimaa and chess clients.
     line main, moves it up or down (`promote`/`demote`), deletes from a
     move (`delete_from`; refused for a running match's line), or copies
     moves. The session refuses edits that would move a running match's
-    line off the main line (`Session::edit_lines`).
+    line off the main line (`Session::edit_lines`). Variations with more
+    than one move have a fold toggle (`MoveNodeView.collapsible`/`folded`).
+  - `CommentBox.svelte`, under the move list, edits the shown move's
+    comment (the game comment at the start; saved on blur or Ctrl+Enter,
+    Esc reverts) and toggles its move glyphs.
+  - `RecordDialog.svelte` exports the full record or, with "Main line
+    only", a plain record (`export_game(mainLineOnly)`).
   - `lib/events.ts`: typed `on()`.
   - `lib/board/`: SVG board. `BoardModel` plays `AnimStep`s: slide, then
     fade out on capture, with fade-in for restored pieces going backward.

@@ -1,7 +1,7 @@
 # Variation tree: design
 
-Status: reviewed (2026-10-02); open questions remain. Nothing here is
-implemented yet.
+Status: reviewed (2026-10-02). Build order steps 1 to 5 are done
+(2026-10-03); open questions remain.
 
 Today a game is one line of moves. Entering a move at an earlier ply
 truncates everything after it (`Game::truncate` in
@@ -207,8 +207,11 @@ These are the keys `lib/shortcuts.ts` left out until variations exist:
   `SessionView.tree` (`MoveNodeView`s), `cursor`, `live` and
   `gameComment` were added. Commands: `goto_node`, `goto_live`,
   `promote`, `demote`, `make_main_line`, `delete_from`; `goto_ply` stays
-  for the shown line. Not yet: the step commands and collapsing. The
-  original plan:
+  for the shown line. Step 5 (2026-10-03) added `goto_sibling`,
+  `goto_branch`, `set_comment`, `toggle_glyph`, `toggle_collapsed`
+  (`MoveNodeView.collapsible` and `folded`), and a main-line-only export.
+  The current line is remembered per node (the child last shown) rather
+  than as one `line_end`. The original plan:
 - `SessionView.moves` becomes the tree, flattened in display order:
 
   ```ts
@@ -473,6 +476,7 @@ parse, and the rules results match the archive's.
 4. The boundary (`SessionView`, commands, ts-rs types) and the move list
    with nesting, the current line and the context menu.
 5. Keys, comments and glyphs in the UI, then export with variations.
+   Done (2026-10-03).
 
 Then analysis mode builds on it: the engine analyses `path(cursor)`, and
 clicking a PV turn adds the PV as a variation (`add_notation` per turn).

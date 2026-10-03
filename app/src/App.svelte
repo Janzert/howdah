@@ -17,6 +17,7 @@
   import { registerApp } from './lib/devHooks';
   import { on } from './lib/events';
   import MoveList from './lib/MoveList.svelte';
+  import CommentBox from './lib/CommentBox.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
   import PlayerBar from './lib/PlayerBar.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
@@ -285,6 +286,10 @@
     forward: (v) => goto(v.ply + 1),
     start: () => goto(0),
     end: () => gotoEnd(),
+    prevVariation: () => run(api.gotoSibling(-1)),
+    nextVariation: () => run(api.gotoSibling(1)),
+    prevBranch: () => run(api.gotoBranch(false)),
+    nextBranch: () => run(api.gotoBranch(true)),
     commit: (v) => {
       if (v.canInput) commit();
     },
@@ -366,6 +371,7 @@
         onEndMatch={() => run(api.endMatch())}
       />
       <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
+      <CommentBox {view} {run} />
       {#if hasEngine && view.players}
         <EnginePanel players={view.players} resetKey={matchKey} />
       {/if}
@@ -388,7 +394,12 @@
 </main>
 
 {#if record != null}
-  <RecordDialog initial={record} onLoad={loadRecord} onClose={() => (record = null)} />
+  <RecordDialog
+    initial={record}
+    onExport={(mainLineOnly) => api.exportGame(mainLineOnly)}
+    onLoad={loadRecord}
+    onClose={() => (record = null)}
+  />
 {/if}
 {#if showNewGame}
   <NewGameDialog

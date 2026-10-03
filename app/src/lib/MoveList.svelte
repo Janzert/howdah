@@ -95,6 +95,14 @@
       style="--depth: {m.depth}"
     >
       {#if m.intro}<div class="comment intro">{m.intro}</div>{/if}
+      {#if m.collapsible}
+        <button
+          class="fold"
+          aria-label={m.folded ? `Unfold the variation from ${m.label}` : `Fold the variation from ${m.label}`}
+          aria-expanded={m.folded === 0}
+          onclick={() => run(api.toggleCollapsed(m.id))}>{m.folded ? '▸' : '▾'}</button
+        >
+      {/if}
       <button
         class="move"
         class:current={m.id === view.cursor}
@@ -103,7 +111,7 @@
         oncontextmenu={(e) => openMenu(e, m)}
       >
         <span class="label">{m.label}</span>
-        <span class="notation">{m.notation}{#if m.glyphs.length}<span class="glyphs"> {m.glyphs.join(' ')}</span>{/if}</span>
+        <span class="notation">{m.notation}{#if m.glyphs.length}<span class="glyphs">{m.glyphs.join(' ')}</span>{/if}{#if m.folded}<span class="folded">+{m.folded}</span>{/if}</span>
       </button>
       {#if m.comment}<div class="comment">{m.comment}</div>{/if}
       {#if m.id === view.cursor && view.turn && view.turn.steps.length > 0}
@@ -132,6 +140,11 @@
   {@const protectedLine = liveLine.has(m.id)}
   <div class="menu" role="menu" style="left: {menu.x}px; top: {menu.y}px">
     <button role="menuitem" onclick={() => act(() => api.makeMainLine(m.id))}>Make main line</button>
+    {#if m.collapsible}
+      <button role="menuitem" onclick={() => act(() => api.toggleCollapsed(m.id))}>
+        {m.folded ? 'Unfold variation' : 'Fold variation'}
+      </button>
+    {/if}
     <button role="menuitem" disabled={index <= 0} onclick={() => act(() => api.promote(m.id))}>Move up</button>
     <button role="menuitem" disabled={index < 0 || index === sibs.length - 1} onclick={() => act(() => api.demote(m.id))}>
       Move down
@@ -159,7 +172,27 @@
   }
   .row {
     /* Variations are indented one step per level, with a guide line. */
+    position: relative;
     margin-left: calc(var(--depth) * 14px);
+  }
+  .fold {
+    position: absolute;
+    left: -14px;
+    top: 2px;
+    width: 14px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 18px;
+    cursor: pointer;
+  }
+  .fold:hover {
+    color: inherit;
+  }
+  .folded {
+    color: var(--muted);
   }
   .row.variation {
     border-left: 2px solid var(--border);
@@ -202,6 +235,10 @@
   .notation {
     white-space: normal;
     word-break: break-word;
+  }
+  .glyphs,
+  .folded {
+    margin-left: 0.4em;
   }
   .glyphs {
     font-weight: bold;

@@ -14,7 +14,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use arimaa_core::{NodeId, Square, TimeControl};
+use arimaa_core::{Glyph, NodeId, Square, TimeControl};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -111,8 +111,8 @@ impl Backend {
         self.mutate(|s| s.load(record).map(|_| Vec::new()))
     }
 
-    pub fn export_game(&self) -> String {
-        self.lock().export()
+    pub fn export_game(&self, main_line_only: bool) -> String {
+        self.lock().export(main_line_only)
     }
 
     pub fn goto_ply(&self, ply: usize) -> Result<(), ApiError> {
@@ -121,6 +121,26 @@ impl Backend {
 
     pub fn goto_node(&self, node: NodeId) -> Result<(), ApiError> {
         self.mutate(|s| s.goto_node(node))
+    }
+
+    pub fn goto_sibling(&self, offset: isize) -> Result<(), ApiError> {
+        self.mutate(|s| s.goto_sibling(offset))
+    }
+
+    pub fn goto_branch(&self, forward: bool) -> Result<(), ApiError> {
+        self.mutate(|s| s.goto_branch(forward))
+    }
+
+    pub fn set_comment(&self, node: NodeId, text: &str) -> Result<(), ApiError> {
+        self.mutate(|s| s.set_comment(node, text))
+    }
+
+    pub fn toggle_glyph(&self, node: NodeId, glyph: Glyph) -> Result<(), ApiError> {
+        self.mutate(|s| s.toggle_glyph(node, glyph))
+    }
+
+    pub fn toggle_collapsed(&self, node: NodeId) -> Result<(), ApiError> {
+        self.mutate(|s| s.toggle_collapsed(node))
     }
 
     pub fn promote(&self, node: NodeId) -> Result<(), ApiError> {
@@ -255,10 +275,15 @@ impl Backend {
             "get_state" => ok(self.get_state()),
             "new_game" => ok(self.new_game()?),
             "load_game" => ok(self.load_game(&arg::<String>(args, "record")?)?),
-            "export_game" => ok(self.export_game()),
+            "export_game" => ok(self.export_game(arg(args, "mainLineOnly")?)),
             "goto_ply" => ok(self.goto_ply(arg(args, "ply")?)?),
             "goto_live" => ok(self.goto_live()?),
             "goto_node" => ok(self.goto_node(arg(args, "node")?)?),
+            "goto_sibling" => ok(self.goto_sibling(arg(args, "offset")?)?),
+            "goto_branch" => ok(self.goto_branch(arg(args, "forward")?)?),
+            "set_comment" => ok(self.set_comment(arg(args, "node")?, &arg::<String>(args, "text")?)?),
+            "toggle_glyph" => ok(self.toggle_glyph(arg(args, "node")?, arg(args, "glyph")?)?),
+            "toggle_collapsed" => ok(self.toggle_collapsed(arg(args, "node")?)?),
             "promote" => ok(self.promote(arg(args, "node")?)?),
             "demote" => ok(self.demote(arg(args, "node")?)?),
             "make_main_line" => ok(self.make_main_line(arg(args, "node")?)?),

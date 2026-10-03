@@ -44,4 +44,14 @@ onLine: boolean,
 /**
  * How the game ended at this move, if it did.
  */
-result: GameResult | null, };
+result: GameResult | null, 
+/**
+ * The first move of a variation with more moves after it, which can
+ * be folded.
+ */
+collapsible: boolean, 
+/**
+ * While folded, how many moves of the variation are hidden after this
+ * one (0 when it's open).
+ */
+folded: number, };

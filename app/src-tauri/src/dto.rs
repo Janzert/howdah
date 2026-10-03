@@ -69,6 +69,12 @@ pub struct MoveNodeView {
     pub on_line: bool,
     /// How the game ended at this move, if it did.
     pub result: Option<GameResult>,
+    /// The first move of a variation with more moves after it, which can
+    /// be folded.
+    pub collapsible: bool,
+    /// While folded, how many moves of the variation are hidden after this
+    /// one (0 when it's open).
+    pub folded: u32,
 }
 
 /// A piece on a square.

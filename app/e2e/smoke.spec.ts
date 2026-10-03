@@ -280,3 +280,34 @@ test('the move list shows variations; a click follows one, and the menu deletes 
   await expect(variation).toHaveCount(0);
   expect(await page.evaluate(() => window.__arimaa!.state()!.ply)).toBe(2);
 });
+
+test('arrow keys switch lines, the comment box annotates, and a variation folds', async ({ page }) => {
+  await freshGame(page);
+  await load(page, [...SAMPLE_TO_3S.slice(0, 2), '2g Ee2n Ee3n', '(', '2g Ha2n', '2s hh7s', ')', '2s ee7s']);
+  const cursor = () =>
+    page.evaluate(() => {
+      const s = window.__arimaa!.state()!;
+      return s.tree.find((m) => m.id === s.cursor)?.notation;
+    });
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect.poll(cursor).toBe('Ee2n Ee3n');
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(cursor).toBe('Ha2n');
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(cursor).toBe('Ee2n Ee3n');
+  await page.keyboard.press('ArrowDown');
+
+  await page.getByRole('button', { name: 'Interesting move' }).click();
+  const comment = page.getByRole('textbox', { name: /Comment on 2g Ha2n/ });
+  await comment.fill('A quieter start.');
+  await comment.press('Control+Enter');
+  const list = page.locator('.moves');
+  await expect(list.getByText('A quieter start.')).toBeVisible();
+  await expect(list.getByRole('button', { name: /2g\s+Ha2n\s*!\?/ })).toBeVisible();
+
+  // Folded variations stay open while the board shows a move inside them.
+  await list.getByRole('button', { name: /2s\s+ee7s/ }).click();
+  await page.getByRole('button', { name: 'Fold the variation from 2g' }).click();
+  await expect(list.getByText('+1')).toBeVisible();
+  await expect(list.getByRole('button', { name: /2s\s+hh7s/ })).toHaveCount(0);
+});

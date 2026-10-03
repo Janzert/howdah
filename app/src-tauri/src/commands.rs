@@ -1,7 +1,7 @@
 //! Tauri commands: thin wrappers over [`Backend`], which holds the logic
 //! and documents the conventions.
 
-use arimaa_core::{NodeId, Square};
+use arimaa_core::{Glyph, NodeId, Square};
 use tauri::State;
 
 use crate::backend::Backend;
@@ -23,8 +23,8 @@ pub fn load_game(state: State<Backend>, record: String) -> Result<(), ApiError> 
 }
 
 #[tauri::command]
-pub fn export_game(state: State<Backend>) -> String {
-    state.export_game()
+pub fn export_game(state: State<Backend>, main_line_only: bool) -> String {
+    state.export_game(main_line_only)
 }
 
 #[tauri::command]
@@ -35,6 +35,31 @@ pub fn goto_ply(state: State<Backend>, ply: usize) -> Result<(), ApiError> {
 #[tauri::command]
 pub fn goto_node(state: State<Backend>, node: NodeId) -> Result<(), ApiError> {
     state.goto_node(node)
+}
+
+#[tauri::command]
+pub fn goto_sibling(state: State<Backend>, offset: isize) -> Result<(), ApiError> {
+    state.goto_sibling(offset)
+}
+
+#[tauri::command]
+pub fn goto_branch(state: State<Backend>, forward: bool) -> Result<(), ApiError> {
+    state.goto_branch(forward)
+}
+
+#[tauri::command]
+pub fn set_comment(state: State<Backend>, node: NodeId, text: String) -> Result<(), ApiError> {
+    state.set_comment(node, &text)
+}
+
+#[tauri::command]
+pub fn toggle_glyph(state: State<Backend>, node: NodeId, glyph: Glyph) -> Result<(), ApiError> {
+    state.toggle_glyph(node, glyph)
+}
+
+#[tauri::command]
+pub fn toggle_collapsed(state: State<Backend>, node: NodeId) -> Result<(), ApiError> {
+    state.toggle_collapsed(node)
 }
 
 #[tauri::command]
