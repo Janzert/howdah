@@ -25,9 +25,11 @@
   }
 
   const HEAD = 24;
+  /** How far the arrowhead reaches into the last square: past the edge,
+   * but short of the center, where the piece standing there would hide it. */
+  const TIP_INSET = 22;
 
-  /** The path through the square centers, ending at the edge of the last
-   * square (so the arrowhead isn't hidden under the piece standing there),
+  /** The path through the square centers, ending inside the last square,
    * plus the arrowhead triangle. */
   function geometry(squares: Square[]) {
     const pts = squares.map(center);
@@ -36,7 +38,7 @@
     const len = Math.hypot(e.x - s.x, e.y - s.y);
     const ux = (e.x - s.x) / len;
     const uy = (e.y - s.y) / len;
-    const tip = { x: e.x - ux * (SQ / 2 - 6), y: e.y - uy * (SQ / 2 - 6) };
+    const tip = { x: e.x - ux * (SQ / 2 - TIP_INSET), y: e.y - uy * (SQ / 2 - TIP_INSET) };
     const base = { x: tip.x - ux * HEAD, y: tip.y - uy * HEAD };
     const shaft = [...pts.slice(0, -1), base];
     const head = [
