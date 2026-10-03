@@ -406,21 +406,10 @@ impl Session {
     }
 
     /// Ends the game with a result decided outside the board. Plans made
-    /// after the live position end with it.
+    /// after the live position stay, as analysis after the end.
     fn finish(&mut self, result: GameResult, detail: Option<String>) {
         let live = self.live();
         let at_live = self.cursor_node() == live;
-        for plan in self.tree[live].children().to_vec() {
-            self.tree.delete(plan).expect("a child exists");
-        }
-        if !self.tree.contains(self.line_end()) {
-            self.cursor = self.cursor.min(self.tree[live].ply());
-            if !self.tree.contains(self.cursor_node()) {
-                self.cursor = self.tree[live].ply();
-            }
-            self.line = self.tree.path(live);
-            self.turn = None;
-        }
         if self.tree.end_line(live, result).is_ok() {
             self.end_detail = detail;
             if at_live {
@@ -635,7 +624,7 @@ impl Session {
         if Game::is_setup_ply(self.cursor) {
             return Err(ApiError::state("the setup must be made first"));
         }
-        if self.tree[self.cursor_node()].result().is_some() {
+        if self.tree[self.cursor_node()].is_terminal() {
             return Err(ApiError::state("the game is over"));
         }
         Ok(TurnBuilder::new(self.cursor_position()))
@@ -834,7 +823,7 @@ impl Session {
     fn phase(&self) -> Phase {
         if Game::is_setup_ply(self.cursor) {
             Phase::Setup
-        } else if self.tree[self.cursor_node()].result().is_some() {
+        } else if self.tree[self.cursor_node()].is_terminal() {
             Phase::Over
         } else {
             Phase::Play
@@ -1363,7 +1352,7 @@ mod tests {
     }
 
     #[test]
-    fn a_timeout_ends_plans_after_the_live_position() {
+    fn plans_stay_as_analysis_after_the_game_ends() {
         let mut s = Session::new();
         s.start_match([Player::Human, engine("b")], [Some("1s/0".parse().unwrap()); 2]);
         s.commit_setup().unwrap();
@@ -1384,8 +1373,21 @@ mod tests {
         let g = s.generation();
         s.engine_failed(g, Color::Silver, "crashed".into());
         let v = s.view();
-        assert_eq!((v.ply, v.moves.len()), (3, 3), "the plan is gone and the board is on the end");
+        assert_eq!((v.ply, v.moves.len()), (4, 4), "the board stays on the plan");
+        s.goto_live();
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply, v.moves_after_cursor), (3, Some(3), 1), "still on the plan's line");
         assert_eq!(v.result.unwrap().reason, WinReason::Forfeit);
+        assert_eq!(v.phase, Phase::Play, "the position can still be analysed");
+        // More analysis after the end is a variation, and the plan is still there.
+        s.try_step(sq("d7"), sq("d6")).unwrap();
+        s.commit_turn().unwrap();
+        let live = s.matchup.as_ref().unwrap().live;
+        assert_eq!(s.tree[live].children().len(), 2);
+        assert_eq!(s.tree.line_end(GameTree::ROOT), live);
+        let record = s.export();
+        assert_eq!(record.matches("(\n2s ").count(), 2, "{record}");
+        assert!(record.ends_with(")\n1-0\n"), "{record}");
     }
 
     #[test]

@@ -72,8 +72,10 @@ ideas from other Arimaa and chess clients.
     - A match plays one line, ending at `Match::live` (always on the main
       line). A human's move at the live node on their turn is played
       (`plays_live`); any other move is a plan, added as a variation and
-      never sent. Setups can't be planned (`can_input`). When the game ends
-      for an outside reason, plans after the live node are deleted.
+      never sent. Setups can't be planned (`can_input`). Plans after the
+      live node stay when the game ends, as analysis: only results on the
+      board (`Node::is_terminal`) stop input, and the main line stops at a
+      node with a result.
       `goto_live` shows the live node.
     - Engine moves enter through `apply_engine_move`, as the live node's
       first child (a matching plan becomes the move). The board follows

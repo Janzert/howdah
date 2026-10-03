@@ -123,6 +123,22 @@ impl GameRecord {
         let tree = &self.tree;
         loop {
             let children = tree[node].children();
+            if tree[node].result().is_some() {
+                // The game ended here, so moves after it are analysis (a
+                // likely finish after a resignation). Each is a variation
+                // starting with the next ply's label, which marks it as a
+                // continuation of this move rather than a replacement.
+                for &c in children {
+                    out.push_str("(\n");
+                    if let Some(intro) = &tree[c].annotation().intro {
+                        out.push_str(&format!("{{{}}}\n", escape_comment(intro)));
+                    }
+                    self.write_move(out, c);
+                    self.write_from(out, c);
+                    out.push_str(")\n");
+                }
+                break;
+            }
             let Some(&main) = children.first() else { break };
             self.write_move(out, main);
             for &v in &children[1..] {
@@ -345,11 +361,15 @@ struct Frame {
     took_back: bool,
     /// Line of the `(` that opened it.
     open_line: usize,
+    /// For a variation, the move before its `(`. A variation whose first
+    /// label is the next ply continues after that move instead of replacing
+    /// it.
+    after: Option<NodeId>,
 }
 
 impl Frame {
-    fn new(current: NodeId, open_line: usize) -> Frame {
-        Frame { current, moved: false, ended: false, took_back: false, open_line }
+    fn new(current: NodeId, open_line: usize, after: Option<NodeId>) -> Frame {
+        Frame { current, moved: false, ended: false, took_back: false, open_line, after }
     }
 }
 
@@ -369,6 +389,9 @@ struct GameParser {
     intro: Option<String>,
     /// Whether any move text has been read, so a tag starts a new game.
     has_moves: bool,
+    /// Moves given continuations by a variation, whose own line's next
+    /// move must still become their main continuation.
+    continued: Vec<NodeId>,
     result_token: Option<String>,
 }
 
@@ -377,7 +400,8 @@ impl GameParser {
         GameParser {
             record: GameRecord::new(),
             start_line,
-            stack: vec![Frame::new(GameTree::ROOT, 0)],
+            stack: vec![Frame::new(GameTree::ROOT, 0, None)],
+            continued: Vec::new(),
             pending: None,
             intro: None,
             has_moves: false,
@@ -415,7 +439,24 @@ impl GameParser {
             frame.ended = false;
             return Ok(());
         }
-        let parent = self.top().current;
+        // A variation labelled with the ply after the move before it
+        // continues that move (used after a line's last move); otherwise it
+        // replaces that move.
+        let frame = self.stack.last().expect("main line");
+        let tree = &self.record.tree;
+        let label_fits = |n: NodeId| {
+            number == (tree[n].ply() / 2 + 1) as u32 && color == tree[n].position().side_to_move()
+        };
+        if !frame.moved
+            && let Some(after) = frame.after
+            && !label_fits(frame.current)
+            && label_fits(after)
+        {
+            self.continued.push(after);
+            self.top().current = after;
+        }
+        let frame = self.stack.last().expect("main line");
+        let (parent, own_line) = (frame.current, frame.moved);
         let tree = &mut self.record.tree;
         let ply = tree[parent].ply();
         if number != (ply / 2 + 1) as u32 || color != tree[parent].position().side_to_move() {
@@ -432,6 +473,7 @@ impl GameParser {
             return Err(at(GameError::GameOver));
         }
         let tree = &mut self.record.tree;
+        let before = tree.len();
         let node = match body {
             MoveBody::Empty => {
                 tree.set_end_marker(parent, marker).map_err(at)?;
@@ -444,13 +486,19 @@ impl GameParser {
                 tree.add_turn(parent, turn).map_err(at)?
             }
         };
-        if let Some(intro) = self.intro.take() {
+        // An introduction belongs to the variation's first new move: a
+        // variation that repeats the game's last move to continue after it
+        // passes the introduction on to the move that follows.
+        if tree.len() > before
+            && let Some(intro) = self.intro.take()
+        {
             tree.annotation_mut(node).map_err(at)?.intro = Some(intro);
         }
-        let decided = tree[node].result().is_some() || marker.is_some();
+        let decided = tree[node].is_terminal() || marker.is_some();
         tree.set_end_marker(node, marker).map_err(at)?;
         let frame = self.top();
-        if std::mem::take(&mut frame.took_back) {
+        let took_back = std::mem::take(&mut frame.took_back);
+        if took_back || (own_line && self.continued.contains(&parent)) {
             self.record.tree.make_first(node).map_err(at)?;
         }
         let frame = self.top();
@@ -511,7 +559,8 @@ impl GameParser {
         let (true, Some(parent)) = (frame.moved, parent) else {
             return Err(parse_error(line, "a variation must follow a move"));
         };
-        self.stack.push(Frame::new(parent, line));
+        let after = frame.current;
+        self.stack.push(Frame::new(parent, line, Some(after)));
         Ok(())
     }
 
@@ -555,12 +604,25 @@ impl GameParser {
             let mut chars = c.chars();
             chars.next().filter(|_| chars.next().is_none()).and_then(WinReason::from_letter)
         });
+        // The game ends where the main line's moves end; anything after
+        // that came from variations.
+        let end = self.stack[0].current;
         let tree = &mut self.record.tree;
-        let end = tree.line_end(GameTree::ROOT);
-        if let (Some(winner), Some(reason), None) = (winner, reason, tree[end].result()) {
-            // A record can't contradict the board: a result that the rules
-            // decide is already set, and these are outside reasons.
-            tree.end_line(end, GameResult { winner, reason }).map_err(|error| RecordError { line, error })?;
+        // An end word names the side to move as the loser: `2s resigns`.
+        let from_marker = tree[end].end_marker().and_then(|m| {
+            let reason = match m.to_ascii_lowercase().as_str() {
+                "resigns" | "resign" => WinReason::Resignation,
+                "timeout" => WinReason::Timeout,
+                "forfeit" => WinReason::Forfeit,
+                _ => return None,
+            };
+            Some(GameResult { winner: tree[end].position().side_to_move().opponent(), reason })
+        });
+        let from_tags = winner.zip(reason).map(|(winner, reason)| GameResult { winner, reason });
+        // A record can't contradict the board: a result that the rules
+        // decide is already set, and these are outside reasons.
+        if let (Some(result), None) = (from_tags.or(from_marker), tree[end].result()) {
+            tree.end_line(end, result).map_err(|error| RecordError { line, error })?;
         }
         Ok((self.start_line, self.record))
     }
@@ -756,7 +818,7 @@ mod tests {
     fn errors_have_lines() {
         let base = setups();
         let cases = [
-            (format!("{base}2g Ee2n\n(\n2s ee7s\n)\n"), 5, "wrong label in a variation"),
+            (format!("{base}2g Ee2n\n(\n3s ee7s\n)\n"), 5, "wrong label in a variation"),
             (format!("{base}2g Ee2n\n(\n2g Db2n\n"), 4, "unclosed"),
             (format!("{base})\n"), 3, "unmatched"),
             (format!("(\n{base})\n"), 1, "variation before any move"),
@@ -772,12 +834,52 @@ mod tests {
     }
 
     #[test]
+    fn analysis_after_a_resignation() {
+        // Silver resigned after 2g. A likely finish follows as a variation
+        // labelled 2s: the next ply, so it continues 2g.
+        let text = format!(
+            "[ResultCode \"r\"]\n[Result \"1-0\"]\n\n{}2g Ee2n\n(\n{{Likely:}}\n2s ee7s\n3g Ee3n\n)\n\
+             (\n2s db7s\n)\n1-0\n",
+            setups()
+        );
+        // The chess way, repeating the last move, reads the same.
+        let repeated = text
+            .replace("(\n{Likely:}\n2s", "(\n{Likely:}\n2g Ee2n\n2s")
+            .replace("(\n2s db7s", "(\n2g Ee2n\n2s db7s");
+        assert_eq!(GameRecord::parse(&repeated).unwrap(), GameRecord::parse(&text).unwrap());
+        let r = GameRecord::parse(&text).unwrap();
+        let end = r.tree.line_end(GameTree::ROOT);
+        assert_eq!(r.tree[end].result().unwrap().reason, WinReason::Resignation);
+        assert_eq!(r.tree[end].mv().unwrap().notation(), "Ee2n");
+        let after = r.tree[end].children();
+        assert_eq!(after.len(), 2, "both continuations hang off the last move");
+        assert_eq!(r.tree[after[0]].annotation().intro.as_deref(), Some("Likely:"));
+        assert_eq!(r.tree.len(), 7);
+        assert_eq!(r.to_record(), text);
+    }
+
+    #[test]
+    fn a_continuation_before_the_next_move_keeps_the_main_line() {
+        // Hand-written: a continuation of 2g given before the game's 2s.
+        let text = format!("{}2g Ee2n\n(\n2s db7s\n)\n2s ee7s\n3g Ee3n\n", setups());
+        let r = GameRecord::parse(&text).unwrap();
+        assert_eq!(main_moves(&r), ["Ee2n", "ee7s", "Ee3n"]);
+        let e2 = r.tree.main_line()[3];
+        assert_eq!(r.tree[e2].children().len(), 2);
+        // A block starting with neither label is an error.
+        let bad = format!("{}2g Ee2n\n(\n3g Ee3n\n)\n", setups());
+        assert!(GameRecord::parse(&bad).is_err());
+    }
+
+    #[test]
     fn end_markers_round_trip() {
         let text = format!("{}2g Ee2n\n2s resigns\n", setups());
         let r = GameRecord::parse(&text).unwrap();
         let end = r.tree.line_end(GameTree::ROOT);
         assert_eq!(r.tree[end].end_marker(), Some("resigns"));
-        assert!(r.to_record().ends_with("2g Ee2n\n2s resigns\n"));
+        let resigned = GameResult { winner: Color::Gold, reason: WinReason::Resignation };
+        assert_eq!(r.tree[end].result(), Some(resigned), "silver resigned");
+        assert!(r.to_record().ends_with("2g Ee2n\n2s resigns\n1-0\n"));
         // arimaa.com adds an empty label after the end; it's ignored.
         assert_eq!(GameRecord::parse(&format!("{text}2s\n")).unwrap(), r);
     }

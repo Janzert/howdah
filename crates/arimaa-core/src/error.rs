@@ -116,8 +116,6 @@ pub enum GameError {
     NoSuchNode,
     #[error("the start of the game can't be changed")]
     IsRoot,
-    #[error("the line continues after this move")]
-    HasContinuation,
 }
 
 /// A [`GameError`] located on a line of a game record.

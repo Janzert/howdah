@@ -159,6 +159,13 @@ impl Node {
         self.result
     }
 
+    /// True if the position decides the game (goal, elimination,
+    /// immobilization), so no move can follow. After an outside result
+    /// such as a resignation, analysis can still continue.
+    pub fn is_terminal(&self) -> bool {
+        self.result.is_some_and(|r| r.reason.is_on_board())
+    }
+
     /// End marker from a loaded record, such as `resigns`. Not interpreted.
     pub fn end_marker(&self) -> Option<&str> {
         self.end_marker.as_deref()
@@ -246,7 +253,7 @@ impl GameTree {
 
     fn check_can_move(&self, parent: NodeId) -> Result<&Node, GameError> {
         let node = self.get(parent)?;
-        if node.result.is_some() { Err(GameError::GameOver) } else { Ok(node) }
+        if node.is_terminal() { Err(GameError::GameOver) } else { Ok(node) }
     }
 
     /// Adds a child of `parent`, or returns the existing child that already
@@ -354,12 +361,12 @@ impl GameTree {
         }
     }
 
-    /// Ends the line at `node` for a reason outside the rules (timeout,
-    /// resignation, ...). The node must not have continuations.
+    /// Ends the game at `node` for a reason outside the rules (timeout,
+    /// resignation, ...). Moves after it, such as a likely continuation
+    /// after a resignation, stay as analysis; the main line ends here.
     pub fn end_line(&mut self, node: NodeId, result: GameResult) -> Result<(), GameError> {
-        let n = self.check_can_move(node)?;
-        if !n.children.is_empty() {
-            return Err(GameError::HasContinuation);
+        if self.get(node)?.result.is_some() {
+            return Err(GameError::GameOver);
         }
         self.get_mut(node)?.result = Some(result);
         Ok(())
@@ -392,10 +399,15 @@ impl GameTree {
     }
 
     /// The end of the main continuation from `node`: following first
-    /// children until a node has none.
+    /// children until a node has none, or has a result. Moves after a
+    /// result (analysis of how the game would have ended) are always
+    /// variations.
     pub fn line_end(&self, node: NodeId) -> NodeId {
         let mut at = node;
-        while let Some(&next) = self.node(at).and_then(|n| n.children.first()) {
+        while let Some(n) = self.node(at)
+            && n.result.is_none()
+            && let Some(&next) = n.children.first()
+        {
             at = next;
         }
         at
@@ -415,7 +427,7 @@ impl GameTree {
     pub fn is_main_line(&self, node: NodeId) -> bool {
         let mut at = node;
         while let Some(parent) = self.node(at).and_then(|n| n.parent) {
-            if self[parent].children.first() != Some(&at) {
+            if self[parent].children.first() != Some(&at) || self[parent].result.is_some() {
                 return false;
             }
             at = parent;
@@ -436,7 +448,10 @@ impl GameTree {
     /// True if the tree is one line with no comments or glyphs, so a plain
     /// record holds all of it.
     pub fn is_plain(&self) -> bool {
-        self.main_line().iter().all(|&id| self[id].children.len() <= 1 && self[id].annotation.is_empty())
+        let line = self.main_line();
+        let end = *line.last().expect("the main line has the root");
+        self[end].children.is_empty()
+            && line.iter().all(|&id| self[id].children.len() <= 1 && self[id].annotation.is_empty())
     }
 
     /// The main line as a plain game.
@@ -584,16 +599,37 @@ mod tests {
     }
 
     #[test]
-    fn results_end_lines() {
+    fn analysis_continues_after_an_outside_result() {
         let (mut t, start) = started();
         let a = play(&mut t, start, &["Ee2n"]);
         let resign = GameResult { winner: Color::Gold, reason: WinReason::Resignation };
         t.end_line(a, resign).unwrap();
         assert_eq!(t[a].result(), Some(resign));
+        assert!(!t[a].is_terminal());
+        assert_eq!(t.end_line(a, resign), Err(GameError::GameOver));
+        // The likely continuation after the resignation is analysis: the
+        // main line still ends at the resignation.
+        let after = play(&mut t, a, &["ee7s", "Ee3n"]);
+        assert_eq!(t.line_end(GameTree::ROOT), a);
+        assert!(!t.is_main_line(after) && t.is_main_line(a));
+        assert!(!t.is_plain());
+        assert_eq!(t.line_end(t[after].parent().unwrap()), after);
+        // A result can also go on a move that already has continuations.
+        let b = play(&mut t, start, &["Db2n"]);
+        play(&mut t, b, &["ee7s"]);
+        t.end_line(b, resign).unwrap();
+    }
+
+    #[test]
+    fn nothing_follows_a_result_on_the_board() {
+        // Reaching a real goal needs a long game; a goal result recorded on
+        // a move behaves the same.
+        let goal = GameResult { winner: Color::Gold, reason: WinReason::Goal };
+        let (mut t, start) = started();
+        let a = play(&mut t, start, &["Ee2n"]);
+        t.end_line(a, goal).unwrap();
+        assert!(t[a].is_terminal());
         assert_eq!(t.add_notation(a, "ee7s"), Err(GameError::GameOver));
-        assert_eq!(t.end_line(start, resign), Err(GameError::HasContinuation));
-        // Other lines from earlier positions are still open.
-        play(&mut t, start, &["Db2n", "ee7s"]);
     }
 
     #[test]

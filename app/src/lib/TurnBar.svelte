@@ -38,6 +38,9 @@
       <strong>{view.result.winner === 'gold' ? 'Gold' : 'Silver'} wins</strong> by {reason[view.result.reason]}
     </div>
     {#if view.endDetail}<div class="note">{view.endDetail}</div>{/if}
+  {/if}
+  {#if view.phase === 'over'}
+    <!-- Decided on the board: nothing can follow. -->
   {:else if view.thinking && !view.turn}
     <div class="status">
       <span class="dot {view.thinking}"></span>
@@ -67,7 +70,7 @@
   {:else}
     <div class="status">
       <span class="dot {view.position.sideToMove}"></span>
-      <strong>{side} to move</strong>
+      <strong>{side} to move</strong>{#if view.result}&nbsp;(analysis){/if}
       {#if turn}· step {turn.steps.length}/4{/if}
     </div>
     {#if turn?.pushPending != null}
@@ -75,7 +78,9 @@
     {:else if turn?.commitBlocker}
       <div class="note">{turn.commitBlocker}</div>
     {/if}
-    {#if turn && planning}
+    {#if turn && view.result}
+      <div class="note">The game is over; committing adds analysis after it.</div>
+    {:else if turn && planning}
       <div class="note">Planning: committing adds a variation; it isn't played.</div>
     {:else if turn && view.movesAfterCursor > 0}
       <div class="note">Committing adds a variation.</div>

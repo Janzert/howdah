@@ -29,6 +29,14 @@ data_type! {
 }
 
 impl WinReason {
+    /// True for the reasons the position itself decides (goal, elimination,
+    /// immobilization). After these no move is possible; after the others
+    /// (a resignation, a timeout, ...) the position can still be played on
+    /// in analysis.
+    pub fn is_on_board(self) -> bool {
+        matches!(self, WinReason::Goal | WinReason::Elimination | WinReason::Immobilization)
+    }
+
     /// The letter arimaa.com and AEI tools use for this end condition
     /// (the full arimaa.com list is in `docs/RESULT-CODES.md`).
     pub fn letter(self) -> char {

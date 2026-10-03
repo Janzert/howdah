@@ -75,9 +75,13 @@ struct Node {
   no cache is needed at first).
 - **Results** live on nodes. A rules result (goal, elimination,
   immobilization) is set when the node is created. An external result
-  (timeout, resignation) is attached to the node that ends the line with
-  `end_line(node, result)`, which refuses a node that already has
-  continuations. A node with a result gets no new children.
+  (timeout, resignation) is attached to the node that ends the game with
+  `end_line(node, result)`.
+  - A rules result is terminal (`Node::is_terminal`): no move can follow.
+  - After an outside result the position can still be played on, for
+    analysis such as the likely finish after a resignation, shown by the
+    player or a commentator. Those moves are always variations: the main
+    line (`line_end`, `main_line`) stops at a node with a result.
 - **Line helpers:** `path(node)` (root to node), `main_line()`,
   `line_through(node)` (the path to `node`, then `children[0]` down to a
   leaf), and `to_game(node) -> Game` for anything that needs a plain
@@ -149,7 +153,8 @@ being played.
   `newgame` + `makemove` sync is unchanged. Analysis mode will hand an
   engine `path(cursor)` the same way.
 - When the match ends, the result goes on `live`, and the tree becomes an
-  ordinary free-play tree.
+  ordinary free-play tree. Plans made after the live node stay, as
+  analysis after the end, and more can be added.
 
 ## UI
 
@@ -395,7 +400,17 @@ names: records say Gold and Silver, as the game does.
   end after a goal) is ignored.
 - **Variations:** `(` and `)` each sit on their own line. A block holds
   an alternative to the move just before it, so its first move has the
-  same label as that move. Blocks nest. The writer indents nothing (old
+  same label as that move. Blocks nest.
+- **Continuations after a line's last move** (analysis after a
+  resignation) are blocks whose first move has the *next* ply's label:
+  `2g Ee2n` then `(`, `2s ee7s`, `)` continues 2g instead of replacing it.
+  Since every move carries its ply, the two readings can't be confused;
+  PGN can't express this, and chess annotators work around it by
+  repeating the last move inside the variation, which the reader also
+  accepts. The writer only uses a continuation block after the last move
+  of a line; elsewhere the move's own line continues it. A hand-written
+  continuation block before the line's next move is read, and the line's
+  own next move still stays the main continuation. The writer indents nothing (old
   tools trim lines anyway); the move list does the indenting.
 - **Comments** are in braces and may span lines; braces don't nest.
   Writers escape a literal `}` in a comment as `\}` and a backslash as
@@ -421,7 +436,9 @@ output. Export offers "main line only" (for arimaa.com, pyrimaa and
 anything else that reads plain records) and "full record".
 
 Results: only the main line's result is written (as tags and the closing
-token). Rules results in variations are found again when the record is
+token). The end words also give a result when there are no result tags
+(`2s resigns`: gold wins by resignation), so analysis after them stays
+off the main line. Rules results in variations are found again when the record is
 read; an outside result (a resignation) at the end of a variation is not
 written.
 
