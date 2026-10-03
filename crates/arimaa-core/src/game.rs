@@ -173,46 +173,11 @@ impl Game {
     }
 
     /// Parses and validates a game record: one move per line, e.g.
-    /// `1g Ra1 Rb1 ...`, `2g Ed2n Ed3n`. Blank lines are skipped. Trailing
-    /// empty move lines and end markers such as `resigns` are accepted.
+    /// `1g Ra1 Rb1 ...`, `2g Ed2n Ed3n`, and keeps its main line. Records
+    /// with tags, comments and variations are read too; see
+    /// [`crate::GameRecord`].
     pub fn parse(record: &str) -> Result<Game, RecordError> {
-        let mut game = Game::new();
-        let mut finished = false;
-        for (i, raw) in record.lines().enumerate() {
-            let line_no = i + 1;
-            let at = |error: GameError| RecordError { line: line_no, error };
-            let text = raw.trim();
-            if text.is_empty() || text.starts_with('#') {
-                continue;
-            }
-            if finished {
-                return Err(at(GameError::GameOver));
-            }
-            let line = notation::parse_move_line(text).map_err(|e| at(e.into()))?;
-            let ply = game.ply_count();
-            let expected = notation::move_label(ply);
-            if line.number != (ply / 2 + 1) as u32 || line.color != game.current_position().side_to_move() {
-                let found = format!("{}{}", line.number, line.color.letter());
-                return Err(at(GameError::OutOfSequence { expected, found }));
-            }
-            let empty = matches!(line.body, MoveBody::Empty);
-            match line.body {
-                MoveBody::Empty => {}
-                MoveBody::Setup(p) => game.play_setup(p).map_err(at)?,
-                MoveBody::Steps(steps) => {
-                    game.play_steps(&steps).map_err(at)?;
-                }
-            }
-            if let Some(m) = line.marker {
-                game.end_marker = Some(m);
-                finished = true;
-            }
-            if empty || game.result.is_some() {
-                // An empty move line or a decided game must be the end of the record.
-                finished = true;
-            }
-        }
-        Ok(game)
+        Ok(crate::GameRecord::parse(record)?.tree.main_game())
     }
 
     /// Builds a game from parts already checked by a [`crate::GameTree`]:

@@ -351,8 +351,9 @@ follows AEI (it's what our own tools already write), except for the side
 names: records say Gold and Silver, as the game does.
 
 - **Tags** are PGN tag pairs, `[Name "value"]`, as AEI writes them (plus
-  PGN's `\"` and `\\` escapes, which AEI doesn't need for bot names),
-  then a blank line. The reader also
+  PGN's `\"` and `\\` escapes, which AEI doesn't need for bot names, and
+  `\n` for a line break, our extension, since PGN can't put one in a
+  tag), then a blank line. The reader also
   accepts the arimaa.com form (`Name: value`, with `-=+=-` around
   multi-line values). Unknown tags are kept and written back.
 - **Side names** are Gold and Silver everywhere: `Gold`/`Silver` for the
@@ -375,7 +376,9 @@ names: records say Gold and Silver, as the game does.
 - **`Position`** holds the starting position in the short format
   (`Position: g [rrrrrrrr...]`, which `Position::to_short_string` already
   writes; the side letter is the side to move). Without it a game starts
-  from the empty board with setups.
+  from the empty board with setups. Not supported yet: the reader
+  refuses a record with a `Position` tag, since `GameTree` always starts
+  from the empty board.
 - **Result**, as AEI writes it: `Result` is `1-0` (gold won) or `0-1`,
   `ResultCode` is the reason letter `WinReason` already uses (`g` goal,
   `e` elimination, `m` immobilization, `t` timeout, `r` resignation, ...,
@@ -385,16 +388,21 @@ names: records say Gold and Silver, as the game does.
   end of each game unambiguous in a file of several games.
 - **Moves** are one per line, as now, followed by optional glyphs and a
   comment. Move labels are read with either side letters, `g`/`s` or
-  arimaa.com's `w`/`b` (`1w`, `1b`), and always written with `g`/`s`. Every move line inside a variation still has its label, and
-  the reader checks it, so a hand-edited file gets errors with line
-  numbers.
+  arimaa.com's `w`/`b` (`1w`, `1b`), and always written with `g`/`s`. Every move line inside a variation
+  still has its label, and the reader checks it, so a hand-edited file
+  gets errors with line numbers. A move ends at the end of its line.
+  After a line has ended, an empty label (`19b`, as arimaa.com records
+  end after a goal) is ignored.
 - **Variations:** `(` and `)` each sit on their own line. A block holds
   an alternative to the move just before it, so its first move has the
   same label as that move. Blocks nest. The writer indents nothing (old
   tools trim lines anyway); the move list does the indenting.
 - **Comments** are in braces and may span lines; braces don't nest.
-  Writers escape a literal `}` in a comment as `\}` (PGN has no escape,
-  so a brace in a comment truncates it there).
+  Writers escape a literal `}` in a comment as `\}` and a backslash as
+  `\\` (PGN has no escape, so a brace in a comment truncates it there).
+  An introduction (a comment right after `(`) is only kept on a
+  variation's first move; if that move later becomes the main line, the
+  writer drops it.
 - **Commands** used from the start: `%clk` (the mover's reserve after the
   move) and `%emt` (time used for the move), so match records keep the
   clocks, as arimaa.com's `timeused` does; `%cal`/`%csl` for the board
@@ -412,8 +420,18 @@ writing the main line without tags is exactly today's `to_record`
 output. Export offers "main line only" (for arimaa.com, pyrimaa and
 anything else that reads plain records) and "full record".
 
-Parsing: `GameTree::parse` reads both; `Game::parse` calls it and takes
+Results: only the main line's result is written (as tags and the closing
+token). Rules results in variations are found again when the record is
+read; an outside result (a resignation) at the end of a variation is not
+written.
+
+Parsing: `GameRecord::parse` (one game) and `GameRecord::parse_all` read
+both forms into tags plus a `GameTree`; `Game::parse` calls it and takes
 the main line, so loading an annotated file anywhere works.
+`GameRecord::to_record` writes the full record, and
+`tree.main_game().to_record()` the plain main line. Checked against the
+350 games of arimaa.com's archive for August to October 2026: all
+parse, and the rules results match the archive's.
 
 ## Build order
 

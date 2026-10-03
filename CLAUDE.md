@@ -42,8 +42,13 @@ ideas from other Arimaa and chess clients.
     first child continues the main line. Adding a move that's already a
     child reuses it, repetition counts only the path to the node, and
     `from_game`/`to_game`/`main_game` convert to and from `Game`. Nodes
-    carry an `Annotation` (comment and PGN-numbered `Glyph`s). The app
-    doesn't use it yet.
+    carry an `Annotation` (comment, variation intro and PGN-numbered
+    `Glyph`s). The app doesn't use it yet.
+  - `record::GameRecord`: tags plus a `GameTree`, read from and written to
+    the PGN-style record format (`parse`, `parse_all`, `to_record`). The
+    reader is lenient (arimaa.com `Name: value` tags, `White`/`Black`
+    names, `w`/`b` labels, `takeback` lines kept as variations);
+    `Game::parse` goes through it and keeps the main line.
 - `crates/arimaa-aei`: async AEI controller (tokio; no UI deps).
   - `Engine`: spawns the process (no shell), runs the handshake, and sends
     typed commands. Messages are parsed with deadlines (`recv_until`), and

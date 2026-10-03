@@ -86,13 +86,17 @@ impl std::fmt::Display for Glyph {
 /// A comment and glyphs on a move. The root's annotation is the game comment.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Annotation {
+    /// Comment after the move.
     pub comment: Option<String>,
+    /// Introduction to a variation, shown before its first move. Only kept
+    /// on a variation's first move.
+    pub intro: Option<String>,
     pub glyphs: Vec<Glyph>,
 }
 
 impl Annotation {
     pub fn is_empty(&self) -> bool {
-        self.comment.is_none() && self.glyphs.is_empty()
+        self.comment.is_none() && self.intro.is_none() && self.glyphs.is_empty()
     }
 
     /// Adds a glyph, replacing one of the same kind: a move can't be both
@@ -361,6 +365,20 @@ impl GameTree {
         Ok(())
     }
 
+    pub(crate) fn set_end_marker(&mut self, node: NodeId, marker: Option<String>) -> Result<(), GameError> {
+        self.get_mut(node)?.end_marker = marker;
+        Ok(())
+    }
+
+    /// Makes `node` its parent's first child, leaving the others in order.
+    pub(crate) fn make_first(&mut self, node: NodeId) -> Result<(), GameError> {
+        let (parent, i) = self.sibling_index(node)?;
+        let children = &mut self.get_mut(parent)?.children;
+        let c = children.remove(i);
+        children.insert(0, c);
+        Ok(())
+    }
+
     /// The nodes from the root to `node`, both included.
     pub fn path(&self, node: NodeId) -> Vec<NodeId> {
         let mut path = Vec::new();
@@ -482,12 +500,8 @@ impl GameTree {
     pub fn make_main_line(&mut self, node: NodeId) -> Result<(), GameError> {
         self.get(node)?;
         let path = self.path(node);
-        for pair in path.windows(2) {
-            let (parent, child) = (pair[0], pair[1]);
-            let children = &mut self.get_mut(parent)?.children;
-            let i = children.iter().position(|&c| c == child).expect("child of its parent");
-            let c = children.remove(i);
-            children.insert(0, c);
+        for &child in &path[1..] {
+            self.make_first(child)?;
         }
         Ok(())
     }
