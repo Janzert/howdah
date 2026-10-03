@@ -47,8 +47,14 @@ Notes:
 - `a` and `u` have no winner, and `n` (and the odd `s`) can be draws, so
   `GameResult`, which always has a winner, can't represent them yet.
   Importing old games needs that (see `VARIATIONS.md`, open questions).
-- `s` is decided by score. pyrimaa and `arimaa-core` use a piece-count
-  placeholder for the score; the official scoring is still a to-do.
+- `s` is decided by score. For games from 2008.07.01 on, the rule on
+  arimaa.com's match rules page
+  (<http://arimaa.com/arimaa/learn/matchRules.html>) is the one in use:
+  the player who has more pieces after the last completed turn wins; if
+  they're equal, whoever had more pieces after the most recent turn where
+  the counts differed wins; if they never differed, silver wins.
+  `arimaa-core` (like pyrimaa) still only compares the final counts, with
+  silver winning ties; implementing the full rule is a to-do.
 - The app also uses `Forfeit` when a local engine fails (crashes or
   stops answering), which is broader than arimaa.com's meaning.
 

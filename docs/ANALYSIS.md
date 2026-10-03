@@ -32,7 +32,7 @@ the first version doesn't block it.
 
 ## What the engines give us
 
-Findings from HANDOFF.md, as they bear on analysis:
+From `ENGINES.md`, as they bear on analysis:
 
 - **Searching until `stop`:** OpFor does this when no time control and no
   depth are set (the defaults). Sharp has no `go infinite`;
@@ -45,7 +45,7 @@ Findings from HANDOFF.md, as they bear on analysis:
   the end unless `verbose` is set (our build allows it), and then
   `log ID …`/`log FS …` lines with a PV, which `SearchLog` parses.
 - **`stop` latency:** Sharp answers at once; OpFor in 0.2-0.3 s since
-  its `SEARCH_SLICE` change (on OpFor's master, not yet pushed).
+  its `SEARCH_SLICE` change.
 - **Scores** are from the mover's side. OpFor's are centi-rabbits, with a
   win near ±32,650 (`WIN_SCORE` 64000 / 1.96). Sharp's are about 10 per
   centi-rabbit, with wins near ±1,000,000 (`SearchEval::Decided`).
@@ -370,11 +370,17 @@ Differences from the design above, and details it left open:
   to answer gold's setup, and gold's isn't worth a special case.
 - Partial turns will come through an AEI change, later. Until then
   analysis searches the turn's start.
+- Confirmed with Brian (2026-10-03), after the first version:
+  - Evals are shown in rabbits (`+0.35`), everywhere: the match engine
+    panel should switch from centi-rabbits too (not done yet).
+  - The eval bar's `k` = 300 stays, to tune by use.
+  - Analysis stays on across new games, unless the new game is one where
+    it isn't allowed (an online game the user plays).
+  - `Space` adds the analysis engine's best turn when no match engine is
+    thinking.
 
 ## Open questions
 
 - **Which AEI change for partial turns:** a new command, or a `makemove`
   flag with a protocol version bump (see "Later"). Not needed for the
   first version.
-- **Eval bar scale:** `k` = 300 for now. Sharp and OpFor look close
-  enough to share it; tune by use.

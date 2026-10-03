@@ -5,7 +5,8 @@ way the real project will be. Long term it covers gameroom play, AEI bots,
 analysis, tournaments, postal games and bot tooling.
 
 Design notes live in `docs/`. `docs/UI-SURVEY.md` collects UI and feature
-ideas from other Arimaa and chess clients.
+ideas from other Arimaa and chess clients, and `docs/ENGINES.md` records how
+Sharp, OpFor and other AEI engines behave.
 
 ## Architecture
 

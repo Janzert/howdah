@@ -113,9 +113,11 @@ pub fn outcome_after_turn(pos: &Position, mover: Color) -> Option<GameResult> {
         return win(opp, WinReason::Elimination);
     }
     if is_immobilized(pos) {
-        // TODO(rules): strictly, a player whose only legal moves would all be
-        // third repetitions is also immobilized. That needs full move
-        // generation plus the game history; pyrimaa doesn't check it either.
+        // TODO(rules): a player whose only legal moves would all be third
+        // repetitions is also immobilized (decided: count it as a loss).
+        // That needs full move generation plus the game history. pyrimaa
+        // doesn't check it, and arimaa.com probably catches only the simple
+        // case of a single otherwise legal move.
         return win(mover, WinReason::Immobilization);
     }
     None
@@ -123,8 +125,10 @@ pub fn outcome_after_turn(pos: &Position, mover: Color) -> Option<GameResult> {
 
 /// Winner when a game or turn limit is reached: the side with more pieces,
 /// silver on a tie.
-// TODO(rules): arimaa.com's scoring for limit games is more detailed. This
-// is pyrimaa's piece count.
+// TODO(rules): the official rule (docs/RESULT-CODES.md) looks back: if the
+// counts are equal now, the side with more pieces after the most recent
+// turn where they differed wins, and silver only if they never differed.
+// This is pyrimaa's piece count on the final position.
 pub fn limit_score_winner(pos: &Position) -> Color {
     let gold = pos.occupied_by(Color::Gold).count_ones();
     let silver = pos.occupied_by(Color::Silver).count_ones();

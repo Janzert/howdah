@@ -478,8 +478,32 @@ parse, and the rules results match the archive's.
 5. Keys, comments and glyphs in the UI, then export with variations.
    Done (2026-10-03).
 
-Then analysis mode builds on it: the engine analyses `path(cursor)`, and
-clicking a PV turn adds the PV as a variation (`add_notation` per turn).
+Analysis mode (`ANALYSIS.md`) builds on it: the engine analyses the
+shown node, and clicking a PV turn adds the PV as a line (`add_line`).
+
+## As built
+
+Choices made in step 5 (confirmed with Brian, 2026-10-03):
+
+- `Shift+←`/`→` land on the next or previous move *that has
+  alternatives* (so `↑`/`↓` then switch among them), and go to the end or
+  start of the line when there are no more.
+- Folding is by hand (a ▸/▾ toggle on variations of two or more moves, and
+  in the menu), not automatic for long ones. A folded variation opens
+  while the board shows a move inside it. Fold state is per session and
+  isn't saved in records.
+- The comment box sits under the move list, for the shown move (the game
+  comment at the start). It saves on blur or Ctrl+Enter; Esc reverts.
+  Variation introductions are only read from records, not editable.
+- Remembered lines: each node remembers the child last shown after it,
+  so clicking a move or `↓` back into a variation resumes the deepest
+  line seen there.
+- Only results on the board (goal, elimination, immobilization) close a
+  position. After a resignation or timeout, analysis can continue, and is
+  written as a block labelled with the next ply.
+
+Not built yet: glyph keys, positional glyphs (`$10`-`$19`), and board
+shapes (`%cal`/`%csl`) stored on moves.
 
 ## Decided
 
@@ -495,20 +519,15 @@ clicking a PV turn adds the PV as a variation (`add_notation` per turn).
   to, as PGN orders them and lichess, ChessBase and SCID display them.
 - A game database, later, is the primary store; records are for
   sharing.
-
-## Open questions
-
-- **Old results in the core.** `WinReason` needs `p`, `a` and `n` (see
-  `RESULT-CODES.md`). `p` and `n` only occur in games under the rules
-  before 2008.07.01; a current game can't end that way. `GameResult` always has a winner, so draws and
-  unknown results from old games also need a place: a variant of
-  `GameResult`, or the record's result tags kept as they are without a
-  `GameResult`.
-- **`Date` format.** PGN and arimaa.com both use `YYYY.MM.DD`; keep it,
-  or write ISO `YYYY-MM-DD` and read both?
-- **The game archive.** Import arimaa.com's archive directly (each row
-  becomes a record with tags and `%emt`/`%clk` from `events`), or convert
-  it with a script?
-- **Setups in variations.** The tree allows alternative setups (a
-  variation at ply 0 or 1). That's cheap to support and useful for setup
-  study, but the move list should show them compactly.
+- Old results (2026-10-03): `WinReason` gets the `p` (repetition), `n`
+  (mutual elimination) and `a` (abandoned) endings, and results without
+  a winner (draws, unknown results) get a place in the core (see
+  `RESULT-CODES.md`). `p` and `n` only occur under the rules before
+  2008.07.01.
+- `Date` (2026-10-03): written as `YYYY.MM.DD` (PGN and arimaa.com);
+  `YYYY-MM-DD` is read too.
+- The arimaa.com archive (2026-10-03): once the local game database
+  exists, games are added to it both from a CLI and from the app. Each
+  archive row becomes a game with tags, and `%emt`/`%clk` from `events`.
+- Setups in variations (2026-10-03): alternative setups are allowed and
+  show in the move list as one compact line that expands on click.
