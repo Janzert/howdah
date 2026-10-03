@@ -147,4 +147,11 @@ describe('BoardModel', () => {
     await vi.advanceTimersByTimeAsync(3 * STEP_MS);
     expect(m.pieces[0].square).toBe(40);
   });
+
+  it('shows a different piece on the same square and id', () => {
+    const m = new BoardModel();
+    m.snap(rabbit(0));
+    m.apply([{ ...rabbit(0)[0], piece: { color: 'gold', kind: 'horse' } }], []);
+    expect(m.pieces[0].piece.kind).toBe('horse');
+  });
 });

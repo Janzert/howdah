@@ -46,8 +46,12 @@ interface QueuedUpdate {
 /** Same pieces on the same squares (ignoring frozen flags). */
 function samePosition(a: PieceView[], b: PieceView[]): boolean {
   if (a.length !== b.length) return false;
-  const squares = new Map(a.map((p) => [p.id, p.square]));
-  return b.every((p) => squares.get(p.id) === p.square);
+  // Kinds too: a setup other than the draft keeps the draft's ids and squares.
+  const byId = new Map(a.map((p) => [p.id, p]));
+  return b.every((p) => {
+    const q = byId.get(p.id);
+    return q?.square === p.square && q.piece.kind === p.piece.kind && q.piece.color === p.piece.color;
+  });
 }
 
 export class BoardModel {
