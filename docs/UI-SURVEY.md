@@ -312,9 +312,9 @@ From Cute Chess. Our `play_match` plus the app's BvB are the seed.
 
 ## 9. Settings, layout and accessibility
 
-- **[have] Settings dialog**, with theme, coordinates and sound so far.
-  Still to add: piece set, volume, animation speed (4steps exposes a delay in ms), coordinates,
-  step mode, confirm move, and auto-rotate.
+- **[have] Settings dialog**: theme, coordinates, auto-rotate (human at
+  the bottom), animation speed (ms per step, as 4steps has), hover input
+  (arrows or step mode), sound and volume. Still to add: confirm move.
 - **[P2] Dockable or resizable panels** (4steps docks for the move list,
   player bars and off-board pieces, with the layout saved). A lighter
   version for us: collapsible side panels with remembered sizes.

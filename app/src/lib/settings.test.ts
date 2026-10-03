@@ -18,6 +18,8 @@ describe('settings parse', () => {
         hoverInput: 'step',
         humanAtBottom: false,
         analysisEngine: 'sharp-1',
+        volume: 40,
+        stepMs: 120,
       }),
       none,
     );
@@ -28,12 +30,16 @@ describe('settings parse', () => {
       hoverInput: 'step',
       humanAtBottom: false,
       analysisEngine: 'sharp-1',
+      volume: 40,
+      stepMs: 120,
     });
     const bad = parse(
-      JSON.stringify({ coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3 }),
+      JSON.stringify({ coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3, volume: 'loud' }),
       none,
     );
     expect(bad).toEqual(DEFAULTS);
+    const out = parse(JSON.stringify({ volume: 250, stepMs: -5 }), none);
+    expect([out.volume, out.stepMs]).toEqual([100, 0]);
   });
 
   it('reads the keys older versions used', () => {

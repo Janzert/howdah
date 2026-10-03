@@ -1,5 +1,6 @@
-// Sound effects (classic arimaa.com set). Whether sound is on is a setting
-// (settings.svelte.ts); the app passes it in with `setMuted`.
+// Sound effects (classic arimaa.com set). Whether sound is on and its
+// volume are settings (settings.svelte.ts); the app passes them in with
+// `setMuted` and `setVolume`.
 //
 // Sounds are played through Web Audio from buffers decoded once at startup
 // (by our own WAV decoder, so every platform behaves the same). Each play is
@@ -18,6 +19,7 @@ export type SoundName = 'slide' | 'place' | 'trapped' | 'win' | 'tick';
 const sources: Record<Exclude<SoundName, 'tick'>, string> = { slide, place, trapped, win };
 
 let muted = false;
+let gain = 1;
 let context: AudioContext | null = null;
 const buffers = new Map<SoundName, AudioBuffer>();
 // Sources still playing. WebKit can garbage-collect a source node nothing
@@ -38,12 +40,19 @@ export function setMuted(m: boolean) {
   muted = m;
 }
 
+/** Sets the volume from a 0-100 setting, squared so the slider feels even. */
+export function setVolume(percent: number) {
+  gain = (Math.min(100, Math.max(0, percent)) / 100) ** 2;
+  if (output) output.gain.value = gain;
+}
+
 /** Creates the audio context and decodes every sound. Safe to call repeatedly. */
 function init(): AudioContext | null {
   if (context) return context;
   if (typeof AudioContext === 'undefined') return null;
   context = new AudioContext();
   output = context.createGain();
+  output.gain.value = gain;
   output.connect(context.destination);
   keepAlive = context.createBufferSource();
   keepAlive.buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);

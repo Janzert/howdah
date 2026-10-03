@@ -1,6 +1,7 @@
 <script lang="ts">
   // Display preferences. Changes apply immediately and are saved as they're made.
-  import { settings, type Coordinates, type HoverInput } from './settings.svelte';
+  import { MAX_STEP_MS, settings, type Coordinates, type HoverInput } from './settings.svelte';
+  import { play } from './sound';
   import { findTheme, themes } from './theme';
 
   let { onClose }: { onClose: () => void } = $props();
@@ -65,6 +66,12 @@
       Put the human player at the bottom
     </label>
     <p class="hint">When a game against an engine starts. Flip still turns the board any time.</p>
+    <label class="row slider">
+      <span>Animation</span>
+      <input type="range" min="0" max={MAX_STEP_MS} step="20" bind:value={settings.stepMs} />
+      <span class="value">{settings.stepMs === 0 ? 'instant' : `${settings.stepMs} ms`}</span>
+    </label>
+    <p class="hint">Time for a piece to slide one step. Moves speed up when several are waiting.</p>
   </section>
 
   <section>
@@ -88,6 +95,19 @@
     <label class="check">
       <input type="checkbox" bind:checked={settings.sound} />
       Play sounds
+    </label>
+    <label class="row slider">
+      <span>Volume</span>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="5"
+        disabled={!settings.sound}
+        bind:value={settings.volume}
+        onchange={() => play('place')}
+      />
+      <span class="value">{settings.volume}%</span>
     </label>
   </section>
 
@@ -155,6 +175,20 @@
     align-items: center;
     gap: 4px;
     font-size: 14px;
+  }
+  .slider {
+    margin-top: 10px;
+  }
+  input[type='range'] {
+    flex: 1;
+    min-width: 0;
+  }
+  .row > .value {
+    width: 64px;
+    flex: none;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
   .attribution {
     margin: -2px 0 10px 108px;

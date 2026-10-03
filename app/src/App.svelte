@@ -30,7 +30,7 @@
   import { settings, type HoverInput } from './lib/settings.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
   import { shortcutFor, type ShortcutId } from './lib/shortcuts';
-  import { play, setMuted, unlockOnInteraction } from './lib/sound';
+  import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
   import { findTheme } from './lib/theme';
   import TurnBar from './lib/TurnBar.svelte';
 
@@ -173,6 +173,8 @@
 
   $effect(() => savePref('flipped', flipped ? '1' : '0'));
   $effect(() => setMuted(!settings.sound));
+  $effect(() => setVolume(settings.volume));
+  $effect(() => model.setBaseSpeed(settings.stepMs));
 
   function flash(text: string) {
     message = text;

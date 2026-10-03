@@ -1,6 +1,7 @@
 // Display preferences, per viewer. Kept in localStorage as one JSON object;
 // a missing or unreadable store just means the defaults. Settings that
 // matter to the backend (engines) live in the app config dir instead.
+import { STEP_MS } from './board/boardModel.svelte';
 import { findTheme } from './theme';
 
 export type Coordinates = 'none' | 'traps' | 'all';
@@ -8,11 +9,18 @@ export type Coordinates = 'none' | 'traps' | 'all';
  * piece's legal steps, or step mode (the step toward the pointer, by click). */
 export type HoverInput = 'off' | 'arrows' | 'step';
 
+/** The slowest step animation the setting allows, in ms. */
+export const MAX_STEP_MS = 600;
+
 export interface SettingsData {
   theme: string;
   /** Board labels: none, the four trap squares, or files and ranks along the edges. */
   coordinates: Coordinates;
   sound: boolean;
+  /** Sound volume, 0 to 100. */
+  volume: number;
+  /** How long a piece takes to slide one step, in ms; 0 shows moves at once. */
+  stepMs: number;
   hoverInput: HoverInput;
   /** Turn the board so a lone human player is at the bottom when a game starts. */
   humanAtBottom: boolean;
@@ -26,6 +34,8 @@ export const DEFAULTS: SettingsData = {
   theme: findTheme(null).id,
   coordinates: 'traps',
   sound: true,
+  volume: 100,
+  stepMs: STEP_MS,
   hoverInput: 'off',
   humanAtBottom: true,
   analysisEngine: null,
@@ -56,6 +66,12 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
     s.coordinates = raw.coordinates;
   }
   if (typeof raw.sound === 'boolean') s.sound = raw.sound;
+  if (typeof raw.volume === 'number' && Number.isFinite(raw.volume)) {
+    s.volume = Math.round(Math.min(100, Math.max(0, raw.volume)));
+  }
+  if (typeof raw.stepMs === 'number' && Number.isFinite(raw.stepMs)) {
+    s.stepMs = Math.round(Math.min(MAX_STEP_MS, Math.max(0, raw.stepMs)));
+  }
   if (typeof raw.humanAtBottom === 'boolean') s.humanAtBottom = raw.humanAtBottom;
   if (typeof raw.analysisEngine === 'string') s.analysisEngine = raw.analysisEngine;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
@@ -86,6 +102,18 @@ class Settings {
   }
   set sound(v: boolean) {
     this.update({ sound: v });
+  }
+  get volume() {
+    return this.#data.volume;
+  }
+  set volume(v: number) {
+    this.update({ volume: v });
+  }
+  get stepMs() {
+    return this.#data.stepMs;
+  }
+  set stepMs(v: number) {
+    this.update({ stepMs: v });
   }
 
   get hoverInput() {
