@@ -372,7 +372,8 @@ Differences from the design above, and details it left open:
   analysis searches the turn's start.
 - Confirmed with Brian (2026-10-03), after the first version:
   - Evals are shown in rabbits (`+0.35`), everywhere: the match engine
-    panel should switch from centi-rabbits too (not done yet).
+    panel too (still from that engine's side, since it's labelled by
+    engine).
   - The eval bar's `k` = 300 stays, to tune by use.
   - Analysis stays on across new games, unless the new game is one where
     it isn't allowed (an online game the user plays).

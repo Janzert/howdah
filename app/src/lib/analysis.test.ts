@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analysisEngine, formatEval, goldShare, nodesPerSecond, pvMoves } from './analysis';
+import { analysisEngine, formatEval, formatRabbits, goldShare, nodesPerSecond, pvMoves } from './analysis';
 import type { AnalysisLine } from './bindings/AnalysisLine';
 import type { EngineSpec } from './bindings/EngineSpec';
 
@@ -23,6 +23,7 @@ describe('analysis display', () => {
     expect(formatEval({ kind: 'centiRabbits', value: 0 })).toBe('0.00');
     expect(formatEval({ kind: 'decided', winner: 'silver' })).toBe('Silver wins');
     expect(formatEval(null)).toBe('');
+    expect(formatRabbits(-5)).toBe('−0.05');
   });
 
   it('fills the eval bar from gold’s end', () => {

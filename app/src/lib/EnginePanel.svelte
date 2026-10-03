@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { formatRabbits } from './analysis';
   import type { Color } from './bindings/Color';
   import type { EngineOutput } from './bindings/EngineOutput';
   import type { PlayersView } from './bindings/PlayersView';
@@ -58,7 +59,7 @@
         <span class="dot {side}"></span>
         <strong>{players[side].name}</strong>
         {#if s.depth}<span class="stat">depth {s.depth}</span>{/if}
-        {#if s.score != null}<span class="stat" title="centi-rabbits, from this engine's side">eval {s.score > 0 ? '+' : ''}{s.score}</span>{/if}
+        {#if s.score != null}<span class="stat" title="in rabbits, from this engine's side">eval {formatRabbits(s.score)}</span>{/if}
       </header>
       {#if s.pv.length}
         <div class="pv" title="principal variation">{s.pv.join('  |  ')}</div>

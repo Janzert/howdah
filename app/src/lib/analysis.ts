@@ -19,7 +19,12 @@ export function goldShare(e: Eval | null): number {
 export function formatEval(e: Eval | null): string {
   if (!e) return '';
   if (e.kind === 'decided') return e.winner === 'gold' ? 'Gold wins' : 'Silver wins';
-  const rabbits = e.value / 100;
+  return formatRabbits(e.value);
+}
+
+/** Centi-rabbits as signed rabbits (`+0.35`, `−1.20`). */
+export function formatRabbits(centiRabbits: number): string {
+  const rabbits = centiRabbits / 100;
   return `${rabbits > 0 ? '+' : rabbits < 0 ? '−' : ''}${Math.abs(rabbits).toFixed(2)}`;
 }
 
