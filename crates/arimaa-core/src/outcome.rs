@@ -29,7 +29,8 @@ data_type! {
 }
 
 impl WinReason {
-    /// The letter arimaa.com and AEI tools use for this end condition.
+    /// The letter arimaa.com and AEI tools use for this end condition
+    /// (the full arimaa.com list is in `docs/RESULT-CODES.md`).
     pub fn letter(self) -> char {
         match self {
             WinReason::Goal => 'g',

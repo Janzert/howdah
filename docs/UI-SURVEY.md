@@ -167,7 +167,7 @@ cover it.
   - `l` to toggle the engine, `x` for threat mode, `?` for the help overlay
 
   A `?` overlay also closes the "no keyboard-shortcut help" to-do.
-- **[P2] Variation tree** (already a to-do; needed for analysis):
+- **[P2] Variation tree** (needed for analysis; design in `VARIATIONS.md`):
   - Entering a move mid-game creates a branch instead of truncating.
   - 4steps's tree context menu: copy move, copy sequence, promote/demote
     (shift up/down), and delete. Deleting is disabled for the live line.
