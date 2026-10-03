@@ -359,6 +359,12 @@ Differences from the design above, and details it left open:
   later), 13 quick arrow-key moves with OpFor ended on the right node
   with no failure, stored lines show at once on returning, the game-end
   Analyse button and a missing engine's failure message work.
+- **Checked in the real app** (`tauri dev`, WebKitGTK, in Xephyr) with
+  Sharp and OpFor (2026-10-03): panel, eval bar (also flipped), PV
+  arrows, the hover preview, chip clicks, `Space`, the engine log and
+  switching engines work. It found two bugs, both fixed: Sharp failing
+  when stopped right after `go` (`ENGINES.md`), and the board keeping the
+  setup draft when `Space` added a different setup.
 
 ## Decided
 
