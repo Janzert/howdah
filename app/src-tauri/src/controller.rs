@@ -13,7 +13,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use arimaa_aei::{Engine, EngineMessage, Info, SearchLog};
+use arimaa_aei::{Engine, EngineMessage, Info, SearchEval, SearchLog};
 use arimaa_core::{Color, TimeControl};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -383,22 +383,26 @@ async fn prepare(
     Ok(())
 }
 
-/// A search log's depth to one decimal place (`12.0233+` -> `12.0+`).
+/// A search log's depth to one decimal place, with `+` while an iteration
+/// is unfinished (`12.0233+` -> `12.0+`, `+3.001` -> `3.0+`).
 fn log_depth(depth: &str) -> String {
-    let plus = if depth.ends_with('+') { "+" } else { "" };
-    match depth.trim_end_matches('+').parse::<f64>() {
+    let plus = if depth.contains('+') { "+" } else { "" };
+    let digits = depth.trim_matches('+');
+    match digits.parse::<f64>() {
         Ok(d) if d.fract() != 0.0 => format!("{d:.1}{plus}"),
-        _ => depth.to_string(),
+        _ => format!("{digits}{plus}"),
     }
 }
 
 /// A search log's eval in centi-rabbits. Only bot_Sharp writes these
-/// logs, and its scale is about 10 per centi-rabbit. A won or lost
-/// position (near ±1,000,000) has no score; the log line still shows it.
-fn log_score(eval: i32) -> Option<i32> {
+/// logs, and its scale is about 10 per centi-rabbit. A proven win or loss
+/// has no score; the log line still shows it.
+fn log_score(eval: &SearchEval) -> Option<i32> {
     const SHARP_PER_CENTI_RABBIT: i32 = 10;
-    const SHARP_DECIDED: i32 = 990_000;
-    (eval.abs() < SHARP_DECIDED).then_some(eval / SHARP_PER_CENTI_RABBIT)
+    match eval {
+        SearchEval::Score(v) => Some(v / SHARP_PER_CENTI_RABBIT),
+        SearchEval::Decided(_) => None,
+    }
 }
 
 fn engine_output(side: Color, msg: EngineMessage) -> Option<EngineOutput> {
@@ -434,9 +438,14 @@ fn engine_output(side: Color, msg: EngineMessage) -> Option<EngineOutput> {
             };
         }
         EngineMessage::Log(text) => {
+            // Sharp's verbose output has a blank line after each iteration.
+            if text.is_empty() {
+                return None;
+            }
             if let Some(search) = SearchLog::parse(&text) {
                 out.depth = Some(log_depth(&search.depth));
-                out.score = log_score(search.eval);
+                out.score = log_score(&search.eval);
+                out.pv = Some(search.pv).filter(|pv| !pv.is_empty());
             }
             out.kind = EngineOutputKind::Log;
             out.text = text;
@@ -469,6 +478,12 @@ mod tests {
         assert_eq!(out.text, "Depth 12.0233+ Eval -1078 Time 2.8 Seed 47d0b298fc1972e4");
         let won = log("Depth 7 Eval 999990 Time 0.1");
         assert_eq!((won.depth.as_deref(), won.score), (Some("7"), None));
+        let id = log("ID Depth:  12     Eval:     90 Time: 2.37/4.89  PV: Ee2n Ee3n Ee4n Ee5n  ed7s qpss");
+        assert_eq!((id.depth.as_deref(), id.score), (Some("12"), Some(9)));
+        assert_eq!(id.pv.unwrap(), ["Ee2n Ee3n Ee4n Ee5n", "ed7s"]);
+        let fs = log("FS Depth: +3.001  Eval:    158 Time: 0.02/8.21  PV: Ee2n Ee3n Ee4n Ee5n  dg7s qpss");
+        assert_eq!(fs.depth.as_deref(), Some("3.0+"));
+        assert!(engine_output(Color::Gold, EngineMessage::Log(String::new())).is_none());
         let plain = log("Started new game");
         assert_eq!((plain.depth, plain.score), (None, None));
     }

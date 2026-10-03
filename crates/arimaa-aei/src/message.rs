@@ -85,39 +85,109 @@ impl Info {
     }
 }
 
-/// A search summary sent as a `log` line rather than `info` lines.
-/// bot_Sharp reports each search only this way, when it finishes:
-/// `log Depth 12.0233+ Eval 71 Time 2.80995 Seed 47d0b298fc1972e4`.
+/// Search progress sent as `log` lines rather than `info` lines, as
+/// bot_Sharp does. It always ends a search with a summary:
+///
+/// `log Depth 12.0233+ Eval 71 Time 2.80995 Seed 47d0b298fc1972e4`
+///
+/// and with its `verbose` option (which our build of Sharp allows outside
+/// dev builds, see `tools/build-sharp.sh`) it also reports each finished
+/// iteration (`ID`) and each new best move within one (`FS`):
+///
+/// `log ID Depth:  12  Eval:  90  Time: 2.37/4.89  PV: Ee2n Ee3n Ee4n Ee5n  ed7s hh7s qpss`
 #[derive(Clone, Debug, PartialEq)]
 pub struct SearchLog {
-    /// Depth in steps as written: fractional, with `+` when a deeper
-    /// iteration was started but not finished.
+    pub kind: SearchLogKind,
+    /// Depth in steps as written: fractional, and for the summary with `+`
+    /// when a deeper iteration was started but not finished. For `FS`
+    /// lines, the progress through the iteration being searched.
     pub depth: String,
-    /// The engine's evaluation from the mover's point of view, on its own
-    /// scale. Sharp's is about 1000 per rabbit (measured: a rabbit up in
-    /// the opening is about +1000), with wins and losses near ±1,000,000.
-    pub eval: i32,
-    /// Seconds.
+    pub eval: SearchEval,
+    /// Seconds used so far.
     pub time: Option<f64>,
+    /// The principal variation, split into turns. Empty for the summary.
+    pub pv: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchLogKind {
+    /// The summary at the end of a search.
+    Summary,
+    /// A finished iteration (`ID`).
+    Iteration,
+    /// A new best move during an iteration (`FS`).
+    NewBest,
+}
+
+/// An evaluation from the mover's point of view.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SearchEval {
+    /// On the engine's own scale. Sharp's is about 1000 per rabbit
+    /// (measured: a rabbit up in the opening is about +1000).
+    Score(i32),
+    /// A proven win or loss, as the engine writes it (`Win12`, `Loss5`).
+    Decided(String),
+}
+
+/// Sharp's evals at or beyond this size are proven wins and losses.
+const SHARP_DECIDED: i32 = 990_000;
+
+impl SearchEval {
+    fn parse(text: &str) -> Option<SearchEval> {
+        if text.starts_with("Win") || text.starts_with("Loss") {
+            return Some(SearchEval::Decided(text.to_string()));
+        }
+        let v: i32 = text.parse().ok()?;
+        Some(if v.abs() >= SHARP_DECIDED {
+            // The summary writes the raw value; spell it as the other lines do.
+            let steps = (1_000_000 - v.abs() + if v > 0 { 11 } else { 7 }) / 8;
+            SearchEval::Decided(format!("{}{steps}", if v > 0 { "Win" } else { "Loss" }))
+        } else {
+            SearchEval::Score(v)
+        })
+    }
 }
 
 impl SearchLog {
-    /// Reads the text after `log `, if it's a search summary: it starts
-    /// with `Depth` and has an `Eval`. Other fields are ignored.
+    /// Reads the text after `log `, if it's one of Sharp's search lines.
+    /// Fields other than depth, eval, time and the PV are ignored.
     pub fn parse(text: &str) -> Option<SearchLog> {
-        let tokens: Vec<&str> = text.split_whitespace().collect();
-        if tokens.first() != Some(&"Depth") {
+        let (kind, rest) = match text.split_once(' ') {
+            Some(("ID", rest)) => (SearchLogKind::Iteration, rest),
+            Some(("FS", rest)) => (SearchLogKind::NewBest, rest),
+            _ => (SearchLogKind::Summary, text),
+        };
+        let (fields, pv) = match rest.split_once("PV:") {
+            Some((fields, pv)) if kind != SearchLogKind::Summary => (fields, pv),
+            _ => (rest, ""),
+        };
+        let tokens: Vec<&str> = fields.split_whitespace().collect();
+        if tokens.first().map(|t| t.trim_end_matches(':')) != Some("Depth") {
             return None;
         }
-        let field = |name: &str| tokens.chunks(2).find(|kv| kv[0] == name).and_then(|kv| kv.get(1).copied());
+        let field = |name: &str| {
+            tokens.chunks(2).find(|kv| kv[0].trim_end_matches(':') == name).and_then(|kv| kv.get(1).copied())
+        };
         let depth = field("Depth")?;
-        depth.trim_end_matches('+').parse::<f64>().ok()?;
+        depth.trim_matches('+').parse::<f64>().ok()?;
+        let time = field("Time").and_then(|t| t.split('/').next()?.parse().ok());
         Some(SearchLog {
+            kind,
             depth: depth.to_string(),
-            eval: field("Eval")?.parse().ok()?,
-            time: field("Time").and_then(|t| t.parse().ok()),
+            eval: SearchEval::parse(field("Eval")?)?,
+            time,
+            pv: split_sharp_pv(pv),
         })
     }
+}
+
+/// Splits a PV as Sharp writes it: turns separated by two spaces, with
+/// `qpss` where a turn ends before its fourth step.
+fn split_sharp_pv(text: &str) -> Vec<String> {
+    text.split("  ")
+        .map(|turn| turn.split_whitespace().filter(|&s| s != "qpss").collect::<Vec<_>>().join(" "))
+        .filter(|turn| !turn.is_empty())
+        .collect()
 }
 
 /// Splits a principal variation into turns. After the first turn, each turn
@@ -169,17 +239,37 @@ mod tests {
 
     #[test]
     fn parses_sharps_search_log() {
+        let summary = SearchLog::parse("Depth 12.0233+ Eval -71 Time 2.80995 Seed 47d0b298fc1972e4").unwrap();
         assert_eq!(
-            SearchLog::parse("Depth 12.0233+ Eval -71 Time 2.80995 Seed 47d0b298fc1972e4"),
-            Some(SearchLog { depth: "12.0233+".into(), eval: -71, time: Some(2.80995) })
+            summary,
+            SearchLog {
+                kind: SearchLogKind::Summary,
+                depth: "12.0233+".into(),
+                eval: SearchEval::Score(-71),
+                time: Some(2.80995),
+                pv: vec![],
+            }
         );
-        assert_eq!(
-            SearchLog::parse("Depth 9 Eval 999990"),
-            Some(SearchLog { depth: "9".into(), eval: 999_990, time: None })
-        );
+        let won = SearchLog::parse("Depth 9 Eval 999901").unwrap();
+        assert_eq!((won.eval, won.time), (SearchEval::Decided("Win13".into()), None));
+        let lost = SearchLog::parse("Depth 9 Eval -999960").unwrap();
+        assert_eq!(lost.eval, SearchEval::Decided("Loss5".into()));
+
+        let id = SearchLog::parse(
+            "ID Depth:  12     Eval:     90 Time: 2.37/4.89  PV: Ee2n Ee3n Ee4n Ee5n  ed7s hh7s hh6w me7w  Dg2n qpss",
+        )
+        .unwrap();
+        assert_eq!((id.kind, id.depth.as_str(), id.time), (SearchLogKind::Iteration, "12", Some(2.37)));
+        assert_eq!(id.pv, ["Ee2n Ee3n Ee4n Ee5n", "ed7s hh7s hh6w me7w", "Dg2n"]);
+        let fs =
+            SearchLog::parse("FS Depth: +3.001  Eval:   Loss5 Time: 0.02/7.97  PV: dg7s qpss  qpss").unwrap();
+        assert_eq!((fs.kind, fs.depth.as_str()), (SearchLogKind::NewBest, "+3.001"));
+        assert_eq!((fs.eval, fs.pv), (SearchEval::Decided("Loss5".into()), vec!["dg7s".to_string()]));
+
         assert_eq!(SearchLog::parse("Started new game"), None);
         assert_eq!(SearchLog::parse("Depth 12 Time 3"), None, "no eval");
         assert_eq!(SearchLog::parse("Depth deep Eval 3"), None);
+        assert_eq!(SearchLog::parse("ID something else"), None);
         assert_eq!(SearchLog::parse("PerMove 3 (max 2.592e+06) Reserve current 10"), None);
     }
 

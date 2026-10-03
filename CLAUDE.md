@@ -53,9 +53,12 @@ ideas from other Arimaa and chess clients.
   - `Engine`: spawns the process (no shell), runs the handshake, and sends
     typed commands. Messages are parsed with deadlines (`recv_until`), and
     `info pv` is split into turns. `SearchLog` reads bot_Sharp's search
-    summary (`log Depth 12.0233+ Eval 71 Time …`), which the controller
-    turns into the panel's depth and eval (Sharp's eval is ~10 per
-    centi-rabbit).
+    logs: the summary at the end (`log Depth 12.0233+ Eval 71 Time …`)
+    and, with its `verbose` option, `ID`/`FS` progress lines with a PV.
+    The controller turns them into the panel's depth, eval and PV (Sharp's
+    eval is ~10 per centi-rabbit). Our build of Sharp
+    (`tools/build-sharp.sh` in the parent repo) allows `verbose` outside
+    dev builds.
   - `play_match`: engine vs engine with clocks, following pyrimaa's
     `game.py` (option names, timeouts, `stop` before the deadline, and
     losses by illegal move, crash, timeout, resignation or turn limit).
