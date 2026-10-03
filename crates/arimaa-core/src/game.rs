@@ -168,20 +168,8 @@ impl Game {
     }
 
     fn play_steps(&mut self, steps: &[RecordStep]) -> Result<Option<GameResult>, GameError> {
-        let mut tb = self.begin_turn()?;
-        for rs in steps {
-            let effect = tb
-                .try_step(rs.step)
-                .map_err(|source| GameError::Step { step: rs.step.to_string(), source })?
-                .effect;
-            // Missing capture tokens are tolerated; wrong ones are not.
-            if let Some(written) = rs.capture
-                && effect.capture != Some(written)
-            {
-                return Err(GameError::CaptureMismatch(written.to_string()));
-            }
-        }
-        self.play_turn(tb.finish()?)
+        let tb = self.begin_turn()?;
+        self.play_turn(build_turn(tb, steps)?)
     }
 
     /// Parses and validates a game record: one move per line, e.g.
@@ -227,6 +215,18 @@ impl Game {
         Ok(game)
     }
 
+    /// Builds a game from parts already checked by a [`crate::GameTree`]:
+    /// `positions` is one longer than `moves`.
+    pub(crate) fn from_parts(
+        moves: Vec<Move>,
+        positions: Vec<Position>,
+        result: Option<GameResult>,
+        end_marker: Option<String>,
+    ) -> Game {
+        debug_assert_eq!(positions.len(), moves.len() + 1);
+        Game { moves, positions, result, end_marker }
+    }
+
     /// Formats the game as a record, one move per line, each ending in `\n`.
     pub fn to_record(&self) -> String {
         let mut out = String::new();
@@ -238,6 +238,23 @@ impl Game {
         }
         out
     }
+}
+
+/// Plays record steps on `tb` and finishes the turn. Missing capture
+/// tokens are tolerated; wrong ones are not.
+pub(crate) fn build_turn(mut tb: TurnBuilder, steps: &[RecordStep]) -> Result<Turn, GameError> {
+    for rs in steps {
+        let effect = tb
+            .try_step(rs.step)
+            .map_err(|source| GameError::Step { step: rs.step.to_string(), source })?
+            .effect;
+        if let Some(written) = rs.capture
+            && effect.capture != Some(written)
+        {
+            return Err(GameError::CaptureMismatch(written.to_string()));
+        }
+    }
+    Ok(tb.finish()?)
 }
 
 #[cfg(test)]

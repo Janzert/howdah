@@ -9,6 +9,7 @@
 //!   (freezing, pushes, pulls, rabbit direction, the 4-step limit).
 //! - [`Game`]: a sequence of setup and turn moves, parsed from and formatted
 //!   to the standard record format.
+//! - [`GameTree`]: moves with variations, comments and glyphs.
 //!
 //! Optional features: `serde` adds serde derives to the data types; `ts` adds
 //! `ts_rs::TS` derives for generating TypeScript bindings.
@@ -21,6 +22,7 @@ mod position;
 mod setup;
 mod step;
 mod timecontrol;
+mod tree;
 mod turn;
 mod types;
 
@@ -31,5 +33,6 @@ pub use position::Position;
 pub use setup::{Placement, apply_setup, default_setup, validate_setup};
 pub use step::{Capture, Step, StepEffect};
 pub use timecontrol::TimeControl;
+pub use tree::{Annotation, GameTree, Glyph, Node, NodeId};
 pub use turn::{MAX_STEPS, Route, StepKind, Turn, TurnBuilder, TurnStep};
 pub use types::{Color, Dir, Piece, PieceKind, Square, TRAPS};

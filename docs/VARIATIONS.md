@@ -67,7 +67,8 @@ struct Node {
 - **Adding a move** (`add_setup`, `add_turn`, `add_notation` taking a
   parent `NodeId`) returns the existing child if one already plays the
   same move, so replaying a known line doesn't create duplicates.
-  Otherwise the new child goes last.
+  Setups count as the same when they produce the same position, whatever
+  order the pieces are listed in. Otherwise the new child goes last.
 - **Repetition** counts positions on the path from the root to the
   parent, not the whole tree. `is_third_repetition(node, end)` replaces
   the ply form, and walks `parent` links (bounded by the game length, so
@@ -75,15 +76,17 @@ struct Node {
 - **Results** live on nodes. A rules result (goal, elimination,
   immobilization) is set when the node is created. An external result
   (timeout, resignation) is attached to the node that ends the line with
-  `end_line(node, result)`. A node with a result has no children.
+  `end_line(node, result)`, which refuses a node that already has
+  continuations. A node with a result gets no new children.
 - **Line helpers:** `path(node)` (root to node), `main_line()`,
   `line_through(node)` (the path to `node`, then `children[0]` down to a
   leaf), and `to_game(node) -> Game` for anything that needs a plain
   line.
 - **Editing:** `delete(node)` removes the node and its subtree;
   `promote`/`demote`/`make_main_line`. `delete` on the root is an error.
-- **Conversions:** `GameTree::from(Game)` and `GameTree::to_game(main
-  line leaf)` are cheap, so existing code paths keep working.
+- **Conversions:** `GameTree::from_game(&Game)` (returning the tree and
+  the game's last node) and `main_game()` are cheap, so existing code
+  paths keep working.
 
 The `Annotation` type:
 

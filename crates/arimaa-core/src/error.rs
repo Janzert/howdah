@@ -112,6 +112,12 @@ pub enum GameError {
     Repetition,
     #[error("the move has no steps or placements")]
     EmptyMove,
+    #[error("no such move in the game tree")]
+    NoSuchNode,
+    #[error("the start of the game can't be changed")]
+    IsRoot,
+    #[error("the line continues after this move")]
+    HasContinuation,
 }
 
 /// A [`GameError`] located on a line of a game record.

@@ -37,6 +37,13 @@ ideas from other Arimaa and chess clients.
     repetitions and plays moves from notation (`play_notation`, used for
     engine and server moves). `end_game` records external results; `parse`
     validates capture tokens, and `to_record` round-trips.
+  - `tree::GameTree`: moves with variations (design in
+    `docs/VARIATIONS.md`). An arena of `Node`s with stable `NodeId`s; the
+    first child continues the main line. Adding a move that's already a
+    child reuses it, repetition counts only the path to the node, and
+    `from_game`/`to_game`/`main_game` convert to and from `Game`. Nodes
+    carry an `Annotation` (comment and PGN-numbered `Glyph`s). The app
+    doesn't use it yet.
 - `crates/arimaa-aei`: async AEI controller (tokio; no UI deps).
   - `Engine`: spawns the process (no shell), runs the handshake, and sends
     typed commands. Messages are parsed with deadlines (`recv_until`), and
