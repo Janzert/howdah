@@ -17,4 +17,4 @@ mod message;
 pub use engine::{Direction, Engine, EngineConfig, EngineId};
 pub use error::AeiError;
 pub use matchplay::{MatchConfig, MatchEvent, MatchOutcome, play_match};
-pub use message::{EngineMessage, Info, split_pv};
+pub use message::{EngineMessage, Info, SearchLog, split_pv};

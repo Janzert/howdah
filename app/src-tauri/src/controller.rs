@@ -13,7 +13,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use arimaa_aei::{Engine, EngineMessage, Info};
+use arimaa_aei::{Engine, EngineMessage, Info, SearchLog};
 use arimaa_core::{Color, TimeControl};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -383,6 +383,24 @@ async fn prepare(
     Ok(())
 }
 
+/// A search log's depth to one decimal place (`12.0233+` -> `12.0+`).
+fn log_depth(depth: &str) -> String {
+    let plus = if depth.ends_with('+') { "+" } else { "" };
+    match depth.trim_end_matches('+').parse::<f64>() {
+        Ok(d) if d.fract() != 0.0 => format!("{d:.1}{plus}"),
+        _ => depth.to_string(),
+    }
+}
+
+/// A search log's eval in centi-rabbits. Only bot_Sharp writes these
+/// logs, and its scale is about 10 per centi-rabbit. A won or lost
+/// position (near ±1,000,000) has no score; the log line still shows it.
+fn log_score(eval: i32) -> Option<i32> {
+    const SHARP_PER_CENTI_RABBIT: i32 = 10;
+    const SHARP_DECIDED: i32 = 990_000;
+    (eval.abs() < SHARP_DECIDED).then_some(eval / SHARP_PER_CENTI_RABBIT)
+}
+
 fn engine_output(side: Color, msg: EngineMessage) -> Option<EngineOutput> {
     let mut out = EngineOutput {
         side,
@@ -416,6 +434,10 @@ fn engine_output(side: Color, msg: EngineMessage) -> Option<EngineOutput> {
             };
         }
         EngineMessage::Log(text) => {
+            if let Some(search) = SearchLog::parse(&text) {
+                out.depth = Some(log_depth(&search.depth));
+                out.score = log_score(search.eval);
+            }
             out.kind = EngineOutputKind::Log;
             out.text = text;
         }
@@ -430,4 +452,24 @@ fn engine_output(side: Color, msg: EngineMessage) -> Option<EngineOutput> {
         }
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sharps_search_log_fills_depth_and_score() {
+        let log = |text: &str| engine_output(Color::Gold, EngineMessage::Log(text.into())).unwrap();
+        let out = log("Depth 12.0233+ Eval -1078 Time 2.8 Seed 47d0b298fc1972e4");
+        assert_eq!(
+            (out.kind, out.depth.as_deref(), out.score),
+            (EngineOutputKind::Log, Some("12.0+"), Some(-107))
+        );
+        assert_eq!(out.text, "Depth 12.0233+ Eval -1078 Time 2.8 Seed 47d0b298fc1972e4");
+        let won = log("Depth 7 Eval 999990 Time 0.1");
+        assert_eq!((won.depth.as_deref(), won.score), (Some("7"), None));
+        let plain = log("Started new game");
+        assert_eq!((plain.depth, plain.score), (None, None));
+    }
 }

@@ -17,8 +17,8 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use arimaa_core::{
-    Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position, Route,
-    Square, Step, StepEffect, StepKind, TimeControl, TurnBuilder, WinReason, default_setup,
+    Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position,
+    Route, Square, Step, StepEffect, StepKind, TimeControl, TurnBuilder, WinReason, default_setup,
     limit_score_winner, notation,
 };
 

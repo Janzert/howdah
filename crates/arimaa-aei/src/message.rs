@@ -85,6 +85,41 @@ impl Info {
     }
 }
 
+/// A search summary sent as a `log` line rather than `info` lines.
+/// bot_Sharp reports each search only this way, when it finishes:
+/// `log Depth 12.0233+ Eval 71 Time 2.80995 Seed 47d0b298fc1972e4`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchLog {
+    /// Depth in steps as written: fractional, with `+` when a deeper
+    /// iteration was started but not finished.
+    pub depth: String,
+    /// The engine's evaluation from the mover's point of view, on its own
+    /// scale. Sharp's is about 1000 per rabbit (measured: a rabbit up in
+    /// the opening is about +1000), with wins and losses near ±1,000,000.
+    pub eval: i32,
+    /// Seconds.
+    pub time: Option<f64>,
+}
+
+impl SearchLog {
+    /// Reads the text after `log `, if it's a search summary: it starts
+    /// with `Depth` and has an `Eval`. Other fields are ignored.
+    pub fn parse(text: &str) -> Option<SearchLog> {
+        let tokens: Vec<&str> = text.split_whitespace().collect();
+        if tokens.first() != Some(&"Depth") {
+            return None;
+        }
+        let field = |name: &str| tokens.chunks(2).find(|kv| kv[0] == name).and_then(|kv| kv.get(1).copied());
+        let depth = field("Depth")?;
+        depth.trim_end_matches('+').parse::<f64>().ok()?;
+        Some(SearchLog {
+            depth: depth.to_string(),
+            eval: field("Eval")?.parse().ok()?,
+            time: field("Time").and_then(|t| t.parse().ok()),
+        })
+    }
+}
+
 /// Splits a principal variation into turns. After the first turn, each turn
 /// starts with the side to move (`w`/`b`, or `g`/`s`):
 /// `Ed2n Ed3n b ee7s ee6s w Ed4n` -> `["Ed2n Ed3n", "ee7s ee6s", "Ed4n"]`.
@@ -130,6 +165,22 @@ mod tests {
         assert_eq!(Info::parse("currmovenumber 7"), Info::CurrMoveNumber(7));
         assert_eq!(Info::parse("score big"), Info::Other { key: "score".into(), value: "big".into() });
         assert_eq!(Info::parse("hashfull 50"), Info::Other { key: "hashfull".into(), value: "50".into() });
+    }
+
+    #[test]
+    fn parses_sharps_search_log() {
+        assert_eq!(
+            SearchLog::parse("Depth 12.0233+ Eval -71 Time 2.80995 Seed 47d0b298fc1972e4"),
+            Some(SearchLog { depth: "12.0233+".into(), eval: -71, time: Some(2.80995) })
+        );
+        assert_eq!(
+            SearchLog::parse("Depth 9 Eval 999990"),
+            Some(SearchLog { depth: "9".into(), eval: 999_990, time: None })
+        );
+        assert_eq!(SearchLog::parse("Started new game"), None);
+        assert_eq!(SearchLog::parse("Depth 12 Time 3"), None, "no eval");
+        assert_eq!(SearchLog::parse("Depth deep Eval 3"), None);
+        assert_eq!(SearchLog::parse("PerMove 3 (max 2.592e+06) Reserve current 10"), None);
     }
 
     #[test]
