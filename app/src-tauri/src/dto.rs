@@ -136,7 +136,7 @@ pub struct SessionView {
     pub last_move: Option<LastMoveView>,
     /// Pieces captured up to `ply`, including in the turn being entered.
     pub captured: CapturedView,
-    /// Moves that committing now would discard (when entering a move before the end).
+    /// Moves after `ply` on the line being shown.
     pub moves_after_cursor: usize,
     pub result: Option<GameResult>,
     pub end_marker: Option<String>,
@@ -148,9 +148,15 @@ pub struct SessionView {
     pub clock: Option<ClockView>,
     /// The side whose engine is thinking.
     pub thinking: Option<Color>,
-    /// Whether board input is accepted now (a human's turn at the live end
-    /// of a match, or any time outside a match).
+    /// Whether board input is accepted now: any time outside a match; in a
+    /// match, moves anywhere (as plans) but setups only on a human's turn.
     pub can_input: bool,
+    /// Whether committing now plays a move in the match (a human's turn at
+    /// the live position), rather than adding a variation.
+    pub plays_live: bool,
+    /// In a match, the ply of the live position if it's on the line being
+    /// shown.
+    pub live_ply: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]

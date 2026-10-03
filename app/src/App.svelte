@@ -214,7 +214,7 @@
 
   /** Whether a human is to move at the live end, playing a non-human. */
   function awaitsHumanAgainstEngine(v: SessionView): boolean {
-    if (!v.players || !v.canInput || v.result || v.ply !== v.moves.length) return false;
+    if (!v.players || !v.playsLive) return false;
     const toMove = v.position.sideToMove;
     const other = toMove === 'gold' ? 'silver' : 'gold';
     return v.players[toMove].kind === 'human' && v.players[other].kind !== 'human';
@@ -249,6 +249,13 @@
     else if (ply >= 0 && ply <= view.moves.length && ply !== view.ply) run(api.gotoPly(ply));
   }
 
+  /** End: the live position in a match, otherwise the end of the line. */
+  function gotoEnd() {
+    if (!view) return;
+    if (view.players && view.livePly !== view.ply) run(api.gotoLive());
+    else goto(view.moves.length);
+  }
+
   async function replayShownMove() {
     if (!view || view.turn?.steps.length || model.animating) return;
     const replay = await api.moveReplay();
@@ -277,7 +284,7 @@
     back: (v) => goto(v.ply - 1),
     forward: (v) => goto(v.ply + 1),
     start: () => goto(0),
-    end: (v) => goto(v.moves.length),
+    end: () => gotoEnd(),
     commit: (v) => {
       if (v.canInput) commit();
     },
@@ -366,7 +373,7 @@
         <button aria-label="Start" onclick={() => goto(0)} title="Start (Home or 0)">⏮</button>
         <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (← or k)">◀</button>
         <button aria-label="Forward" onclick={() => goto(view!.ply + 1)} title="Forward (→ or j); at the latest move, replays it">▶</button>
-        <button aria-label="End" onclick={() => goto(view!.moves.length)} title="End (End or $)">⏭</button>
+        <button aria-label="End" onclick={gotoEnd} title="End (End or $)">⏭</button>
       </div>
     {/if}
     <div class="tools">

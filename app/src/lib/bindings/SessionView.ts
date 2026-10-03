@@ -32,7 +32,7 @@ lastMove: LastMoveView | null,
  */
 captured: CapturedView, 
 /**
- * Moves that committing now would discard (when entering a move before the end).
+ * Moves after `ply` on the line being shown.
  */
 movesAfterCursor: number, result: GameResult | null, endMarker: string | null, 
 /**
@@ -49,7 +49,17 @@ players: PlayersView | null, clock: ClockView | null,
  */
 thinking: Color | null, 
 /**
- * Whether board input is accepted now (a human's turn at the live end
- * of a match, or any time outside a match).
+ * Whether board input is accepted now: any time outside a match; in a
+ * match, moves anywhere (as plans) but setups only on a human's turn.
  */
-canInput: boolean, };
+canInput: boolean, 
+/**
+ * Whether committing now plays a move in the match (a human's turn at
+ * the live position), rather than adding a variation.
+ */
+playsLive: boolean, 
+/**
+ * In a match, the ply of the live position if it's on the line being
+ * shown.
+ */
+livePly: number | null, };

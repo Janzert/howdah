@@ -13,7 +13,9 @@
   }
   let { view, onCommit, onUndo, onCancel, onMoveNow, onEndMatch }: Props = $props();
   const inMatch = $derived(view.players != null);
-  const browsing = $derived(inMatch && view.movesAfterCursor > 0 && view.result == null);
+  const browsing = $derived(inMatch && view.livePly !== view.ply && view.result == null);
+  // In a match, a move that isn't the human's live move is a plan.
+  const planning = $derived(inMatch && !view.playsLive && view.result == null);
 
   const side = $derived(view.position.sideToMove === 'gold' ? 'Gold' : 'Silver');
   const turn = $derived(view.turn);
@@ -36,17 +38,17 @@
       <strong>{view.result.winner === 'gold' ? 'Gold' : 'Silver'} wins</strong> by {reason[view.result.reason]}
     </div>
     {#if view.endDetail}<div class="note">{view.endDetail}</div>{/if}
-  {:else if view.thinking}
+  {:else if view.thinking && !view.turn}
     <div class="status">
       <span class="dot {view.thinking}"></span>
       <strong>{view.players?.[view.thinking].name ?? 'Engine'}</strong> is thinking…
     </div>
-    {#if browsing}<div class="note">Browsing earlier moves; press End to follow the game.</div>{/if}
+    {#if browsing}<div class="note">Away from the live game; press End to follow it.</div>{/if}
     <div class="buttons">
       <button onclick={onMoveNow}>Move now <kbd>Space</kbd></button>
     </div>
-  {:else if browsing}
-    <div class="status">Browsing earlier moves</div>
+  {:else if browsing && !view.turn}
+    <div class="status">Away from the live game</div>
     <div class="note">Press End to return to the live game.</div>
   {:else if view.phase === 'setup'}
     <div class="status">
@@ -73,10 +75,10 @@
     {:else if turn?.commitBlocker}
       <div class="note">{turn.commitBlocker}</div>
     {/if}
-    {#if turn && view.movesAfterCursor > 0}
-      <div class="note warn">
-        Committing replaces {view.movesAfterCursor} later move{view.movesAfterCursor === 1 ? '' : 's'}
-      </div>
+    {#if turn && planning}
+      <div class="note">Planning: committing adds a variation; it isn't played.</div>
+    {:else if turn && view.movesAfterCursor > 0}
+      <div class="note">Committing adds a variation.</div>
     {/if}
     <div class="buttons">
       <button onclick={onUndo} disabled={!turn}>Undo step <kbd>⌫</kbd></button>

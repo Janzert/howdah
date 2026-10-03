@@ -17,6 +17,8 @@ export const api = {
   loadGame: (record: string) => invoke<void>('load_game', { record }),
   exportGame: () => invoke<string>('export_game'),
   gotoPly: (ply: number) => invoke<void>('goto_ply', { ply }),
+  /** Shows the live position of a match (the end of the line in free play). */
+  gotoLive: () => invoke<void>('goto_live'),
   /** The shown move's starting pieces and animation, or null after a setup. */
   moveReplay: () => invoke<MoveReplay | null>('move_replay'),
   legalTargets: (from: Square) => invoke<StepTarget[]>('legal_targets', { from }),

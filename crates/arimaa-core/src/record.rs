@@ -87,7 +87,9 @@ impl GameRecord {
         let end = tree.line_end(GameTree::ROOT);
         let mut tags: Vec<(String, String)> =
             self.tags.iter().filter(|(n, _)| !COMPUTED_TAGS.contains(&n.as_str())).cloned().collect();
-        if tree[end].ply() > 0 {
+        // PlyCount only goes with other tags, so an untagged record stays
+        // free of a header.
+        if tree[end].ply() > 0 && !tags.is_empty() {
             tags.push(("PlyCount".into(), tree[end].ply().to_string()));
         }
         let (code, result) = match tree[end].result() {
@@ -669,7 +671,7 @@ mod tests {
             r.tree[end].result(),
             Some(GameResult { winner: Color::Gold, reason: WinReason::Resignation })
         );
-        assert_eq!(r.to_record(), text.replace("[ResultCode", "[PlyCount \"3\"]\n[ResultCode"));
+        assert_eq!(r.to_record(), text);
 
         // A draw from an old game stays in the tags.
         let old = format!("[ResultCode \"n\"]\n\n{}1/2-1/2\n", setups());

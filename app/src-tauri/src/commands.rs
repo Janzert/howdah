@@ -33,6 +33,11 @@ pub fn goto_ply(state: State<Backend>, ply: usize) -> Result<(), ApiError> {
 }
 
 #[tauri::command]
+pub fn goto_live(state: State<Backend>) -> Result<(), ApiError> {
+    state.goto_live()
+}
+
+#[tauri::command]
 pub fn move_replay(state: State<Backend>) -> Option<MoveReplay> {
     state.move_replay()
 }

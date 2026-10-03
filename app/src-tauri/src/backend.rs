@@ -119,6 +119,13 @@ impl Backend {
         self.mutate(|s| s.goto(ply))
     }
 
+    pub fn goto_live(&self) -> Result<(), ApiError> {
+        self.mutate(|s| {
+            s.goto_live();
+            Ok(Vec::new())
+        })
+    }
+
     pub fn move_replay(&self) -> Option<MoveReplay> {
         self.lock().move_replay()
     }
@@ -230,6 +237,7 @@ impl Backend {
             "load_game" => ok(self.load_game(&arg::<String>(args, "record")?)?),
             "export_game" => ok(self.export_game()),
             "goto_ply" => ok(self.goto_ply(arg(args, "ply")?)?),
+            "goto_live" => ok(self.goto_live()?),
             "move_replay" => ok(self.move_replay()),
             "legal_targets" => ok(self.legal_targets(arg(args, "from")?)),
             "try_step" => ok(self.try_step(arg(args, "from")?, arg(args, "to")?)?),

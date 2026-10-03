@@ -1,17 +1,24 @@
 //! The game being viewed and edited in a window: pure state logic with no
 //! Tauri types, so it can be unit tested (and reused by other front ends).
 //!
+//! The game is a [`GameTree`]: entering a move anywhere adds a branch, and
+//! nothing is lost without an explicit delete. The session shows one line of
+//! the tree at a time (the root, then one node per ply), with a cursor on it.
+//!
 //! A session is either free play (anyone may enter moves for either side,
 //! at any ply) or a match: each side has a human or engine player, and
-//! optionally a clock. In a match, humans can only move on their own turn at
-//! the live end of the game; engine moves arrive via `apply_engine_move`
-//! from the controller.
+//! optionally a clock. A match plays one line, ending at its live node. A
+//! human's move at the live node on their turn is played; any other move
+//! (earlier, or while the opponent is to move) is a variation for planning
+//! and is never sent. Engine moves arrive via `apply_engine_move` from the
+//! controller.
 
 use std::time::{Duration, Instant};
 
 use arimaa_core::{
-    Color, Game, GameError, GameResult, Move, Placement, Position, Route, Square, Step, StepEffect, StepKind,
-    TimeControl, TurnBuilder, WinReason, default_setup, limit_score_winner, notation,
+    Color, Game, GameError, GameRecord, GameResult, GameTree, Move, NodeId, Placement, Position, Route,
+    Square, Step, StepEffect, StepKind, TimeControl, TurnBuilder, WinReason, default_setup,
+    limit_score_winner, notation,
 };
 
 use crate::dto::{
@@ -67,6 +74,8 @@ impl Clock {
 #[derive(Clone, Debug)]
 struct Match {
     players: [Player; 2],
+    /// The end of the game being played. It's always on the main line.
+    live: NodeId,
     clock: Option<Clock>,
     thinking: Option<Color>,
     /// When the current turn (at the live end of the game) started. Kept
@@ -136,8 +145,14 @@ fn compute_ids(game: &Game) -> Vec<IdMap> {
 }
 
 pub struct Session {
+    tree: GameTree,
+    /// Tags of a loaded record, kept for export.
+    tags: Vec<(String, String)>,
+    /// The line being shown: the root, then one node per ply.
+    line: Vec<NodeId>,
+    /// The line being shown as a plain game.
     game: Game,
-    /// Ply being shown.
+    /// Ply being shown (an index into `line`).
     cursor: usize,
     /// Turn being entered from the position at `cursor`.
     turn: Option<TurnBuilder>,
@@ -159,12 +174,18 @@ impl Default for Session {
 
 impl Session {
     pub fn new() -> Session {
-        Session::with_game(Game::new())
+        Session::with_tree(GameTree::new(), Vec::new(), GameTree::ROOT)
     }
 
-    fn with_game(game: Game) -> Session {
-        let cursor = game.ply_count();
+    /// A session showing the line through `at`, with the cursor on it.
+    fn with_tree(tree: GameTree, tags: Vec<(String, String)>, at: NodeId) -> Session {
+        let cursor = tree[at].ply();
+        let line = tree.line_through(at);
+        let game = tree.to_game(*line.last().expect("the line has the root")).expect("the line exists");
         let mut s = Session {
+            tree,
+            tags,
+            line,
             game,
             cursor,
             turn: None,
@@ -179,9 +200,9 @@ impl Session {
     }
 
     /// Replaces the game, keeping the generation counter moving forward.
-    fn replace(&mut self, game: Game, matchup: Option<Match>) {
+    fn replace(&mut self, tree: GameTree, tags: Vec<(String, String)>, at: NodeId, matchup: Option<Match>) {
         let generation = self.generation + 1;
-        *self = Session::with_game(game);
+        *self = Session::with_tree(tree, tags, at);
         self.generation = generation;
         self.matchup = matchup;
         self.refresh();
@@ -195,39 +216,78 @@ impl Session {
         self.matchup.as_ref().map_or(&Player::Human, |m| &m.players[side.index()])
     }
 
-    /// Side to move at the live end of the game.
-    fn live_side(&self) -> Color {
-        self.game.current_position().side_to_move()
+    fn cursor_node(&self) -> NodeId {
+        self.line[self.cursor]
     }
 
-    /// Whether board input is accepted now.
+    fn line_end(&self) -> NodeId {
+        *self.line.last().expect("the line has the root")
+    }
+
+    /// The end of the game: the match's live node, or in free play the end
+    /// of the line being shown.
+    fn live(&self) -> NodeId {
+        self.matchup.as_ref().map_or_else(|| self.line_end(), |m| m.live)
+    }
+
+    fn live_result(&self) -> Option<GameResult> {
+        self.tree[self.live()].result()
+    }
+
+    /// Side to move at the live end of the game.
+    fn live_side(&self) -> Color {
+        self.tree[self.live()].position().side_to_move()
+    }
+
+    /// Whether committing now plays a move in the match (a human's turn at
+    /// the live node), rather than adding a variation.
+    pub fn plays_live(&self) -> bool {
+        self.matchup.is_some()
+            && self.cursor_node() == self.live()
+            && self.live_result().is_none()
+            && *self.player(self.live_side()) == Player::Human
+    }
+
+    /// Whether board input is accepted now. In a match, moves can be
+    /// entered anywhere to plan (they become variations), but a setup only
+    /// on a human's turn at the live node.
     pub fn can_input(&self) -> bool {
-        match &self.matchup {
-            None => true,
-            Some(_) => {
-                self.game.result().is_none()
-                    && self.cursor == self.game.ply_count()
-                    && *self.player(self.live_side()) == Player::Human
-            }
-        }
+        self.matchup.is_none() || !Game::is_setup_ply(self.cursor) || self.plays_live()
     }
 
     fn require_input(&self) -> Result<(), ApiError> {
         if self.can_input() {
             Ok(())
-        } else if self.cursor != self.game.ply_count() {
-            Err(ApiError::state("the match is live; go to the latest move to play"))
         } else {
-            Err(ApiError::state("it's not your turn"))
+            Err(ApiError::state("a setup can only be entered on your own turn"))
         }
     }
 
+    /// Shows `node`: on the current line if it's there, otherwise on the
+    /// line through it.
+    fn show(&mut self, node: NodeId) {
+        match self.line.iter().position(|&n| n == node) {
+            Some(i) => self.cursor = i,
+            None => {
+                self.line = self.tree.line_through(node);
+                self.cursor = self.tree[node].ply();
+            }
+        }
+        self.refresh();
+    }
+
+    /// Brings the shown line up to date with the tree (it grows when moves
+    /// are added at its end) and recomputes what depends on it.
     fn refresh(&mut self) {
+        self.line = self.tree.line_through(self.line_end());
+        self.game = self.tree.to_game(self.line_end()).expect("the line exists");
         self.ids = compute_ids(&self.game);
         let setup_due = Game::is_setup_ply(self.cursor)
-            && self.cursor == self.game.ply_count()
-            && self.game.result().is_none()
-            && *self.player(self.live_side()) == Player::Human;
+            && self.tree[self.cursor_node()].result().is_none()
+            && match &self.matchup {
+                None => self.cursor_node() == self.line_end(),
+                Some(_) => self.plays_live(),
+            };
         if !setup_due {
             self.setup_draft = None;
         } else if self.setup_draft.is_none() {
@@ -237,16 +297,18 @@ impl Session {
     }
 
     fn cursor_position(&self) -> &Position {
-        self.game.position_at(self.cursor).expect("cursor is within the game")
+        self.tree[self.cursor_node()].position()
     }
 
     pub fn new_game(&mut self) {
-        self.replace(Game::new(), None);
+        self.replace(GameTree::new(), Vec::new(), GameTree::ROOT, None);
     }
 
+    /// Loads a record, showing the end of its main line.
     pub fn load(&mut self, record: &str) -> Result<(), ApiError> {
-        let game = Game::parse(record)?;
-        self.replace(game, None);
+        let record = GameRecord::parse(record)?;
+        let end = record.tree.line_end(GameTree::ROOT);
+        self.replace(record.tree, record.tags, end, None);
         Ok(())
     }
 
@@ -259,9 +321,15 @@ impl Session {
             reserves: time_controls.map(|tc| tc.map_or(Duration::ZERO, |t| t.starting_reserve())),
             game_started: now,
         });
-        let matchup =
-            Match { players, clock, thinking: None, turn_started: Instant::now(), last_move_time: None };
-        self.replace(Game::new(), Some(matchup));
+        let matchup = Match {
+            players,
+            live: GameTree::ROOT,
+            clock,
+            thinking: None,
+            turn_started: Instant::now(),
+            last_move_time: None,
+        };
+        self.replace(GameTree::new(), Vec::new(), GameTree::ROOT, Some(matchup));
     }
 
     /// Stops the match: the game stays as it is, and both sides become free
@@ -282,17 +350,18 @@ impl Session {
     /// The engine turn to request now, if an engine is to move.
     pub fn engine_turn(&self) -> Option<EngineTurn> {
         let m = self.matchup.as_ref()?;
-        if self.game.result().is_some() {
+        if self.live_result().is_some() {
             return None;
         }
         let side = self.live_side();
         let Player::Engine { id, .. } = &m.players[side.index()] else { return None };
+        let path = self.tree.path(m.live);
         Some(EngineTurn {
             generation: self.generation,
             side,
             engine_id: id.clone(),
-            ply: self.game.ply_count(),
-            moves: self.game.moves().iter().map(Move::notation).collect(),
+            ply: self.tree[m.live].ply(),
+            moves: path[1..].iter().filter_map(|&id| self.tree[id].mv().map(Move::notation)).collect(),
             time_control: m.clock.as_ref().and_then(|c| c.tc(side)),
             reserves: m.clock.as_ref().map(|c| c.reserves),
             deadline: self.turn_deadline(),
@@ -304,7 +373,7 @@ impl Session {
     pub fn turn_deadline(&self) -> Option<Instant> {
         let m = self.matchup.as_ref()?;
         let clock = m.clock.as_ref()?;
-        if self.game.result().is_some() {
+        if self.live_result().is_some() {
             return None;
         }
         let side = self.live_side();
@@ -324,7 +393,7 @@ impl Session {
         }
         let game_limit = self.matchup.as_ref().and_then(|m| m.clock.as_ref()).and_then(Clock::game_deadline);
         if game_limit.is_some_and(|g| now >= g) {
-            let winner = limit_score_winner(self.game.current_position());
+            let winner = limit_score_winner(self.tree[self.live()].position());
             self.finish(
                 GameResult { winner, reason: WinReason::Score },
                 Some("game time limit reached".into()),
@@ -336,16 +405,32 @@ impl Session {
         true
     }
 
-    /// Ends the game with a result decided outside the board.
+    /// Ends the game with a result decided outside the board. Plans made
+    /// after the live position end with it.
     fn finish(&mut self, result: GameResult, detail: Option<String>) {
-        if self.game.end_game(result).is_ok() {
-            self.end_detail = detail;
+        let live = self.live();
+        let at_live = self.cursor_node() == live;
+        for plan in self.tree[live].children().to_vec() {
+            self.tree.delete(plan).expect("a child exists");
+        }
+        if !self.tree.contains(self.line_end()) {
+            self.cursor = self.cursor.min(self.tree[live].ply());
+            if !self.tree.contains(self.cursor_node()) {
+                self.cursor = self.tree[live].ply();
+            }
+            self.line = self.tree.path(live);
             self.turn = None;
-            self.setup_draft = None;
+        }
+        if self.tree.end_line(live, result).is_ok() {
+            self.end_detail = detail;
+            if at_live {
+                self.turn = None;
+            }
             if let Some(m) = &mut self.matchup {
                 m.thinking = None;
             }
         }
+        self.refresh();
     }
 
     /// Engine ids playing (gold, silver) in the current match.
@@ -363,7 +448,7 @@ impl Session {
     /// Ends the game because the engine for `side` failed (crashed, didn't
     /// start, ...), at any point of the game.
     pub fn engine_failed(&mut self, generation: u64, side: Color, detail: String) {
-        if generation == self.generation && self.game.result().is_none() {
+        if generation == self.generation && self.live_result().is_none() {
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Forfeit }, Some(detail));
         }
     }
@@ -371,7 +456,7 @@ impl Session {
     /// Timing and clock bookkeeping for a move by the side to move, before
     /// it's added. Returns false (and ends the game) if the move came too late.
     fn clock_move(&mut self, now: Instant) -> bool {
-        let setup = Game::is_setup_ply(self.game.ply_count());
+        let setup = Game::is_setup_ply(self.tree[self.live()].ply());
         let side = self.live_side();
         let Some(m) = self.matchup.as_mut() else { return true };
         let used = now.saturating_duration_since(m.turn_started);
@@ -421,10 +506,13 @@ impl Session {
         ply: usize,
         text: &str,
     ) -> Result<Vec<AnimStep>, ApiError> {
+        let Some(live) = self.matchup.as_ref().map(|m| m.live) else {
+            return Err(ApiError::state("no match"));
+        };
         if generation != self.generation
-            || ply != self.game.ply_count()
+            || ply != self.tree[live].ply()
             || side != self.live_side()
-            || self.game.result().is_some()
+            || self.live_result().is_some()
         {
             return Err(ApiError::state("stale engine move"));
         }
@@ -434,34 +522,61 @@ impl Session {
         if !self.clock_move(Instant::now()) {
             return Ok(Vec::new());
         }
-        let following = self.cursor == ply;
+        let following = self.cursor_node() == live;
         if text.trim().eq_ignore_ascii_case("resign") {
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Resignation }, None);
             return Ok(Vec::new());
         }
-        if let Err(e) = self.game.play_notation(text) {
-            let detail = format!("{side:?} engine played {text:?}: {e}");
-            self.finish(GameResult { winner: side.opponent(), reason: WinReason::IllegalMove }, Some(detail));
-            return Ok(Vec::new());
-        }
+        let node = match self.tree.add_notation(live, text) {
+            Ok(node) => node,
+            Err(e) => {
+                let detail = format!("{side:?} engine played {text:?}: {e}");
+                self.finish(
+                    GameResult { winner: side.opponent(), reason: WinReason::IllegalMove },
+                    Some(detail),
+                );
+                return Ok(Vec::new());
+            }
+        };
+        self.play_live(node);
         self.after_move(side, ply);
-        let mut anim = Vec::new();
         if following {
             self.turn = None;
-            self.cursor = self.game.ply_count();
-            self.ids = compute_ids(&self.game);
-            anim = self.move_animation(ply);
+            self.show(node);
+            return Ok(self.move_animation(ply));
         }
         self.refresh();
-        Ok(anim)
+        Ok(Vec::new())
     }
 
+    /// Makes `node`, a child of the live node, the match's new live node
+    /// and the main continuation (a plan for the same move becomes it).
+    fn play_live(&mut self, node: NodeId) {
+        self.tree.make_first(node).expect("the node exists");
+        if let Some(m) = &mut self.matchup {
+            m.live = node;
+        }
+    }
+
+    /// The game as a record: a plain record when it's one line without
+    /// comments or tags, otherwise the full record with variations.
     pub fn export(&self) -> String {
-        self.game.to_record()
+        if self.tags.is_empty() && self.tree.is_plain() {
+            return self.tree.main_game().to_record();
+        }
+        GameRecord { tags: self.tags.clone(), tree: self.tree.clone() }.to_record()
     }
 
-    /// Shows `ply`, discarding any turn in progress. Moving one ply forward or
-    /// back animates that move.
+    /// Shows the live position of a match (or the end of the line in free
+    /// play), discarding any turn in progress.
+    pub fn goto_live(&mut self) {
+        self.turn = None;
+        let live = self.live();
+        self.show(live);
+    }
+
+    /// Shows `ply` on the current line, discarding any turn in progress.
+    /// Moving one ply forward or back animates that move.
     pub fn goto(&mut self, ply: usize) -> Result<Vec<AnimStep>, ApiError> {
         if ply > self.game.ply_count() {
             return Err(ApiError::state(format!("ply {ply} is past the end of the game")));
@@ -520,7 +635,7 @@ impl Session {
         if Game::is_setup_ply(self.cursor) {
             return Err(ApiError::state("the setup must be made first"));
         }
-        if self.cursor == self.game.ply_count() && self.game.result().is_some() {
+        if self.tree[self.cursor_node()].result().is_some() {
             return Err(ApiError::state("the game is over"));
         }
         Ok(TurnBuilder::new(self.cursor_position()))
@@ -597,7 +712,9 @@ impl Session {
         anim.into_iter().rev().map(AnimStep::reversed).collect()
     }
 
-    /// Adds the in-progress turn to the game, replacing any later moves.
+    /// Adds the in-progress turn to the game: as a played move at the live
+    /// node of a match on a human's turn, otherwise as a new branch (or the
+    /// existing move, if it's already there).
     pub fn commit_turn(&mut self) -> Result<(), ApiError> {
         let Some(tb) = self.turn.take() else { return Err(ApiError::state("no turn in progress")) };
         if let Err(e) = tb.can_finish() {
@@ -605,7 +722,6 @@ impl Session {
             return Err(ApiError::illegal(e));
         }
         let turn = tb.clone().finish().expect("checked above");
-        // Check before truncating, so a rejected turn doesn't lose later moves.
         if self.game.is_third_repetition(self.cursor, &turn.end) {
             self.turn = Some(tb);
             return Err(ApiError::illegal(GameError::Repetition));
@@ -614,14 +730,18 @@ impl Session {
             self.turn = Some(tb);
             return Err(e);
         }
-        let (mover, ply) = (turn.start.side_to_move(), self.cursor);
-        self.game.truncate(self.cursor);
-        if self.clock_move(Instant::now()) {
-            self.game.play_turn(turn).map_err(ApiError::illegal)?;
-            self.after_move(mover, ply);
+        let (mover, ply, parent) = (turn.start.side_to_move(), self.cursor, self.cursor_node());
+        if !self.plays_live() {
+            let node = self.tree.add_turn(parent, turn).map_err(ApiError::illegal)?;
+            self.show(node);
+            return Ok(());
         }
-        self.cursor = self.game.ply_count();
-        self.refresh();
+        if self.clock_move(Instant::now()) {
+            let node = self.tree.add_turn(parent, turn).map_err(ApiError::illegal)?;
+            self.play_live(node);
+            self.after_move(mover, ply);
+            self.show(node);
+        }
         Ok(())
     }
 
@@ -657,11 +777,15 @@ impl Session {
         let Some(draft) = self.setup_draft.take() else {
             return Err(ApiError::state("no setup is being arranged"));
         };
-        if self.clock_move(Instant::now()) {
-            self.game.play_setup(draft).map_err(ApiError::illegal)?;
+        let parent = self.cursor_node();
+        if !self.plays_live() {
+            let node = self.tree.add_setup(parent, draft).map_err(ApiError::illegal)?;
+            self.show(node);
+        } else if self.clock_move(Instant::now()) {
+            let node = self.tree.add_setup(parent, draft).map_err(ApiError::illegal)?;
+            self.play_live(node);
+            self.show(node);
         }
-        self.cursor = self.game.ply_count();
-        self.refresh();
         Ok(())
     }
 
@@ -710,7 +834,7 @@ impl Session {
     fn phase(&self) -> Phase {
         if Game::is_setup_ply(self.cursor) {
             Phase::Setup
-        } else if self.cursor == self.game.ply_count() && self.game.result().is_some() {
+        } else if self.tree[self.cursor_node()].result().is_some() {
             Phase::Over
         } else {
             Phase::Play
@@ -764,8 +888,8 @@ impl Session {
             last_move: self.last_move_view(),
             captured: self.captured_view(),
             moves_after_cursor: self.game.ply_count() - self.cursor,
-            result: if self.cursor == self.game.ply_count() { self.game.result() } else { None },
-            end_marker: self.game.end_marker().map(str::to_string),
+            result: self.tree[self.cursor_node()].result(),
+            end_marker: self.tree[self.line_end()].end_marker().map(str::to_string),
             end_detail: self.end_detail.clone(),
             players: self
                 .matchup
@@ -774,6 +898,8 @@ impl Session {
             clock: self.clock_view(),
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
             can_input: self.can_input(),
+            plays_live: self.plays_live(),
+            live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
         }
     }
 
@@ -816,7 +942,7 @@ impl Session {
         let clock = m.clock.as_ref()?;
         let ms = |d: Duration| d.as_millis() as u64;
         let running =
-            self.game.result().is_none().then(|| self.live_side()).filter(|s| clock.tc(*s).is_some());
+            self.live_result().is_none().then(|| self.live_side()).filter(|s| clock.tc(*s).is_some());
         let (elapsed, allowance) = match running {
             Some(side) => {
                 let tc = clock.tc(side).expect("running side is timed");
@@ -983,16 +1109,41 @@ mod tests {
     }
 
     #[test]
-    fn move_from_earlier_ply_replaces_later_moves() {
+    fn move_from_earlier_ply_adds_a_branch() {
         let mut s = Session::new();
         s.load(SAMPLE).unwrap();
         s.goto(2).unwrap();
         assert_eq!(s.view().moves_after_cursor, 8);
         s.try_step(sq("a2"), sq("a3")).unwrap();
         s.commit_turn().unwrap();
+        // The new branch is shown; the game is still there.
         let v = s.view();
-        assert_eq!(v.moves.len(), 3);
+        assert_eq!((v.ply, v.moves.len()), (3, 3));
         assert_eq!(v.moves[2].notation, "Ha2n");
+        assert_eq!(s.tree.main_line().len(), 11);
+        let record = s.export();
+        assert!(record.contains("(\n2g Ha2n\n)"), "{record}");
+        // Playing the game's own move (2g Ee2n Ee3n Ee4n Ee5e) goes back
+        // onto the main line instead of adding a copy.
+        s.goto(2).unwrap();
+        s.try_route(sq("e2"), sq("e5"), &[]).unwrap();
+        s.try_step(sq("e5"), sq("f5")).unwrap();
+        s.commit_turn().unwrap();
+        let v = s.view();
+        assert_eq!((v.ply, v.moves.len()), (3, 10), "back on the game's line");
+        assert_eq!(s.tree[s.tree.main_line()[2]].children().len(), 2);
+    }
+
+    #[test]
+    fn loaded_variations_export_in_full() {
+        let mut s = Session::new();
+        let mut text = SAMPLE.lines().take(3).collect::<Vec<_>>().join("\n");
+        text.push_str(" {first} !?\n");
+        s.load(&text).unwrap();
+        assert!(s.export().contains("{first}"));
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        assert_eq!(s.export(), Game::parse(SAMPLE).unwrap().to_record(), "a plain game stays plain");
     }
 
     #[test]
@@ -1143,6 +1294,98 @@ mod tests {
         assert!(anim.is_empty());
         assert_eq!(s.view().ply, 1, "browsing: the cursor stays");
         assert_eq!(s.view().moves.len(), 4);
+    }
+
+    /// A human (gold) against an engine, with both setups played.
+    fn human_vs_engine_started() -> Session {
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("bot")], [None, None]);
+        s.commit_setup().unwrap();
+        s.apply_engine_move(s.generation(), Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
+        s
+    }
+
+    #[test]
+    fn planning_during_a_match() {
+        let mut s = human_vs_engine_started();
+        assert!(s.plays_live());
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn().unwrap();
+        // The engine's turn: a move at the live position is a plan.
+        assert!(!s.plays_live() && s.can_input());
+        s.try_step(sq("e7"), sq("e6")).unwrap();
+        s.commit_turn().unwrap();
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply), (4, Some(3)));
+        assert_eq!(s.engine_turn().unwrap().ply, 3, "the plan isn't played");
+        // The engine plays something else; the plan stays as a variation
+        // and the board stays on it.
+        let anim = s.apply_engine_move(s.generation(), Color::Silver, 3, "db7s").unwrap();
+        assert!(anim.is_empty());
+        assert_eq!(s.view().moves[3].notation, "ee7s");
+        let live = s.matchup.as_ref().unwrap().live;
+        assert_eq!(s.tree[live].mv().unwrap().notation(), "db7s");
+        assert!(s.tree.is_main_line(live));
+        s.goto_live();
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply, v.plays_live), (4, Some(4), true));
+    }
+
+    #[test]
+    fn a_plan_matching_the_engine_move_becomes_the_game() {
+        let mut s = human_vs_engine_started();
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn().unwrap();
+        s.try_step(sq("e7"), sq("e6")).unwrap();
+        s.commit_turn().unwrap();
+        s.goto(3).unwrap();
+        let anim = s.apply_engine_move(s.generation(), Color::Silver, 3, "ee7s").unwrap();
+        assert_eq!(anim.len(), 1, "watching live: animate");
+        let v = s.view();
+        assert_eq!((v.ply, v.moves.len(), v.live_ply), (4, 4, Some(4)));
+        assert_eq!(s.tree.len(), 5, "no duplicate node");
+    }
+
+    #[test]
+    fn exploring_earlier_moves_in_a_match() {
+        let mut s = human_vs_engine_started();
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn().unwrap();
+        s.goto(2).unwrap();
+        s.try_step(sq("d2"), sq("d3")).unwrap();
+        s.commit_turn().unwrap();
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply, v.plays_live), (3, None, false));
+        assert_eq!(s.engine_turn().unwrap().moves.last().unwrap(), "Ee2n");
+        // Setups can't be planned.
+        s.goto(1).unwrap();
+        assert!(!s.can_input());
+    }
+
+    #[test]
+    fn a_timeout_ends_plans_after_the_live_position() {
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("b")], [Some("1s/0".parse().unwrap()); 2]);
+        s.commit_setup().unwrap();
+        s.apply_engine_move(s.generation(), Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
+        s.goto(1).unwrap();
+        // An earlier variation survives; nothing is planned past the live node here.
+        assert!(s.check_timeout(Instant::now() + Duration::from_secs(5)));
+        let v = s.view();
+        assert_eq!(v.ply, 1);
+        s.goto_live();
+        assert_eq!(s.view().result.unwrap().reason, WinReason::Timeout);
+
+        let mut s = human_vs_engine_started();
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn().unwrap();
+        s.try_step(sq("e7"), sq("e6")).unwrap();
+        s.commit_turn().unwrap();
+        let g = s.generation();
+        s.engine_failed(g, Color::Silver, "crashed".into());
+        let v = s.view();
+        assert_eq!((v.ply, v.moves.len()), (3, 3), "the plan is gone and the board is on the end");
+        assert_eq!(v.result.unwrap().reason, WinReason::Forfeit);
     }
 
     #[test]

@@ -60,16 +60,24 @@ ideas from other Arimaa and chess clients.
     modes, used by the tests. `examples/match.rs` plays one game from the
     command line.
 - `app/src-tauri`: thin shell.
-  - `session.rs` has the pure state logic: cursor ply, in-progress turn,
-    setup draft, and stable piece ids for animation. Unit-tested, no Tauri types.
+  - `session.rs` has the pure state logic: a `GameTree`, the line being
+    shown (`line`, root to a leaf) with a cursor ply on it, the in-progress
+    turn, setup draft, and stable piece ids for animation (computed along
+    the line). Committing anywhere adds a branch (`show` moves to it);
+    nothing is truncated. Unit-tested, no Tauri types.
     - It's either free play or a *match*: a player per side (human or
       engine), an optional time control per side (with the game time limit
       and turn limit enforced), and a `generation` counter bumped on every
       new game or match change, so stale engine replies are ignored.
-    - In a match, humans may only input on their own turn at the live end
-      (`can_input`).
-    - Engine moves enter through `apply_engine_move`. The board follows them
-      only if you're watching the live position.
+    - A match plays one line, ending at `Match::live` (always on the main
+      line). A human's move at the live node on their turn is played
+      (`plays_live`); any other move is a plan, added as a variation and
+      never sent. Setups can't be planned (`can_input`). When the game ends
+      for an outside reason, plans after the live node are deleted.
+      `goto_live` shows the live node.
+    - Engine moves enter through `apply_engine_move`, as the live node's
+      first child (a matching plan becomes the move). The board follows
+      them only if you're watching the live position.
   - `controller.rs`: a background coordinator task, plus one actor task per
     engine process.
     - It watches the session (`engine_turn`, `turn_deadline`), asks the

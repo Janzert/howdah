@@ -371,7 +371,7 @@ impl GameTree {
     }
 
     /// Makes `node` its parent's first child, leaving the others in order.
-    pub(crate) fn make_first(&mut self, node: NodeId) -> Result<(), GameError> {
+    pub fn make_first(&mut self, node: NodeId) -> Result<(), GameError> {
         let (parent, i) = self.sibling_index(node)?;
         let children = &mut self.get_mut(parent)?.children;
         let c = children.remove(i);
@@ -431,6 +431,12 @@ impl GameTree {
         let moves = path[1..].iter().map(|&id| self[id].mv.clone().expect("only the root has no move"));
         let positions = path.iter().map(|&id| self[id].position.clone()).collect();
         Ok(Game::from_parts(moves.collect(), positions, end.result, end.end_marker.clone()))
+    }
+
+    /// True if the tree is one line with no comments or glyphs, so a plain
+    /// record holds all of it.
+    pub fn is_plain(&self) -> bool {
+        self.main_line().iter().all(|&id| self[id].children.len() <= 1 && self[id].annotation.is_empty())
     }
 
     /// The main line as a plain game.
