@@ -88,6 +88,14 @@
       </div>
     </fieldset>
     <p class="hint">{hoverHint} Dragging always works.</p>
+    <label class="check gap">
+      <input type="checkbox" bind:checked={settings.continueTurns} />
+      Keep stepping after a full turn
+    </label>
+    <p class="hint">
+      A step after the fourth finishes the turn and starts the other side's. In a game, your move stays a plan
+      until you commit it; Shift+Enter ends a shorter turn as a plan.
+    </p>
   </section>
 
   <section>
@@ -175,6 +183,9 @@
     align-items: center;
     gap: 4px;
     font-size: 14px;
+  }
+  .gap {
+    margin-top: 10px;
   }
   .slider {
     margin-top: 10px;

@@ -201,6 +201,9 @@ pub struct SessionView {
     /// Whether committing now plays a move in the match (a human's turn at
     /// the live position), rather than adding a variation.
     pub plays_live: bool,
+    /// The plan move Enter would play (`3g Ee2n …`), when the cursor is in
+    /// a plan for the user's move.
+    pub plan_move: Option<String>,
     /// In a match, the ply of the live position if it's on the line being
     /// shown.
     pub live_ply: Option<usize>,

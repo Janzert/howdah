@@ -53,6 +53,13 @@
   {:else if browsing && !view.turn}
     <div class="status">Away from the live game</div>
     <div class="note">Press End to return to the live game.</div>
+    {#if view.planMove}
+      <div class="buttons">
+        <button class="primary" onclick={onCommit} title="Play this plan's first move in the game">
+          Play {view.planMove} <kbd>⏎</kbd>
+        </button>
+      </div>
+    {/if}
   {:else if view.phase === 'setup'}
     <div class="status">
       <span class="dot {view.position.sideToMove}"></span>

@@ -20,6 +20,7 @@ describe('settings parse', () => {
         analysisEngine: 'sharp-1',
         volume: 40,
         stepMs: 120,
+        continueTurns: false,
       }),
       none,
     );
@@ -32,6 +33,7 @@ describe('settings parse', () => {
       analysisEngine: 'sharp-1',
       volume: 40,
       stepMs: 120,
+      continueTurns: false,
     });
     const bad = parse(
       JSON.stringify({ coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3, volume: 'loud' }),

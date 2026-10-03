@@ -74,9 +74,12 @@ cover it.
   wheel up redoes it. Redo needs us to keep the undone steps until a
   different step replaces them. In exploration mode, scrolling past the
   start of the turn continues back into the previous move.
-- **[P1] Optional move confirmation (4steps "Confirm move", lichess "confirm
-  moves").** It's off by default in local play. It matters more for rated
-  online games and postal games.
+- **[have] Move confirmation and planning.** A move is always played by an
+  explicit Commit (Enter), never by its fourth step. Steps past a full
+  turn continue into the other side's turn, as a plan when it's your move
+  in a game (like 4steps' explore mode), with a setting to turn that off
+  (`VARIATIONS.md`). 4steps and lichess offer confirmation as an option
+  because their moves are sent as they're completed.
 - **[P2] Typed move entry (lichess `keyboardMove`).** A text box that
   accepts notation (`Ed2n Ed3n ee7s`) and previews the steps as you type.
   It's also good for accessibility, and "play from clipboard" (4steps:
@@ -314,7 +317,7 @@ From Cute Chess. Our `play_match` plus the app's BvB are the seed.
 
 - **[have] Settings dialog**: theme, coordinates, auto-rotate (human at
   the bottom), animation speed (ms per step, as 4steps has), hover input
-  (arrows or step mode), sound and volume. Still to add: confirm move.
+  (arrows or step mode), continuous step entry, sound and volume.
 - **[P2] Dockable or resizable panels** (4steps docks for the move list,
   player bars and off-board pieces, with the layout saved). A lighter
   version for us: collapsible side panels with remembered sizes.

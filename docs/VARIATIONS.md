@@ -142,7 +142,13 @@ being played.
   `live` when it isn't your turn, adds a variation instead of being
   refused. This gives arimaa.com's "plan ahead" for free. A planned move
   at `live` is kept as a variation and is never sent. Sending the first
-  move of a plan is a later, explicit action.
+  move of a plan is a later, explicit action: Enter (or the "Play"
+  button) while the shown line is a plan for your move.
+- **Continuous entry:** a step after a full turn finishes it and starts
+  the other side's turn, so plans can be stepped out without committing
+  each turn. At `live` on your move the finished turn is a plan; only
+  Commit plays a move. Shift+Enter ends a shorter turn as a plan. A
+  setting turns it off.
 
   This changes the current rule (`require_input` refuses input unless it's
   your turn at the latest move). Input at `live` on your own turn still

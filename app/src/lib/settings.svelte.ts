@@ -22,6 +22,9 @@ export interface SettingsData {
   /** How long a piece takes to slide one step, in ms; 0 shows moves at once. */
   stepMs: number;
   hoverInput: HoverInput;
+  /** After a turn's fourth step, keep entering steps for the other side
+   * (the turn is finished, as a plan when it's your move in a match). */
+  continueTurns: boolean;
   /** Turn the board so a lone human player is at the bottom when a game starts. */
   humanAtBottom: boolean;
   /** The engine analysis last used (an engine id). */
@@ -37,6 +40,7 @@ export const DEFAULTS: SettingsData = {
   volume: 100,
   stepMs: STEP_MS,
   hoverInput: 'off',
+  continueTurns: true,
   humanAtBottom: true,
   analysisEngine: null,
 };
@@ -72,6 +76,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   if (typeof raw.stepMs === 'number' && Number.isFinite(raw.stepMs)) {
     s.stepMs = Math.round(Math.min(MAX_STEP_MS, Math.max(0, raw.stepMs)));
   }
+  if (typeof raw.continueTurns === 'boolean') s.continueTurns = raw.continueTurns;
   if (typeof raw.humanAtBottom === 'boolean') s.humanAtBottom = raw.humanAtBottom;
   if (typeof raw.analysisEngine === 'string') s.analysisEngine = raw.analysisEngine;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
@@ -121,6 +126,13 @@ class Settings {
   }
   set hoverInput(v: HoverInput) {
     this.update({ hoverInput: v });
+  }
+
+  get continueTurns() {
+    return this.#data.continueTurns;
+  }
+  set continueTurns(v: boolean) {
+    this.update({ continueTurns: v });
   }
 
   get humanAtBottom() {

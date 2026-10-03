@@ -175,6 +175,9 @@
   $effect(() => setMuted(!settings.sound));
   $effect(() => setVolume(settings.volume));
   $effect(() => model.setBaseSpeed(settings.stepMs));
+  $effect(() => {
+    api.setContinueTurns(settings.continueTurns).catch(() => {});
+  });
 
   function flash(text: string) {
     message = text;
@@ -286,7 +289,7 @@
   function commit() {
     if (!view) return;
     if (view.phase === 'setup') run(api.commitSetup());
-    else if (view.turn) run(api.commitTurn());
+    else if (view.turn || view.planMove) run(api.commitTurn());
   }
 
   const animHooks = {
@@ -344,6 +347,9 @@
     nextBranch: () => run(api.gotoBranch(true)),
     commit: (v) => {
       if (v.canInput) commit();
+    },
+    planTurn: (v) => {
+      if (v.turn && v.canInput) run(api.commitTurn(true));
     },
     undoStep: (v) => {
       if (v.turn && v.canInput) run(api.undoStep());

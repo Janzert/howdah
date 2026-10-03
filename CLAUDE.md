@@ -94,6 +94,13 @@ Sharp, OpFor and other AEI engines behave.
       board (`Node::is_terminal`) stop input, and the main line stops at a
       node with a result.
       `goto_live` shows the live node.
+    - Continuous entry (`continue_turns`, on unless the setting turns it
+      off): a step after a full turn finishes it (`full_turn`) and starts
+      the other side's, so a line can be stepped through without
+      committing. It never plays a move: at the live node the turn becomes
+      a plan. `commit_turn(plan)` plays the turn (or keeps it as a plan);
+      with no turn, it plays `plan_to_play`, the plan's move after live
+      on the shown line.
     - Engine moves enter through `apply_engine_move`, as the live node's
       first child (a matching plan becomes the move). The board follows
       them only if you're watching the live position.

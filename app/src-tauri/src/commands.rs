@@ -125,8 +125,13 @@ pub fn cancel_turn(state: State<Backend>) -> Result<(), ApiError> {
 }
 
 #[tauri::command]
-pub fn commit_turn(state: State<Backend>) -> Result<(), ApiError> {
-    state.commit_turn()
+pub fn commit_turn(state: State<Backend>, plan: bool) -> Result<(), ApiError> {
+    state.commit_turn(plan)
+}
+
+#[tauri::command]
+pub fn set_continue_turns(state: State<Backend>, on: bool) -> Result<(), ApiError> {
+    state.set_continue_turns(on)
 }
 
 #[tauri::command]

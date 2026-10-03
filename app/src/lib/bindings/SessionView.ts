@@ -82,6 +82,11 @@ canInput: boolean,
  */
 playsLive: boolean, 
 /**
+ * The plan move Enter would play (`3g Ee2n …`), when the cursor is in
+ * a plan for the user's move.
+ */
+planMove: string | null, 
+/**
  * In a match, the ply of the live position if it's on the line being
  * shown.
  */

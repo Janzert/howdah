@@ -194,8 +194,18 @@ impl Backend {
         self.mutate(|s| Ok(s.cancel_turn()))
     }
 
-    pub fn commit_turn(&self) -> Result<(), ApiError> {
-        self.mutate(|s| s.commit_turn().map(|_| Vec::new()))
+    /// Ends the turn being entered: plays it in a match on the user's move
+    /// (or plays the shown plan's move), unless `plan` keeps it as a plan.
+    pub fn commit_turn(&self, plan: bool) -> Result<(), ApiError> {
+        self.mutate(|s| s.commit_turn(plan).map(|_| Vec::new()))
+    }
+
+    /// Whether a step after a full turn starts the other side's turn.
+    pub fn set_continue_turns(&self, on: bool) -> Result<(), ApiError> {
+        self.mutate(|s| {
+            s.set_continue_turns(on);
+            Ok(Vec::new())
+        })
     }
 
     pub fn setup_swap(&self, a: Square, b: Square) -> Result<(), ApiError> {
@@ -330,7 +340,8 @@ impl Backend {
             )?),
             "undo_step" => ok(self.undo_step()?),
             "cancel_turn" => ok(self.cancel_turn()?),
-            "commit_turn" => ok(self.commit_turn()?),
+            "commit_turn" => ok(self.commit_turn(arg(args, "plan")?)?),
+            "set_continue_turns" => ok(self.set_continue_turns(arg(args, "on")?)?),
             "setup_swap" => ok(self.setup_swap(arg(args, "a")?, arg(args, "b")?)?),
             "commit_setup" => ok(self.commit_setup()?),
             "start_match" => ok(self.start_match(&arg(args, "spec")?)?),

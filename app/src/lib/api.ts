@@ -49,7 +49,10 @@ export const api = {
   tryRoute: (from: Square, to: Square, path: Square[]) => invoke<void>('try_route', { from, to, path }),
   undoStep: () => invoke<void>('undo_step'),
   cancelTurn: () => invoke<void>('cancel_turn'),
-  commitTurn: () => invoke<void>('commit_turn'),
+  /** Ends the turn; `plan` keeps a turn on your move in a match as a plan
+   * instead of playing it. With no turn, plays the shown plan's move. */
+  commitTurn: (plan = false) => invoke<void>('commit_turn', { plan }),
+  setContinueTurns: (on: boolean) => invoke<void>('set_continue_turns', { on }),
   setupSwap: (a: Square, b: Square) => invoke<void>('setup_swap', { a, b }),
   commitSetup: () => invoke<void>('commit_setup'),
   startMatch: (spec: MatchSpec) => invoke<void>('start_match', { spec }),

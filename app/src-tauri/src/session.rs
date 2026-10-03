@@ -18,8 +18,8 @@ use std::time::{Duration, Instant};
 
 use arimaa_core::{
     Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position,
-    Route, Square, Step, StepEffect, StepKind, TimeControl, TurnBuilder, WinReason, default_setup,
-    limit_score_winner, notation,
+    Route, Square, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder, WinReason, default_setup,
+    limit_score_winner, notation, outcome_after_turn,
 };
 
 use crate::dto::{
@@ -225,6 +225,9 @@ pub struct Session {
     analysis: Option<AnalysisEngine>,
     /// The deepest line analysis found at each node.
     evals: HashMap<NodeId, AnalysisLine>,
+    /// Whether a step after a full turn finishes it and starts the next
+    /// side's (see [`Session::try_step`]). A preference, kept across games.
+    continue_turns: bool,
 }
 
 impl Default for Session {
@@ -259,6 +262,7 @@ impl Session {
             generation: 0,
             analysis: None,
             evals: HashMap::new(),
+            continue_turns: true,
         };
         s.refresh();
         s
@@ -268,10 +272,11 @@ impl Session {
     /// Analysis stays on.
     fn replace(&mut self, tree: GameTree, tags: Vec<(String, String)>, at: NodeId, matchup: Option<Match>) {
         let generation = self.generation + 1;
-        let analysis = self.analysis.take();
+        let (analysis, continue_turns) = (self.analysis.take(), self.continue_turns);
         *self = Session::with_tree(tree, tags, at);
         self.generation = generation;
         self.analysis = analysis;
+        self.continue_turns = continue_turns;
         self.matchup = matchup;
         self.refresh();
     }
@@ -956,10 +961,52 @@ impl Session {
         Ok(TurnBuilder::new(self.cursor_position()))
     }
 
+    pub fn set_continue_turns(&mut self, on: bool) {
+        self.continue_turns = on;
+    }
+
+    /// The in-progress turn, finished, when the next step starts the other
+    /// side's turn: it has used all its steps, it could be committed, and
+    /// it doesn't end the game.
+    fn full_turn(&self) -> Option<Turn> {
+        let tb = self.turn.as_ref().filter(|tb| self.continue_turns && tb.steps_left() == 0)?;
+        let turn = tb.clone().finish().ok()?;
+        if self.game.is_third_repetition(self.cursor, &turn.end)
+            || outcome_after_turn(&turn.end, turn.start.side_to_move()).is_some()
+        {
+            return None;
+        }
+        Some(turn)
+    }
+
+    /// The turn the next step goes into, and the full turn that has to be
+    /// finished first if it starts the other side's turn.
+    fn input_builder(&self) -> Result<(TurnBuilder, Option<Turn>), ApiError> {
+        match self.full_turn() {
+            Some(turn) => Ok((TurnBuilder::new(&turn.end), Some(turn))),
+            None => Ok((self.turn_builder()?, None)),
+        }
+    }
+
+    /// Adds a full turn to the tree before the next turn starts. It never
+    /// plays a move in a match: at the live node it's a plan.
+    fn finish_full_turn(&mut self, turn: Turn) -> Result<(), ApiError> {
+        let node = self.tree.add_turn(self.cursor_node(), turn).map_err(ApiError::illegal)?;
+        self.turn = None;
+        self.show(node);
+        Ok(())
+    }
+
+    /// Takes one step. With `continue_turns` on, a step after a full turn
+    /// finishes it (as a plan when it's the user's move in a match, which
+    /// only `commit_turn` plays) and starts the other side's turn.
     pub fn try_step(&mut self, from: Square, to: Square) -> Result<Vec<AnimStep>, ApiError> {
         self.require_input()?;
-        let mut tb = self.turn_builder()?;
+        let (mut tb, full) = self.input_builder()?;
         tb.try_move(from, to).map_err(ApiError::illegal)?;
+        if let Some(turn) = full {
+            self.finish_full_turn(turn)?;
+        }
         self.turn = Some(tb);
         let (anim, _) = self.turn_animation();
         Ok(anim.last().copied().into_iter().collect())
@@ -983,7 +1030,7 @@ impl Session {
         if !self.can_input() || self.setup_draft.is_some() {
             return None;
         }
-        let tb = self.turn_builder().ok()?;
+        let (tb, _) = self.input_builder().ok()?;
         let steps = self.route(&tb, from, to, path)?;
         Some(steps.iter().filter_map(Step::to).collect())
     }
@@ -996,12 +1043,15 @@ impl Session {
         path: &[Square],
     ) -> Result<Vec<AnimStep>, ApiError> {
         self.require_input()?;
-        let mut tb = self.turn_builder()?;
+        let (mut tb, full) = self.input_builder()?;
         let Some(steps) = self.route(&tb, from, to, path) else {
             return Err(ApiError::illegal("that piece can't get there this turn"));
         };
         for &step in &steps {
             tb.try_step(step).map_err(ApiError::illegal)?;
+        }
+        if let Some(turn) = full {
+            self.finish_full_turn(turn)?;
         }
         self.turn = Some(tb);
         let (anim, _) = self.turn_animation();
@@ -1028,10 +1078,17 @@ impl Session {
     }
 
     /// Adds the in-progress turn to the game: as a played move at the live
-    /// node of a match on a human's turn, otherwise as a new branch (or the
-    /// existing move, if it's already there).
-    pub fn commit_turn(&mut self) -> Result<(), ApiError> {
-        let Some(tb) = self.turn.take() else { return Err(ApiError::state("no turn in progress")) };
+    /// node of a match on a human's turn (unless `plan` is set), otherwise
+    /// as a new branch (or the existing move, if it's already there). With
+    /// no turn in progress, plays the next move of the shown line when it's
+    /// a plan for the user's move.
+    pub fn commit_turn(&mut self, plan: bool) -> Result<(), ApiError> {
+        let Some(tb) = self.turn.take() else {
+            if plan {
+                return Err(ApiError::state("no turn in progress"));
+            }
+            return self.play_plan();
+        };
         if let Err(e) = tb.can_finish() {
             self.turn = Some(tb);
             return Err(ApiError::illegal(e));
@@ -1046,7 +1103,7 @@ impl Session {
             return Err(e);
         }
         let (mover, ply, parent) = (turn.start.side_to_move(), self.cursor, self.cursor_node());
-        if !self.plays_live() {
+        if plan || !self.plays_live() {
             let node = self.tree.add_turn(parent, turn).map_err(ApiError::illegal)?;
             self.show(node);
             return Ok(());
@@ -1056,6 +1113,35 @@ impl Session {
             self.play_live(node);
             self.after_move(mover, ply);
             self.show(node);
+        }
+        Ok(())
+    }
+
+    /// The move `commit_turn` would play with no turn in progress: the one
+    /// after the live node on the shown line, when the cursor is past it
+    /// and it's the user's move (a plan entered earlier).
+    fn plan_to_play(&self) -> Option<NodeId> {
+        let live = self.live();
+        let ply = self.tree[live].ply();
+        if self.matchup.is_none()
+            || self.cursor <= ply
+            || Game::is_setup_ply(ply)
+            || self.live_result().is_some()
+            || *self.player(self.live_side()) != Player::Human
+        {
+            return None;
+        }
+        self.line.get(ply + 1).copied().filter(|_| self.line.get(ply) == Some(&live))
+    }
+
+    /// Plays [`Session::plan_to_play`].
+    fn play_plan(&mut self) -> Result<(), ApiError> {
+        let Some(node) = self.plan_to_play() else { return Err(ApiError::state("no turn in progress")) };
+        let (mover, ply) = (self.live_side(), self.tree[self.live()].ply());
+        if self.clock_move(Instant::now()) {
+            self.play_live(node);
+            self.after_move(mover, ply);
+            self.refresh();
         }
         Ok(())
     }
@@ -1120,7 +1206,7 @@ impl Session {
                 .map(|p| StepTarget { to: p.square, kind: None, steps: 1 })
                 .collect();
         }
-        let Ok(tb) = self.turn_builder() else { return Vec::new() };
+        let Ok((tb, _)) = self.input_builder() else { return Vec::new() };
         let mut targets: Vec<StepTarget> = tb
             .legal_steps_from(from)
             .into_iter()
@@ -1218,6 +1304,10 @@ impl Session {
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
             can_input: self.can_input(),
             plays_live: self.plays_live(),
+            plan_move: self.plan_to_play().and_then(|n| {
+                let mv = self.tree[n].mv()?;
+                Some(format!("{} {}", notation::move_label(self.tree[n].ply() - 1), mv.notation()))
+            }),
             live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
             analysis_engine: self.analysis.as_ref().map(|a| a.id.clone()),
             stored_analysis: self.evals.get(&self.cursor_node()).cloned(),
@@ -1412,7 +1502,7 @@ mod tests {
         assert_eq!(id_at(&s.view(), "e3"), e);
         assert!(s.try_step(sq("a1"), sq("a2")).is_err());
         assert_eq!(s.view().turn.unwrap().steps.len(), 1);
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         assert_eq!(s.view().moves.last().unwrap().notation, "Ee2n");
         assert_eq!(id_at(&s.view(), "e3"), e);
     }
@@ -1460,7 +1550,7 @@ mod tests {
         s.try_step(sq("e2"), sq("e3")).unwrap();
         s.try_step(sq("e3"), sq("e2")).unwrap();
         assert!(s.view().turn.unwrap().commit_blocker.is_some());
-        assert!(s.commit_turn().is_err());
+        assert!(s.commit_turn(false).is_err());
         assert!(s.view().turn.is_some(), "failed commit keeps the turn");
         let anim = s.undo_step().unwrap();
         assert_eq!((anim[0].from, anim[0].to), (sq("e2"), sq("e3")));
@@ -1493,7 +1583,7 @@ mod tests {
         s.goto(2).unwrap();
         assert_eq!(s.view().moves_after_cursor, 8);
         s.try_step(sq("a2"), sq("a3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         // The new branch is shown; the game is still there.
         let v = s.view();
         assert_eq!((v.ply, v.moves.len()), (3, 3));
@@ -1506,7 +1596,7 @@ mod tests {
         s.goto(2).unwrap();
         s.try_route(sq("e2"), sq("e5"), &[]).unwrap();
         s.try_step(sq("e5"), sq("f5")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         let v = s.view();
         assert_eq!((v.ply, v.moves.len()), (3, 10), "back on the game's line");
         assert_eq!(s.tree[s.tree.main_line()[2]].children().len(), 2);
@@ -1518,12 +1608,12 @@ mod tests {
         s.load(SAMPLE).unwrap();
         s.goto(2).unwrap();
         s.try_step(sq("a2"), sq("a3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         s.try_step(sq("h7"), sq("h6")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         s.goto(3).unwrap();
         s.try_step(sq("a7"), sq("a6")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         s
     }
 
@@ -1669,10 +1759,10 @@ mod tests {
     fn a_running_match_keeps_its_line() {
         let mut s = human_vs_engine_started();
         s.try_step(sq("e2"), sq("e3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         s.goto(2).unwrap();
         s.try_step(sq("d2"), sq("d3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         let plan = s.cursor_node();
         let live = s.matchup.as_ref().unwrap().live;
         assert!(s.promote(plan).is_err());
@@ -1684,7 +1774,7 @@ mod tests {
         s.engine_failed(s.generation(), Color::Silver, "crashed".into());
         s.goto(2).unwrap();
         s.try_step(sq("d2"), sq("d3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         s.promote(s.cursor_node()).unwrap();
         assert!(s.delete_from(live).is_err());
     }
@@ -1803,7 +1893,7 @@ mod tests {
         s.apply_engine_move(g, Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
         assert!(s.can_input());
         s.try_step(sq("e2"), sq("e3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         assert_eq!(s.engine_turn().unwrap().ply, 3);
     }
 
@@ -1865,11 +1955,11 @@ mod tests {
         let mut s = human_vs_engine_started();
         assert!(s.plays_live());
         s.try_step(sq("e2"), sq("e3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         // The engine's turn: a move at the live position is a plan.
         assert!(!s.plays_live() && s.can_input());
         s.try_step(sq("e7"), sq("e6")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         let v = s.view();
         assert_eq!((v.ply, v.live_ply), (4, Some(3)));
         assert_eq!(s.engine_turn().unwrap().ply, 3, "the plan isn't played");
@@ -1886,13 +1976,71 @@ mod tests {
         assert_eq!((v.ply, v.live_ply, v.plays_live), (4, Some(4), true));
     }
 
+    /// Gold's elephant walks e2 to d5, using all four steps.
+    fn full_gold_turn(s: &mut Session) {
+        for (from, to) in [("e2", "e3"), ("e3", "e4"), ("e4", "e5"), ("e5", "d5")] {
+            s.try_step(sq(from), sq(to)).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_step_after_a_full_turn_starts_the_next() {
+        let mut s = Session::new();
+        s.commit_setup().unwrap();
+        s.commit_setup().unwrap();
+        full_gold_turn(&mut s);
+        assert!(s.legal_targets(sq("e7")).iter().any(|t| t.to == sq("e6")), "silver's steps are offered");
+        let anim = s.try_step(sq("e7"), sq("e6")).unwrap();
+        assert_eq!(anim.len(), 1);
+        let v = s.view();
+        assert_eq!(v.moves.last().unwrap().notation, "Ee2n Ee3n Ee4n Ee5w");
+        assert_eq!((v.ply, v.turn.unwrap().steps.len()), (3, 1));
+
+        // Turned off, the fifth step is refused.
+        s.cancel_turn();
+        s.goto(2).unwrap();
+        s.set_continue_turns(false);
+        full_gold_turn(&mut s);
+        assert!(s.legal_targets(sq("e7")).is_empty());
+        assert!(s.try_step(sq("e7"), sq("e6")).is_err());
+        assert_eq!(s.view().turn.unwrap().steps.len(), 4);
+    }
+
+    #[test]
+    fn stepping_past_your_move_plans_it_until_played() {
+        let mut s = human_vs_engine_started();
+        full_gold_turn(&mut s);
+        s.try_step(sq("e7"), sq("e6")).unwrap();
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply), (3, Some(2)), "gold's turn is a plan, not played");
+        assert!(s.engine_turn().is_none(), "the engine isn't asked to move");
+        assert_eq!(v.plan_move.as_deref(), Some("2g Ee2n Ee3n Ee4n Ee5w"));
+
+        // Enter with no turn in progress plays the plan's first move.
+        s.cancel_turn();
+        s.commit_turn(false).unwrap();
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply), (3, Some(3)));
+        assert_eq!(s.engine_turn().unwrap().ply, 3);
+    }
+
+    #[test]
+    fn a_short_turn_can_end_as_a_plan() {
+        let mut s = human_vs_engine_started();
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn(true).unwrap();
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply), (3, Some(2)));
+        assert!(s.commit_turn(true).is_err(), "nothing to end");
+    }
+
     #[test]
     fn a_plan_matching_the_engine_move_becomes_the_game() {
         let mut s = human_vs_engine_started();
         s.try_step(sq("e2"), sq("e3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         s.try_step(sq("e7"), sq("e6")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         s.goto(3).unwrap();
         let anim = s.apply_engine_move(s.generation(), Color::Silver, 3, "ee7s").unwrap();
         assert_eq!(anim.len(), 1, "watching live: animate");
@@ -1905,10 +2053,10 @@ mod tests {
     fn exploring_earlier_moves_in_a_match() {
         let mut s = human_vs_engine_started();
         s.try_step(sq("e2"), sq("e3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         s.goto(2).unwrap();
         s.try_step(sq("d2"), sq("d3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         let v = s.view();
         assert_eq!((v.ply, v.live_ply, v.plays_live), (3, None, false));
         assert_eq!(s.engine_turn().unwrap().moves.last().unwrap(), "Ee2n");
@@ -1933,9 +2081,9 @@ mod tests {
 
         let mut s = human_vs_engine_started();
         s.try_step(sq("e2"), sq("e3")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         s.try_step(sq("e7"), sq("e6")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         let g = s.generation();
         s.engine_failed(g, Color::Silver, "crashed".into());
         let v = s.view();
@@ -1947,7 +2095,7 @@ mod tests {
         assert_eq!(v.phase, Phase::Play, "the position can still be analysed");
         // More analysis after the end is a variation, and the plan is still there.
         s.try_step(sq("d7"), sq("d6")).unwrap();
-        s.commit_turn().unwrap();
+        s.commit_turn(false).unwrap();
         let live = s.matchup.as_ref().unwrap().live;
         assert_eq!(s.tree[live].children().len(), 2);
         assert_eq!(s.tree.line_end(GameTree::ROOT), live);
