@@ -55,6 +55,11 @@ with GCC 13; the source has `#ifdef`s for Windows and macOS, untested.
   lines.
 - **No `go infinite`.** `setoption name ignoretc value true` (allowed in
   release builds) makes `go` search until `stop`, which it answers at once.
+- **A `stop` right after `go`** (within a few ms, before its search thread
+  starts) gets no `bestmove`: the search reports a null move, which Sharp
+  logs as `Error: Bot tried to make illegal move:` before waiting for
+  commands again. `Profile::ends_search_without_move` recognizes it, so
+  analysis moves on; fast arrow-key navigation hit it in the app.
 - **`setposition`** wants exactly `[` + 64 squares + `]`, and ignores the
   side: with `s` it still searches for gold.
 - **Clock:** it keeps its own reserve (a default of 60 s showed in its log),

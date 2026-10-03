@@ -3,7 +3,7 @@
 //! read their scores. Engine quirks live here and nowhere else.
 
 use crate::engine::EngineId;
-use crate::message::SearchEval;
+use crate::message::{EngineMessage, SearchEval};
 
 /// An evaluation from the mover's point of view, in centi-rabbits (a rabbit
 /// up in the opening is about +100), or a proven result.
@@ -90,6 +90,14 @@ impl Profile {
         }
     }
 
+    /// Whether `msg` ends a stopped search that has no move to send. Sharp,
+    /// stopped before its search thread starts (a `stop` right after `go`),
+    /// logs this instead of a `bestmove` and then waits for commands.
+    pub fn ends_search_without_move(self, msg: &EngineMessage) -> bool {
+        self == Profile::Sharp
+            && matches!(msg, EngineMessage::Log(text) if text.starts_with("Error: Bot tried to make illegal move:"))
+    }
+
     /// Reads the eval of a search log line.
     pub fn log_score(self, eval: &SearchEval) -> Score {
         match eval {
@@ -128,5 +136,13 @@ mod tests {
         assert_eq!(Profile::Sharp.log_score(&SearchEval::Decided("Loss5".into())), Score::Loss);
         assert_eq!(Score::Win.flipped(), Score::Loss);
         assert_eq!(Score::CentiRabbits(30).flipped(), Score::CentiRabbits(-30));
+    }
+
+    #[test]
+    fn knows_sharps_stop_without_a_move() {
+        let msg = EngineMessage::Log("Error: Bot tried to make illegal move: ".into());
+        assert!(Profile::Sharp.ends_search_without_move(&msg));
+        assert!(!Profile::Generic.ends_search_without_move(&msg));
+        assert!(!Profile::Sharp.ends_search_without_move(&EngineMessage::Log("Started new game".into())));
     }
 }

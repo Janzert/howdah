@@ -762,7 +762,7 @@ async fn run_actor(
                 ActorCmd::Think { request, moves, tc, reserves } => {
                     let mut ready = Ok(());
                     if let Some(old) = thinking.take() {
-                        ready = finish_search(&mut engine, old, stop_sent, &report).await;
+                        ready = finish_search(&mut engine, profile, old, stop_sent, &report).await;
                     }
                     if ready.is_ok() {
                         ready = prepare(&mut engine, &mut told, moves, tc, reserves).await;
@@ -809,10 +809,12 @@ async fn send_options(
     Ok(())
 }
 
-/// Stops the search for `request` and waits for its `bestmove`, passing on
-/// what the engine says meanwhile.
+/// Stops the search for `request` and waits for its `bestmove` (or the
+/// profile's sign that there won't be one), passing on what the engine says
+/// meanwhile.
 async fn finish_search(
     engine: &mut Engine,
+    profile: Profile,
     request: u64,
     stop_sent: bool,
     report: &impl Fn(u64, ActorEvent),
@@ -828,7 +830,13 @@ async fn finish_search(
                 report(request, ActorEvent::BestMove(text));
                 return Ok(());
             }
-            Some(other) => report(request, ActorEvent::Line(other)),
+            Some(other) => {
+                let done = profile.ends_search_without_move(&other);
+                report(request, ActorEvent::Line(other));
+                if done {
+                    return Ok(());
+                }
+            }
         }
     }
 }
