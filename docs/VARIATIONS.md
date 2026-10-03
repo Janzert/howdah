@@ -203,6 +203,12 @@ These are the keys `lib/shortcuts.ts` left out until variations exist:
 
 ### Boundary
 
+- Built (2026-10-03): `SessionView.moves` stays the line being shown, and
+  `SessionView.tree` (`MoveNodeView`s), `cursor`, `live` and
+  `gameComment` were added. Commands: `goto_node`, `goto_live`,
+  `promote`, `demote`, `make_main_line`, `delete_from`; `goto_ply` stays
+  for the shown line. Not yet: the step commands and collapsing. The
+  original plan:
 - `SessionView.moves` becomes the tree, flattened in display order:
 
   ```ts

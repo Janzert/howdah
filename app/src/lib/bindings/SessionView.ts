@@ -4,13 +4,35 @@ import type { ClockView } from "./ClockView";
 import type { Color } from "./Color";
 import type { GameResult } from "./GameResult";
 import type { LastMoveView } from "./LastMoveView";
+import type { MoveNodeView } from "./MoveNodeView";
 import type { MoveView } from "./MoveView";
+import type { NodeId } from "./NodeId";
 import type { Phase } from "./Phase";
 import type { PlayersView } from "./PlayersView";
 import type { PositionView } from "./PositionView";
 import type { TurnView } from "./TurnView";
 
-export type SessionView = { moves: Array<MoveView>, 
+export type SessionView = { 
+/**
+ * The line being shown, one entry per move.
+ */
+moves: Array<MoveView>, 
+/**
+ * Every move of the game tree, in display order.
+ */
+tree: Array<MoveNodeView>, 
+/**
+ * The comment on the whole game (before the first move).
+ */
+gameComment: string | null, 
+/**
+ * The node being shown (the root before any move).
+ */
+cursor: NodeId, 
+/**
+ * In a match, the live node: the end of the game being played.
+ */
+live: NodeId | null, 
 /**
  * Ply being shown (0 = empty board, `moves.len()` = latest).
  */

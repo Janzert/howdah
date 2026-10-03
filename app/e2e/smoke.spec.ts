@@ -264,3 +264,19 @@ test('? opens and closes the keyboard help; k and j step through moves', async (
   await page.keyboard.press('j');
   await expect.poll(ply).toBe(before);
 });
+
+test('the move list shows variations; a click follows one, and the menu deletes it', async ({ page }) => {
+  await freshGame(page);
+  await load(page, [...SAMPLE_TO_3S.slice(0, 2), '2g Ee2n Ee3n', '(', '2g Ha2n', '2s hh7s', ')', '2s ee7s']);
+  const list = page.locator('.moves');
+  const variation = list.getByRole('button', { name: /2g\s+Ha2n/ });
+  await expect(variation).toBeVisible();
+  await variation.click();
+  await expect.poll(() => page.evaluate(() => window.__arimaa!.state()!.moves.at(-1)?.notation)).toBe('hh7s');
+  await expect(board(page).getByRole('img', { name: 'gold horse a3' })).toBeVisible();
+
+  await variation.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Delete from here' }).click();
+  await expect(variation).toHaveCount(0);
+  expect(await page.evaluate(() => window.__arimaa!.state()!.ply)).toBe(2);
+});

@@ -119,8 +119,14 @@ ideas from other Arimaa and chess clients.
     `squareCenter(sq)`, `api`. `idle()` also waits for pending hover arrows.
     Input goes through the board's own pointer handlers. Board pieces carry
     accessible names ("gold camel d5, frozen") and `data-square`.
-  - `MoveList.svelte` stays scrolled to the bottom while following the
-    latest move, until the user scrolls up.
+  - `MoveList.svelte` shows the whole game tree from `SessionView.tree`
+    (display order, as the record format writes it: each move, then the
+    variations replacing it, indented by `depth`). Moves off the shown line
+    are dimmed. A click calls `goto_node`; the right-click menu makes a
+    line main, moves it up or down (`promote`/`demote`), deletes from a
+    move (`delete_from`; refused for a running match's line), or copies
+    moves. The session refuses edits that would move a running match's
+    line off the main line (`Session::edit_lines`).
   - `lib/events.ts`: typed `on()`.
   - `lib/board/`: SVG board. `BoardModel` plays `AnimStep`s: slide, then
     fade out on capture, with fade-in for restored pieces going backward.

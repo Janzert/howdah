@@ -365,7 +365,7 @@
         onMoveNow={() => run(api.engineMoveNow())}
         onEndMatch={() => run(api.endMatch())}
       />
-      <MoveList {view} onGoto={goto} />
+      <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
       {#if hasEngine && view.players}
         <EnginePanel players={view.players} resetKey={matchKey} />
       {/if}

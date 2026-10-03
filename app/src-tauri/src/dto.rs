@@ -1,7 +1,7 @@
 //! View types sent to the frontend. TypeScript definitions are generated from
 //! these with ts-rs (`npm run bindings`); don't hand-edit `src/lib/bindings`.
 
-use arimaa_core::{Color, GameResult, Piece, PieceKind, Square, StepKind};
+use arimaa_core::{Color, GameResult, NodeId, Piece, PieceKind, Square, StepKind};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -37,6 +37,38 @@ pub struct MoveView {
     /// Move number label, e.g. `2g`.
     pub label: String,
     pub notation: String,
+}
+
+/// One move of the game tree, as the move list shows it. `SessionView.tree`
+/// lists them in display order: each main move, then the variations that
+/// replace it (and continuations after a line's last move), nested.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MoveNodeView {
+    pub id: NodeId,
+    pub parent: NodeId,
+    /// Ply after this move.
+    pub ply: usize,
+    /// Nesting: 0 on the main line, one more per level of variation.
+    pub depth: usize,
+    /// The first move of a variation.
+    pub starts_variation: bool,
+    /// How many variations end with this move (nested ones can end
+    /// together).
+    pub closes: u32,
+    /// Move number label, e.g. `2g`.
+    pub label: String,
+    pub notation: String,
+    /// Annotation glyphs as written (`!?`, `$14`).
+    pub glyphs: Vec<String>,
+    pub comment: Option<String>,
+    /// Introduction to the variation this move starts.
+    pub intro: Option<String>,
+    /// On the line being shown.
+    pub on_line: bool,
+    /// How the game ended at this move, if it did.
+    pub result: Option<GameResult>,
 }
 
 /// A piece on a square.
@@ -124,7 +156,16 @@ pub struct TurnView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SessionView {
+    /// The line being shown, one entry per move.
     pub moves: Vec<MoveView>,
+    /// Every move of the game tree, in display order.
+    pub tree: Vec<MoveNodeView>,
+    /// The comment on the whole game (before the first move).
+    pub game_comment: Option<String>,
+    /// The node being shown (the root before any move).
+    pub cursor: NodeId,
+    /// In a match, the live node: the end of the game being played.
+    pub live: Option<NodeId>,
     /// Ply being shown (0 = empty board, `moves.len()` = latest).
     pub ply: usize,
     pub phase: Phase,

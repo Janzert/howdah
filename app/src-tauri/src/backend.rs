@@ -14,7 +14,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use arimaa_core::{Square, TimeControl};
+use arimaa_core::{NodeId, Square, TimeControl};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -117,6 +117,26 @@ impl Backend {
 
     pub fn goto_ply(&self, ply: usize) -> Result<(), ApiError> {
         self.mutate(|s| s.goto(ply))
+    }
+
+    pub fn goto_node(&self, node: NodeId) -> Result<(), ApiError> {
+        self.mutate(|s| s.goto_node(node))
+    }
+
+    pub fn promote(&self, node: NodeId) -> Result<(), ApiError> {
+        self.mutate(|s| s.promote(node))
+    }
+
+    pub fn demote(&self, node: NodeId) -> Result<(), ApiError> {
+        self.mutate(|s| s.demote(node))
+    }
+
+    pub fn make_main_line(&self, node: NodeId) -> Result<(), ApiError> {
+        self.mutate(|s| s.make_main_line(node))
+    }
+
+    pub fn delete_from(&self, node: NodeId) -> Result<(), ApiError> {
+        self.mutate(|s| s.delete_from(node))
     }
 
     pub fn goto_live(&self) -> Result<(), ApiError> {
@@ -238,6 +258,11 @@ impl Backend {
             "export_game" => ok(self.export_game()),
             "goto_ply" => ok(self.goto_ply(arg(args, "ply")?)?),
             "goto_live" => ok(self.goto_live()?),
+            "goto_node" => ok(self.goto_node(arg(args, "node")?)?),
+            "promote" => ok(self.promote(arg(args, "node")?)?),
+            "demote" => ok(self.demote(arg(args, "node")?)?),
+            "make_main_line" => ok(self.make_main_line(arg(args, "node")?)?),
+            "delete_from" => ok(self.delete_from(arg(args, "node")?)?),
             "move_replay" => ok(self.move_replay()),
             "legal_targets" => ok(self.legal_targets(arg(args, "from")?)),
             "try_step" => ok(self.try_step(arg(args, "from")?, arg(args, "to")?)?),

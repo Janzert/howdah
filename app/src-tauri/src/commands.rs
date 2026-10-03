@@ -1,7 +1,7 @@
 //! Tauri commands: thin wrappers over [`Backend`], which holds the logic
 //! and documents the conventions.
 
-use arimaa_core::Square;
+use arimaa_core::{NodeId, Square};
 use tauri::State;
 
 use crate::backend::Backend;
@@ -30,6 +30,31 @@ pub fn export_game(state: State<Backend>) -> String {
 #[tauri::command]
 pub fn goto_ply(state: State<Backend>, ply: usize) -> Result<(), ApiError> {
     state.goto_ply(ply)
+}
+
+#[tauri::command]
+pub fn goto_node(state: State<Backend>, node: NodeId) -> Result<(), ApiError> {
+    state.goto_node(node)
+}
+
+#[tauri::command]
+pub fn promote(state: State<Backend>, node: NodeId) -> Result<(), ApiError> {
+    state.promote(node)
+}
+
+#[tauri::command]
+pub fn demote(state: State<Backend>, node: NodeId) -> Result<(), ApiError> {
+    state.demote(node)
+}
+
+#[tauri::command]
+pub fn make_main_line(state: State<Backend>, node: NodeId) -> Result<(), ApiError> {
+    state.make_main_line(node)
+}
+
+#[tauri::command]
+pub fn delete_from(state: State<Backend>, node: NodeId) -> Result<(), ApiError> {
+    state.delete_from(node)
 }
 
 #[tauri::command]

@@ -7,6 +7,7 @@ import type { EngineIdentity } from './bindings/EngineIdentity';
 import type { EngineSpec } from './bindings/EngineSpec';
 import type { MatchSpec } from './bindings/MatchSpec';
 import type { MoveReplay } from './bindings/MoveReplay';
+import type { NodeId } from './bindings/NodeId';
 import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
 import type { StepTarget } from './bindings/StepTarget';
@@ -19,6 +20,13 @@ export const api = {
   gotoPly: (ply: number) => invoke<void>('goto_ply', { ply }),
   /** Shows the live position of a match (the end of the line in free play). */
   gotoLive: () => invoke<void>('goto_live'),
+  /** Shows any move of the game tree, switching to its line if needed. */
+  gotoNode: (node: NodeId) => invoke<void>('goto_node', { node }),
+  promote: (node: NodeId) => invoke<void>('promote', { node }),
+  demote: (node: NodeId) => invoke<void>('demote', { node }),
+  makeMainLine: (node: NodeId) => invoke<void>('make_main_line', { node }),
+  /** Deletes the move and everything after it. */
+  deleteFrom: (node: NodeId) => invoke<void>('delete_from', { node }),
   /** The shown move's starting pieces and animation, or null after a setup. */
   moveReplay: () => invoke<MoveReplay | null>('move_replay'),
   legalTargets: (from: Square) => invoke<StepTarget[]>('legal_targets', { from }),

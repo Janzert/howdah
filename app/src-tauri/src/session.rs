@@ -22,9 +22,9 @@ use arimaa_core::{
 };
 
 use crate::dto::{
-    AnimPiece, AnimStep, ApiError, CapturedView, ClockView, LastMoveView, LastStepView, MoveReplay, MoveView,
-    Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView, PlayersView, PositionView, SessionView,
-    SideClockView, StepTarget, TurnStepView, TurnView,
+    AnimPiece, AnimStep, ApiError, CapturedView, ClockView, LastMoveView, LastStepView, MoveNodeView,
+    MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView, PlayersView,
+    PositionView, SessionView, SideClockView, StepTarget, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -564,6 +564,76 @@ impl Session {
         self.show(live);
     }
 
+    /// Shows `node`, discarding any turn in progress: on the current line if
+    /// it's there, otherwise on the line through it. A move forward or back
+    /// from the shown node is animated.
+    pub fn goto_node(&mut self, node: NodeId) -> Result<Vec<AnimStep>, ApiError> {
+        if !self.tree.contains(node) {
+            return Err(ApiError::state("that move no longer exists"));
+        }
+        if let Some(ply) = self.line.iter().position(|&n| n == node) {
+            return self.goto(ply);
+        }
+        let from = self.cursor_node();
+        let had_turn = self.turn.take().is_some();
+        self.show(node);
+        // Off the line, only a step forward can be next to the old cursor.
+        let forward = self.tree[node].parent() == Some(from);
+        Ok(if forward && !had_turn { self.move_animation(self.cursor - 1) } else { Vec::new() })
+    }
+
+    /// Applies an edit to the tree's lines (promote, delete, ...). While a
+    /// match is being played its line stays the main line, so an edit that
+    /// would change or remove it is refused.
+    fn edit_lines(
+        &mut self,
+        f: impl FnOnce(&mut GameTree) -> Result<(), GameError>,
+    ) -> Result<Vec<AnimStep>, ApiError> {
+        let mut tree = self.tree.clone();
+        f(&mut tree).map_err(ApiError::illegal)?;
+        if let Some(m) = &self.matchup {
+            if !tree.contains(m.live) {
+                return Err(ApiError::illegal("the match's moves can't be deleted"));
+            }
+            if self.tree[m.live].result().is_none() && !tree.is_main_line(m.live) {
+                return Err(ApiError::illegal("the game being played stays the main line"));
+            }
+        }
+        self.tree = tree;
+        // Keep the shown line if it still exists; otherwise fall back to
+        // the deepest part of it that does.
+        let keep = self.line.iter().take_while(|&&n| self.tree.contains(n)).count();
+        if keep < self.line.len() {
+            self.line.truncate(keep);
+            if self.cursor >= keep {
+                self.cursor = keep - 1;
+                self.turn = None;
+            }
+        }
+        self.refresh();
+        Ok(Vec::new())
+    }
+
+    /// Moves `node` one place earlier among the alternatives for its ply.
+    pub fn promote(&mut self, node: NodeId) -> Result<Vec<AnimStep>, ApiError> {
+        self.edit_lines(|t| t.promote(node))
+    }
+
+    /// Moves `node` one place later among the alternatives for its ply.
+    pub fn demote(&mut self, node: NodeId) -> Result<Vec<AnimStep>, ApiError> {
+        self.edit_lines(|t| t.demote(node))
+    }
+
+    /// Makes the line through `node` the main line.
+    pub fn make_main_line(&mut self, node: NodeId) -> Result<Vec<AnimStep>, ApiError> {
+        self.edit_lines(|t| t.make_main_line(node))
+    }
+
+    /// Deletes `node` and every move after it.
+    pub fn delete_from(&mut self, node: NodeId) -> Result<Vec<AnimStep>, ApiError> {
+        self.edit_lines(|t| t.delete(node))
+    }
+
     /// Shows `ply` on the current line, discarding any turn in progress.
     /// Moving one ply forward or back animates that move.
     pub fn goto(&mut self, ply: usize) -> Result<Vec<AnimStep>, ApiError> {
@@ -870,6 +940,10 @@ impl Session {
 
         SessionView {
             moves,
+            tree: self.tree_view(),
+            game_comment: self.tree[GameTree::ROOT].annotation().comment.clone(),
+            cursor: self.cursor_node(),
+            live: self.matchup.as_ref().map(|m| m.live),
             ply: self.cursor,
             phase: self.phase(),
             position: position_view(&position, &ids),
@@ -889,6 +963,63 @@ impl Session {
             can_input: self.can_input(),
             plays_live: self.plays_live(),
             live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
+        }
+    }
+
+    /// The game tree in display order, as the record format writes it.
+    fn tree_view(&self) -> Vec<MoveNodeView> {
+        let mut out = Vec::new();
+        self.tree_view_from(GameTree::ROOT, 0, &mut out);
+        out
+    }
+
+    /// Adds the moves after `node` on its line, each followed by the
+    /// variations that replace it.
+    fn tree_view_from(&self, mut node: NodeId, depth: usize, out: &mut Vec<MoveNodeView>) {
+        let tree = &self.tree;
+        loop {
+            let children = tree[node].children();
+            if tree[node].result().is_some() {
+                // After the game's end, every move is a continuation.
+                for &c in children {
+                    self.variation_view(c, depth + 1, out);
+                }
+                return;
+            }
+            let Some(&main) = children.first() else { return };
+            out.push(self.node_view(main, depth));
+            for &v in &children[1..] {
+                self.variation_view(v, depth + 1, out);
+            }
+            node = main;
+        }
+    }
+
+    fn variation_view(&self, first: NodeId, depth: usize, out: &mut Vec<MoveNodeView>) {
+        let start = out.len();
+        out.push(self.node_view(first, depth));
+        out[start].starts_variation = true;
+        self.tree_view_from(first, depth, out);
+        out.last_mut().expect("the first move").closes += 1;
+    }
+
+    fn node_view(&self, id: NodeId, depth: usize) -> MoveNodeView {
+        let node = &self.tree[id];
+        let annotation = node.annotation();
+        MoveNodeView {
+            id,
+            parent: node.parent().expect("only the root has no parent"),
+            ply: node.ply(),
+            depth,
+            starts_variation: false,
+            closes: 0,
+            label: notation::move_label(node.ply() - 1),
+            notation: node.mv().map(Move::notation).unwrap_or_default(),
+            glyphs: annotation.glyphs.iter().map(ToString::to_string).collect(),
+            comment: annotation.comment.clone(),
+            intro: annotation.intro.clone(),
+            on_line: self.line.contains(&id),
+            result: node.result(),
         }
     }
 
@@ -1121,6 +1252,105 @@ mod tests {
         let v = s.view();
         assert_eq!((v.ply, v.moves.len()), (3, 10), "back on the game's line");
         assert_eq!(s.tree[s.tree.main_line()[2]].children().len(), 2);
+    }
+
+    /// The sample game with a variation for 2g (Ha2n) and one inside it.
+    fn with_variations() -> Session {
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        s.goto(2).unwrap();
+        s.try_step(sq("a2"), sq("a3")).unwrap();
+        s.commit_turn().unwrap();
+        s.try_step(sq("h7"), sq("h6")).unwrap();
+        s.commit_turn().unwrap();
+        s.goto(3).unwrap();
+        s.try_step(sq("a7"), sq("a6")).unwrap();
+        s.commit_turn().unwrap();
+        s
+    }
+
+    #[test]
+    fn tree_view_lists_variations_after_the_move_they_replace() {
+        let s = with_variations();
+        let v = s.view();
+        let rows: Vec<String> = v
+            .tree
+            .iter()
+            .map(|m| {
+                let mark = if m.starts_variation { "(" } else { "" };
+                let end = ")".repeat(m.closes as usize);
+                format!(
+                    "{}{mark}{} {}{end}",
+                    "  ".repeat(m.depth),
+                    m.label,
+                    m.notation.split(' ').next().unwrap()
+                )
+            })
+            .collect();
+        assert_eq!(rows[2..6], ["2g Ee2n", "  (2g Ha2n", "  2s hh7s", "    (2s ha7s))"], "{rows:#?}");
+        assert_eq!(rows[6], "2s hh7s");
+        assert_eq!(v.cursor, s.cursor_node());
+        let shown: Vec<_> = v.tree.iter().filter(|m| m.on_line).map(|m| m.notation.as_str()).collect();
+        assert_eq!(shown.len(), 4);
+        assert_eq!(shown[2..], ["Ha2n", "ha7s"]);
+    }
+
+    #[test]
+    fn goto_node_switches_lines() {
+        let mut s = with_variations();
+        let main_2s = s.tree.main_line()[4];
+        let anim = s.goto_node(main_2s).unwrap();
+        assert!(anim.is_empty(), "a jump to another line snaps");
+        let v = s.view();
+        assert_eq!((v.ply, v.moves.len()), (4, 10));
+        // A move forward off the line animates.
+        let alt = s.tree[s.tree.main_line()[2]].children()[1];
+        s.goto(2).unwrap();
+        let anim = s.goto_node(alt).unwrap();
+        assert_eq!(anim.len(), 1);
+        assert_eq!(s.view().moves[2].notation, "Ha2n");
+        assert!(s.goto_node(NodeId(999)).is_err());
+    }
+
+    #[test]
+    fn line_edits() {
+        let mut s = with_variations();
+        let alt = s.tree[s.tree.main_line()[2]].children()[1];
+        s.promote(alt).unwrap();
+        assert_eq!(s.tree.main_line()[3], alt);
+        s.demote(alt).unwrap();
+        s.make_main_line(s.cursor_node()).unwrap();
+        assert_eq!(s.tree.main_line().len(), 5);
+        // Deleting the shown move moves the board back to its parent.
+        let shown = s.cursor_node();
+        let parent = s.tree[shown].parent().unwrap();
+        s.delete_from(shown).unwrap();
+        assert_eq!(s.cursor_node(), parent);
+        assert!(s.delete_from(GameTree::ROOT).is_err());
+    }
+
+    #[test]
+    fn a_running_match_keeps_its_line() {
+        let mut s = human_vs_engine_started();
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn().unwrap();
+        s.goto(2).unwrap();
+        s.try_step(sq("d2"), sq("d3")).unwrap();
+        s.commit_turn().unwrap();
+        let plan = s.cursor_node();
+        let live = s.matchup.as_ref().unwrap().live;
+        assert!(s.promote(plan).is_err());
+        assert!(s.make_main_line(plan).is_err());
+        assert!(s.delete_from(live).is_err());
+        assert!(s.demote(live).is_err());
+        s.delete_from(plan).unwrap();
+        // After the game ends its line can be rearranged, but not deleted.
+        s.engine_failed(s.generation(), Color::Silver, "crashed".into());
+        s.goto(2).unwrap();
+        s.try_step(sq("d2"), sq("d3")).unwrap();
+        s.commit_turn().unwrap();
+        s.promote(s.cursor_node()).unwrap();
+        assert!(s.delete_from(live).is_err());
     }
 
     #[test]
