@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { analysisEngine, pvMoves } from './lib/analysis';
+  import AnalysisPanel from './lib/AnalysisPanel.svelte';
   import { api, errorMessage } from './lib/api';
+  import type { AnalysisLine } from './lib/bindings/AnalysisLine';
+  import type { AnalysisView } from './lib/bindings/AnalysisView';
   import { requestAttention } from './lib/attention';
   import type { Color } from './lib/bindings/Color';
   import type { EngineSpec } from './lib/bindings/EngineSpec';
@@ -12,6 +16,7 @@
   import { nextTick, turnTimeLeft } from './lib/clock';
   import EnginePanel from './lib/EnginePanel.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
+  import EvalBar from './lib/EvalBar.svelte';
   import GameEndDialog from './lib/GameEndDialog.svelte';
   import HelpDialog from './lib/HelpDialog.svelte';
   import { registerApp } from './lib/devHooks';
@@ -60,6 +65,8 @@
   /** The last match started from the new-game dialog, for a rematch. */
   let lastSpec = $state<MatchSpec | null>(null);
   let engines = $state<EngineSpec[]>([]);
+  /** The latest analysis update. */
+  let analysis = $state<AnalysisView | null>(null);
   let messageTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Clock ticking: views carry elapsed time at send; count on from arrival.
@@ -184,7 +191,7 @@
     }
   }
 
-  if (import.meta.env.DEV) registerApp({ state: () => view, message: () => message, model });
+  if (import.meta.env.DEV) registerApp({ state: () => view, message: () => message, analysis: () => analysis, model });
 
   onMount(() => {
     unlockOnInteraction();
@@ -203,6 +210,7 @@
         requestAttention();
       }
     });
+    const unlistenAnalysis = on('analysis://update', (u) => (analysis = u));
     api.getState().then((v) => {
       setView(v);
       model.snap(v.position.pieces);
@@ -210,6 +218,7 @@
     reloadEngines();
     return () => {
       unlisten.then((f) => f());
+      unlistenAnalysis.then((f) => f());
     };
   });
 
@@ -225,6 +234,47 @@
   const hasEngine = $derived(
     view?.players != null && (view.players.gold.kind === 'engine' || view.players.silver.kind === 'engine'),
   );
+
+  const analysing = $derived(view?.analysisEngine != null);
+  /** What analysis found for the shown node: this search's line once it
+   * arrives, until then the one kept from an earlier visit. */
+  const shown = $derived.by((): { line: AnalysisLine | null; stored: boolean } => {
+    if (!view || !analysing) return { line: null, stored: false };
+    if (analysis?.node === view.cursor && analysis.line) return { line: analysis.line, stored: analysis.stored };
+    return { line: view.storedAnalysis, stored: view.storedAnalysis != null };
+  });
+  /** The PV's first turn, drawn on the board while no steps are taken. */
+  const pvMove = $derived(view?.turn?.steps.length ? null : (shown.line?.pv[0]?.steps ?? null));
+  /** A match with an engine is still being played (its live node has no result). */
+  const matchRunning = $derived.by(() => {
+    if (!hasEngine || view?.live == null) return false;
+    const live = view.live;
+    const result = live === view.cursor ? view.result : view.tree.find((n) => n.id === live)?.result;
+    return result == null;
+  });
+
+  /** Turns analysis on with the engine used last (or the first), or off. */
+  function toggleAnalysis() {
+    if (analysing) {
+      run(api.setAnalysis(null));
+      return;
+    }
+    const engine = analysisEngine(engines, settings.analysisEngine);
+    if (!engine) {
+      flash('Add an engine first (Engines)');
+      return;
+    }
+    useAnalysisEngine(engine.id);
+  }
+
+  function useAnalysisEngine(id: string) {
+    settings.analysisEngine = id;
+    run(api.setAnalysis(id));
+  }
+
+  function addPv(line: AnalysisLine, index: number) {
+    run(api.addLine(line.node, pvMoves(line, index)));
+  }
 
   function onDrop(from: Square, to: Square, path: Square[]): Promise<boolean> {
     if (!view) return Promise.resolve(false);
@@ -301,7 +351,9 @@
     },
     moveNow: (v) => {
       if (v.thinking) run(api.engineMoveNow());
+      else if (shown.line?.pv.length && !v.turn?.steps.length) addPv(shown.line, 0);
     },
+    analysis: () => toggleAnalysis(),
     flip: () => (flipped = !flipped),
     cycleHover: () => {
       const next = HOVER_ORDER[(HOVER_ORDER.indexOf(settings.hoverInput) + 1) % HOVER_ORDER.length];
@@ -335,7 +387,12 @@
     {#if view}
       <PlayerBar {view} side={flipped ? 'gold' : 'silver'} {receivedAt} {now} {theme} />
     {/if}
-    <div class="board-wrap">
+    <div class="board-wrap" class:with-bar={analysing}>
+      {#if analysing}
+        <div class="eval-box">
+          <EvalBar evaluation={shown.line?.eval ?? null} {flipped} />
+        </div>
+      {/if}
       <div class="board-box">
         <Board
           {model}
@@ -344,6 +401,7 @@
           {interactive}
           pushPending={view?.turn?.pushPending ?? null}
           lastMove={view?.turn?.steps.length ? null : (view?.lastMove ?? null)}
+          {pvMove}
           coordinates={settings.coordinates}
           hoverInput={settings.hoverInput}
           positionKey={view ? `${view.ply}|${view.position.short}|${view.canInput}|${view.turn?.steps.length ?? 0}` : ''}
@@ -375,6 +433,25 @@
       {#if hasEngine && view.players}
         <EnginePanel players={view.players} resetKey={matchKey} />
       {/if}
+      {#if analysing || analysis?.state === 'failed'}
+        <AnalysisPanel
+          {view}
+          {analysis}
+          line={shown.line}
+          stored={shown.stored}
+          {engines}
+          {theme}
+          {flipped}
+          sharesCpu={matchRunning}
+          onEngine={useAnalysisEngine}
+          onClose={() => {
+            if (analysing) run(api.setAnalysis(null));
+            analysis = null;
+          }}
+          onAdd={addPv}
+          preview={(line, i) => api.previewLine(line.node, pvMoves(line, i))}
+        />
+      {/if}
       <div class="nav">
         <button aria-label="Start" onclick={() => goto(0)} title="Start (Home or 0)">⏮</button>
         <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (← or k)">◀</button>
@@ -385,6 +462,9 @@
     <div class="tools">
       <button onclick={() => (showNewGame = true)}>New game</button>
       <button onclick={() => (showEngines = true)}>Engines</button>
+      <button onclick={toggleAnalysis} aria-pressed={analysing} title="Analyse the shown position with an engine (l)">
+        Analysis
+      </button>
       <button onclick={openRecord}>Record</button>
       <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
       <button onclick={() => (showSettings = true)}>Settings</button>
@@ -420,6 +500,7 @@
     {view}
     onRematch={rematch}
     onSwapSides={swappedSpec ? () => startGame(swappedSpec!) : undefined}
+    onAnalyse={engines.length && !analysing ? toggleAnalysis : undefined}
     onClose={() => (showGameEnd = false)}
   />
 {/if}
@@ -449,13 +530,27 @@
   .board-wrap {
     flex: 1;
     container-type: size;
-    display: grid;
-    place-items: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
     min-height: 0;
   }
   .board-box {
     width: min(100cqw, 100cqh);
     height: min(100cqw, 100cqh);
+  }
+  /* The eval bar takes its width and gap from the board. */
+  .with-bar .board-box {
+    width: min(100cqw - 22px, 100cqh);
+    height: min(100cqw - 22px, 100cqh);
+  }
+  .eval-box {
+    height: min(100cqw - 22px, 100cqh);
+  }
+  [aria-pressed='true'] {
+    background: var(--accent);
+    color: var(--accent-text);
   }
   .panel {
     display: flex;

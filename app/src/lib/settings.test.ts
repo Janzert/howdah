@@ -17,6 +17,7 @@ describe('settings parse', () => {
         theme: 'placeholder',
         hoverInput: 'step',
         humanAtBottom: false,
+        analysisEngine: 'sharp-1',
       }),
       none,
     );
@@ -26,8 +27,12 @@ describe('settings parse', () => {
       sound: false,
       hoverInput: 'step',
       humanAtBottom: false,
+      analysisEngine: 'sharp-1',
     });
-    const bad = parse(JSON.stringify({ coordinates: 'diagonal', sound: 'yes', theme: 'gone' }), none);
+    const bad = parse(
+      JSON.stringify({ coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3 }),
+      none,
+    );
     expect(bad).toEqual(DEFAULTS);
   });
 

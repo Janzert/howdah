@@ -16,6 +16,8 @@ export interface SettingsData {
   hoverInput: HoverInput;
   /** Turn the board so a lone human player is at the bottom when a game starts. */
   humanAtBottom: boolean;
+  /** The engine analysis last used (an engine id). */
+  analysisEngine: string | null;
 }
 
 const KEY = 'settings';
@@ -26,6 +28,7 @@ export const DEFAULTS: SettingsData = {
   sound: true,
   hoverInput: 'off',
   humanAtBottom: true,
+  analysisEngine: null,
 };
 
 function read(key: string): string | null {
@@ -54,6 +57,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   }
   if (typeof raw.sound === 'boolean') s.sound = raw.sound;
   if (typeof raw.humanAtBottom === 'boolean') s.humanAtBottom = raw.humanAtBottom;
+  if (typeof raw.analysisEngine === 'string') s.analysisEngine = raw.analysisEngine;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
   if (raw.hoverInput === 'off' || raw.hoverInput === 'arrows' || raw.hoverInput === 'step') {
     s.hoverInput = raw.hoverInput;
@@ -96,6 +100,13 @@ class Settings {
   }
   set humanAtBottom(v: boolean) {
     this.update({ humanAtBottom: v });
+  }
+
+  get analysisEngine() {
+    return this.#data.analysisEngine;
+  }
+  set analysisEngine(v: string | null) {
+    this.update({ analysisEngine: v });
   }
 
   update(patch: Partial<SettingsData>) {

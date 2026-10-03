@@ -31,6 +31,9 @@ export interface ThemeUi {
 
 export const LAST_MOVE_COLORS = { lastMove: 'rgba(255, 205, 40, 0.6)', lastMoveDisplaced: 'rgba(235, 90, 40, 0.75)' };
 
+/** The analysis engine's next move, drawn like the last move. */
+export const PV_MOVE_COLORS = { move: 'rgba(40, 125, 225, 0.65)', displaced: 'rgba(150, 70, 215, 0.75)' };
+
 export interface Theme {
   id: string;
   name: string;

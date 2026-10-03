@@ -8,6 +8,7 @@ import type { EngineSpec } from './bindings/EngineSpec';
 import type { MatchSpec } from './bindings/MatchSpec';
 import type { MoveReplay } from './bindings/MoveReplay';
 import type { NodeId } from './bindings/NodeId';
+import type { PositionView } from './bindings/PositionView';
 import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
 import type { StepTarget } from './bindings/StepTarget';
@@ -54,6 +55,13 @@ export const api = {
   startMatch: (spec: MatchSpec) => invoke<void>('start_match', { spec }),
   endMatch: () => invoke<void>('end_match'),
   engineMoveNow: () => invoke<void>('engine_move_now'),
+  /** Turns analysis on with an engine, or off with null. Updates arrive as
+   * `analysis://update` events. */
+  setAnalysis: (engineId: string | null) => invoke<void>('set_analysis', { engineId }),
+  /** Adds moves (in notation) as a line from a node and shows its end. */
+  addLine: (from: NodeId, moves: string[]) => invoke<void>('add_line', { from, moves }),
+  /** The position after playing moves from a node, without changing anything. */
+  previewLine: (from: NodeId, moves: string[]) => invoke<PositionView>('preview_line', { from, moves }),
   listEngines: () => invoke<EngineSpec[]>('list_engines'),
   saveEngine: (spec: EngineSpec) => invoke<EngineSpec>('save_engine', { spec }),
   deleteEngine: (id: string) => invoke<void>('delete_engine', { id }),

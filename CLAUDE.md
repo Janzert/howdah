@@ -55,15 +55,18 @@ ideas from other Arimaa and chess clients.
     `info pv` is split into turns. `SearchLog` reads bot_Sharp's search
     logs: the summary at the end (`log Depth 12.0233+ Eval 71 Time …`)
     and, with its `verbose` option, `ID`/`FS` progress lines with a PV.
-    The controller turns them into the panel's depth, eval and PV (Sharp's
-    eval is ~10 per centi-rabbit). Our build of Sharp
+    `Profile` (picked from `id name`: Sharp, OpFor, Generic) holds engine
+    quirks: the options analysis needs and how to read scores (`Score`,
+    from the mover's side). Our build of Sharp
     (`tools/build-sharp.sh` in the parent repo) allows `verbose` outside
     dev builds.
   - `play_match`: engine vs engine with clocks, following pyrimaa's
     `game.py` (option names, timeouts, `stop` before the deadline, and
     losses by illegal move, crash, timeout, resignation or turn limit).
   - `src/bin/aei-test-engine.rs` is a random-move engine with misbehaviour
-    modes, used by the tests. `examples/match.rs` plays one game from the
+    modes, used by the tests. `--until-stop` makes it search until `stop`
+    like an analysing engine, logging anything else sent mid-search as an
+    error; the app's controller tests use it. `examples/match.rs` plays one game from the
     command line.
 - `app/src-tauri`: thin shell.
   - `session.rs` has the pure state logic: a `GameTree`, the line being
@@ -102,6 +105,16 @@ ideas from other Arimaa and chess clients.
       engine failures into forfeits.
     - Commands call `Controller::poke()` after every change.
     - Engine output goes out as `engine://output`.
+    - Analysis (design in `docs/ANALYSIS.md`): a separate actor searches
+      `Session::analysis_target()` (the shown node; a turn being entered
+      is ignored) until it changes. A `Think` mid-search stops the search
+      and waits for its `bestmove` first, and only the newest queued
+      `Think` runs. PVs are checked with `Game::play_notation` into
+      `PvTurn`s, scores turned to gold's side, and snapshots sent as
+      `analysis://update` (`AnalysisView`) at most every 100 ms. The
+      session keeps the deepest line per node (`store_analysis`), shown as
+      `SessionView.storedAnalysis` on return. `add_line` adds a PV as a
+      variation (a plan in a match); `preview_line` is the hover preview.
   - `engines.rs`: the engine list (`engines.json` in the app config dir).
     It defaults to the bundled `aei-test-engine` when that sits next to the
     app binary (`cargo build -p arimaa-aei --bin aei-test-engine`).
@@ -129,7 +142,7 @@ ideas from other Arimaa and chess clients.
     checks: `state()`, `board()` (text diagram), `message()`, `idle()`,
     `drag('d2','d5',['d3','d4'])`, `click(sq, toward?)`, `hover(sq, toward?)` (`toward` leans the
     pointer toward a neighbour, for step mode), `hoverTargets()`,
-    `squareCenter(sq)`, `api`. `idle()` also waits for pending hover arrows.
+    `squareCenter(sq)`, `analysis()` (the latest `AnalysisView`), `api`. `idle()` also waits for pending hover arrows.
     Input goes through the board's own pointer handlers. Board pieces carry
     accessible names ("gold camel d5, frozen") and `data-square`.
   - `MoveList.svelte` shows the whole game tree from `SessionView.tree`
@@ -141,6 +154,10 @@ ideas from other Arimaa and chess clients.
     moves. The session refuses edits that would move a running match's
     line off the main line (`Session::edit_lines`). Variations with more
     than one move have a fold toggle (`MoveNodeView.collapsible`/`folded`).
+  - `AnalysisPanel.svelte` (engine picker, eval/depth/speed, PV chips with
+    a `MiniBoard` hover preview, engine log), `EvalBar.svelte` beside the
+    board, and the PV's first turn drawn by `LastMoveLayer` with `pv`.
+    `lib/analysis.ts` formats evals and picks the engine.
   - `CommentBox.svelte`, under the move list, edits the shown move's
     comment (the game comment at the start; saved on blur or Ctrl+Enter,
     Esc reverts) and toggles its move glyphs.
@@ -224,9 +241,10 @@ ideas from other Arimaa and chess clients.
 - **The frontend never decides legality.** It renders state and sends intents.
   Drag hints come from `legal_targets` and `plan_route`, but `try_route`
   (or `try_step`) is authoritative.
-- Event names are `domain://event`. Planned: `engine://info`,
-  `gameroom://update`, `tournament://progress`. Use Tauri `Channel<T>` for
-  per-request high-rate streams (e.g. one analysis run).
+- Event names are `domain://event`. Planned: `gameroom://update`,
+  `tournament://progress`. Analysis uses an event (`analysis://update`,
+  throttled to 10 Hz) rather than a Tauri `Channel<T>`, since the dev
+  bridge forwards events; revisit for several engines at once.
 - TypeScript types come from Rust via ts-rs into `app/src/lib/bindings/`
   (committed; don't hand-edit). Regenerate after changing DTOs or core serde
   types: `cd app && npm run bindings`. `.cargo/config.toml` sets

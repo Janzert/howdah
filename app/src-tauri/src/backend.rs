@@ -21,11 +21,11 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, EngineIdentity, EngineSpec, MatchSpec, MoveReplay, PlayerSpec, SessionUpdate,
-    SessionView, StepTarget,
+    AnimStep, ApiError, EngineIdentity, EngineSpec, MatchSpec, MoveReplay, PlayerSpec, PositionView,
+    SessionUpdate, SessionView, StepTarget,
 };
 use crate::engines::{self, EngineRegistry};
-use crate::session::{Player, Session};
+use crate::session::{AnalysisEngine, Player, Session};
 
 /// Event carrying a [`SessionUpdate`] after every change to the session.
 pub const GAME_CHANGED: &str = "game://changed";
@@ -242,6 +242,35 @@ impl Backend {
         })
     }
 
+    /// Turns analysis on with the engine `engine_id`, or off with `None`.
+    /// (It will be refused while the user plays an online game.)
+    pub fn set_analysis(&self, engine_id: Option<&str>) -> Result<(), ApiError> {
+        let engine = match engine_id {
+            Some(id) => {
+                let spec = self
+                    .engines()
+                    .get(id)
+                    .ok_or_else(|| ApiError::illegal(format!("unknown engine {id:?}")))?;
+                Some(AnalysisEngine { id: spec.id, name: spec.name })
+            }
+            None => None,
+        };
+        self.mutate(|s| {
+            s.set_analysis(engine);
+            Ok(Vec::new())
+        })
+    }
+
+    /// Adds moves as a line from `from` and shows its end (see
+    /// [`Session::add_line`]).
+    pub fn add_line(&self, from: NodeId, moves: &[String]) -> Result<(), ApiError> {
+        self.mutate(|s| s.add_line(from, moves))
+    }
+
+    pub fn preview_line(&self, from: NodeId, moves: &[String]) -> Result<PositionView, ApiError> {
+        self.lock().preview_line(from, moves)
+    }
+
     pub fn engine_move_now(&self) {
         self.controller.move_now();
     }
@@ -310,6 +339,9 @@ impl Backend {
                 self.engine_move_now();
                 ok(())
             }
+            "set_analysis" => ok(self.set_analysis(arg::<Option<String>>(args, "engineId")?.as_deref())?),
+            "add_line" => ok(self.add_line(arg(args, "from")?, &arg::<Vec<String>>(args, "moves")?)?),
+            "preview_line" => ok(self.preview_line(arg(args, "from")?, &arg::<Vec<String>>(args, "moves")?)?),
             "list_engines" => ok(self.list_engines()),
             "save_engine" => ok(self.save_engine(arg(args, "spec")?)?),
             "delete_engine" => ok(self.delete_engine(&arg::<String>(args, "id")?)?),

@@ -33,6 +33,10 @@ impl EngineRegistry {
 
     /// Adds or updates an engine; a new one (empty id) gets a fresh id.
     pub fn save(&mut self, mut spec: EngineSpec) -> Result<EngineSpec, ApiError> {
+        for o in &mut spec.options {
+            o.name = o.name.trim().to_string();
+            o.value = o.value.trim().to_string();
+        }
         validate(&spec)?;
         if spec.id.is_empty() {
             spec.id = new_id(&spec.name);
@@ -67,6 +71,9 @@ fn validate(spec: &EngineSpec) -> Result<(), ApiError> {
     if spec.program.trim().is_empty() {
         return Err(ApiError::illegal("the engine needs a program to run"));
     }
+    if let Some(o) = spec.options.iter().find(|o| o.name.is_empty() || o.name.contains(char::is_whitespace)) {
+        return Err(ApiError::illegal(format!("option name {:?} needs to be one word", o.name)));
+    }
     Ok(())
 }
 
@@ -91,6 +98,7 @@ fn default_engines() -> Vec<EngineSpec> {
             program: p.display().to_string(),
             args: Vec::new(),
             working_dir: None,
+            options: Vec::new(),
         })
         .into_iter()
         .collect()
@@ -129,6 +137,7 @@ mod tests {
             program: "/bin/true".into(),
             args: vec![],
             working_dir: None,
+            options: Vec::new(),
         }
     }
 

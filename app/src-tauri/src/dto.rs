@@ -204,6 +204,92 @@ pub struct SessionView {
     /// In a match, the ply of the live position if it's on the line being
     /// shown.
     pub live_ply: Option<usize>,
+    /// The engine analysing the shown position, while analysis is on.
+    pub analysis_engine: Option<String>,
+    /// What analysis found at the shown node earlier, if anything, so the
+    /// eval shows at once while the new search starts.
+    pub stored_analysis: Option<AnalysisLine>,
+}
+
+/// An evaluation from gold's side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export)]
+pub enum Eval {
+    /// Centi-rabbits: a rabbit up in the opening is about +100.
+    CentiRabbits { value: i32 },
+    /// A proven win.
+    Decided { winner: Color },
+}
+
+/// One turn of an engine's principal variation, checked to be legal.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PvTurn {
+    /// Move number label, e.g. `12s`.
+    pub label: String,
+    /// In normal form, with capture tokens.
+    pub notation: String,
+    /// The steps, for drawing (`None` for a setup).
+    pub steps: Option<LastMoveView>,
+}
+
+/// What an engine has found about one node.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AnalysisLine {
+    /// The node analysed: the line starts from its position.
+    pub node: NodeId,
+    /// As the engine writes it, e.g. `12+`.
+    pub depth: Option<String>,
+    pub eval: Option<Eval>,
+    pub pv: Vec<PvTurn>,
+    #[ts(type = "number | null")]
+    pub nodes: Option<u64>,
+    #[ts(type = "number | null")]
+    pub time_ms: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AnalysisState {
+    /// Analysis is off.
+    Off,
+    /// The engine is starting.
+    Starting,
+    Searching,
+    /// The engine stopped by itself (a proven result, a single move, a setup).
+    Finished,
+    /// The shown position has a result on the board; nothing to search.
+    Idle,
+    /// The engine failed; analysis was turned off. `detail` says why.
+    Failed,
+}
+
+/// Payload of the `analysis://update` event: a snapshot of the analysis,
+/// sent at most every 100 ms while the engine reports.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AnalysisView {
+    pub state: AnalysisState,
+    /// The engine's configured name.
+    pub engine: Option<String>,
+    /// The node being analysed.
+    pub node: Option<NodeId>,
+    /// The move being searched for, e.g. `12s`.
+    pub label: Option<String>,
+    /// The best line known for `node`: this search's, or a deeper one
+    /// stored from an earlier visit.
+    pub line: Option<AnalysisLine>,
+    /// `line` is from an earlier visit; this search hasn't reached its depth.
+    pub stored: bool,
+    /// Engine output since the previous update.
+    pub log: Vec<String>,
+    pub detail: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -299,6 +385,20 @@ pub struct EngineSpec {
     pub program: String,
     pub args: Vec<String>,
     pub working_dir: Option<String>,
+    /// Sent with `setoption` after the handshake, for play and analysis
+    /// (`threads`, `hash`, ...). They override the options the app sets for
+    /// a known engine.
+    #[serde(default)]
+    pub options: Vec<EngineOption>,
+}
+
+/// One engine option, as `setoption name <name> value <value>` sends it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct EngineOption {
+    pub name: String,
+    pub value: String,
 }
 
 /// What an engine reported about itself in the handshake.

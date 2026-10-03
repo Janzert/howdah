@@ -1,7 +1,12 @@
 //! A minimal AEI engine for tests: plays random legal moves, and can be told
 //! to misbehave. Not a useful opponent.
 //!
-//! Usage: `aei-test-engine [--mode MODE] [--after N] [--delay-ms MS] [--seed S]`
+//! Usage: `aei-test-engine [--mode MODE] [--after N] [--delay-ms MS] [--seed S] [--until-stop]`
+//!
+//! It logs each option it's sent (`log option NAME=VALUE`). With
+//! `--until-stop`, every `go` searches until `stop` (as an engine analysing
+//! does), sending `info depth/score/pv` every 20 ms, and any command but
+//! `stop`, `isready` and `quit` during a search is logged as an error.
 //!
 //! Modes (applied once, on the engine's (N+1)-th move; N defaults to 0):
 //! - `random` (default): random legal moves.
@@ -40,6 +45,7 @@ struct Options {
     after: u32,
     delay: Duration,
     seed: u64,
+    until_stop: bool,
 }
 
 fn parse_options() -> Options {
@@ -48,8 +54,13 @@ fn parse_options() -> Options {
         after: 0,
         delay: Duration::from_millis(0),
         seed: SystemTime::now().duration_since(UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1,
+        until_stop: false,
     };
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(i) = args.iter().position(|a| a == "--until-stop") {
+        args.remove(i);
+        o.until_stop = true;
+    }
     let mut i = 0;
     while i + 1 < args.len() {
         let v = &args[i + 1];
@@ -172,7 +183,10 @@ fn main() {
                     Err(e) => say(&format!("log Error: bad setposition: {e}")),
                 }
             }
-            "setoption" => {}
+            "setoption" => {
+                let option = rest.strip_prefix("name ").unwrap_or(rest).replacen(" value ", "=", 1);
+                say(&format!("log option {option}"));
+            }
             "makemove" => {
                 if let Err(e) = state.apply(rest) {
                     say(&format!("log Error: bad makemove {rest:?}: {e}"));
@@ -208,7 +222,26 @@ fn main() {
                     }
                     _ => {}
                 }
-                match state.random_move(&mut rng) {
+                let best = state.random_move(&mut rng);
+                if opts.until_stop {
+                    let pv = best.clone().unwrap_or_default();
+                    let mut depth = 1;
+                    loop {
+                        say(&format!("info depth {depth}"));
+                        say(&format!("info score {}", depth * 10));
+                        say(&format!("info pv {pv}"));
+                        depth += 1;
+                        match rx.recv_timeout(Duration::from_millis(20)) {
+                            Ok(l) if l.trim() == "stop" => break,
+                            Ok(l) if l.trim() == "quit" => return,
+                            Ok(l) if l.trim() == "isready" => say("readyok"),
+                            Ok(l) => say(&format!("log Error: {l:?} during a search")),
+                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                        }
+                    }
+                }
+                match best {
                     Some(m) => say(&format!("bestmove {m}")),
                     None => say("bestmove resign"),
                 }

@@ -23,9 +23,9 @@ use arimaa_core::{
 };
 
 use crate::dto::{
-    AnimPiece, AnimStep, ApiError, CapturedView, ClockView, LastMoveView, LastStepView, MoveNodeView,
-    MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView, PlayersView,
-    PositionView, SessionView, SideClockView, StepTarget, TurnStepView, TurnView,
+    AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, LastMoveView, LastStepView,
+    MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView,
+    PlayersView, PositionView, SessionView, SideClockView, StepTarget, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,6 +101,57 @@ pub struct EngineTurn {
     pub deadline: Option<Instant>,
 }
 
+/// The engine chosen for analysis.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AnalysisEngine {
+    pub id: String,
+    pub name: String,
+}
+
+/// What analysis should search now: the shown node.
+#[derive(Clone, Debug)]
+pub struct AnalysisTarget {
+    pub generation: u64,
+    pub node: NodeId,
+    /// The move being searched for, e.g. `12s`.
+    pub label: String,
+    /// Every move up to the node, in notation.
+    pub moves: Vec<String>,
+    /// The game up to the node, open for more moves (an outside result
+    /// such as a resignation is dropped), to check the engine's lines.
+    pub game: Game,
+}
+
+impl AnalysisTarget {
+    /// Whether two targets are the same search.
+    pub fn same(&self, other: &AnalysisTarget) -> bool {
+        (self.generation, self.node) == (other.generation, other.node)
+    }
+}
+
+/// Orders analysis depths as engines write them (`12`, `12+`, `12.4+`):
+/// by number, then an unfinished iteration after a finished one. A line
+/// without a depth comes first.
+pub fn depth_key(depth: Option<&str>) -> (f64, bool) {
+    let Some(d) = depth else { return (-1.0, false) };
+    (d.trim_matches('+').parse().unwrap_or(0.0), d.contains('+'))
+}
+
+/// A move's steps, for drawing (`None` for a setup). `color` is the mover.
+pub fn steps_view(color: Color, mv: &Move) -> Option<LastMoveView> {
+    let Move::Steps(steps) = mv else { return None };
+    let steps = steps
+        .iter()
+        .map(|e| LastStepView {
+            piece: e.step.piece,
+            from: e.step.from,
+            to: e.to,
+            captured: e.capture.map(|c| PieceAt { piece: c.piece, square: c.square }),
+        })
+        .collect();
+    Some(LastMoveView { color, steps })
+}
+
 type IdMap = [Option<PieceId>; 64];
 
 fn id_base(color: Color) -> PieceId {
@@ -170,6 +221,10 @@ pub struct Session {
     /// Bumped whenever the game is replaced or the match changes, so
     /// background work for an old game can tell it's stale.
     generation: u64,
+    /// The engine analysing the shown position, while analysis is on.
+    analysis: Option<AnalysisEngine>,
+    /// The deepest line analysis found at each node.
+    evals: HashMap<NodeId, AnalysisLine>,
 }
 
 impl Default for Session {
@@ -202,16 +257,21 @@ impl Session {
             matchup: None,
             end_detail: None,
             generation: 0,
+            analysis: None,
+            evals: HashMap::new(),
         };
         s.refresh();
         s
     }
 
     /// Replaces the game, keeping the generation counter moving forward.
+    /// Analysis stays on.
     fn replace(&mut self, tree: GameTree, tags: Vec<(String, String)>, at: NodeId, matchup: Option<Match>) {
         let generation = self.generation + 1;
+        let analysis = self.analysis.take();
         *self = Session::with_tree(tree, tags, at);
         self.generation = generation;
+        self.analysis = analysis;
         self.matchup = matchup;
         self.refresh();
     }
@@ -689,6 +749,94 @@ impl Session {
         Ok(Vec::new())
     }
 
+    /// Turns analysis on with `engine`, or off with `None`.
+    pub fn set_analysis(&mut self, engine: Option<AnalysisEngine>) {
+        self.analysis = engine;
+    }
+
+    pub fn analysis_engine(&self) -> Option<&AnalysisEngine> {
+        self.analysis.as_ref()
+    }
+
+    /// What analysis should search now: the shown node, unless analysis is
+    /// off or the node's position has a result on the board. A turn being
+    /// entered is ignored (AEI can't hand an engine a partial turn), so the
+    /// search stays on the turn's start.
+    pub fn analysis_target(&self) -> Option<AnalysisTarget> {
+        self.analysis.as_ref()?;
+        let node = self.cursor_node();
+        if self.tree[node].is_terminal() {
+            return None;
+        }
+        let mut game = self.tree.to_game(node).expect("the node exists");
+        game.reopen();
+        Some(AnalysisTarget {
+            generation: self.generation,
+            node,
+            label: notation::move_label(self.tree[node].ply()),
+            moves: game.moves().iter().map(Move::notation).collect(),
+            game,
+        })
+    }
+
+    /// Keeps `line` as what analysis found at its node, unless a deeper
+    /// line is kept already. Lines for an old game are ignored.
+    pub fn store_analysis(&mut self, generation: u64, line: &AnalysisLine) {
+        if generation != self.generation || !self.tree.contains(line.node) {
+            return;
+        }
+        let deeper = |old: &AnalysisLine| depth_key(old.depth.as_deref()) > depth_key(line.depth.as_deref());
+        if !self.evals.get(&line.node).is_some_and(deeper) {
+            self.evals.insert(line.node, line.clone());
+        }
+    }
+
+    /// The line kept for `node` by [`Session::store_analysis`].
+    pub fn stored_analysis(&self, generation: u64, node: NodeId) -> Option<&AnalysisLine> {
+        (generation == self.generation).then(|| self.evals.get(&node)).flatten()
+    }
+
+    /// Adds `moves` (in notation) as a line from `from`, reusing moves that
+    /// are there already, and shows its last move. Nothing is added if a
+    /// move is illegal. In a match this never plays the live move: a line
+    /// from the live node is a plan, like any move entered there.
+    pub fn add_line(&mut self, from: NodeId, moves: &[String]) -> Result<Vec<AnimStep>, ApiError> {
+        if !self.tree.contains(from) {
+            return Err(ApiError::state("that move no longer exists"));
+        }
+        if moves.is_empty() {
+            return Err(ApiError::state("no moves to add"));
+        }
+        let mut tree = self.tree.clone();
+        let mut at = from;
+        for m in moves {
+            if self.matchup.is_some() && Game::is_setup_ply(tree[at].ply()) {
+                return Err(ApiError::state("a setup can't be planned during a match"));
+            }
+            at = tree.add_notation(at, m).map_err(|e| ApiError::illegal(format!("{m}: {e}")))?;
+        }
+        self.tree = tree;
+        let shown = self.cursor_node();
+        let had_turn = self.turn.take().is_some();
+        self.show(at);
+        if from != shown || had_turn {
+            return Ok(Vec::new());
+        }
+        let start = self.tree[from].ply();
+        Ok((start..self.cursor).flat_map(|ply| self.move_animation(ply)).collect())
+    }
+
+    /// The position after playing `moves` (in notation) from `from`, for
+    /// previewing a line.
+    pub fn preview_line(&self, from: NodeId, moves: &[String]) -> Result<PositionView, ApiError> {
+        let mut game = self.tree.to_game(from).map_err(|_| ApiError::state("that move no longer exists"))?;
+        game.reopen();
+        for m in moves {
+            game.play_notation(m).map_err(|e| ApiError::illegal(format!("{m}: {e}")))?;
+        }
+        Ok(position_view(game.current_position(), &[None; 64]))
+    }
+
     /// Applies an edit to the tree's lines (promote, delete, ...). While a
     /// match is being played its line stays the main line, so an edit that
     /// would change or remove it is refused.
@@ -707,6 +855,7 @@ impl Session {
             }
         }
         self.tree = tree;
+        self.evals.retain(|&n, _| self.tree.contains(n));
         // Keep the shown line if it still exists; otherwise fall back to
         // the deepest part of it that does.
         let keep = self.line.iter().take_while(|&&n| self.tree.contains(n)).count();
@@ -1070,6 +1219,8 @@ impl Session {
             can_input: self.can_input(),
             plays_live: self.plays_live(),
             live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
+            analysis_engine: self.analysis.as_ref().map(|a| a.id.clone()),
+            stored_analysis: self.evals.get(&self.cursor_node()).cloned(),
         }
     }
 
@@ -1142,18 +1293,8 @@ impl Session {
 
     fn last_move_view(&self) -> Option<LastMoveView> {
         let ply = self.cursor.checked_sub(1)?;
-        let Move::Steps(steps) = &self.game.moves()[ply] else { return None };
         let color = self.game.position_at(ply)?.side_to_move();
-        let steps = steps
-            .iter()
-            .map(|e| LastStepView {
-                piece: e.step.piece,
-                from: e.step.from,
-                to: e.to,
-                captured: e.capture.map(|c| PieceAt { piece: c.piece, square: c.square }),
-            })
-            .collect();
-        Some(LastMoveView { color, steps })
+        steps_view(color, &self.game.moves()[ply])
     }
 
     fn captured_view(&self) -> CapturedView {
@@ -1895,5 +2036,135 @@ mod tests {
         let mut s = Session::new();
         let err = s.load("1g Ra1\n").unwrap_err();
         assert_eq!(err.line, Some(1));
+    }
+
+    fn analysing(s: &mut Session) {
+        s.set_analysis(Some(AnalysisEngine { id: "e".into(), name: "E".into() }));
+    }
+
+    fn strings(moves: &[&str]) -> Vec<String> {
+        moves.iter().map(|m| m.to_string()).collect()
+    }
+
+    #[test]
+    fn analysis_targets_the_shown_node() {
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        assert!(s.analysis_target().is_none(), "off");
+        analysing(&mut s);
+        s.goto(4).unwrap();
+        let t = s.analysis_target().unwrap();
+        assert_eq!((t.node, t.label.as_str(), t.moves.len()), (s.cursor_node(), "3g", 4));
+        assert_eq!(t.moves[2], "Ee2n Ee3n Ee4n Ee5e");
+        // A turn being entered doesn't change the target.
+        s.try_step(sq("a2"), sq("a3")).unwrap();
+        assert!(s.analysis_target().unwrap().same(&t));
+        // Analysis stays on for a new game; the target is new.
+        s.new_game();
+        let fresh = s.analysis_target().unwrap();
+        assert!(!fresh.same(&t));
+        assert_eq!(fresh.label, "1g");
+    }
+
+    #[test]
+    fn analysis_goes_on_after_a_resignation_but_not_a_goal() {
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        analysing(&mut s);
+        s.finish(GameResult { winner: Color::Silver, reason: WinReason::Resignation }, None);
+        let t = s.analysis_target().expect("the position is still open");
+        assert_eq!(t.game.result(), None);
+        // A result on the board ends the search. (Set directly: the sample
+        // has no goal.)
+        s.load(SAMPLE).unwrap();
+        s.finish(GameResult { winner: Color::Gold, reason: WinReason::Goal }, None);
+        assert!(s.analysis_target().is_none());
+        s.goto(9).unwrap();
+        assert!(s.analysis_target().is_some());
+    }
+
+    #[test]
+    fn stored_analysis_keeps_the_deepest_line() {
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        let node = s.cursor_node();
+        let line = |depth: &str| AnalysisLine {
+            node,
+            depth: Some(depth.into()),
+            eval: None,
+            pv: Vec::new(),
+            nodes: None,
+            time_ms: None,
+        };
+        let g = s.generation();
+        s.store_analysis(g, &line("8"));
+        s.store_analysis(g, &line("12"));
+        s.store_analysis(g, &line("9+"));
+        assert_eq!(s.stored_analysis(g, node).unwrap().depth.as_deref(), Some("12"));
+        s.store_analysis(g, &line("12+"));
+        assert_eq!(s.view().stored_analysis.unwrap().depth.as_deref(), Some("12+"));
+        s.store_analysis(g + 1, &line("30"));
+        assert_eq!(s.stored_analysis(g, node).unwrap().depth.as_deref(), Some("12+"), "old game");
+        s.goto(3).unwrap();
+        let earlier = s.cursor_node();
+        s.delete_from(s.line[4]).unwrap();
+        assert!(s.stored_analysis(g, node).is_none(), "dropped with its node");
+        s.load(SAMPLE).unwrap();
+        assert!(s.stored_analysis(s.generation(), earlier).is_none(), "cleared with a new game");
+        assert_eq!(depth_key(None), (-1.0, false));
+        assert!(depth_key(Some("12.4+")) > depth_key(Some("12")));
+    }
+
+    #[test]
+    fn add_line_adds_and_shows_a_variation() {
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        s.goto(2).unwrap();
+        let from = s.cursor_node();
+        let anim = s.add_line(from, &strings(&["Ee2n", "ee7s", "Ee3n"])).unwrap();
+        assert_eq!(anim.len(), 3, "the moves from the shown node animate");
+        let v = s.view();
+        assert_eq!((v.ply, v.moves[2].notation.as_str()), (5, "Ee2n"));
+        assert_eq!(s.tree[from].children().len(), 2);
+        // The game's own moves are reused, and an illegal move adds nothing.
+        let nodes = s.tree.len();
+        s.add_line(from, &strings(&["Ee2n Ee3n Ee4n Ee5e", "hh7s hh6s hh5w"])).unwrap();
+        assert_eq!(s.tree.len(), nodes);
+        assert_eq!(s.view().moves_after_cursor, 6, "on the game's line");
+        let err = s.add_line(from, &strings(&["Ee2n", "Ra1n"])).unwrap_err();
+        assert!(err.message.starts_with("Ra1n"), "{}", err.message);
+        assert_eq!(s.tree.len(), nodes);
+        assert!(s.add_line(from, &[]).is_err());
+        // From a node other than the shown one: no animation.
+        s.goto(0).unwrap();
+        assert!(s.add_line(from, &strings(&["Ee2n", "ee7s"])).unwrap().is_empty());
+        assert_eq!(s.view().ply, 4);
+    }
+
+    #[test]
+    fn add_line_in_a_match_is_a_plan() {
+        let mut s = human_vs_engine_started();
+        let live = s.matchup.as_ref().unwrap().live;
+        s.add_line(live, &strings(&["Ee2n", "ee7s"])).unwrap();
+        assert_eq!(s.matchup.as_ref().unwrap().live, live, "nothing played");
+        assert_eq!(s.engine_turn(), None, "still the human's turn");
+        assert_eq!(s.view().ply, 4);
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("bot")], [None, None]);
+        assert!(s.add_line(GameTree::ROOT, &[setup_text(Color::Gold)]).is_err(), "setups aren't planned");
+    }
+
+    #[test]
+    fn preview_line_shows_the_position_after_it() {
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        s.goto(2).unwrap();
+        let from = s.cursor_node();
+        let p = s.preview_line(from, &strings(&["Ee2n Ee3n", "ee7s"])).unwrap();
+        let at = |q: &str| p.pieces.iter().find(|x| x.square == sq(q)).map(|x| x.piece);
+        assert!(at("e4").is_some() && at("e2").is_none() && at("e6").is_some());
+        assert_eq!(p.side_to_move, Color::Gold);
+        assert!(s.preview_line(from, &strings(&["Ra1n"])).is_err());
+        assert_eq!(s.view().ply, 2, "nothing changes");
     }
 }

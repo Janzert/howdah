@@ -48,7 +48,7 @@ describe('shortcutFor', () => {
 describe('shortcutGroups', () => {
   it('keeps every shortcut, grouped in table order', () => {
     const groups = shortcutGroups();
-    expect(groups.map((g) => g.group)).toEqual(['Moves', 'Your turn', 'Board', 'Other']);
+    expect(groups.map((g) => g.group)).toEqual(['Moves', 'Your turn', 'Engines', 'Board', 'Other']);
     expect(groups.flatMap((g) => g.shortcuts)).toEqual(SHORTCUTS);
   });
 });

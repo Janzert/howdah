@@ -1,7 +1,8 @@
 <script lang="ts">
   // The move that produced the shown position: a faint path per moved piece
   // (dashed for enemy pieces that were pushed or pulled) and a ghost of each
-  // piece captured on a trap. Drawn under the pieces.
+  // piece captured on a trap. Drawn under the pieces. With `pv`, an engine's
+  // next move instead, in the engine color and without ghosts.
   import type { LastMoveView } from '../bindings/LastMoveView';
   import type { Square } from '../bindings/Square';
   import { SQ, squareXY } from '../geometry';
@@ -9,7 +10,12 @@
   import { lastMoveTrails } from './lastMove';
   import PieceGlyph from './PieceGlyph.svelte';
 
-  let { lastMove, theme, flipped }: { lastMove: LastMoveView; theme: Theme; flipped: boolean } = $props();
+  let {
+    lastMove,
+    theme,
+    flipped,
+    pv = false,
+  }: { lastMove: LastMoveView; theme: Theme; flipped: boolean; pv?: boolean } = $props();
 
   const drawn = $derived(lastMoveTrails(lastMove));
 
@@ -48,8 +54,8 @@
   const ordered = $derived([...drawn.trails].sort((a, b) => Number(a.displaced) - Number(b.displaced)));
 </script>
 
-<g class="last-move" aria-hidden="true">
-  {#each drawn.captured as c (c.square)}
+<g class={pv ? 'pv-move' : 'last-move'} aria-hidden="true">
+  {#each pv ? [] : drawn.captured as c (c.square)}
     {@const p = squareXY(c.square, flipped)}
     <g class="ghost" transform="translate({p.x}, {p.y})">
       <PieceGlyph piece={c.piece} {theme} />
@@ -65,7 +71,8 @@
 </g>
 
 <style>
-  .last-move {
+  .last-move,
+  .pv-move {
     pointer-events: none;
   }
   .ghost {
@@ -77,6 +84,12 @@
   }
   .trail.displaced {
     --c: var(--last-move-displaced);
+  }
+  .pv-move .trail {
+    --c: var(--pv-move);
+  }
+  .pv-move .trail.displaced {
+    --c: var(--pv-move-displaced);
   }
   polyline {
     fill: none;

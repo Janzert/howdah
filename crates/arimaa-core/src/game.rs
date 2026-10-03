@@ -95,6 +95,15 @@ impl Game {
         }
     }
 
+    /// Drops a result decided outside the board (resignation, timeout), so
+    /// moves can follow it as analysis. A result on the board stays.
+    pub fn reopen(&mut self) {
+        if self.result.is_some_and(|r| !r.reason.is_on_board()) {
+            self.result = None;
+            self.end_marker = None;
+        }
+    }
+
     fn check_can_move(&self) -> Result<(), GameError> {
         if self.result.is_some() { Err(GameError::GameOver) } else { Ok(()) }
     }
@@ -281,6 +290,9 @@ mod tests {
         assert_eq!(g.result(), Some(resign));
         assert_eq!(g.play_notation("ee7s"), Err(GameError::GameOver));
         assert_eq!(g.end_game(resign), Err(GameError::GameOver));
+        g.reopen();
+        assert_eq!(g.result(), None);
+        g.play_notation("ee7s").unwrap();
     }
 
     #[test]

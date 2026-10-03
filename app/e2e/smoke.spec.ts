@@ -15,6 +15,8 @@ async function freshGame(page: Page) {
   await page.waitForFunction(() => window.__arimaa?.state() != null);
   await page.evaluate(async () => {
     const a = window.__arimaa!;
+    // The bridge is shared between tests; analysis stays on across games.
+    await a.api.setAnalysis(null);
     await a.api.newGame();
     await a.idle();
   });
@@ -310,4 +312,28 @@ test('arrow keys switch lines, the comment box annotates, and a variation folds'
   await page.getByRole('button', { name: 'Fold the variation from 2g' }).click();
   await expect(list.getByText('+1')).toBeVisible();
   await expect(list.getByRole('button', { name: /2s\s+hh7s/ })).toHaveCount(0);
+});
+
+test('l turns analysis on; a click on its line adds it, and l turns it off', async ({ page }) => {
+  await freshGame(page);
+  await load(page, SAMPLE_TO_3S);
+  await page.keyboard.press('l');
+  const panel = page.getByRole('region', { name: 'Analysis' });
+  await expect(panel).toBeVisible();
+  // The bundled random mover answers at once; its move is the line.
+  await panel.getByRole('combobox', { name: 'Analysis engine' }).selectOption({ label: 'Random mover (test engine)' });
+  await expect(page.getByRole('meter', { name: 'Evaluation for gold' })).toBeVisible();
+  const chip = panel.getByRole('button', { name: /^4g\s/ });
+  await expect(chip).toBeVisible();
+  const ply = () => page.evaluate(() => window.__arimaa!.state()!.ply);
+  const before = await ply();
+  await chip.click();
+  await expect.poll(ply).toBe(before + 1);
+  // Analysis follows the board to the new node.
+  await expect(panel.getByText(/Done: 4s/)).toBeVisible();
+
+  await page.locator('body').click({ position: { x: 1, y: 1 } });
+  await page.keyboard.press('l');
+  await expect(panel).toHaveCount(0);
+  expect(await page.evaluate(() => window.__arimaa!.state()!.analysisEngine)).toBeNull();
 });

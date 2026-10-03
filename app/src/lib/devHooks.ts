@@ -3,6 +3,7 @@
 // screenshots or pixel coordinates. Input goes through the board's own
 // pointer handlers, so it exercises the same code as a real mouse.
 import { api } from './api';
+import type { AnalysisView } from './bindings/AnalysisView';
 import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
 import type { BoardModel } from './board/boardModel.svelte';
@@ -12,6 +13,7 @@ import { squareName, TRAPS } from './geometry';
 interface AppParts {
   state: () => SessionView | null;
   message: () => string | null;
+  analysis: () => AnalysisView | null;
   model: BoardModel;
 }
 
@@ -86,6 +88,8 @@ const hooks = {
   /** The latest `SessionView` the UI received, as a plain copy (the
    * reactive proxy doesn't serialize in some tools). */
   state: (): SessionView | null => JSON.parse(JSON.stringify(need(app, 'app').state())),
+  /** The latest analysis update (`analysis://update`), as a plain copy. */
+  analysis: (): AnalysisView | null => JSON.parse(JSON.stringify(need(app, 'app').analysis())),
   /** The error or notice the UI is currently showing, if any. */
   message: (): string | null => need(app, 'app').message(),
   /** The board as displayed (mid-animation included), as text: gold upper

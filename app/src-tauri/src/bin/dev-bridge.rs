@@ -7,7 +7,7 @@
 //! - `POST /invoke/<command>` with the JSON arguments (or no body) returns
 //!   the command's JSON result, or an `ApiError` with status 400.
 //! - `GET /events` is a server-sent event stream; each event's name is the
-//!   Tauri event name (`game://changed`, `engine://output`).
+//!   Tauri event name (`game://changed`, `engine://output`, `analysis://update`).
 //!
 //! Run: `cargo run -p arimaa-desktop --features dev-bridge --bin dev-bridge`
 //! with optional `--port <n>` (default 1421) and `--config-dir <dir>`

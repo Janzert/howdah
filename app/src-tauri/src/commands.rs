@@ -5,7 +5,9 @@ use arimaa_core::{Glyph, NodeId, Square};
 use tauri::State;
 
 use crate::backend::Backend;
-use crate::dto::{ApiError, EngineIdentity, EngineSpec, MatchSpec, MoveReplay, SessionView, StepTarget};
+use crate::dto::{
+    ApiError, EngineIdentity, EngineSpec, MatchSpec, MoveReplay, PositionView, SessionView, StepTarget,
+};
 
 #[tauri::command]
 pub fn get_state(state: State<Backend>) -> SessionView {
@@ -170,4 +172,23 @@ pub fn delete_engine(state: State<Backend>, id: String) -> Result<(), ApiError> 
 #[tauri::command]
 pub async fn test_engine(spec: EngineSpec) -> Result<EngineIdentity, ApiError> {
     Backend::test_engine(&spec).await
+}
+
+#[tauri::command]
+pub fn set_analysis(state: State<Backend>, engine_id: Option<String>) -> Result<(), ApiError> {
+    state.set_analysis(engine_id.as_deref())
+}
+
+#[tauri::command]
+pub fn add_line(state: State<Backend>, from: NodeId, moves: Vec<String>) -> Result<(), ApiError> {
+    state.add_line(from, &moves)
+}
+
+#[tauri::command]
+pub fn preview_line(
+    state: State<Backend>,
+    from: NodeId,
+    moves: Vec<String>,
+) -> Result<PositionView, ApiError> {
+    state.preview_line(from, &moves)
 }

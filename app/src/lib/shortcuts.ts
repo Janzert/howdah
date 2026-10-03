@@ -15,6 +15,7 @@ export type ShortcutId =
   | 'undoStep'
   | 'resetTurn'
   | 'moveNow'
+  | 'analysis'
   | 'flip'
   | 'cycleHover'
   | 'mute'
@@ -40,7 +41,13 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'commit', group: 'Your turn', keys: ['Enter'], label: 'Commit the move or setup' },
   { id: 'undoStep', group: 'Your turn', keys: ['Backspace'], label: 'Undo a step' },
   { id: 'resetTurn', group: 'Your turn', keys: ['Escape'], label: 'Undo the whole turn' },
-  { id: 'moveNow', group: 'Your turn', keys: [' '], label: 'Make the thinking engine move now' },
+  { id: 'analysis', group: 'Engines', keys: ['l'], label: 'Analysis on or off' },
+  {
+    id: 'moveNow',
+    group: 'Engines',
+    keys: [' '],
+    label: "Make the thinking engine move now; otherwise add analysis's best turn",
+  },
   { id: 'flip', group: 'Board', keys: ['f'], label: 'Flip the board' },
   { id: 'cycleHover', group: 'Board', keys: ['s'], label: 'Hover input: off, arrows, step mode' },
   { id: 'mute', group: 'Other', keys: ['m'], label: 'Sound on or off' },

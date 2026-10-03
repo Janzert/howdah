@@ -9,9 +9,11 @@
     /** Starts the same game with the players' colors swapped; absent when
      * swapping would change nothing. */
     onSwapSides?: () => Promise<string | null>;
+    /** Turns analysis on at the final position; absent without an engine. */
+    onAnalyse?: () => void;
     onClose: () => void;
   }
-  let { view, onRematch, onSwapSides, onClose }: Props = $props();
+  let { view, onRematch, onSwapSides, onAnalyse, onClose }: Props = $props();
 
   const text = $derived(view.result ? describeResult(view.result) : null);
   // The winner's name, when it tells the players apart (not "Human" vs "Human").
@@ -49,6 +51,17 @@
       <button onclick={() => start(onSwapSides)}>Swap sides</button>
     {/if}
     <span class="spacer"></span>
+    {#if onAnalyse}
+      <button
+        onclick={() => {
+          onAnalyse();
+          onClose();
+        }}
+        title="Close and analyse the final position with an engine"
+      >
+        Analyse
+      </button>
+    {/if}
     <!-- svelte-ignore a11y_autofocus -->
     <button class="primary" onclick={onClose} autofocus title="Close, leaving the game on the board to review">
       Review game

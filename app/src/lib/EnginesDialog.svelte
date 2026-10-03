@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, errorMessage } from './api';
+  import type { EngineOption } from './bindings/EngineOption';
   import type { EngineSpec } from './bindings/EngineSpec';
 
   interface Props {
@@ -10,7 +11,14 @@
   let { onChanged, onClose }: Props = $props();
 
   let engines = $state<EngineSpec[]>([]);
-  let editing = $state<{ id: string; name: string; program: string; args: string; workingDir: string } | null>(null);
+  let editing = $state<{
+    id: string;
+    name: string;
+    program: string;
+    args: string;
+    workingDir: string;
+    options: string;
+  } | null>(null);
   let status = $state<{ ok: boolean; text: string } | null>(null);
   let busy = $state(false);
   let dialog: HTMLDialogElement;
@@ -27,8 +35,15 @@
   function edit(e: EngineSpec | null) {
     status = null;
     editing = e
-      ? { id: e.id, name: e.name, program: e.program, args: e.args.join(' '), workingDir: e.workingDir ?? '' }
-      : { id: '', name: '', program: '', args: '', workingDir: '' };
+      ? {
+          id: e.id,
+          name: e.name,
+          program: e.program,
+          args: e.args.join(' '),
+          workingDir: e.workingDir ?? '',
+          options: e.options.map((o) => `${o.name} = ${o.value}`).join('\n'),
+        }
+      : { id: '', name: '', program: '', args: '', workingDir: '', options: '' };
   }
 
   function spec(): EngineSpec {
@@ -39,7 +54,21 @@
       program: e.program.trim(),
       args: e.args.split(/\s+/).filter((a) => a.length > 0),
       workingDir: e.workingDir.trim() || null,
+      options: parseOptions(e.options),
     };
+  }
+
+  /** `name = value` lines; blank lines are skipped, and a line without `=`
+   * is a name with an empty value. */
+  function parseOptions(text: string): EngineOption[] {
+    return text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const i = line.indexOf('=');
+        return i < 0 ? { name: line, value: '' } : { name: line.slice(0, i).trim(), value: line.slice(i + 1).trim() };
+      });
   }
 
   async function test() {
@@ -86,8 +115,14 @@
       <input id="en-args" bind:value={editing.args} placeholder="e.g. aei" />
       <label for="en-dir">Working dir</label>
       <input id="en-dir" bind:value={editing.workingDir} placeholder="optional" />
+      <label for="en-options">Options</label>
+      <textarea id="en-options" rows="3" bind:value={editing.options} placeholder="e.g. threads = 2"></textarea>
     </div>
-    <p class="hint">The program is run directly, not through a shell. Arguments are split on spaces.</p>
+    <p class="hint">
+      The program is run directly, not through a shell. Arguments are split on spaces. Options are one per line,
+      as <code>name = value</code>, sent with <code>setoption</code> for games and analysis. Sharp and OpFor get
+      what analysis needs without any.
+    </p>
     {#if status}<p class:ok={status.ok} class="status">{status.text}</p>{/if}
     <div class="buttons">
       <button onclick={test} disabled={busy}>{busy ? 'Testing…' : 'Test'}</button>
@@ -166,7 +201,8 @@
     gap: 8px 12px;
     align-items: center;
   }
-  input {
+  input,
+  textarea {
     font: inherit;
     padding: 4px 8px;
     border: 1px solid var(--border);
@@ -177,6 +213,18 @@
   .hint {
     font-size: 12px;
     color: var(--muted);
+  }
+  .hint code {
+    font-size: 11px;
+  }
+  textarea {
+    resize: vertical;
+    font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
+    font-size: 12px;
+  }
+  label[for='en-options'] {
+    align-self: start;
+    padding-top: 4px;
   }
   .status {
     font-size: 13px;

@@ -7,7 +7,7 @@
   import { SQ, squareAt, squareName, squareXY } from '../geometry';
   import type { LastMoveView } from '../bindings/LastMoveView';
   import type { Coordinates, HoverInput } from '../settings.svelte';
-  import { LAST_MOVE_COLORS, viewBox, type Theme } from '../theme';
+  import { LAST_MOVE_COLORS, PV_MOVE_COLORS, viewBox, type Theme } from '../theme';
   import AnnotationLayer from './AnnotationLayer.svelte';
   import { Annotations, colorFor, type AnnotationColor } from './annotations.svelte';
   import BoardSurface from './BoardSurface.svelte';
@@ -26,6 +26,8 @@
     pushPending: Square | null;
     /** The move that produced the shown position, drawn when the board is at rest. */
     lastMove: LastMoveView | null;
+    /** The analysis engine's next move, drawn over the last move when at rest. */
+    pvMove?: LastMoveView | null;
     coordinates: Coordinates;
     /** Input from pointer movement: arrows for a hovered piece's legal steps,
      * or step mode (the step toward the pointer, taken with a click). */
@@ -49,6 +51,7 @@
     interactive,
     pushPending,
     lastMove,
+    pvMove = null,
     coordinates,
     hoverInput,
     positionKey,
@@ -342,6 +345,8 @@
   style:--push={theme.ui.pushPending}
   style:--last-move={theme.ui.lastMove ?? LAST_MOVE_COLORS.lastMove}
   style:--last-move-displaced={theme.ui.lastMoveDisplaced ?? LAST_MOVE_COLORS.lastMoveDisplaced}
+  style:--pv-move={PV_MOVE_COLORS.move}
+  style:--pv-move-displaced={PV_MOVE_COLORS.displaced}
   style:--step-ms="{model.stepMs}ms"
   style:--fade-ms="{model.fadeMs}ms"
 >
@@ -364,6 +369,9 @@
 
     {#if lastMove && !model.animating}
       <LastMoveLayer {lastMove} {theme} {flipped} />
+    {/if}
+    {#if pvMove && !model.animating}
+      <LastMoveLayer lastMove={pvMove} {theme} {flipped} pv />
     {/if}
 
     <g class="hints">
