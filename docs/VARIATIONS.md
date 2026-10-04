@@ -147,7 +147,7 @@ being played.
 - **Continuous entry:** a step after a full turn finishes it and starts
   the other side's turn, so plans can be stepped out without committing
   each turn. At `live` on your move the finished turn is a plan; only
-  Commit plays a move. Shift+Enter ends a shorter turn as a plan. A
+  Play (Enter) plays a move. Shift+Enter ends a shorter turn as a plan. A
   setting turns it off.
 - **Undo across turns and takebacks:** Backspace with no step to undo
   reopens the previous move (minus its last step). At `live` that undoes

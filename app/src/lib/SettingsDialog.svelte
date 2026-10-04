@@ -94,29 +94,44 @@
     </label>
     <p class="hint">
       A step after the fourth finishes the turn and starts the other side's. In a game, your move stays a plan
-      until you commit it; Shift+Enter ends a shorter turn as a plan.
+      until you play it; Shift+Enter ends a shorter turn as a plan.
     </p>
   </section>
 
   <section>
     <h3>Sound</h3>
-    <label class="check">
-      <input type="checkbox" bind:checked={settings.sound} />
-      Play sounds
-    </label>
-    <label class="row slider">
-      <span>Volume</span>
+    <div class="row">
+      <label for="volume">Volume</label>
+      <button
+        class="mute"
+        aria-pressed={!settings.sound}
+        aria-label={settings.sound ? 'Mute' : 'Unmute'}
+        title={settings.sound ? 'Mute (m)' : 'Unmute (m)'}
+        onclick={() => (settings.sound = !settings.sound)}
+      >
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor" />
+          {#if settings.sound}
+            <path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          {:else}
+            <path d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          {/if}
+        </svg>
+      </button>
       <input
+        id="volume"
         type="range"
         min="0"
         max="100"
         step="5"
-        disabled={!settings.sound}
+        class:muted={!settings.sound}
         bind:value={settings.volume}
+        oninput={() => (settings.sound = true)}
         onchange={() => play('place')}
       />
       <span class="value">{settings.volume}%</span>
-    </label>
+    </div>
+    <p class="hint">Moving the slider unmutes.</p>
   </section>
 
   <div class="buttons">
@@ -160,6 +175,7 @@
     font-size: 14px;
   }
   .row > span,
+  .row > label,
   legend {
     width: 96px;
     flex: none;
@@ -193,6 +209,21 @@
   input[type='range'] {
     flex: 1;
     min-width: 0;
+  }
+  input[type='range'].muted {
+    opacity: 0.45;
+  }
+  .row > .mute {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 26px;
+    padding: 0;
+    margin-left: -6px;
+  }
+  .mute[aria-pressed='true'] {
+    color: var(--warn);
   }
   .row > .value {
     width: 64px;

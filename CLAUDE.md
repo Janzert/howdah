@@ -236,6 +236,12 @@ Sharp, OpFor and other AEI engines behave.
     (`lib/result.ts`) after the final move's animation, with rematch and
     swap sides (repeating the last New game spec). `justEnded` keeps it to
     games ending as they're played, not loaded records or going to the end.
+  - Away from the live position in a match, an engine's move shows an
+    alert over the board (`missedMove` in `App.svelte`, from
+    `SessionView.liveMove`) with a sound, until the user goes back (End,
+    or the alert or TurnBar's button). The board doesn't follow.
+  - The turn's main button is Play (Enter, `commit_turn`); while planning
+    away from the live game it's End turn.
   - `lib/attention.ts`: when a human's opponent has moved and the window
     isn't focused, the OS attention request (Tauri permission
     `core:window:allow-request-user-attention`), or a title prefix in a

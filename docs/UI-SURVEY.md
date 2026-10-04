@@ -75,7 +75,7 @@ cover it.
   different step replaces them. In exploration mode, scrolling past the
   start of the turn continues back into the previous move.
 - **[have] Move confirmation and planning.** A move is always played by an
-  explicit Commit (Enter), never by its fourth step. Steps past a full
+  explicit Play (Enter), never by its fourth step. Steps past a full
   turn continue into the other side's turn, as a plan when it's your move
   in a game (like 4steps' explore mode), with a setting to turn that off
   (`VARIATIONS.md`). 4steps and lichess offer confirmation as an option

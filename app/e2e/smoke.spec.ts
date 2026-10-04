@@ -53,7 +53,7 @@ test('setup swap with the real mouse, then a dragged route', async ({ page }) =>
   const steps = await page.evaluate(() => window.__arimaa!.state()!.turn!.steps.map((s) => s.notation));
   expect(steps).toEqual(['Md2n', 'Md3n', 'Md4n']);
 
-  await page.getByRole('button', { name: 'Commit' }).click();
+  await page.getByRole('button', { name: 'Play', exact: false }).click();
   await expect(page.getByText('Silver to move')).toBeVisible();
 });
 

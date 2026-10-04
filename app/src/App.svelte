@@ -54,6 +54,9 @@
   const theme = $derived(findTheme(settings.theme));
   let flipped = $state(pref('flipped') === '1');
   let message = $state<string | null>(null);
+  /** An engine's move that arrived while the user was looking elsewhere
+   * (`3s ed7s …`), until they go back to the live game. */
+  let missedMove = $state<string | null>(null);
   let record = $state<string | null>(null);
   let showNewGame = $state(false);
   let showEngines = $state(false);
@@ -215,6 +218,13 @@
       if (prev && u.view.moves.length > prev.moves.length && awaitsHumanAgainstEngine(u.view)) {
         requestAttention();
       }
+      if (!awayFromLive(u.view)) {
+        missedMove = null;
+      } else if (prev && u.view.liveMove && u.view.liveMove !== prev.liveMove && movedByEngine(u.view)) {
+        missedMove = u.view.liveMove;
+        play('place');
+        requestAttention();
+      }
     });
     const unlistenAnalysis = on('analysis://update', (u) => (analysis = u));
     api.getState().then((v) => {
@@ -227,6 +237,21 @@
       unlistenAnalysis.then((f) => f());
     };
   });
+
+  /** In a match, showing something other than the live position. */
+  function awayFromLive(v: SessionView): boolean {
+    return v.players != null && v.livePly !== v.ply;
+  }
+
+  /** Whether the latest move in the match was an engine's. */
+  function movedByEngine(v: SessionView): boolean {
+    return v.players?.[liveMover(v)].kind === 'engine';
+  }
+
+  /** The side that played the latest move (`3s …` is silver's). */
+  function liveMover(v: SessionView): Color {
+    return v.liveMove?.split(' ')[0].endsWith('g') ? 'gold' : 'silver';
+  }
 
   /** Whether a human is to move at the live end, playing a non-human. */
   function awaitsHumanAgainstEngine(v: SessionView): boolean {
@@ -402,6 +427,14 @@
           <EvalBar evaluation={shown.line?.eval ?? null} {flipped} />
         </div>
       {/if}
+      {#if missedMove && view?.players}
+        {@const mover = liveMover(view)}
+        <button class="live-alert" onclick={gotoEnd} aria-live="polite">
+          <span class="dot {mover}"></span>
+          <span>{view.players[mover].name} played <code>{missedMove}</code></span>
+          <strong>Back to live game</strong> <kbd>End</kbd>
+        </button>
+      {/if}
       <div class="board-box">
         <Board
           {model}
@@ -434,6 +467,7 @@
         onCommit={commit}
         onUndo={() => run(api.undoStep())}
         onTakeBack={() => run(api.takeBack())}
+        onGotoLive={gotoEnd}
         onCancel={() => run(api.cancelTurn())}
         onMoveNow={() => run(api.engineMoveNow())}
         onEndMatch={() => run(api.endMatch())}
@@ -538,6 +572,7 @@
     min-height: 0;
   }
   .board-wrap {
+    position: relative;
     flex: 1;
     container-type: size;
     display: flex;
@@ -584,6 +619,67 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+  }
+  .live-alert {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 32px);
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 13px;
+    white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    animation: live-alert-in 0.9s ease-out;
+    cursor: pointer;
+  }
+  .live-alert code {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .live-alert > span:not(.dot) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .live-alert .dot {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.4);
+  }
+  .live-alert .dot.gold {
+    background: #e3b23c;
+  }
+  .live-alert .dot.silver {
+    background: #c9ced6;
+  }
+  @keyframes live-alert-in {
+    0% {
+      transform: translate(-50%, -12px);
+      opacity: 0;
+    }
+    30% {
+      transform: translate(-50%, 0);
+      opacity: 1;
+    }
+    45%,
+    75% {
+      box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.35);
+    }
+    100% {
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    }
   }
   .message {
     position: absolute;

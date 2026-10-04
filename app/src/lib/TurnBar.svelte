@@ -8,11 +8,12 @@
     onCommit: () => void;
     onUndo: () => void;
     onTakeBack: () => void;
+    onGotoLive: () => void;
     onCancel: () => void;
     onMoveNow: () => void;
     onEndMatch: () => void;
   }
-  let { view, onCommit, onUndo, onTakeBack, onCancel, onMoveNow, onEndMatch }: Props = $props();
+  let { view, onCommit, onUndo, onTakeBack, onGotoLive, onCancel, onMoveNow, onEndMatch }: Props = $props();
   const inMatch = $derived(view.players != null);
   const browsing = $derived(inMatch && view.livePly !== view.ply && view.result == null);
   // In a match, a move that isn't the human's live move is a plan.
@@ -47,21 +48,21 @@
       <span class="dot {view.thinking}"></span>
       <strong>{view.players?.[view.thinking].name ?? 'Engine'}</strong> is thinking…
     </div>
-    {#if browsing}<div class="note">Away from the live game; press End to follow it.</div>{/if}
     <div class="buttons">
+      {#if browsing}<button onclick={onGotoLive}>Back to live game <kbd>End</kbd></button>{/if}
       <button onclick={onMoveNow}>Move now <kbd>Space</kbd></button>
       {#if view.canTakeBack}<button onclick={onTakeBack}>Take back</button>{/if}
     </div>
   {:else if browsing && !view.turn}
     <div class="status">Away from the live game</div>
-    <div class="note">Press End to return to the live game.</div>
-    {#if view.planMove}
-      <div class="buttons">
+    <div class="buttons">
+      <button onclick={onGotoLive}>Back to live game <kbd>End</kbd></button>
+      {#if view.planMove}
         <button class="primary" onclick={onCommit} title="Play this plan's first move in the game">
           Play {view.planMove} <kbd>⏎</kbd>
         </button>
-      </div>
-    {/if}
+      {/if}
+    </div>
   {:else if view.phase === 'setup'}
     <div class="status">
       <span class="dot {view.position.sideToMove}"></span>
@@ -88,19 +89,29 @@
       <div class="note">{turn.commitBlocker}</div>
     {/if}
     {#if turn && view.result}
-      <div class="note">The game is over; committing adds analysis after it.</div>
+      <div class="note">The game is over; moves are added as analysis after it.</div>
     {:else if turn && planning}
-      <div class="note">Planning: committing adds a variation; it isn't played.</div>
+      <div class="note">Planning: this turn is added as a variation, not played.</div>
     {:else if turn && view.movesAfterCursor > 0}
-      <div class="note">Committing adds a variation.</div>
+      <div class="note">Playing this adds a variation.</div>
     {/if}
     <div class="buttons">
       <button onclick={onUndo} disabled={!view.canUndo}>Undo step <kbd>⌫</kbd></button>
       <button onclick={onCancel} disabled={!turn}>Reset <kbd>Esc</kbd></button>
-      <button class="primary" onclick={onCommit} disabled={!turn || turn.commitBlocker != null}>
-        Commit <kbd>⏎</kbd>
+      <button
+        class="primary"
+        onclick={onCommit}
+        disabled={!turn || turn.commitBlocker != null}
+        title={planning ? 'End this turn; the other side moves next in the plan' : 'Play this move'}
+      >
+        {planning ? 'End turn' : 'Play'} <kbd>⏎</kbd>
       </button>
     </div>
+    {#if browsing}
+      <div class="buttons">
+        <button onclick={onGotoLive}>Back to live game <kbd>End</kbd></button>
+      </div>
+    {/if}
   {/if}
   {#if inMatch && !view.result}
     <div class="buttons">

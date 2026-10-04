@@ -1444,6 +1444,10 @@ impl Session {
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
             can_input: self.can_input(),
             plays_live: self.plays_live(),
+            live_move: self.matchup.as_ref().and_then(|m| {
+                let n = &self.tree[m.live];
+                Some(format!("{} {}", notation::move_label(n.ply().checked_sub(1)?), n.mv()?.notation()))
+            }),
             can_undo: self.can_undo(),
             can_take_back: self.take_back_target().is_some(),
             plan_move: self.plan_to_play().and_then(|n| {

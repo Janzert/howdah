@@ -87,6 +87,10 @@ playsLive: boolean,
  */
 planMove: string | null, 
 /**
+ * In a match, the latest move played (`3s ed7s …`), if any.
+ */
+liveMove: string | null, 
+/**
  * Whether Undo step (Backspace) has something to undo: a step, the
  * move into the shown position, or a takeback.
  */

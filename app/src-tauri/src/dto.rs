@@ -204,6 +204,8 @@ pub struct SessionView {
     /// The plan move Enter would play (`3g Ee2n …`), when the cursor is in
     /// a plan for the user's move.
     pub plan_move: Option<String>,
+    /// In a match, the latest move played (`3s ed7s …`), if any.
+    pub live_move: Option<String>,
     /// Whether Undo step (Backspace) has something to undo: a step, the
     /// move into the shown position, or a takeback.
     pub can_undo: bool,
