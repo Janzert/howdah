@@ -337,3 +337,65 @@ test('l turns analysis on; a click on its line adds it, and l turns it off', asy
   await expect(panel).toHaveCount(0);
   expect(await page.evaluate(() => window.__arimaa!.state()!.analysisEngine)).toBeNull();
 });
+
+test('an engine move missed while planning shows an alert; going back replays it', async ({ page }) => {
+  await freshGame(page);
+  const engines = await page.evaluate(() => window.__arimaa!.api.listEngines());
+  test.skip(engines.length === 0, 'no test engine (cargo build -p arimaa-aei --bin aei-test-engine)');
+  await page.evaluate(async (id) => {
+    const a = window.__arimaa!;
+    await a.api.startMatch({
+      gold: { kind: 'human' },
+      silver: { kind: 'engine', engineId: id },
+      goldTimeControl: null,
+      silverTimeControl: null,
+      takebacks: false,
+    });
+    await a.api.commitSetup();
+  }, engines[0].id);
+  await expect.poll(() => page.evaluate(() => window.__arimaa!.state()!.livePly)).toBe(2);
+  // Plan gold's move, silver's reply and a gold step, then play gold's move
+  // from inside the plan: the engine answers while the board shows the plan.
+  await page.evaluate(async () => {
+    const a = window.__arimaa!;
+    const sq = (n: string) => n.charCodeAt(0) - 97 + 8 * (Number(n[1]) - 1);
+    const steps = [
+      ['e2', 'e3'], ['e3', 'e4'], ['e4', 'e5'], ['e5', 'd5'],
+      ['a7', 'a6'], ['a6', 'a5'], ['a5', 'a4'], ['a4', 'a3'],
+      ['d5', 'd6'],
+    ];
+    for (const [from, to] of steps) await a.api.tryStep(sq(from), sq(to));
+    await a.api.cancelTurn();
+    await a.api.commitTurn();
+  });
+  const alert = page.locator('.live-alert');
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText('Back to live game');
+
+  const boards = await page.evaluate(async () => {
+    const a = window.__arimaa!;
+    document.querySelector<HTMLButtonElement>('.live-alert')!.click();
+    const seen: string[] = [];
+    const end = performance.now() + 2500;
+    while (performance.now() < end) {
+      const b = a.board();
+      if (seen.at(-1) !== b) seen.push(b);
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    return seen;
+  });
+  await expect(alert).toBeHidden();
+  const s = await page.evaluate(() => window.__arimaa!.state()!);
+  expect(s.ply).toBe(s.livePly);
+  // It went back to the position before the engine's move, then played it.
+  expect(boards.length).toBeGreaterThanOrEqual(3);
+  const before = await page.evaluate(async (ply) => {
+    const a = window.__arimaa!;
+    await a.api.gotoPly(ply);
+    await a.idle();
+    return a.board();
+  }, s.ply - 1);
+  expect(boards).toContain(before);
+  expect(boards.indexOf(before)).toBeLessThan(boards.length - 1);
+  await page.evaluate(() => window.__arimaa!.api.endMatch());
+});

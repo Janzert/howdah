@@ -219,6 +219,9 @@
         requestAttention();
       }
       if (!awayFromLive(u.view)) {
+        // Back at the live position after missing a move: show it being
+        // played, unless this update already animated it.
+        if (missedMove && u.animation.length === 0) replayShownMove();
         missedMove = null;
       } else if (prev && u.view.liveMove && u.view.liveMove !== prev.liveMove && movedByEngine(u.view)) {
         missedMove = u.view.liveMove;
