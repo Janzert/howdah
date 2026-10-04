@@ -66,6 +66,11 @@ impl Controller {
     pub fn move_now(&self) {
         let _ = self.tx.send(ControlMsg::MoveNow);
     }
+
+    /// Ends the coordinator, which quits its engines (the session closed).
+    pub fn shutdown(&self) {
+        let _ = self.tx.send(ControlMsg::Shutdown);
+    }
 }
 
 /// Which actor a message comes from.
@@ -92,6 +97,7 @@ enum Purpose {
 enum ControlMsg {
     Poke,
     MoveNow,
+    Shutdown,
     FromActor { origin: Origin, request: u64, event: ActorEvent },
 }
 
@@ -196,8 +202,9 @@ impl Coordinator {
             let timer = self.next_timer();
             tokio::select! {
                 msg = rx.recv() => match msg {
+                    // Dropping the actors' senders quits the engines.
+                    Some(ControlMsg::Shutdown) | None => return,
                     Some(msg) => self.handle(msg),
-                    None => return,
                 },
                 _ = sleep_until(timer), if timer.is_some() => self.on_timer(),
             }
@@ -482,7 +489,7 @@ impl Coordinator {
 
     fn handle(&mut self, msg: ControlMsg) {
         match msg {
-            ControlMsg::Poke => {}
+            ControlMsg::Poke | ControlMsg::Shutdown => {}
             ControlMsg::MoveNow => {
                 if let Some(p) = &mut self.pending
                     && let Some(actor) = &self.actors[p.side.index()]

@@ -3,7 +3,7 @@
 // Vite proxies /bridge to it. Start it with `npm run bridge`.
 import { emit } from '@tauri-apps/api/event';
 import { mockIPC } from '@tauri-apps/api/mocks';
-import { isApiError } from './api';
+import { isApiError, session } from './api';
 import type { ApiError } from './bindings/ApiError';
 
 const BASE = '/bridge';
@@ -52,8 +52,8 @@ export function installDevBridge(): void {
   // EventSource reconnects by itself; after a bridge restart the session is
   // new, so ask for the state again.
   source.addEventListener('open', () => {
-    void invoke('get_state', {}).then((view) =>
-      emit('game://changed', { view, animation: [], animationBudgetMs: null }),
+    void invoke('get_state', { session }).then((view) =>
+      emit('game://changed', { session, view, animation: [], animationBudgetMs: null }),
     );
   });
   source.addEventListener('error', () => console.warn('dev bridge: event stream lost, retrying'));

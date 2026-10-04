@@ -34,6 +34,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::open_session,
+            commands::close_session,
+            commands::list_sessions,
             commands::get_state,
             commands::new_game,
             commands::load_game,

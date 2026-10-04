@@ -12,6 +12,12 @@
 //! (earlier, or while the opponent is to move) is a variation for planning
 //! and is never sent. Engine moves arrive via `apply_engine_move` from the
 //! controller.
+//!
+//! A remote player's moves are played elsewhere (a gameroom game) and
+//! arrive through `sync_remote` as the full move list the server reports.
+//! When either side is remote, the server keeps the clock: the session
+//! shows the times it's given (`set_remote_clock`) and never ends the game
+//! on time or the turn limit itself (`finish_remote` does).
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -31,7 +37,14 @@ use crate::dto::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Player {
     Human,
-    Engine { id: String, name: String },
+    Engine {
+        id: String,
+        name: String,
+    },
+    /// Plays elsewhere, such as an arimaa.com player; the name is theirs.
+    Remote {
+        name: String,
+    },
 }
 
 impl Player {
@@ -39,6 +52,7 @@ impl Player {
         match self {
             Player::Human => PlayerView { kind: PlayerKind::Human, name: "Human".into() },
             Player::Engine { name, .. } => PlayerView { kind: PlayerKind::Engine, name: name.clone() },
+            Player::Remote { name } => PlayerView { kind: PlayerKind::Remote, name: name.clone() },
         }
     }
 }
@@ -100,6 +114,12 @@ struct TurnStart {
 }
 
 impl Match {
+    /// Whether a server keeps the clock and decides results (a remote side
+    /// plays).
+    fn server_clock(&self) -> bool {
+        self.players.iter().any(|p| matches!(p, Player::Remote { .. }))
+    }
+
     fn turn_start(&self, now: Instant) -> TurnStart {
         TurnStart {
             elapsed: self
@@ -109,6 +129,17 @@ impl Match {
             reserves: self.clock.as_ref().map(|c| c.reserves),
         }
     }
+}
+
+/// The clocks as a server reports them, for a match with a remote side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RemoteClock {
+    /// Reserves (gold, silver).
+    pub reserves: [Duration; 2],
+    /// Time the side to move has used on this turn.
+    pub turn_elapsed: Duration,
+    /// Time since the game started, when the game has a time limit.
+    pub game_elapsed: Option<Duration>,
 }
 
 /// What the controller needs to ask an engine for a move.
@@ -520,7 +551,11 @@ impl Session {
     /// Ends the game if time has run out: the side to move loses on time, or
     /// if the game time limit passed, the game is decided by score. Returns
     /// whether it ended.
+    /// With a remote side the server flags time, so this never ends it.
     pub fn check_timeout(&mut self, now: Instant) -> bool {
+        if self.matchup.as_ref().is_some_and(Match::server_clock) {
+            return false;
+        }
         if !self.turn_deadline().is_some_and(|d| now >= d) {
             return false;
         }
@@ -559,7 +594,7 @@ impl Session {
     pub fn engine_players(&self) -> [Option<String>; 2] {
         let id = |p: &Player| match p {
             Player::Engine { id, .. } => Some(id.clone()),
-            Player::Human => None,
+            Player::Human | Player::Remote { .. } => None,
         };
         match &self.matchup {
             Some(m) => [id(&m.players[0]), id(&m.players[1])],
@@ -576,18 +611,20 @@ impl Session {
     }
 
     /// Timing and clock bookkeeping for a move by the side to move, before
-    /// it's added. Returns false (and ends the game) if the move came too late.
+    /// it's added. Returns false (and ends the game) if the move came too
+    /// late, unless a server keeps the clock.
     fn clock_move(&mut self, now: Instant) -> bool {
         let setup = Game::is_setup_ply(self.tree[self.live()].ply());
         let side = self.live_side();
         let Some(m) = self.matchup.as_mut() else { return true };
+        let server_clock = m.server_clock();
         let used = now.saturating_duration_since(m.turn_started);
         m.last_move_time = Some(used);
         m.turn_started = now;
         let Some(clock) = m.clock.as_mut() else { return true };
         let Some(tc) = clock.tc(side) else { return true };
         let reserve = clock.reserves[side.index()];
-        if used > tc.turn_allowance(reserve) {
+        if used > tc.turn_allowance(reserve) && !server_clock {
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
             return false;
         }
@@ -603,9 +640,15 @@ impl Session {
         self.matchup.as_ref().and_then(|m| m.last_move_time)
     }
 
-    /// End-of-turn checks that depend on the match (the turn limit).
+    /// End-of-turn checks that depend on the match (the turn limit). A
+    /// server keeping the clock applies them itself.
     fn after_move(&mut self, mover: Color, ply: usize) {
-        let limit = self.matchup.as_ref().and_then(|m| m.clock.as_ref()).and_then(Clock::turn_limit);
+        let limit = self
+            .matchup
+            .as_ref()
+            .filter(|m| !m.server_clock())
+            .and_then(|m| m.clock.as_ref())
+            .and_then(Clock::turn_limit);
         if let Some(limit) = limit
             && mover == Color::Silver
             && (ply / 2 + 1) as u32 >= limit
@@ -669,6 +712,114 @@ impl Session {
         }
         self.refresh();
         Ok(Vec::new())
+    }
+
+    /// Brings the match's played moves in line with `moves`, every move a
+    /// server reports for a game with a remote side (in notation, setups
+    /// included). Moves past the live node are played. If the server's list
+    /// is shorter or differs (a takeback), the live node goes back to where
+    /// they agree first, and the moves dropped stay as the continuation, as
+    /// with [`Session::take_back`]. The board follows if the user was
+    /// watching the live position, animating a single new move.
+    ///
+    /// A move the rules refuse is an error; the moves before it are still
+    /// played.
+    pub fn sync_remote(&mut self, generation: u64, moves: &[String]) -> Result<Vec<AnimStep>, ApiError> {
+        let Some(m) = self.matchup.as_ref().filter(|m| m.server_clock()) else {
+            return Err(ApiError::state("no game with a remote player"));
+        };
+        if generation != self.generation {
+            return Err(ApiError::state("stale remote moves"));
+        }
+        let old_live = m.live;
+        let path = self.tree.path(old_live);
+        let following = self.cursor_node() == old_live;
+        let refuse = |i: usize, e: GameError| ApiError::state(format!("server move {}: {e}", i + 1));
+        // How many of the server's moves the played line already has.
+        let mut agree = 0;
+        while agree + 1 < path.len() && agree < moves.len() {
+            let node = self.tree.add_notation(path[agree], &moves[agree]).map_err(|e| refuse(agree, e))?;
+            if node != path[agree + 1] {
+                break;
+            }
+            agree += 1;
+        }
+        if agree + 1 == path.len() && agree == moves.len() {
+            return Ok(Vec::new());
+        }
+        if self.live_result().is_some() {
+            return Err(ApiError::state("the server's moves changed after the game ended"));
+        }
+        if agree + 1 < path.len() {
+            let Some(m) = &mut self.matchup else { unreachable!("checked above") };
+            m.live = path[agree];
+            m.thinking = None;
+        }
+        let mut added = 0;
+        let mut refused = None;
+        for (i, text) in moves.iter().enumerate().skip(agree) {
+            let live = self.live();
+            let node = match self.tree.add_notation(live, text) {
+                Ok(node) => node,
+                Err(e) => {
+                    refused = Some(refuse(i, e));
+                    break;
+                }
+            };
+            let (mover, ply) = (self.live_side(), self.tree[live].ply());
+            self.clock_move(Instant::now());
+            self.play_live(node);
+            self.after_move(mover, ply);
+            added += 1;
+        }
+        let mut anim = Vec::new();
+        if following {
+            self.turn = None;
+            let live = self.live();
+            self.show(live);
+            if agree + 1 == path.len() && added == 1 && refused.is_none() {
+                anim = self.move_animation(self.tree[live].ply() - 1);
+            }
+        } else {
+            self.refresh();
+        }
+        refused.map_or(Ok(anim), Err)
+    }
+
+    /// Sets the clocks to what the server reports, in a game with a remote
+    /// side.
+    pub fn set_remote_clock(&mut self, generation: u64, reported: RemoteClock) -> Result<(), ApiError> {
+        if generation != self.generation {
+            return Err(ApiError::state("stale remote clock"));
+        }
+        let Some(m) = self.matchup.as_mut().filter(|m| m.server_clock()) else {
+            return Err(ApiError::state("no game with a remote player"));
+        };
+        let now = Instant::now();
+        m.turn_started = now.checked_sub(reported.turn_elapsed).unwrap_or(now);
+        if let Some(clock) = &mut m.clock {
+            clock.reserves = reported.reserves;
+            if let Some(elapsed) = reported.game_elapsed {
+                clock.game_started = now.checked_sub(elapsed).unwrap_or(now);
+            }
+        }
+        Ok(())
+    }
+
+    /// Ends a game with a remote side with the result the server reports.
+    pub fn finish_remote(
+        &mut self,
+        generation: u64,
+        result: GameResult,
+        detail: Option<String>,
+    ) -> Result<(), ApiError> {
+        if generation != self.generation || !self.matchup.as_ref().is_some_and(Match::server_clock) {
+            return Err(ApiError::state("no game with a remote player"));
+        }
+        if self.live_result().is_none() {
+            self.finish(result, detail);
+        }
+        Ok(())
     }
 
     /// Makes `node`, a child of the live node, the match's new live node
@@ -2088,6 +2239,105 @@ mod tests {
         assert!(anim.is_empty());
         assert_eq!(s.view().ply, 1, "browsing: the cursor stays");
         assert_eq!(s.view().moves.len(), 4);
+    }
+
+    fn remote(name: &str) -> Player {
+        Player::Remote { name: name.into() }
+    }
+
+    /// The first `n` moves of the sample game, as a server reports them.
+    fn sample_moves(n: usize) -> Vec<String> {
+        SAMPLE.lines().take(n).map(|l| l.split_once(' ').unwrap().1.to_string()).collect()
+    }
+
+    #[test]
+    fn remote_moves_are_played_from_the_servers_list() {
+        let mut s = Session::new();
+        s.start_match([remote("a"), remote("b")], [None, None], false);
+        let g = s.generation();
+        assert!(!s.can_input(), "no setup draft for a remote side");
+        assert_eq!(s.engine_turn(), None);
+        // Joining a game in progress: no animation for a batch.
+        assert!(s.sync_remote(g, &sample_moves(3)).unwrap().is_empty());
+        let v = s.view();
+        assert_eq!((v.ply, v.moves.len()), (3, 3));
+        assert_eq!(v.players.unwrap().gold.kind, PlayerKind::Remote);
+        assert!(s.sync_remote(g, &sample_moves(3)).unwrap().is_empty(), "nothing new");
+        // One new move while watching live is animated.
+        assert_eq!(s.sync_remote(g, &sample_moves(4)).unwrap().len(), 3);
+        assert_eq!(s.view().ply, 4);
+        assert!(s.sync_remote(g + 1, &sample_moves(5)).is_err(), "old game");
+        // Browsing: the move is played but the cursor stays.
+        s.goto(2).unwrap();
+        assert!(s.sync_remote(g, &sample_moves(5)).unwrap().is_empty());
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply), (2, Some(5)));
+    }
+
+    #[test]
+    fn a_shorter_remote_list_takes_moves_back() {
+        let mut s = Session::new();
+        s.start_match([remote("a"), remote("b")], [None, None], false);
+        let g = s.generation();
+        s.sync_remote(g, &sample_moves(5)).unwrap();
+        s.sync_remote(g, &sample_moves(4)).unwrap();
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply), (4, Some(4)));
+        assert_eq!(v.moves_after_cursor, 1, "the taken-back move stays as the continuation");
+        // A different move then replaces it on the main line.
+        let mut moves = sample_moves(4);
+        moves.push("Ef5w".into());
+        s.sync_remote(g, &moves).unwrap();
+        assert_eq!(s.view().moves[4].notation, "Ef5w");
+        assert_eq!(s.export(true).lines().count(), 5);
+    }
+
+    #[test]
+    fn an_illegal_remote_move_is_refused() {
+        let mut s = Session::new();
+        s.start_match([remote("a"), remote("b")], [None, None], false);
+        let g = s.generation();
+        let mut moves = sample_moves(2);
+        moves.push("Ea1n".into());
+        let e = s.sync_remote(g, &moves).unwrap_err();
+        assert!(e.message.contains("server move 3"), "{}", e.message);
+        let v = s.view();
+        assert_eq!((v.live_ply, v.result), (Some(2), None), "the moves before it stay");
+    }
+
+    #[test]
+    fn the_server_keeps_a_remote_games_clock() {
+        let mut s = Session::new();
+        let tc: TimeControl = "1s/0".parse().unwrap();
+        s.start_match([remote("a"), remote("b")], [Some(tc); 2], false);
+        let g = s.generation();
+        s.sync_remote(g, &sample_moves(2)).unwrap();
+        // Far past gold's allowance, but only the server ends the game.
+        assert!(!s.check_timeout(Instant::now() + Duration::from_secs(60)));
+        let reported = RemoteClock {
+            reserves: [Duration::from_secs(30), Duration::from_secs(20)],
+            turn_elapsed: Duration::from_secs(5),
+            game_elapsed: None,
+        };
+        s.set_remote_clock(g, reported).unwrap();
+        let clock = s.view().clock.unwrap();
+        assert_eq!(clock.gold.unwrap().reserve_ms, 30_000);
+        assert_eq!(clock.silver.unwrap().reserve_ms, 20_000);
+        assert!(clock.turn_elapsed_ms >= 5_000);
+        let result = GameResult { winner: Color::Silver, reason: WinReason::Timeout };
+        s.finish_remote(g, result, None).unwrap();
+        assert_eq!(s.view().result, Some(result));
+        assert!(s.sync_remote(g, &sample_moves(3)).is_err(), "no moves after the end");
+    }
+
+    #[test]
+    fn remote_calls_need_a_remote_game() {
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("bot")], [None, None], false);
+        let g = s.generation();
+        assert!(s.sync_remote(g, &sample_moves(1)).is_err());
+        let result = GameResult { winner: Color::Gold, reason: WinReason::Resignation };
+        assert!(s.finish_remote(g, result, None).is_err());
     }
 
     /// A human (gold) against an engine, with both setups played.

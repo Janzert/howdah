@@ -223,7 +223,7 @@
         // played, unless this update already animated it.
         if (missedMove && u.animation.length === 0) replayShownMove();
         missedMove = null;
-      } else if (prev && u.view.liveMove && u.view.liveMove !== prev.liveMove && movedByEngine(u.view)) {
+      } else if (prev && u.view.liveMove && u.view.liveMove !== prev.liveMove && movedByOpponent(u.view)) {
         missedMove = u.view.liveMove;
         play('place');
         requestAttention();
@@ -246,9 +246,11 @@
     return v.players != null && v.livePly !== v.ply;
   }
 
-  /** Whether the latest move in the match was an engine's. */
-  function movedByEngine(v: SessionView): boolean {
-    return v.players?.[liveMover(v)].kind === 'engine';
+  /** Whether the latest move in the match came from an engine or a remote
+   * player rather than the user. */
+  function movedByOpponent(v: SessionView): boolean {
+    const kind = v.players?.[liveMover(v)].kind;
+    return kind != null && kind !== 'human';
   }
 
   /** The side that played the latest move (`3s …` is silver's). */

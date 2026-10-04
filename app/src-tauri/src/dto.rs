@@ -8,6 +8,19 @@ use ts_rs::TS;
 /// Stable identity for a piece across plies, so the UI can animate it.
 pub type PieceId = u16;
 
+/// Identifies one of the backend's sessions (a game shown in a window).
+/// Every session command takes one, and session events carry it as a
+/// `session` field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SessionId(pub u32);
+
+impl std::fmt::Display for SessionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -309,6 +322,8 @@ pub struct AnalysisView {
 pub enum PlayerKind {
     Human,
     Engine,
+    /// Plays elsewhere, such as on arimaa.com.
+    Remote,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]

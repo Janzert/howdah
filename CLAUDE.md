@@ -113,8 +113,17 @@ Sharp, OpFor and other AEI engines behave.
     - Engine moves enter through `apply_engine_move`, as the live node's
       first child (a matching plan becomes the move). The board follows
       them only if you're watching the live position.
-  - `controller.rs`: a background coordinator task, plus one actor task per
-    engine process.
+    - A `Player::Remote` plays elsewhere (a gameroom game). Its moves
+      arrive through `sync_remote`, the full list the server reports: new
+      moves are played, and a shorter or different list moves the live node
+      back (a takeback on the server). With a remote side the server keeps
+      the clock (`Match::server_clock`): `set_remote_clock` sets it,
+      `finish_remote` ends the game, and the session never flags time or
+      the turn limit itself. Sending a human's move to the server is still
+      to come (use case 2).
+  - `controller.rs`: a background coordinator task per session, plus one
+    actor task per engine process. `Controller::shutdown` ends it when its
+    session closes, which quits its engines.
     - It watches the session (`engine_turn`, `turn_deadline`), asks the
       engine to think, and keeps the engine's move list in sync (`newgame`
       plus `makemove`s when the history diverges).
@@ -137,6 +146,12 @@ Sharp, OpFor and other AEI engines behave.
     app binary (`cargo build -p howdah-aei --bin aei-test-engine`).
   - `dto.rs` holds the view types sent to the UI, with ts-rs derives.
   - `backend.rs`: `Backend` holds the command logic, free of Tauri types.
+    It holds several sessions keyed by `SessionId`, each with its own
+    controller (`open_session`, `close_session`, `list_sessions`).
+    `MAIN_SESSION` (1) is the main window's: it always exists, and
+    `api.ts` has the same number (a test checks). Every session command
+    takes a `session` argument, and a session's events carry a `session`
+    field (`SessionEvents` adds it).
     Commands are **intents**. Mutating commands return
     `Result<(), ApiError>`, and the new state arrives as a `game://changed`
     event (`SessionUpdate {view, animation}`). Queries (`get_state`,
@@ -147,11 +162,14 @@ Sharp, OpFor and other AEI engines behave.
     `dispatch` and `commands.rs`/`lib.rs`.
   - `commands.rs`: thin `#[tauri::command]` wrappers over `Backend`.
   - `src/bin/dev-bridge.rs` (feature `dev-bridge`): serves `Backend` over
-    HTTP on 127.0.0.1:1421 (`POST /invoke/<cmd>`, SSE `GET /events`), so the
+    HTTP on 127.0.0.1:1421 (`POST /invoke/<cmd>` with JSON arguments,
+    including `"session": 1` for session commands; SSE `GET /events`), so the
     frontend can run in a plain browser against the real session and
     engines. Its engine list lives in `target/debug/dev-bridge-config/`.
 - `app/src`: Svelte 5 (runes) + Vite, no SvelteKit.
-  - `lib/api.ts`: typed invoke wrappers.
+  - `lib/api.ts`: typed invoke wrappers. `session` is the window's
+    session: `?session=<id>` in its URL, otherwise `MAIN_SESSION`; every
+    session command passes it.
   - `lib/devBridge.ts`: in dev outside Tauri (`main.ts` checks), `mockIPC`
     forwards every `invoke` to the dev bridge (Vite proxies `/bridge`) and
     replays its event stream as Tauri events.
@@ -180,7 +198,7 @@ Sharp, OpFor and other AEI engines behave.
     Esc reverts) and toggles its move glyphs.
   - `RecordDialog.svelte` exports the full record or, with "Main line
     only", a plain record (`export_game(mainLineOnly)`).
-  - `lib/events.ts`: typed `on()`.
+  - `lib/events.ts`: typed `on()`. It drops events from other sessions.
   - `lib/board/`: SVG board. `BoardModel` plays `AnimStep`s: slide, then
     fade out on capture, with fade-in for restored pieces going backward.
     - Drag-to-route: `DragPath` records the squares the pointer crosses
@@ -236,8 +254,8 @@ Sharp, OpFor and other AEI engines behave.
     (`lib/result.ts`) after the final move's animation, with rematch and
     swap sides (repeating the last New game spec). `justEnded` keeps it to
     games ending as they're played, not loaded records or going to the end.
-  - Away from the live position in a match, an engine's move shows an
-    alert over the board (`missedMove` in `App.svelte`, from
+  - Away from the live position in a match, an engine's or remote
+    player's move shows an alert over the board (`missedMove` in `App.svelte`, from
     `SessionView.liveMove`) with a sound, until the user goes back (End,
     or the alert or TurnBar's button). The board doesn't follow; going
     back replays the missed move from the position before it
