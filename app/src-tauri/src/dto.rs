@@ -566,3 +566,60 @@ impl From<howdah_arimaa::RecordError> for ApiError {
         ApiError { kind: ErrorKind::Record, message: e.error.to_string(), line: Some(e.line) }
     }
 }
+
+/// The arimaa.com gameroom login.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GameroomStatus {
+    /// Who is logged in, if anyone.
+    pub username: Option<String>,
+    /// The username of the remembered login, if one is saved (its password
+    /// stays in the backend).
+    pub saved_username: Option<String>,
+}
+
+/// A game being played on arimaa.com, from the gameroom's live list.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LiveGameView {
+    pub gid: String,
+    pub gold: Option<String>,
+    pub silver: Option<String>,
+    pub time_control: Option<String>,
+    pub rated: bool,
+    pub postal: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum WatchState {
+    /// Waiting for the server's next change.
+    Following,
+    /// The connection failed; trying again (`detail` says why).
+    Reconnecting,
+    /// The game is over.
+    Ended,
+    /// The user stopped watching, or the session moved on to another game;
+    /// the watch is over and forgotten.
+    Stopped,
+    /// Watching failed and stopped (`detail` says why).
+    Failed,
+}
+
+/// A session following an arimaa.com game, sent as `gameroom://watch`
+/// whenever it changes. (The server doesn't show spectators the game's
+/// chat.)
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WatchView {
+    pub gid: String,
+    pub state: WatchState,
+    pub detail: Option<String>,
+    /// Whether the seat is an ASIP viewer seat, which the server sends
+    /// moves to only every ~10 s.
+    pub delayed: bool,
+}

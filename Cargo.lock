@@ -1315,6 +1315,7 @@ dependencies = [
  "axum",
  "howdah-aei",
  "howdah-arimaa",
+ "howdah-gameroom",
  "serde",
  "serde_json",
  "tauri",

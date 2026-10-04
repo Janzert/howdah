@@ -7,9 +7,9 @@
 //! and the new state arrives as a `game://changed` event. Queries
 //! (`get_state`, `legal_targets`, `export_game`, the engine list) return data.
 //!
-//! Every state source (UI intents, the engine controller, later the
-//! gameroom) goes through the same event path, so the frontend has one place
-//! where state comes in.
+//! Every state source (UI intents, the engine controller, a followed
+//! gameroom game) goes through the same event path, so the frontend has one
+//! place where state comes in.
 //!
 //! The backend holds several sessions, each a game with its own engine
 //! controller (a window per game, or a gameroom game being followed). Every
@@ -29,10 +29,11 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, EngineIdentity, EngineSpec, MatchSpec, MoveReplay, PlayerSpec, PositionView,
-    SessionId, SessionUpdate, SessionView, StepTarget,
+    AnimStep, ApiError, EngineIdentity, EngineSpec, GameroomStatus, LiveGameView, MatchSpec, MoveReplay,
+    PlayerSpec, PositionView, SessionId, SessionUpdate, SessionView, StepTarget, WatchView,
 };
 use crate::engines::{self, EngineRegistry};
+use crate::gameroom::{self, Gameroom, SavedLogin, WATCH_UPDATE, Watch};
 use crate::session::{AnalysisEngine, Player, Session};
 
 /// Event carrying a [`SessionUpdate`] after every change to the session.
@@ -82,11 +83,13 @@ pub fn emit_session(events: &Events, session: &Session, animation: Vec<AnimStep>
     emit(events, GAME_CHANGED, update);
 }
 
-/// One session and the controller running its engines.
+/// One session, the controller running its engines, and the gameroom
+/// game it follows, if any.
 struct SessionHandle {
     session: SharedSession,
     controller: Controller,
     events: Events,
+    watch: Mutex<Option<Watch>>,
 }
 
 impl SessionHandle {
@@ -94,6 +97,19 @@ impl SessionHandle {
         // A panic mid-command can't leave the session half-updated in a way
         // that matters more than refusing all further commands would.
         self.session.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn watch(&self) -> MutexGuard<'_, Option<Watch>> {
+        self.watch.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Stops following a gameroom game (or forgets an ended one), if the
+    /// session has one.
+    fn stop_watching(&self) {
+        let watch = self.watch().take();
+        if let Some(mut watch) = watch {
+            emit(&self.events, WATCH_UPDATE, watch.stop());
+        }
     }
 }
 
@@ -108,17 +124,19 @@ pub struct Backend {
     sessions: Mutex<BTreeMap<SessionId, Arc<SessionHandle>>>,
     next_session: AtomicU32,
     engines: SharedRegistry,
+    gameroom: Gameroom,
     events: Events,
 }
 
 impl Backend {
     /// Creates the backend with the main session open. Needs a Tokio
     /// runtime registered with `tauri::async_runtime`.
-    pub fn new(registry: EngineRegistry, events: Events) -> Backend {
+    pub fn new(registry: EngineRegistry, saved_login: SavedLogin, events: Events) -> Backend {
         let backend = Backend {
             sessions: Mutex::new(BTreeMap::new()),
             next_session: AtomicU32::new(MAIN_SESSION.0),
             engines: Arc::new(Mutex::new(registry)),
+            gameroom: Gameroom::new(saved_login),
             events,
         };
         let main = backend.open_session();
@@ -165,7 +183,8 @@ impl Backend {
         let events: Events = Arc::new(SessionEvents { id, inner: self.events.clone() });
         let session = Arc::new(Mutex::new(Session::new()));
         let controller = controller::spawn(events.clone(), session.clone(), self.engines.clone());
-        self.sessions().insert(id, Arc::new(SessionHandle { session, controller, events }));
+        self.sessions()
+            .insert(id, Arc::new(SessionHandle { session, controller, events, watch: Mutex::new(None) }));
         id
     }
 
@@ -186,6 +205,7 @@ impl Backend {
     }
 
     pub fn new_game(&self, id: SessionId) -> Result<(), ApiError> {
+        self.handle(id)?.stop_watching();
         self.mutate(id, |s| {
             s.new_game();
             Ok(Vec::new())
@@ -193,6 +213,7 @@ impl Backend {
     }
 
     pub fn load_game(&self, id: SessionId, record: &str) -> Result<(), ApiError> {
+        self.handle(id)?.stop_watching();
         self.mutate(id, |s| s.load(record).map(|_| Vec::new()))
     }
 
@@ -341,13 +362,16 @@ impl Backend {
             }
         };
         let tcs = [parse(&spec.gold_time_control)?, parse(&spec.silver_time_control)?];
+        self.handle(id)?.stop_watching();
         self.mutate(id, |s| {
             s.start_match(players, tcs, spec.takebacks);
             Ok(Vec::new())
         })
     }
 
+    /// Stops the match (and following a gameroom game); the game stays.
     pub fn end_match(&self, id: SessionId) -> Result<(), ApiError> {
+        self.handle(id)?.stop_watching();
         self.mutate(id, |s| {
             s.end_match();
             Ok(Vec::new())
@@ -408,6 +432,60 @@ impl Backend {
     /// Starts the engine to check it speaks AEI, and reports its identity.
     pub async fn test_engine(spec: &EngineSpec) -> Result<EngineIdentity, ApiError> {
         engines::probe(spec).await
+    }
+
+    pub fn gameroom_status(&self) -> GameroomStatus {
+        self.gameroom.status()
+    }
+
+    /// Logs in to arimaa.com. An empty password uses the saved one; with
+    /// `remember` the login is saved (the password obfuscated), and without
+    /// it any saved login is forgotten.
+    pub async fn gameroom_login(
+        &self,
+        username: &str,
+        password: &str,
+        remember: bool,
+    ) -> Result<GameroomStatus, ApiError> {
+        self.gameroom.login(username, password, remember).await
+    }
+
+    pub async fn gameroom_logout(&self) -> Result<(), ApiError> {
+        self.gameroom.logout().await
+    }
+
+    /// The games being played in the gameroom now.
+    pub async fn live_games(&self) -> Result<Vec<LiveGameView>, ApiError> {
+        self.gameroom.live_games().await
+    }
+
+    /// Follows arimaa.com game `gid` in session `id`, as a viewer: the
+    /// session becomes that game, and moves, clocks, chat and the result
+    /// arrive as the server reports them (see `gameroom.rs`).
+    pub async fn watch_game(&self, id: SessionId, gid: &str) -> Result<(), ApiError> {
+        let handle = self.handle(id)?;
+        let target = gameroom::Target {
+            session: handle.session.clone(),
+            controller: handle.controller.clone(),
+            events: handle.events.clone(),
+        };
+        let watch = gameroom::watch(&self.gameroom, gid, target).await?;
+        // An earlier watch's task ends as it's dropped, without a "stopped"
+        // event, which would hide the new one.
+        let old = handle.watch().replace(watch);
+        drop(old);
+        Ok(())
+    }
+
+    /// Stops following the session's gameroom game; the game stays.
+    pub fn stop_watching(&self, id: SessionId) -> Result<(), ApiError> {
+        self.handle(id)?.stop_watching();
+        Ok(())
+    }
+
+    /// The session's followed gameroom game, if it has one.
+    pub fn watch_status(&self, id: SessionId) -> Result<Option<WatchView>, ApiError> {
+        Ok(self.handle(id)?.watch().as_ref().map(Watch::view))
     }
 
     /// Runs a command by name with JSON arguments, as `invoke(cmd, args)`
@@ -479,6 +557,19 @@ impl Backend {
             "save_engine" => ok(self.save_engine(arg(args, "spec")?)?),
             "delete_engine" => ok(self.delete_engine(&arg::<String>(args, "id")?)?),
             "test_engine" => ok(Backend::test_engine(&arg(args, "spec")?).await?),
+            "gameroom_status" => ok(self.gameroom_status()),
+            "gameroom_login" => ok(self
+                .gameroom_login(
+                    &arg::<String>(args, "username")?,
+                    &arg::<String>(args, "password")?,
+                    arg(args, "remember")?,
+                )
+                .await?),
+            "gameroom_logout" => ok(self.gameroom_logout().await?),
+            "live_games" => ok(self.live_games().await?),
+            "watch_game" => ok(self.watch_game(sid()?, &arg::<String>(args, "gid")?).await?),
+            "stop_watching" => ok(self.stop_watching(sid()?)?),
+            "watch_status" => ok(self.watch_status(sid()?)?),
             _ => Err(ApiError::state(format!("unknown command {cmd:?}"))),
         }
     }
@@ -522,7 +613,7 @@ mod tests {
     fn backend(events: Events) -> Backend {
         runtime();
         let path = std::env::temp_dir().join(format!("arimaa-backend-test-{}.json", std::process::id()));
-        Backend::new(EngineRegistry::load(path), events)
+        Backend::new(EngineRegistry::load(path), SavedLogin::new(None), events)
     }
 
     #[test]

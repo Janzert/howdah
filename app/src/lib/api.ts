@@ -5,6 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ApiError } from './bindings/ApiError';
 import type { EngineIdentity } from './bindings/EngineIdentity';
 import type { EngineSpec } from './bindings/EngineSpec';
+import type { GameroomStatus } from './bindings/GameroomStatus';
+import type { LiveGameView } from './bindings/LiveGameView';
 import type { MatchSpec } from './bindings/MatchSpec';
 import type { MoveReplay } from './bindings/MoveReplay';
 import type { NodeId } from './bindings/NodeId';
@@ -13,6 +15,7 @@ import type { SessionId } from './bindings/SessionId';
 import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
 import type { StepTarget } from './bindings/StepTarget';
+import type { WatchView } from './bindings/WatchView';
 
 /** The main window's session; `MAIN_SESSION` in backend.rs. */
 export const MAIN_SESSION = 1;
@@ -85,6 +88,23 @@ export const api = {
   saveEngine: (spec: EngineSpec) => invoke<EngineSpec>('save_engine', { spec }),
   deleteEngine: (id: string) => invoke<void>('delete_engine', { id }),
   testEngine: (spec: EngineSpec) => invoke<EngineIdentity>('test_engine', { spec }),
+  /** Who is logged in to the arimaa.com gameroom. */
+  gameroomStatus: () => invoke<GameroomStatus>('gameroom_status'),
+  /** Logs in to arimaa.com. An empty password uses the saved one; `remember`
+   * saves the login (the password obfuscated), and without it a saved login
+   * is forgotten. */
+  gameroomLogin: (username: string, password: string, remember: boolean) =>
+    invoke<GameroomStatus>('gameroom_login', { username, password, remember }),
+  gameroomLogout: () => invoke<void>('gameroom_logout'),
+  /** The games being played on arimaa.com now. */
+  liveGames: () => invoke<LiveGameView[]>('live_games'),
+  /** Follows an arimaa.com game in this session, as a viewer. Changes arrive
+   * as `game://changed` and `gameroom://watch` events. */
+  watchGame: (gid: string) => invoke<void>('watch_game', { session, gid }),
+  /** Stops following the game; it stays on the board. */
+  stopWatching: () => invoke<void>('stop_watching', { session }),
+  /** The game this session follows, if any. */
+  watchStatus: () => invoke<WatchView | null>('watch_status', { session }),
 };
 
 export function isApiError(e: unknown): e is ApiError {

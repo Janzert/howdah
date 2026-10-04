@@ -1,12 +1,14 @@
-//! Tauri shell over `howdah-arimaa` and `howdah-aei`: session state, the
-//! engine controller, commands and events. Game logic lives in the core
-//! crates; this crate only adapts it for the UI.
+//! Tauri shell over `howdah-arimaa`, `howdah-aei` and `howdah-gameroom`:
+//! session state, the engine controller, followed gameroom games, commands
+//! and events. Game logic lives in the core crates; this crate only adapts
+//! it for the UI.
 
 pub mod backend;
 mod commands;
 mod controller;
 pub mod dto;
 pub mod engines;
+pub mod gameroom;
 pub mod session;
 
 use std::sync::Arc;
@@ -16,6 +18,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use backend::{Backend, EventSink};
 use engines::EngineRegistry;
+use gameroom::SavedLogin;
 
 impl EventSink for AppHandle {
     fn emit(&self, event: &str, payload: Value) {
@@ -30,7 +33,8 @@ pub fn run() {
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let registry = EngineRegistry::load(config_dir.join("engines.json"));
-            app.manage(Backend::new(registry, Arc::new(app.handle().clone())));
+            let saved_login = SavedLogin::new(Some(config_dir.join("gameroom-login.json")));
+            app.manage(Backend::new(registry, saved_login, Arc::new(app.handle().clone())));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -75,6 +79,13 @@ pub fn run() {
             commands::save_engine,
             commands::delete_engine,
             commands::test_engine,
+            commands::gameroom_status,
+            commands::gameroom_login,
+            commands::gameroom_logout,
+            commands::live_games,
+            commands::watch_game,
+            commands::stop_watching,
+            commands::watch_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,8 +6,8 @@ use tauri::State;
 
 use crate::backend::Backend;
 use crate::dto::{
-    ApiError, EngineIdentity, EngineSpec, MatchSpec, MoveReplay, PositionView, SessionId, SessionView,
-    StepTarget,
+    ApiError, EngineIdentity, EngineSpec, GameroomStatus, LiveGameView, MatchSpec, MoveReplay, PositionView,
+    SessionId, SessionView, StepTarget, WatchView,
 };
 
 #[tauri::command]
@@ -257,4 +257,44 @@ pub fn preview_line(
     moves: Vec<String>,
 ) -> Result<PositionView, ApiError> {
     state.preview_line(session, from, &moves)
+}
+
+#[tauri::command]
+pub fn gameroom_status(state: State<Backend>) -> GameroomStatus {
+    state.gameroom_status()
+}
+
+#[tauri::command]
+pub async fn gameroom_login(
+    state: State<'_, Backend>,
+    username: String,
+    password: String,
+    remember: bool,
+) -> Result<GameroomStatus, ApiError> {
+    state.gameroom_login(&username, &password, remember).await
+}
+
+#[tauri::command]
+pub async fn gameroom_logout(state: State<'_, Backend>) -> Result<(), ApiError> {
+    state.gameroom_logout().await
+}
+
+#[tauri::command]
+pub async fn live_games(state: State<'_, Backend>) -> Result<Vec<LiveGameView>, ApiError> {
+    state.live_games().await
+}
+
+#[tauri::command]
+pub async fn watch_game(state: State<'_, Backend>, session: SessionId, gid: String) -> Result<(), ApiError> {
+    state.watch_game(session, &gid).await
+}
+
+#[tauri::command]
+pub fn stop_watching(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
+    state.stop_watching(session)
+}
+
+#[tauri::command]
+pub fn watch_status(state: State<Backend>, session: SessionId) -> Result<Option<WatchView>, ApiError> {
+    state.watch_status(session)
 }

@@ -15,6 +15,8 @@
   }
   let { view, onCommit, onUndo, onTakeBack, onGotoLive, onCancel, onMoveNow, onEndMatch }: Props = $props();
   const inMatch = $derived(view.players != null);
+  /** Both sides play elsewhere: a game watched on arimaa.com. */
+  const watching = $derived(view.players?.gold.kind === 'remote' && view.players.silver.kind === 'remote');
   const browsing = $derived(inMatch && view.livePly !== view.ply && view.result == null);
   // In a match, a move that isn't the human's live move is a plan.
   const planning = $derived(inMatch && !view.playsLive && view.result == null);
@@ -80,7 +82,8 @@
   {:else}
     <div class="status">
       <span class="dot {view.position.sideToMove}"></span>
-      <strong>{side} to move</strong>{#if view.result}&nbsp;(analysis){/if}
+      <strong>{watching && !view.result ? view.players![view.position.sideToMove].name : side} to move</strong
+      >{#if view.result}&nbsp;(analysis){/if}
       {#if turn}· step {turn.steps.length}/4{/if}
     </div>
     {#if turn?.pushPending != null}
@@ -95,18 +98,21 @@
     {:else if turn && view.movesAfterCursor > 0}
       <div class="note">Playing this adds a variation.</div>
     {/if}
-    <div class="buttons">
-      <button onclick={onUndo} disabled={!view.canUndo}>Undo step <kbd>⌫</kbd></button>
-      <button onclick={onCancel} disabled={!turn}>Reset <kbd>Esc</kbd></button>
-      <button
-        class="primary"
-        onclick={onCommit}
-        disabled={!turn || turn.commitBlocker != null}
-        title={planning ? 'End this turn; the other side moves next in the plan' : 'Play this move'}
-      >
-        {planning ? 'End turn' : 'Play'} <kbd>⏎</kbd>
-      </button>
-    </div>
+    <!-- Watching, the buttons wait until the user starts planning a move. -->
+    {#if !watching || turn}
+      <div class="buttons">
+        <button onclick={onUndo} disabled={!view.canUndo}>Undo step <kbd>⌫</kbd></button>
+        <button onclick={onCancel} disabled={!turn}>Reset <kbd>Esc</kbd></button>
+        <button
+          class="primary"
+          onclick={onCommit}
+          disabled={!turn || turn.commitBlocker != null}
+          title={planning ? 'End this turn; the other side moves next in the plan' : 'Play this move'}
+        >
+          {planning ? 'End turn' : 'Play'} <kbd>⏎</kbd>
+        </button>
+      </div>
+    {/if}
     {#if browsing}
       <div class="buttons">
         <button onclick={onGotoLive}>Back to live game <kbd>End</kbd></button>
@@ -118,7 +124,13 @@
       {#if view.canTakeBack && !view.thinking}
         <button class="subtle" onclick={onTakeBack} title="Undo played moves back to your last move">Take back</button>
       {/if}
-      <button class="subtle" onclick={onEndMatch} title="Stop the match; the game stays for analysis">Stop match</button>
+      {#if watching}
+        <button class="subtle" onclick={onEndMatch} title="Stop following the game; it stays for analysis">
+          Stop watching
+        </button>
+      {:else}
+        <button class="subtle" onclick={onEndMatch} title="Stop the match; the game stays for analysis">Stop match</button>
+      {/if}
     </div>
   {/if}
 </div>

@@ -33,6 +33,9 @@
   import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
   import { findTheme } from './lib/theme';
   import TurnBar from './lib/TurnBar.svelte';
+  import type { WatchView } from './lib/bindings/WatchView';
+  import WatchDialog from './lib/WatchDialog.svelte';
+  import WatchPanel from './lib/WatchPanel.svelte';
 
   function pref(key: string): string | null {
     try {
@@ -62,6 +65,9 @@
   let showEngines = $state(false);
   let showSettings = $state(false);
   let showHelp = $state(false);
+  let showWatch = $state(false);
+  /** The arimaa.com game this session follows, if any. */
+  let watch = $state<WatchView | null>(null);
   // The game-end dialog waits for the final move's animation.
   let gameEndPending = $state(false);
   let showGameEnd = $state(false);
@@ -226,10 +232,13 @@
       } else if (prev && u.view.liveMove && u.view.liveMove !== prev.liveMove && movedByOpponent(u.view)) {
         missedMove = u.view.liveMove;
         play('place');
-        requestAttention();
+        // Only a player is asked to come back ("Your move"), not a spectator.
+        if (loneHuman(u.view)) requestAttention();
       }
     });
     const unlistenAnalysis = on('analysis://update', (u) => (analysis = u));
+    const unlistenWatch = on('gameroom://watch', (w) => (watch = w.state === 'stopped' ? null : w));
+    api.watchStatus().then((w) => (watch = w));
     api.getState().then((v) => {
       setView(v);
       model.snap(v.position.pieces);
@@ -238,6 +247,7 @@
     return () => {
       unlisten.then((f) => f());
       unlistenAnalysis.then((f) => f());
+      unlistenWatch.then((f) => f());
     };
   });
 
@@ -351,6 +361,16 @@
     }
   }
 
+  async function watchGame(gid: string): Promise<string | null> {
+    try {
+      await api.watchGame(gid);
+      lastSpec = null;
+      return null;
+    } catch (e) {
+      return errorMessage(e);
+    }
+  }
+
   async function openRecord() {
     record = await api.exportGame();
   }
@@ -407,7 +427,7 @@
   };
 
   function onkeydown(e: KeyboardEvent) {
-    if (!view || record != null || showNewGame || showEngines || showSettings || showGameEnd || showHelp) return;
+    if (!view || record != null || showNewGame || showEngines || showSettings || showGameEnd || showHelp || showWatch) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, select')) return;
     const shortcut = shortcutFor(e);
@@ -479,6 +499,9 @@
       />
       <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
       <CommentBox {view} {run} />
+      {#if watch}
+        <WatchPanel {watch} />
+      {/if}
       {#if hasEngine && view.players}
         <EnginePanel players={view.players} resetKey={matchKey} />
       {/if}
@@ -510,6 +533,7 @@
     {/if}
     <div class="tools">
       <button onclick={() => (showNewGame = true)}>New game</button>
+      <button onclick={() => (showWatch = true)} title="Watch a game being played on arimaa.com">Watch</button>
       <button onclick={() => (showEngines = true)}>Engines</button>
       <button onclick={toggleAnalysis} aria-pressed={analysing} title="Analyse the shown position with an engine (l)">
         Analysis
@@ -547,11 +571,14 @@
 {#if showGameEnd && view?.result}
   <GameEndDialog
     {view}
-    onRematch={rematch}
+    onRematch={watch ? undefined : rematch}
     onSwapSides={swappedSpec ? () => startGame(swappedSpec!) : undefined}
     onAnalyse={engines.length && !analysing ? toggleAnalysis : undefined}
     onClose={() => (showGameEnd = false)}
   />
+{/if}
+{#if showWatch}
+  <WatchDialog onWatch={watchGame} onClose={() => (showWatch = false)} />
 {/if}
 {#if showSettings}
   <SettingsDialog onClose={() => (showSettings = false)} />

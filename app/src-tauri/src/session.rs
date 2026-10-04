@@ -345,6 +345,11 @@ impl Session {
         self.generation
     }
 
+    /// Replaces the record's tags (players, event and so on).
+    pub fn set_tags(&mut self, tags: Vec<(String, String)>) {
+        self.tags = tags;
+    }
+
     fn player(&self, side: Color) -> &Player {
         self.matchup.as_ref().map_or(&Player::Human, |m| &m.players[side.index()])
     }

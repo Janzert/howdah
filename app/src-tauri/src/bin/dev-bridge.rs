@@ -7,12 +7,13 @@
 //! - `POST /invoke/<command>` with the JSON arguments (or no body) returns
 //!   the command's JSON result, or an `ApiError` with status 400.
 //! - `GET /events` is a server-sent event stream; each event's name is the
-//!   Tauri event name (`game://changed`, `engine://output`, `analysis://update`).
+//!   Tauri event name (`game://changed`, `engine://output`, `analysis://update`,
+//!   `gameroom://watch`).
 //!
 //! Run: `cargo run -p howdah --features dev-bridge --bin dev-bridge`
 //! with optional `--port <n>` (default 1421) and `--config-dir <dir>`
 //! (default: `dev-bridge-config` next to the binary, so the app's own
-//! engine list is untouched). It listens on localhost only.
+//! engine list and saved gameroom login are untouched). It listens on localhost only.
 
 use std::convert::Infallible;
 use std::path::PathBuf;
@@ -28,6 +29,7 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use howdah_lib::backend::{Backend, EventSink};
 use howdah_lib::engines::EngineRegistry;
+use howdah_lib::gameroom::SavedLogin;
 use serde_json::Value;
 use tokio::sync::broadcast;
 use tokio_stream::{Stream, StreamExt, wrappers::BroadcastStream};
@@ -71,7 +73,8 @@ async fn main() {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
     let (tx, _) = broadcast::channel(1024);
     let registry = EngineRegistry::load(config_dir.join("engines.json"));
-    let backend = Arc::new(Backend::new(registry, Arc::new(Broadcast(tx.clone()))));
+    let saved_login = SavedLogin::new(Some(config_dir.join("gameroom-login.json")));
+    let backend = Arc::new(Backend::new(registry, saved_login, Arc::new(Broadcast(tx.clone()))));
     let app = App { backend, events: tx };
 
     let router =

@@ -4,8 +4,9 @@
 
   interface Props {
     view: SessionView;
-    /** Starts the same game again; resolves with an error message, if any. */
-    onRematch: () => Promise<string | null>;
+    /** Starts the same game again; resolves with an error message, if any.
+     * Absent for a game watched on arimaa.com. */
+    onRematch?: () => Promise<string | null>;
     /** Starts the same game with the players' colors swapped; absent when
      * swapping would change nothing. */
     onSwapSides?: () => Promise<string | null>;
@@ -46,7 +47,9 @@
   {/if}
   {#if error}<p class="error">{error}</p>{/if}
   <div class="buttons">
-    <button onclick={() => start(onRematch)}>Rematch</button>
+    {#if onRematch}
+      <button onclick={() => start(onRematch)}>Rematch</button>
+    {/if}
     {#if onSwapSides}
       <button onclick={() => start(onSwapSides)}>Swap sides</button>
     {/if}

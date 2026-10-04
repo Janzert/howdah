@@ -1,16 +1,19 @@
 // Typed event subscription. Event names follow `domain://event`.
-// Planned: 'gameroom://update', 'tournament://progress'.
+// Planned: 'tournament://progress'.
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { session } from './api';
 import type { AnalysisView } from './bindings/AnalysisView';
 import type { EngineOutput } from './bindings/EngineOutput';
 import type { SessionUpdate } from './bindings/SessionUpdate';
+import type { WatchView } from './bindings/WatchView';
 
 export interface EventMap {
   'game://changed': SessionUpdate;
   'engine://output': EngineOutput;
   /** Analysis snapshots, at most every 100 ms while the engine reports. */
   'analysis://update': AnalysisView;
+  /** The followed arimaa.com game's state, when it changes. */
+  'gameroom://watch': WatchView;
 }
 
 /** Subscribes to an event. Events from a session carry a `session` field

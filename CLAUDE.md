@@ -163,6 +163,22 @@ Sharp, OpFor and other AEI engines behave.
       session keeps the deepest line per node (`store_analysis`), shown as
       `SessionView.storedAnalysis` on return. `add_line` adds a PV as a
       variation (a plan in a match); `preview_line` is the hover preview.
+  - `gameroom.rs`: spectating arimaa.com games (use case 3). `Gameroom`
+    holds the login and lists live games. "Remember password" saves the
+    login in `gameroom-login.json` in the config dir (`SavedLogin`, mode
+    600): the password XORed with a fixed key and hex-encoded, which is
+    obfuscation, not encryption. The password never goes back to the
+    frontend: a login with an empty password uses the saved one, and a
+    login without "remember" deletes the file. `watch` seats a viewer (`Lobby::watch`), starts a match between
+    two `Player::Remote`s in the session (with record tags), and spawns a
+    task that long-polls the game server (`maxwait` 300 s, as the browser
+    client does). Each reply goes through `apply`: `sync_remote`,
+    `set_remote_clock`, `finish_remote`. The task stops when the game ends,
+    on `stop_watching`, or when the session's generation changes; failed
+    polls are retried with a pause growing to 30 s. Its state goes out
+    as `gameroom://watch` (`WatchView`, only when changed). A
+    session's `Watch` lives in its `SessionHandle`; `new_game`,
+    `load_game`, `start_match` and `end_match` stop and forget it.
   - `engines.rs`: the engine list (`engines.json` in the app config dir).
     It defaults to the bundled `aei-test-engine` when that sits next to the
     app binary (`cargo build -p howdah-aei --bin aei-test-engine`).
@@ -218,6 +234,14 @@ Sharp, OpFor and other AEI engines behave.
   - `CommentBox.svelte`, under the move list, edits the shown move's
     comment (the game comment at the start; saved on blur or Ctrl+Enter,
     Esc reverts) and toggles its move glyphs.
+  - `WatchDialog.svelte` (Watch): the gameroom login (with "Remember
+    password"; a saved login fills the username, and the password field
+    says "Saved password"), then the live games with a Watch button each. `WatchPanel.svelte` under the comment box
+    shows the followed game's state (spectators don't get the chat). TurnBar shows the player to
+    move and "Stop watching" (`end_match`), and its turn buttons only once
+    the user starts planning a move. Following the live game is the
+    match's usual behaviour (the board follows at the live node, otherwise
+    the missed-move alert).
   - `RecordDialog.svelte` exports the full record or, with "Main line
     only", a plain record (`export_game(mainLineOnly)`).
   - `lib/events.ts`: typed `on()`. It drops events from other sessions.
@@ -307,10 +331,12 @@ Sharp, OpFor and other AEI engines behave.
 - **The frontend never decides legality.** It renders state and sends intents.
   Drag hints come from `legal_targets` and `plan_route`, but `try_route`
   (or `try_step`) is authoritative.
-- Event names are `domain://event`. Planned: `gameroom://update`,
-  `tournament://progress`. Analysis uses an event (`analysis://update`,
-  throttled to 10 Hz) rather than a Tauri `Channel<T>`, since the dev
-  bridge forwards events; revisit for several engines at once.
+- Event names are `domain://event`. Planned: `tournament://progress`.
+  The dev bridge's frontend (`devBridge.ts`) forwards a fixed list of
+  event names; add new ones there. Analysis uses an event
+  (`analysis://update`, throttled to 10 Hz) rather than a Tauri
+  `Channel<T>`, since the dev bridge forwards events; revisit for several
+  engines at once.
 - TypeScript types come from Rust via ts-rs into `app/src/lib/bindings/`
   (committed; don't hand-edit). Regenerate after changing DTOs or core serde
   types: `cd app && npm run bindings`. `.cargo/config.toml` sets

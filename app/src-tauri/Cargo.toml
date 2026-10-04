@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 howdah-arimaa = { workspace = true, features = ["ts"] }
 howdah-aei.workspace = true
+howdah-gameroom.workspace = true
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true
