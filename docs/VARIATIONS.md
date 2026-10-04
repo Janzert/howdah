@@ -397,9 +397,11 @@ names: records say Gold and Silver, as the game does.
   `WhiteElo`/`BlackElo` too), `GoldTitle`/`SilverTitle`,
   `GoldType`/`SilverType` (PGN's `human`/`program`), `Mode`,
   `Annotator`, and `Position`. The
-  arimaa.com game id needs a tag of its own (`Site` already holds the
-  archive's `site` value, "Over the Net"); lichess puts the game URL in
-  `Site`, and chess.com uses a separate `Link` tag, which fits better.
+  arimaa.com game id has a tag of its own, `GameId` (decided 2026-10-04;
+  `Site` already holds the archive's `site` value, "Over the Net"). A
+  plain id matches the archive's `id` column; lichess puts the game URL
+  in `Site` and chess.com uses a `Link` tag, but arimaa.com's game pages
+  don't open from outside the gameroom.
 - **`Position`** holds the starting position in the short format
   (`Position: g [rrrrrrrr...]`, which `Position::to_short_string` already
   writes; the side letter is the side to move). Without it a game starts

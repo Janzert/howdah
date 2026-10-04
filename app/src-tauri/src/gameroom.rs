@@ -16,6 +16,11 @@
 //! password, obfuscated, in a file in the app config dir. The password
 //! never goes back to the frontend; logging in with an empty password uses
 //! the saved one.
+//!
+//! A finished game gets a permanent id, the record's `GameId` tag. The
+//! final state usually carries it (`finishedId`); otherwise it's looked up
+//! with `findgameid`, a few times, since right after the end the server may
+//! not know it yet.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -202,6 +207,13 @@ impl Gameroom {
             .collect())
     }
 
+    /// The permanent id of finished game `gid`.
+    async fn find_game_id(&self, gid: &str) -> Result<String, ApiError> {
+        let lobby = self.lobby.lock().await;
+        let lobby = lobby.as_ref().ok_or_else(|| ApiError::state("log in to arimaa.com first"))?;
+        lobby.find_game_id(gid).await.map_err(net_error)
+    }
+
     /// A viewer seat at game `gid`, and its full state.
     async fn seat(&self, gid: &str) -> Result<(GameServer, ViewerSeat, GameState), ApiError> {
         let (mut server, how) = {
@@ -254,12 +266,12 @@ pub struct Target {
 
 /// Seats a viewer at game `gid`, makes `target`'s session that game, and
 /// starts following it.
-pub async fn watch(gameroom: &Gameroom, gid: &str, target: Target) -> Result<Watch, ApiError> {
+pub async fn watch(gameroom: &Arc<Gameroom>, gid: &str, target: Target) -> Result<Watch, ApiError> {
     let gid = gid.trim();
     let (server, how, state) = gameroom.seat(gid).await?;
     let generation = {
         let mut s = lock(&target.session);
-        start(&mut s, gid, &state);
+        start(&mut s, &state);
         s.generation()
     };
     let delayed = matches!(how, ViewerSeat::Asip { .. });
@@ -271,24 +283,29 @@ pub async fn watch(gameroom: &Gameroom, gid: &str, target: Target) -> Result<Wat
             ViewerSeat::Browser => None,
         },
         delayed,
+        finished_id: None,
     }));
     let next = update(&target, generation, &state, &view);
     emit(&target.events, WATCH_UPDATE, lock(&view).clone());
+    let gameroom = gameroom.clone();
+    let view2 = view.clone();
     let task = match next {
-        Next::Follow => Some(tauri::async_runtime::spawn(follow(server, target, generation, view.clone()))),
-        Next::Stop => None,
+        Next::Follow => tauri::async_runtime::spawn(follow(gameroom, server, target, generation, view2)),
+        Next::Stop => tauri::async_runtime::spawn(find_id(gameroom, target, generation, view2)),
     };
+    let task = Some(task);
     Ok(Watch { view, task })
 }
 
 /// Starts a match between the game's players, as the server reports them.
-fn start(s: &mut Session, gid: &str, state: &GameState) {
+fn start(s: &mut Session, state: &GameState) {
     let name = |i: usize, side: &str| state.players[i].clone().unwrap_or_else(|| side.to_string());
     let players = [Player::Remote { name: name(0, "Gold") }, Player::Remote { name: name(1, "Silver") }];
     let tc: Option<TimeControl> = state.time_control.as_deref().and_then(|t| t.parse().ok());
     s.start_match(players, [tc; 2], false);
-    let mut tags =
-        vec![("Site".to_string(), "arimaa.com".to_string()), ("Event".into(), format!("Game {gid}"))];
+    // As the arimaa.com archive has them.
+    let event = state.raw.nonempty("event").unwrap_or_else(|| "Casual game".into());
+    let mut tags = vec![("Event".to_string(), event), ("Site".into(), "Over the Net".into())];
     for (i, side) in ["Gold", "Silver"].into_iter().enumerate() {
         if let Some(p) = &state.players[i] {
             tags.push((side.into(), p.clone()));
@@ -334,6 +351,9 @@ fn apply(s: &mut Session, generation: u64, state: &GameState) -> (Vec<AnimStep>,
                     Ok(()) => Outcome::Ended,
                     Err(e) => Outcome::Failed(e.message),
                 };
+                if let Some(id) = &state.finished_id {
+                    s.set_tag("GameId", id);
+                }
             }
             (None, Some(code)) => {
                 outcome =
@@ -373,6 +393,7 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
         Outcome::Ended => {
             v.state = WatchState::Ended;
             v.detail = None;
+            v.finished_id = state.finished_id.clone();
             Next::Stop
         }
         Outcome::Failed(e) => {
@@ -400,13 +421,20 @@ fn set_state(target: &Target, view: &Mutex<WatchView>, state: WatchState, detail
 /// Long-polls the game server until the game ends or the session moves on.
 /// Failed polls are retried with a growing pause; the server may also
 /// close a waiting poll with no reply at all.
-async fn follow(mut server: GameServer, target: Target, generation: u64, view: Arc<Mutex<WatchView>>) {
+async fn follow(
+    gameroom: Arc<Gameroom>,
+    mut server: GameServer,
+    target: Target,
+    generation: u64,
+    view: Arc<Mutex<WatchView>>,
+) {
     let mut backoff = Duration::from_secs(1);
     loop {
         match server.update(MAXWAIT).await {
             Ok(state) => {
                 backoff = Duration::from_secs(1);
                 if let Next::Stop = update(&target, generation, &state, &view) {
+                    find_id(gameroom, target, generation, view).await;
                     return;
                 }
                 continue;
@@ -428,6 +456,34 @@ async fn follow(mut server: GameServer, target: Target, generation: u64, view: A
         }
         tokio::time::sleep(backoff).await;
         backoff = (backoff * 2).min(MAX_BACKOFF);
+    }
+}
+
+/// Looks up an ended game's permanent id if its final state had none,
+/// and adds it to the record and the view. Right after the end the server
+/// may not know it yet, so it tries a few times, waiting longer each time.
+async fn find_id(gameroom: Arc<Gameroom>, target: Target, generation: u64, view: Arc<Mutex<WatchView>>) {
+    let gid = {
+        let v = lock(&view);
+        if v.state != WatchState::Ended || v.finished_id.is_some() {
+            return;
+        }
+        v.gid.clone()
+    };
+    for attempt in 1..=4 {
+        tokio::time::sleep(Duration::from_secs(2 * attempt)).await;
+        let Ok(id) = gameroom.find_game_id(&gid).await else { continue };
+        {
+            let mut s = lock(&target.session);
+            if s.generation() != generation {
+                return;
+            }
+            s.set_tag("GameId", &id);
+        }
+        let mut v = lock(&view);
+        v.finished_id = Some(id);
+        emit(&target.events, WATCH_UPDATE, v.clone());
+        return;
     }
 }
 
@@ -479,7 +535,7 @@ mod tests {
     fn the_session_becomes_the_servers_game() {
         let mut s = Session::new();
         let first = state("2w Ee2n", "");
-        start(&mut s, "123", &first);
+        start(&mut s, &first);
         let g = s.generation();
         assert_eq!(apply(&mut s, g, &first).1, Outcome::Playing);
         let v = s.view();
@@ -501,10 +557,11 @@ mod tests {
     #[test]
     fn the_servers_result_ends_the_game() {
         let mut s = Session::new();
-        let ended = state("2w Ee2n", "result=b\nreason=t\n");
-        start(&mut s, "123", &ended);
+        let ended = state("2w Ee2n", "result=b\nreason=t\nfinishedId=671437\n");
+        start(&mut s, &ended);
         let g = s.generation();
         assert_eq!(apply(&mut s, g, &ended).1, Outcome::Ended);
+        assert!(s.export(false).contains("[GameId \"671437\"]"), "{}", s.export(false));
         let result = GameResult { winner: Color::Silver, reason: WinReason::Timeout };
         assert_eq!(s.view().result, Some(result));
     }
@@ -513,7 +570,7 @@ mod tests {
     fn a_state_that_doesnt_fit_fails() {
         let mut s = Session::new();
         let first = state("2w Ee2n", "");
-        start(&mut s, "123", &first);
+        start(&mut s, &first);
         let g = s.generation();
         apply(&mut s, g, &first);
         let illegal = state("2w Ee2n%132b Ee3n", "");

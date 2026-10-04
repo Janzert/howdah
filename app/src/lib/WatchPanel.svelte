@@ -19,7 +19,11 @@
   <div class="status">
     <span class="state {watch.state}"></span>
     <span>arimaa.com game {watch.gid}</span>
-    <span class="label">{STATES[watch.state]}</span>
+    <span class="label">
+      {STATES[watch.state]}{#if watch.finishedId}<span title="The game's permanent arimaa.com id"
+          >&nbsp;· #{watch.finishedId}</span
+        >{/if}
+    </span>
   </div>
   {#if watch.detail}<div class="note">{watch.detail}</div>{/if}
 </section>

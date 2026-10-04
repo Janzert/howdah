@@ -15,6 +15,9 @@
 //!     long polls (default 3, each waiting up to --maxwait, default 30),
 //!     log out.
 //!     Each update shows how long the server held the latest move.
+//! probe findgameid TID
+//!     log in the browser's way, look up the permanent id of finished game
+//!     TID (ASIP 1.0 `findgameid`), log out
 //! ```
 //! `--log FILE` also appends the exchanges to FILE.
 
@@ -29,7 +32,7 @@ use howdah_gameroom::{
 
 fn usage() -> ! {
     eprintln!(
-        "usage: probe live | probe watch GID [--seat browser|1|2] [--server 1|2] [--polls N] [--maxwait SECS] [--log FILE]"
+        "usage: probe live | probe watch GID [--seat browser|1|2] [--server 1|2] [--polls N] [--maxwait SECS] | probe findgameid TID [--log FILE]"
     );
     std::process::exit(2)
 }
@@ -118,6 +121,10 @@ async fn main() {
 
     let result = match positional.first().map(String::as_str) {
         Some("live") => live(&mut lobby, &user, &password).await,
+        Some("findgameid") => {
+            let tid = positional.get(1).cloned().unwrap_or_else(|| usage());
+            find_game_id(&mut lobby, &user, &password, &tid).await
+        }
         Some("watch") => {
             let gid = positional.get(1).cloned().unwrap_or_else(|| usage());
             let opts = (seat_asip, server_asip, polls, Duration::from_secs(maxwait));
@@ -144,6 +151,13 @@ async fn live(lobby: &mut Lobby, user: &str, password: &str) -> Result<(), Error
     for g in games {
         println!("  {} {:?} tc={:?} rated={} postal={}", g.gid, g.players, g.time_control, g.rated, g.postal);
     }
+    Ok(())
+}
+
+async fn find_game_id(lobby: &mut Lobby, user: &str, password: &str, tid: &str) -> Result<(), Error> {
+    lobby.login(user, password).await?;
+    println!("logged in");
+    println!("permanent id of {tid}: {}", lobby.find_game_id(tid).await?);
     Ok(())
 }
 

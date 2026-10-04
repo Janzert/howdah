@@ -350,6 +350,14 @@ impl Session {
         self.tags = tags;
     }
 
+    /// Sets one tag, replacing any earlier value.
+    pub fn set_tag(&mut self, name: &str, value: &str) {
+        match self.tags.iter_mut().find(|(n, _)| n == name) {
+            Some((_, v)) => *v = value.to_string(),
+            None => self.tags.push((name.to_string(), value.to_string())),
+        }
+    }
+
     fn player(&self, side: Color) -> &Player {
         self.matchup.as_ref().map_or(&Player::Human, |m| &m.players[side.index()])
     }

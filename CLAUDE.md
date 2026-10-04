@@ -78,6 +78,7 @@ Sharp, OpFor and other AEI engines behave.
     1.0, JSON for 2.0); `encode_request` encodes requests.
   - `client`: `Lobby` (`login` the browser's way through `login.cgi`, or
     `login_asip`; `live_games` from ASIP 2.0 `state`; `reserve_seat`;
+    `find_game_id`, a finished game's permanent id over ASIP 1.0;
     `watch`, which gets a viewer seat the browser client's way and follows
     it on `client3gs.cgi`, since ASIP viewer seats get moves only in ~10 s
     steps) and `GameServer` (`sit`, `game_state`, the `update`
@@ -178,7 +179,12 @@ Sharp, OpFor and other AEI engines behave.
     polls are retried with a pause growing to 30 s. Its state goes out
     as `gameroom://watch` (`WatchView`, only when changed). A
     session's `Watch` lives in its `SessionHandle`; `new_game`,
-    `load_game`, `start_match` and `end_match` stop and forget it.
+    `load_game`, `start_match` and `end_match` stop and forget it. The
+    record gets the archive's `Event` and `Site` ("Over the Net"), and at
+    the end the permanent id as `GameId` (`WatchView.finishedId` too): from
+    the final state's `finishedId`, or else `find_id` asks `findgameid` up
+    to four times, 2, 4, 6 and 8 s apart, since the server may not know it
+    right after the end.
   - `engines.rs`: the engine list (`engines.json` in the app config dir).
     It defaults to the bundled `aei-test-engine` when that sits next to the
     app binary (`cargo build -p howdah-aei --bin aei-test-engine`).

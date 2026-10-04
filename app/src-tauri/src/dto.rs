@@ -622,4 +622,7 @@ pub struct WatchView {
     /// Whether the seat is an ASIP viewer seat, which the server sends
     /// moves to only every ~10 s.
     pub delayed: bool,
+    /// The game's permanent arimaa.com id, once it has ended and the
+    /// server has given one.
+    pub finished_id: Option<String>,
 }

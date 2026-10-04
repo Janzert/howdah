@@ -124,7 +124,7 @@ pub struct Backend {
     sessions: Mutex<BTreeMap<SessionId, Arc<SessionHandle>>>,
     next_session: AtomicU32,
     engines: SharedRegistry,
-    gameroom: Gameroom,
+    gameroom: Arc<Gameroom>,
     events: Events,
 }
 
@@ -136,7 +136,7 @@ impl Backend {
             sessions: Mutex::new(BTreeMap::new()),
             next_session: AtomicU32::new(MAIN_SESSION.0),
             engines: Arc::new(Mutex::new(registry)),
-            gameroom: Gameroom::new(saved_login),
+            gameroom: Arc::new(Gameroom::new(saved_login)),
             events,
         };
         let main = backend.open_session();

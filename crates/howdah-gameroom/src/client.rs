@@ -489,6 +489,19 @@ impl Lobby {
         })
     }
 
+    /// The permanent id of a finished game from its gameroom (temporary) id,
+    /// over ASIP 1.0's `findgameid`. Right after a game ends the server may
+    /// not know it yet (an error, "Cannot find the game with temp id"), so
+    /// callers retry.
+    pub async fn find_game_id(&self, tid: &str) -> Result<String, Error> {
+        let mut params = vec![("action", "findgameid".to_string()), ("tid", tid.to_string())];
+        if let Some(sid) = &self.sid {
+            params.push(("sid", sid.clone()));
+        }
+        let r = self.post(Asip::V1, &params).await?;
+        r.nonempty("gid").ok_or_else(|| Error::BadReply("no gid in the findgameid reply".into()))
+    }
+
     /// Watches game `gid` as a viewer, the board seen from `side`, as the
     /// browser client does: the seat from `opengamewin.cgi` (ASIP viewer
     /// seats get moves only in ~10 s steps), followed on the browser

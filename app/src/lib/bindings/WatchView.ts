@@ -11,4 +11,9 @@ export type WatchView = { gid: string, state: WatchState, detail: string | null,
  * Whether the seat is an ASIP viewer seat, which the server sends
  * moves to only every ~10 s.
  */
-delayed: boolean, };
+delayed: boolean, 
+/**
+ * The game's permanent arimaa.com id, once it has ended and the
+ * server has given one.
+ */
+finishedId: string | null, };
