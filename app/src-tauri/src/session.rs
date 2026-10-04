@@ -15,9 +15,13 @@
 //!
 //! A remote player's moves are played elsewhere (a gameroom game) and
 //! arrive through `sync_remote` as the full move list the server reports.
-//! When either side is remote, the server keeps the clock: the session
-//! shows the times it's given (`set_remote_clock`) and never ends the game
-//! on time or the turn limit itself (`finish_remote` does).
+//! In local games the session is the authority on the game; when either
+//! side is remote, the server is. The played moves are exactly the
+//! server's, the clocks show the times it reports (`set_remote_clock`),
+//! and only it ends the game on time or the turn limit (`finish_remote`).
+//! Nothing played here goes into the game directly: a human's move stays
+//! a plan, and no engine is asked to move, until sending moves to the
+//! server is built (use case 2).
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -369,9 +373,10 @@ impl Session {
     }
 
     /// Whether committing now plays a move in the match (a human's turn at
-    /// the live node), rather than adding a variation.
+    /// the live node), rather than adding a variation. Never in a game
+    /// with a remote side: its moves come only from the server.
     pub fn plays_live(&self) -> bool {
-        self.matchup.is_some()
+        self.matchup.as_ref().is_some_and(|m| !m.server_clock())
             && self.cursor_node() == self.live()
             && self.live_result().is_none()
             && *self.player(self.live_side()) == Player::Human
@@ -513,7 +518,7 @@ impl Session {
 
     /// The engine turn to request now, if an engine is to move.
     pub fn engine_turn(&self) -> Option<EngineTurn> {
-        let m = self.matchup.as_ref()?;
+        let m = self.matchup.as_ref().filter(|m| !m.server_clock())?;
         if self.live_result().is_some() {
             return None;
         }
@@ -612,19 +617,21 @@ impl Session {
 
     /// Timing and clock bookkeeping for a move by the side to move, before
     /// it's added. Returns false (and ends the game) if the move came too
-    /// late, unless a server keeps the clock.
+    /// late. A server keeping the clock sets the reserves itself.
     fn clock_move(&mut self, now: Instant) -> bool {
         let setup = Game::is_setup_ply(self.tree[self.live()].ply());
         let side = self.live_side();
         let Some(m) = self.matchup.as_mut() else { return true };
-        let server_clock = m.server_clock();
         let used = now.saturating_duration_since(m.turn_started);
         m.last_move_time = Some(used);
         m.turn_started = now;
+        if m.server_clock() {
+            return true;
+        }
         let Some(clock) = m.clock.as_mut() else { return true };
         let Some(tc) = clock.tc(side) else { return true };
         let reserve = clock.reserves[side.index()];
-        if used > tc.turn_allowance(reserve) && !server_clock {
+        if used > tc.turn_allowance(reserve) {
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
             return false;
         }
@@ -807,6 +814,8 @@ impl Session {
     }
 
     /// Ends a game with a remote side with the result the server reports.
+    /// A result the rules already gave the last move (a goal, say) must be
+    /// the same one; a different one is an error, since the server decides.
     pub fn finish_remote(
         &mut self,
         generation: u64,
@@ -816,8 +825,14 @@ impl Session {
         if generation != self.generation || !self.matchup.as_ref().is_some_and(Match::server_clock) {
             return Err(ApiError::state("no game with a remote player"));
         }
-        if self.live_result().is_none() {
-            self.finish(result, detail);
+        match self.live_result() {
+            None => self.finish(result, detail),
+            Some(r) if r == result => {}
+            Some(r) => {
+                return Err(ApiError::state(format!(
+                    "the server's result {result:?} differs from the rules' {r:?}"
+                )));
+            }
         }
         Ok(())
     }
@@ -2328,6 +2343,23 @@ mod tests {
         s.finish_remote(g, result, None).unwrap();
         assert_eq!(s.view().result, Some(result));
         assert!(s.sync_remote(g, &sample_moves(3)).is_err(), "no moves after the end");
+    }
+
+    #[test]
+    fn nothing_played_here_enters_a_remote_game() {
+        let mut s = Session::new();
+        s.start_match([Player::Human, remote("opponent")], [None, None], false);
+        let g = s.generation();
+        assert!(!s.plays_live() && !s.can_input(), "no setup to send yet");
+        s.sync_remote(g, &sample_moves(2)).unwrap();
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn(false).unwrap();
+        let v = s.view();
+        assert_eq!(v.live_ply, Some(2), "the human's move is a plan");
+        assert_eq!(v.moves.len(), 3);
+        let mut e = Session::new();
+        e.start_match([engine("bot"), remote("opponent")], [None, None], false);
+        assert_eq!(e.engine_turn(), None, "no engine moves without the server");
     }
 
     #[test]

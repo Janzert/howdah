@@ -1,0 +1,17 @@
+[package]
+name = "howdah-gameroom"
+version = "0.1.0"
+description = "Client for the arimaa.com gameroom (ASIP)"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+howdah-arimaa.workspace = true
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time", "sync"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

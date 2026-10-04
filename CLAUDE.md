@@ -69,6 +69,23 @@ Sharp, OpFor and other AEI engines behave.
     like an analysing engine, logging anything else sent mid-search as an
     error; the app's controller tests use it. `examples/match.rs` plays one game from the
     command line.
+- `crates/howdah-gameroom`: client for the arimaa.com gameroom over ASIP
+  (reqwest; depends only on `howdah-arimaa`). For a game on the server,
+  the server is the authority on moves, clocks and results.
+  - `wire`: `Record` decodes either reply format (`key=value` for ASIP
+    1.0, JSON for 2.0); `encode_request` encodes requests.
+  - `client`: `Lobby` (login, `live_games` from ASIP 2.0 `state`,
+    `reserve_seat`) and `GameServer` (`sit`, `game_state`, the `update`
+    long poll, which adds each reply's new moves and chat to what came
+    before and refetches the full state if the lengths don't match). `Http`
+    sends a Referer, spaces requests a second apart (except long polls),
+    and logs exchanges through a `NetLog` with `password`, `sid`, `auth`
+    and `tid` redacted.
+  - `state`: `GameState` from a reply: players, moves without numbers
+    (`split_moves`), result (`parse_result`), and `ServerClock` worked out
+    as the browser client does.
+  - `examples/probe.rs` runs it against the live server by hand (see the
+    parent repo's notes on probing first). Never in tests or CI.
 - `app/src-tauri`: thin shell.
   - `session.rs` has the pure state logic: a `GameTree`, the line being
     shown (`line`, root to a leaf) with a cursor ply on it, the in-progress
@@ -308,6 +325,7 @@ Sharp, OpFor and other AEI engines behave.
 ```bash
 cargo test --workspace            # all Rust tests (test profile uses opt-level 1)
 cargo run -p howdah-aei --example match -- --gold "CMD" --silver "CMD" [--tc 2s/10s] [--transcript]
+cargo run -p howdah-gameroom --example probe -- live   # live server; ARIMAA_USERNAME/ARIMAA_PASSWORD
 cargo clippy --workspace --all-targets
 cd app && npm install
 npm run check                     # svelte-check
