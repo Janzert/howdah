@@ -5,7 +5,7 @@ and the way the game ended (the termination or reason code). The same
 reason letters appear in the gameroom protocols, in AEI tools
 (pyrimaa's `game.py`, the `ResultCode` tag in round-robin output), and
 in 4steps. `WinReason::letter` and `WinReason::from_letter` in
-`arimaa-core` (`outcome.rs`) use them.
+`howdah-arimaa` (`outcome.rs`) use them.
 
 ## Winner
 
@@ -53,7 +53,7 @@ Notes:
   the player who has more pieces after the last completed turn wins; if
   they're equal, whoever had more pieces after the most recent turn where
   the counts differed wins; if they never differed, silver wins.
-  `arimaa-core` (like pyrimaa) still only compares the final counts, with
+  `howdah-arimaa` (like pyrimaa) still only compares the final counts, with
   silver winning ties; implementing the full rule is a to-do.
 - The app also uses `Forfeit` when a local engine fails (crashes or
   stops answering), which is broader than arimaa.com's meaning.

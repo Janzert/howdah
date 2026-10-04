@@ -1,7 +1,7 @@
 //! View types sent to the frontend. TypeScript definitions are generated from
 //! these with ts-rs (`npm run bindings`); don't hand-edit `src/lib/bindings`.
 
-use arimaa_core::{Color, GameResult, NodeId, Piece, PieceKind, Square, StepKind};
+use howdah_arimaa::{Color, GameResult, NodeId, Piece, PieceKind, Square, StepKind};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -546,8 +546,8 @@ impl ApiError {
     }
 }
 
-impl From<arimaa_core::RecordError> for ApiError {
-    fn from(e: arimaa_core::RecordError) -> ApiError {
+impl From<howdah_arimaa::RecordError> for ApiError {
+    fn from(e: howdah_arimaa::RecordError) -> ApiError {
         ApiError { kind: ErrorKind::Record, message: e.error.to_string(), line: Some(e.line) }
     }
 }

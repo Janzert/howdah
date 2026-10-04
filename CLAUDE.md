@@ -1,4 +1,4 @@
-# Arimaa Desktop: notes for Claude
+# Howdah: notes for Claude
 
 Cross-platform Arimaa client. It's a Tauri 2 spike, but it's structured the
 way the real project will be. Long term it covers gameroom play, AEI bots,
@@ -10,7 +10,7 @@ Sharp, OpFor and other AEI engines behave.
 
 ## Architecture
 
-- `crates/arimaa-core`: pure Rust, no UI or Tauri deps (`thiserror` only).
+- `crates/howdah-arimaa`: pure Rust, no UI or Tauri deps (`thiserror` only).
   It will also back a headless CLI and PyO3 bindings, so keep the API clean.
   - `types`: Color, PieceKind (Ord = strength), Piece, Square (0 = a1,
     63 = h8), Dir, TRAPS.
@@ -50,7 +50,7 @@ Sharp, OpFor and other AEI engines behave.
     reader is lenient (arimaa.com `Name: value` tags, `White`/`Black`
     names, `w`/`b` labels, `takeback` lines kept as variations);
     `Game::parse` goes through it and keeps the main line.
-- `crates/arimaa-aei`: async AEI controller (tokio; no UI deps).
+- `crates/howdah-aei`: async AEI controller (tokio; no UI deps).
   - `Engine`: spawns the process (no shell), runs the handshake, and sends
     typed commands. Messages are parsed with deadlines (`recv_until`), and
     `info pv` is split into turns. `SearchLog` reads bot_Sharp's search
@@ -134,7 +134,7 @@ Sharp, OpFor and other AEI engines behave.
       variation (a plan in a match); `preview_line` is the hover preview.
   - `engines.rs`: the engine list (`engines.json` in the app config dir).
     It defaults to the bundled `aei-test-engine` when that sits next to the
-    app binary (`cargo build -p arimaa-aei --bin aei-test-engine`).
+    app binary (`cargo build -p howdah-aei --bin aei-test-engine`).
   - `dto.rs` holds the view types sent to the UI, with ts-rs derives.
   - `backend.rs`: `Backend` holds the command logic, free of Tauri types.
     Commands are **intents**. Mutating commands return
@@ -280,7 +280,7 @@ Sharp, OpFor and other AEI engines behave.
 - Square serializes as its index (0..63). Enums serialize lowercase/camelCase.
 - rustfmt: `max_width = 110`. Conventional commits.
 - The reference implementation for rules questions is `../AEI/pyrimaa/board.py`.
-  `crates/arimaa-core/tests/movegen.rs` checks move-generation counts
+  `crates/howdah-arimaa/tests/movegen.rs` checks move-generation counts
   against it (both sides to move). To add cases, compute counts with
   pyrimaa's `get_moves()`. `tests/pyrimaa_cases.rs` ports the step-level
   cases from `pyrimaa/tests/test_board.py`.
@@ -289,7 +289,7 @@ Sharp, OpFor and other AEI engines behave.
 
 ```bash
 cargo test --workspace            # all Rust tests (test profile uses opt-level 1)
-cargo run -p arimaa-aei --example match -- --gold "CMD" --silver "CMD" [--tc 2s/10s] [--transcript]
+cargo run -p howdah-aei --example match -- --gold "CMD" --silver "CMD" [--tc 2s/10s] [--transcript]
 cargo clippy --workspace --all-targets
 cd app && npm install
 npm run check                     # svelte-check

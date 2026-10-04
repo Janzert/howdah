@@ -1,7 +1,7 @@
 //! Plays one engine-vs-engine game and prints it.
 //!
 //! ```text
-//! cargo run -p arimaa-aei --example match -- \
+//! cargo run -p howdah-aei --example match -- \
 //!     --gold "path/to/sharp aei" --silver "path/to/aei-test-engine" \
 //!     [--tc 5s/1m] [--gold-dir DIR] [--silver-dir DIR] [--transcript]
 //! ```
@@ -10,8 +10,8 @@
 
 use std::time::Duration;
 
-use arimaa_aei::{Direction, Engine, EngineConfig, Info, MatchConfig, MatchEvent, play_match};
-use arimaa_core::Color;
+use howdah_aei::{Direction, Engine, EngineConfig, Info, MatchConfig, MatchEvent, play_match};
+use howdah_arimaa::Color;
 
 struct Args {
     gold: String,
@@ -90,7 +90,7 @@ async fn main() {
     let mut score = None;
     let outcome = play_match(&mut gold, &mut silver, &config, |event| match event {
         MatchEvent::Started { gold, silver } => {
-            let name = |id: &arimaa_aei::EngineId| id.name.clone().unwrap_or_else(|| "?".into());
+            let name = |id: &howdah_aei::EngineId| id.name.clone().unwrap_or_else(|| "?".into());
             println!("{} (gold) vs {} (silver)", name(&gold), name(&silver));
         }
         MatchEvent::TurnStarted { .. } => {
@@ -101,7 +101,7 @@ async fn main() {
         MatchEvent::Info { info: Info::Score(s), .. } => score = Some(s),
         MatchEvent::Unexpected { side, line } => eprintln!("  {side:?} sent unexpected: {line}"),
         MatchEvent::MovePlayed { ply, side, notation, used, reserve } => {
-            let label = arimaa_core::notation::move_label(ply);
+            let label = howdah_arimaa::notation::move_label(ply);
             let mut extra = vec![fmt_dur(used)];
             if let Some(r) = reserve {
                 extra.push(format!("reserve {}", fmt_dur(r)));

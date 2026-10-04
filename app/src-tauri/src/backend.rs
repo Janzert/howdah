@@ -14,7 +14,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use arimaa_core::{Glyph, NodeId, Square, TimeControl};
+use howdah_arimaa::{Glyph, NodeId, Square, TimeControl};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;

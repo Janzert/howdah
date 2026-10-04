@@ -7,7 +7,7 @@
 //!   score scales).
 //!
 //! The protocol is specified in AEI's `AEI_PROTOCOL.md`. Moves coming back
-//! from engines are validated with `arimaa-core` before being used. No UI or
+//! from engines are validated with `howdah-arimaa` before being used. No UI or
 //! Tauri dependencies; the desktop app, a CLI and a tournament runner share
 //! this crate.
 

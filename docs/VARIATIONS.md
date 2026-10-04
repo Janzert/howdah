@@ -20,7 +20,7 @@ and a record format that can save it.
   change.
 - Records with variations round-trip, and a plain record (main line only)
   stays exactly what `Game::to_record` writes today.
-- `arimaa-core` keeps the model, so the CLI and Python bindings can read
+- `howdah-arimaa` keeps the model, so the CLI and Python bindings can read
   and write annotated games.
 
 Not goals for now: merging transpositions (the same position reached by
@@ -32,10 +32,10 @@ for sharing with others and with other tools. So the tree is the model
 both use; the record format doesn't have to carry everything the app
 stores, only what's worth sharing.
 
-## Model (`arimaa-core`)
+## Model (`howdah-arimaa`)
 
 A new `GameTree` type sits next to `Game`. `Game` stays as it is: it's
-the right type for a single line, and `arimaa-aei`'s `play_match` and the
+the right type for a single line, and `howdah-aei`'s `play_match` and the
 engine controller only ever need one line.
 
 ```rust
@@ -474,7 +474,7 @@ parse, and the rules results match the archive's.
 
 ## Build order
 
-1. `GameTree` in `arimaa-core`, with tests: adding and reusing children,
+1. `GameTree` in `howdah-arimaa`, with tests: adding and reusing children,
    repetition along a path, results per line, promote/demote/main line,
    delete, `from(Game)`/`to_game`.
 2. The record format: `GameTree::parse` and `to_record`, with tags,

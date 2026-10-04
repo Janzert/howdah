@@ -48,41 +48,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "arimaa-aei"
-version = "0.1.0"
-dependencies = [
- "arimaa-core",
- "thiserror 2.0.21",
- "tokio",
-]
-
-[[package]]
-name = "arimaa-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "thiserror 2.0.21",
- "ts-rs",
-]
-
-[[package]]
-name = "arimaa-desktop"
-version = "0.1.0"
-dependencies = [
- "arimaa-aei",
- "arimaa-core",
- "axum",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "thiserror 2.0.21",
- "tokio",
- "tokio-stream",
- "ts-rs",
-]
-
-[[package]]
 name = "atk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1260,6 +1225,41 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "howdah"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "howdah-aei",
+ "howdah-arimaa",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+ "ts-rs",
+]
+
+[[package]]
+name = "howdah-aei"
+version = "0.1.0"
+dependencies = [
+ "howdah-arimaa",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "howdah-arimaa"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+ "ts-rs",
+]
 
 [[package]]
 name = "html5ever"

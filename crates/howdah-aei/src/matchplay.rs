@@ -1,11 +1,11 @@
 //! Playing a full game between two engines, with clocks. Follows AEI's
 //! `pyrimaa/game.py`: the same options are sent, the same timeouts apply,
-//! and every move is validated by `arimaa-core` before it reaches the other
+//! and every move is validated by `howdah-arimaa` before it reaches the other
 //! engine.
 
 use std::time::Duration;
 
-use arimaa_core::{Color, Game, GameResult, TimeControl, WinReason, limit_score_winner};
+use howdah_arimaa::{Color, Game, GameResult, TimeControl, WinReason, limit_score_winner};
 use tokio::time::Instant;
 
 use crate::engine::{Engine, EngineId};

@@ -1,4 +1,4 @@
-//! Tauri shell over `arimaa-core` and `arimaa-aei`: session state, the
+//! Tauri shell over `howdah-arimaa` and `howdah-aei`: session state, the
 //! engine controller, commands and events. Game logic lives in the core
 //! crates; this crate only adapts it for the UI.
 

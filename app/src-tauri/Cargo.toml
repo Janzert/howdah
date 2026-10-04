@@ -1,24 +1,24 @@
 [package]
-name = "arimaa-desktop"
+name = "howdah"
 version = "0.1.0"
-description = "Arimaa desktop client"
+description = "Desktop client for Arimaa"
 edition.workspace = true
 license.workspace = true
 rust-version = "1.90"
 # The app; `dev-bridge` is a second, feature-gated binary.
-default-run = "arimaa-desktop"
+default-run = "howdah"
 
 [lib]
 # The _lib suffix avoids a name clash with the binary on Windows (cargo#8519).
-name = "arimaa_desktop_lib"
+name = "howdah_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-arimaa-core = { workspace = true, features = ["ts"] }
-arimaa-aei.workspace = true
+howdah-arimaa = { workspace = true, features = ["ts"] }
+howdah-aei.workspace = true
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true

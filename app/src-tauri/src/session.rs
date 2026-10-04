@@ -16,7 +16,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use arimaa_core::{
+use howdah_arimaa::{
     Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position,
     Route, Square, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder, WinReason, default_setup,
     limit_score_winner, notation, outcome_after_turn,
@@ -102,7 +102,10 @@ struct TurnStart {
 impl Match {
     fn turn_start(&self, now: Instant) -> TurnStart {
         TurnStart {
-            elapsed: self.clock.as_ref().map_or(Duration::ZERO, |c| now.saturating_duration_since(c.game_started)),
+            elapsed: self
+                .clock
+                .as_ref()
+                .map_or(Duration::ZERO, |c| now.saturating_duration_since(c.game_started)),
             reserves: self.clock.as_ref().map(|c| c.reserves),
         }
     }
@@ -1369,7 +1372,7 @@ impl Session {
         end.set_side_to_move(end.side_to_move().opponent());
         self.game
             .is_third_repetition(self.cursor, &end)
-            .then(|| arimaa_core::GameError::Repetition.to_string())
+            .then(|| howdah_arimaa::GameError::Repetition.to_string())
     }
 
     fn phase(&self) -> Phase {
@@ -1600,7 +1603,7 @@ fn position_view(pos: &Position, ids: &IdMap) -> PositionView {
 mod tests {
     use super::*;
 
-    const SAMPLE: &str = include_str!("../../../crates/arimaa-core/tests/data/sample_game.txt");
+    const SAMPLE: &str = include_str!("../../../crates/howdah-arimaa/tests/data/sample_game.txt");
 
     fn sq(s: &str) -> Square {
         s.parse().unwrap()
@@ -1949,7 +1952,7 @@ mod tests {
 
     #[test]
     fn last_move_and_captures() {
-        use arimaa_core::PieceKind;
+        use howdah_arimaa::PieceKind;
         let mut s = Session::new();
         s.load(SAMPLE).unwrap();
         s.goto(2).unwrap();

@@ -2,7 +2,7 @@
 //! a trap capture. The record was also replayed through the reference Python
 //! implementation (AEI's pyrimaa) with identical notation.
 
-use arimaa_core::{Color, Game, Move, Piece, Position, StepKind, TurnBuilder};
+use howdah_arimaa::{Color, Game, Move, Piece, Position, StepKind, TurnBuilder};
 
 const RECORD: &str = include_str!("data/sample_game.txt");
 

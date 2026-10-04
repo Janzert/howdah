@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Arimaa Desktop",
+  "productName": "Howdah",
   "version": "0.1.0",
-  "identifier": "io.github.janzert.arimaa-desktop",
+  "identifier": "io.github.janzert.howdah",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Arimaa",
+        "title": "Howdah",
         "width": 1180,
         "height": 800,
         "minWidth": 640,

@@ -1,5 +1,5 @@
 [package]
-name = "arimaa-aei"
+name = "howdah-aei"
 version = "0.1.0"
 description = "Async controller for Arimaa Engine Interface (AEI) engines"
 edition.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-arimaa-core.workspace = true
+howdah-arimaa.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["process", "io-util", "time", "sync", "macros", "rt"] }
 

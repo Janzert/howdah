@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use arimaa_core::{Color, Position, TurnBuilder};
+use howdah_arimaa::{Color, Position, TurnBuilder};
 
 fn collect(tb: &mut TurnBuilder, out: &mut HashSet<Position>) {
     if tb.can_finish().is_ok() {

@@ -21,8 +21,8 @@ use std::io::{BufRead, Write};
 use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use arimaa_core::notation::{MoveBody, format_placements, format_steps, parse_move_body};
-use arimaa_core::{Color, Position, TurnBuilder, apply_setup, default_setup};
+use howdah_arimaa::notation::{MoveBody, format_placements, format_steps, parse_move_body};
+use howdah_arimaa::{Color, Position, TurnBuilder, apply_setup, default_setup};
 
 struct Rng(u64);
 
@@ -166,7 +166,7 @@ fn main() {
             "aei" => {
                 say("protocol-version 1");
                 say("id name aei-test-engine");
-                say("id author arimaa-desktop");
+                say("id author howdah");
                 say(&format!("id version {}", opts.mode));
                 say("aeiok");
             }

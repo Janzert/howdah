@@ -1,8 +1,8 @@
 //! Cases ported from AEI's `pyrimaa/tests/test_board.py`. Squares are
 //! indices (a1 = 0, h8 = 63), which match pyrimaa's step tuples.
 
-use arimaa_core::notation::format_steps;
-use arimaa_core::{Color, CommitError, Position, Square, StepError, TurnBuilder};
+use howdah_arimaa::notation::format_steps;
+use howdah_arimaa::{Color, CommitError, Position, Square, StepError, TurnBuilder};
 
 const BASIC_SETUP: &str = "[rrrrrrrrdhcemchd                                DHCMECHDRRRRRRRR]";
 const CHECK_STEP_POS: &str = "[rrrrrr rdhce h d C   c      mCr     ED         RDH M  H RRRRRRR ]";

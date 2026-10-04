@@ -74,7 +74,7 @@ test('an unreachable drop shows an error and puts the piece back', async ({ page
 test('engine vs engine match plays moves', async ({ page }) => {
   await freshGame(page);
   const engines = await page.evaluate(() => window.__arimaa!.api.listEngines());
-  test.skip(engines.length === 0, 'no test engine (cargo build -p arimaa-aei --bin aei-test-engine)');
+  test.skip(engines.length === 0, 'no test engine (cargo build -p howdah-aei --bin aei-test-engine)');
   const engineId = engines[0].id;
   await page.evaluate(
     (id) =>
@@ -341,7 +341,7 @@ test('l turns analysis on; a click on its line adds it, and l turns it off', asy
 test('an engine move missed while planning shows an alert; going back replays it', async ({ page }) => {
   await freshGame(page);
   const engines = await page.evaluate(() => window.__arimaa!.api.listEngines());
-  test.skip(engines.length === 0, 'no test engine (cargo build -p arimaa-aei --bin aei-test-engine)');
+  test.skip(engines.length === 0, 'no test engine (cargo build -p howdah-aei --bin aei-test-engine)');
   await page.evaluate(async (id) => {
     const a = window.__arimaa!;
     await a.api.startMatch({

@@ -4,7 +4,7 @@ How the AEI engines the app has been run with behave, and what the
 controller does about it. The protocol is `AEI_PROTOCOL.md` in
 [AEI](https://github.com/Janzert/AEI), whose `pyrimaa/aei.py` is a
 working Python controller. Engine quirks live in one place in the code,
-`arimaa_aei::Profile`, picked from the engine's `id name`.
+`howdah_aei::Profile`, picked from the engine's `id name`.
 
 ## What the controller relies on
 
@@ -89,7 +89,7 @@ LDC).
 
 ## Simple engines
 
-- `aei-test-engine` (`crates/arimaa-aei/src/bin`): random legal moves,
+- `aei-test-engine` (`crates/howdah-aei/src/bin`): random legal moves,
   with misbehaviour modes and `--until-stop` for the tests.
 - pyrimaa's `simple_engine` and the other simple AEI engines: run as
   `python3 -m pyrimaa.simple_engine` with the AEI checkout as the working

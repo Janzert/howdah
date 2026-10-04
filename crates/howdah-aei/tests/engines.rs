@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
-use arimaa_aei::{AeiError, Engine, EngineConfig, EngineMessage, MatchConfig, MatchEvent, play_match};
-use arimaa_core::{Color, Game, WinReason};
+use howdah_aei::{AeiError, Engine, EngineConfig, EngineMessage, MatchConfig, MatchEvent, play_match};
+use howdah_arimaa::{Color, Game, WinReason};
 
 const TEST_ENGINE: &str = env!("CARGO_BIN_EXE_aei-test-engine");
 
@@ -40,7 +40,7 @@ async fn missing_working_dir_is_reported_as_such() {
 async fn setposition_and_go() {
     let mut engine = start(&["--seed", "7"]).await;
     engine.new_game().await.unwrap();
-    let pos = arimaa_core::Position::from_short_string(
+    let pos = howdah_arimaa::Position::from_short_string(
         Color::Gold,
         "[rrrrrrrrhdcemcdh                                HDCMECDHRRRRRRRR]",
     )
@@ -54,9 +54,9 @@ async fn setposition_and_go() {
         }
     };
     // The move must be legal from that position.
-    let mut tb = arimaa_core::TurnBuilder::new(&pos);
-    let (body, _) = arimaa_core::notation::parse_move_body(&mv).unwrap();
-    let arimaa_core::notation::MoveBody::Steps(steps) = body else { panic!("expected steps, got {mv}") };
+    let mut tb = howdah_arimaa::TurnBuilder::new(&pos);
+    let (body, _) = howdah_arimaa::notation::parse_move_body(&mv).unwrap();
+    let howdah_arimaa::notation::MoveBody::Steps(steps) = body else { panic!("expected steps, got {mv}") };
     for s in steps {
         tb.try_step(s.step).unwrap();
     }
@@ -67,7 +67,7 @@ async fn run(
     gold: &[&str],
     silver: &[&str],
     tc: Option<&str>,
-) -> (arimaa_aei::MatchOutcome, Vec<MatchEvent>) {
+) -> (howdah_aei::MatchOutcome, Vec<MatchEvent>) {
     let mut g = start(gold).await;
     let mut s = start(silver).await;
     let config = MatchConfig {
@@ -138,7 +138,7 @@ async fn garbage_is_reported_not_fatal() {
 async fn hanging_engine_times_out() {
     // 1 s per move, no reserve: silver's first real turn never answers.
     let (outcome, events) = run(&[], &["--mode", "hang", "--after", "1"], Some("1s/0")).await;
-    assert_eq!(outcome.result, arimaa_core::GameResult { winner: Color::Gold, reason: WinReason::Timeout });
+    assert_eq!(outcome.result, howdah_arimaa::GameResult { winner: Color::Gold, reason: WinReason::Timeout });
     let starts: Vec<_> = events
         .iter()
         .filter_map(|e| match e {

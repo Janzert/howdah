@@ -9,7 +9,7 @@
 //! - `GET /events` is a server-sent event stream; each event's name is the
 //!   Tauri event name (`game://changed`, `engine://output`, `analysis://update`).
 //!
-//! Run: `cargo run -p arimaa-desktop --features dev-bridge --bin dev-bridge`
+//! Run: `cargo run -p howdah --features dev-bridge --bin dev-bridge`
 //! with optional `--port <n>` (default 1421) and `--config-dir <dir>`
 //! (default: `dev-bridge-config` next to the binary, so the app's own
 //! engine list is untouched). It listens on localhost only.
@@ -19,8 +19,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use arimaa_desktop_lib::backend::{Backend, EventSink};
-use arimaa_desktop_lib::engines::EngineRegistry;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
@@ -28,6 +26,8 @@ use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
+use howdah_lib::backend::{Backend, EventSink};
+use howdah_lib::engines::EngineRegistry;
 use serde_json::Value;
 use tokio::sync::broadcast;
 use tokio_stream::{Stream, StreamExt, wrappers::BroadcastStream};

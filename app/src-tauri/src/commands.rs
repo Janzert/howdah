@@ -1,7 +1,7 @@
 //! Tauri commands: thin wrappers over [`Backend`], which holds the logic
 //! and documents the conventions.
 
-use arimaa_core::{Glyph, NodeId, Square};
+use howdah_arimaa::{Glyph, NodeId, Square};
 use tauri::State;
 
 use crate::backend::Backend;

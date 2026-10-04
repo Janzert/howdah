@@ -1,6 +1,6 @@
-# Arimaa Desktop
+# Howdah
 
-A cross-platform desktop client for [Arimaa](https://en.wikipedia.org/wiki/Arimaa),
+Howdah is a cross-platform desktop client for [Arimaa](https://en.wikipedia.org/wiki/Arimaa),
 built with Rust and [Tauri 2](https://tauri.app/) (Svelte + TypeScript frontend).
 
 **Status: early spike.** You can set up, play and review games locally.
@@ -9,7 +9,7 @@ bot tournaments, postal games and bot development tooling.
 
 ## Layout
 
-- `crates/arimaa-core`: rules, positions, notation and game records. Pure
+- `crates/howdah-arimaa`: rules, positions, notation and game records. Pure
   Rust with no UI dependencies.
 - `app/`: the Tauri application. `src-tauri/` is the Rust shell and `src/`
   is the Svelte frontend.

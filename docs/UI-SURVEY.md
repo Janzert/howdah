@@ -122,7 +122,7 @@ cover it.
   side, plus light and dark.
 - **[P3] Teaching overlays.** Mark pieces that can be captured next turn,
   rabbits that can reach goal within N steps, and trap control. They're
-  Arimaa-only and cheap to compute in `arimaa-core`. They should be off by
+  Arimaa-only and cheap to compute in `howdah-arimaa`. They should be off by
   default and probably disallowed in rated online play.
 - **[P3] Zen mode (lichess `z`)** hides everything except the board and
   clocks. **Full screen** comes from 4steps.

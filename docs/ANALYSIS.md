@@ -337,7 +337,7 @@ Differences from the design above, and details it left open:
   (`null` turns analysis off) instead of `on: bool`. The panel has an
   engine picker; `l` and the Analysis button use the engine picked last
   (`settings.analysisEngine`), or the first in the list.
-- **Profiles** live in `arimaa-aei` (`Profile`, `Score`), not the app, so
+- **Profiles** live in `howdah-aei` (`Profile`, `Score`), not the app, so
   a CLI gets them too. Only Sharp's `log` lines are read as search
   progress. The actor sends the options, then `isready`, and passes on
   what the engine said about them, so a rejected option shows in the log.

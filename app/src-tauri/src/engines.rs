@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use arimaa_aei::{Engine, EngineConfig};
+use howdah_aei::{Engine, EngineConfig};
 
 use crate::dto::{ApiError, EngineIdentity, EngineSpec};
 
@@ -85,7 +85,7 @@ fn new_id(name: &str) -> String {
 }
 
 /// The bundled random-move test engine, if it's next to the app binary
-/// (it is in development builds after `cargo build -p arimaa-aei`).
+/// (it is in development builds after `cargo build -p howdah-aei`).
 fn default_engines() -> Vec<EngineSpec> {
     let exe = std::env::current_exe().ok();
     let dir = exe.as_deref().and_then(Path::parent);

@@ -17,8 +17,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use arimaa_aei::{AeiError, Engine, EngineMessage, Info, Profile, Score, SearchLog};
-use arimaa_core::{Color, Game, TimeControl, notation};
+use howdah_aei::{AeiError, Engine, EngineMessage, Info, Profile, Score, SearchLog};
+use howdah_arimaa::{Color, Game, TimeControl, notation};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::backend::{Events, emit, emit_session};
@@ -1063,7 +1063,7 @@ mod tests {
         let program = dir.join(if cfg!(windows) { "aei-test-engine.exe" } else { "aei-test-engine" });
         assert!(
             program.exists(),
-            "{} is missing: run `cargo build -p arimaa-aei --bin aei-test-engine`",
+            "{} is missing: run `cargo build -p howdah-aei --bin aei-test-engine`",
             program.display()
         );
         EngineSpec {

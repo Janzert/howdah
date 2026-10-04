@@ -1,5 +1,5 @@
 {
-  "name": "arimaa-desktop",
+  "name": "howdah",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "bindings": "cargo test -p arimaa-desktop --lib export_bindings",
-    "bridge": "cargo build -p arimaa-aei --bin aei-test-engine && cargo run -p arimaa-desktop --features dev-bridge --bin dev-bridge",
+    "bindings": "cargo test -p howdah --lib export_bindings",
+    "bridge": "cargo build -p howdah-aei --bin aei-test-engine && cargo run -p howdah --features dev-bridge --bin dev-bridge",
     "tauri": "tauri",
     "test": "vitest run",
     "e2e": "playwright test"
