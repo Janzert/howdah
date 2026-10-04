@@ -71,11 +71,16 @@ Sharp, OpFor and other AEI engines behave.
     command line.
 - `crates/howdah-gameroom`: client for the arimaa.com gameroom over ASIP
   (reqwest; depends only on `howdah-arimaa`). For a game on the server,
-  the server is the authority on moves, clocks and results.
+  the server is the authority on moves, clocks and results. Where paths
+  differ, use the one that likely costs the server least, as the browser
+  client does.
   - `wire`: `Record` decodes either reply format (`key=value` for ASIP
     1.0, JSON for 2.0); `encode_request` encodes requests.
-  - `client`: `Lobby` (login, `live_games` from ASIP 2.0 `state`,
-    `reserve_seat`) and `GameServer` (`sit`, `game_state`, the `update`
+  - `client`: `Lobby` (`login` the browser's way through `login.cgi`, or
+    `login_asip`; `live_games` from ASIP 2.0 `state`; `reserve_seat`;
+    `watch`, which gets a viewer seat the browser client's way and follows
+    it on `client3gs.cgi`, since ASIP viewer seats get moves only in ~10 s
+    steps) and `GameServer` (`sit`, `game_state`, the `update`
     long poll, which adds each reply's new moves and chat to what came
     before and refetches the full state if the lengths don't match). `Http`
     sends a Referer, spaces requests a second apart (except long polls),

@@ -88,7 +88,12 @@ impl GameState {
     /// reply, or an update with the earlier parts added back).
     pub fn from_record(raw: Record) -> GameState {
         let player = |key: &str| raw.nonempty(key).map(|p| p.trim_start_matches("* ").trim().to_string());
-        let result_code = raw.nonempty("result");
+        // ASIP sends `result=wg`; the browser client's server sends
+        // `result=w` and `reason=g`.
+        let result_code = raw.nonempty("result").map(|r| match raw.nonempty("reason") {
+            Some(reason) if r.len() == 1 => format!("{r}{reason}"),
+            _ => r,
+        });
         let result = result_code.as_deref().and_then(parse_result);
         GameState {
             role: raw.str("role").as_deref().and_then(Role::from_letter),
@@ -171,6 +176,15 @@ mod tests {
         assert_eq!(parse_result("bt").unwrap().winner, Color::Silver);
         assert_eq!(parse_result("w"), None);
         assert_eq!(Role::from_letter("v"), Some(Role::Viewer));
+    }
+
+    #[test]
+    fn results_in_both_forms() {
+        let asip = GameState::from_record(Record::decode("result=bg\n").unwrap());
+        let browser = GameState::from_record(Record::decode(r#"{"result":"w","reason":"t"}"#).unwrap());
+        assert_eq!(asip.result.unwrap().winner, Color::Silver);
+        assert_eq!(browser.result, Some(GameResult { winner: Color::Gold, reason: WinReason::Timeout }));
+        assert_eq!(browser.result_code.as_deref(), Some("wt"));
     }
 
     #[test]

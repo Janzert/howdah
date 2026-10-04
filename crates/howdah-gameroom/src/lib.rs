@@ -11,7 +11,9 @@
 //! list, clocks and result are what the game is. [`GameState`] reports them
 //! as the server gives them.
 //!
-//! - [`Lobby`]: login, the live-games list, seat reservation.
+//! - [`Lobby`]: login, the live-games list, seat reservation, and
+//!   [`Lobby::watch`]: a viewer seat the browser client's way
+//!   (`opengamewin.cgi`), since ASIP viewer seats get moves in ~10 s steps.
 //! - [`GameServer`]: sit, `gamestate`, and the `updategamestate` long poll
 //!   (keeping the moves and chat received so far).
 //! - Requests carry a Referer (the server refuses requests under the
@@ -25,7 +27,9 @@ pub mod client;
 pub mod state;
 pub mod wire;
 
-pub use client::{Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, NetLog, Seat};
+pub use client::{
+    Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, NetLog, Seat, ViewerSeat,
+};
 pub use state::{GameState, Role, ServerClock, parse_result, split_moves};
 pub use wire::{Format, Record};
 

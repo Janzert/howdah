@@ -8,11 +8,13 @@
 //! ```text
 //! probe live
 //!     log in (ASIP 2.0), list the live games, log out
-//! probe watch GID [--seat 1|2] [--server 1|2|3] [--polls N] [--maxwait SECS]
-//!     log in, reserve a viewer seat over ASIP --seat (default 2), sit and
-//!     follow the game over ASIP --server (default 1; 3 sits over 1.0
-//!     and follows on the browser client's `client3gs.cgi`) for N long polls
-//!     (default 3, each waiting up to --maxwait, default 30), log out
+//! probe watch GID [--seat browser|1|2] [--server 1|2] [--polls N] [--maxwait SECS]
+//!     log in the browser's way and watch as the browser client does
+//!     (default), or log in over ASIP and use an ASIP viewer seat over
+//!     --seat 1 or 2, sat and followed over ASIP --server (default 1); N
+//!     long polls (default 3, each waiting up to --maxwait, default 30),
+//!     log out.
+//!     Each update shows how long the server held the latest move.
 //! ```
 //! `--log FILE` also appends the exchanges to FILE.
 
@@ -20,13 +22,14 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use howdah_arimaa::Color;
 use howdah_gameroom::{
     Asip, DEFAULT_GAMEROOM, Error, Exchange, GameServer, GameState, Http, Lobby, Role, user_agent,
 };
 
 fn usage() -> ! {
     eprintln!(
-        "usage: probe live | probe watch GID [--seat 1|2] [--server 1|2] [--polls N] [--maxwait SECS] [--log FILE]"
+        "usage: probe live | probe watch GID [--seat browser|1|2] [--server 1|2] [--polls N] [--maxwait SECS] [--log FILE]"
     );
     std::process::exit(2)
 }
@@ -54,6 +57,10 @@ fn show(state: &GameState) {
     );
     println!("  last move: {:?}", state.moves.last());
     println!("  clock: {:?}", state.clock);
+    let start = if state.turn == Some(Color::Gold) { "wstartmove" } else { "bstartmove" };
+    if let (Some(now), Some(start)) = (r.int("timeonserver"), r.int(start)) {
+        println!("  the turn started {}s before this reply (server clock)", now - start);
+    }
     let mut keys: Vec<&String> = r.fields.keys().collect();
     keys.sort();
     println!("  fields: {}", keys.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" "));
@@ -64,17 +71,18 @@ async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut positional = Vec::new();
     let (mut seat_asip, mut server_asip, mut polls, mut maxwait, mut log_file) =
-        (Asip::V2, Asip::V1, 3, 30, None);
-    let mut gs3 = false;
+        (None, Asip::V1, 3, 30, None);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let mut value = || it.next().cloned().unwrap_or_else(|| usage());
         match a.as_str() {
-            "--seat" => seat_asip = asip(&value()),
-            "--server" => match value().as_str() {
-                "3" => (server_asip, gs3) = (Asip::V1, true),
-                v => server_asip = asip(v),
-            },
+            "--seat" => {
+                seat_asip = match value().as_str() {
+                    "browser" => None,
+                    v => Some(asip(v)),
+                }
+            }
+            "--server" => server_asip = asip(&value()),
             "--polls" => polls = value().parse().unwrap_or_else(|_| usage()),
             "--maxwait" => maxwait = value().parse().unwrap_or_else(|_| usage()),
             "--log" => log_file = Some(value()),
@@ -112,7 +120,7 @@ async fn main() {
         Some("live") => live(&mut lobby, &user, &password).await,
         Some("watch") => {
             let gid = positional.get(1).cloned().unwrap_or_else(|| usage());
-            let opts = (seat_asip, server_asip, gs3, polls, Duration::from_secs(maxwait));
+            let opts = (seat_asip, server_asip, polls, Duration::from_secs(maxwait));
             watch(&mut lobby, http, &user, &password, &gid, opts).await
         }
         _ => usage(),
@@ -130,7 +138,7 @@ async fn main() {
 
 async fn live(lobby: &mut Lobby, user: &str, password: &str) -> Result<(), Error> {
     lobby.login(user, password).await?;
-    println!("logged in (ASIP 2.0)");
+    println!("logged in");
     let games = lobby.live_games().await?;
     println!("{} live games", games.len());
     for g in games {
@@ -145,20 +153,28 @@ async fn watch(
     user: &str,
     password: &str,
     gid: &str,
-    (seat_asip, server_asip, gs3, polls, maxwait): (Asip, Asip, bool, u32, Duration),
+    (seat_asip, server_asip, polls, maxwait): (Option<Asip>, Asip, u32, Duration),
 ) -> Result<(), Error> {
-    lobby.login(user, password).await?;
-    println!("logged in (ASIP 2.0)");
-    lobby.set_asip(seat_asip);
-    let seat = lobby.reserve_seat(gid, Role::Viewer).await?;
-    println!("viewer seat over {seat_asip:?}: reply as {:?}, gsurl {}", seat.reply_format, seat.gsurl);
-    lobby.set_asip(Asip::V2);
-    let mut server = GameServer::sit(http, &seat, server_asip).await?;
-    println!("sat at {}", server.url());
-    if gs3 {
-        server.switch_to("http://arimaa.com/arimaa/gameserver/client3gs.cgi", howdah_gameroom::Format::Json);
-        println!("following on {}", server.url());
+    match seat_asip {
+        None => lobby.login(user, password).await?,
+        Some(_) => lobby.login_asip(user, password).await?,
     }
+    println!("logged in");
+    let mut server = match seat_asip {
+        None => {
+            let (server, how) = lobby.watch(gid, Color::Gold).await?;
+            println!("viewer seat: {how:?}");
+            server
+        }
+        Some(v) => {
+            lobby.set_asip(v);
+            let seat = lobby.reserve_seat(gid, Role::Viewer).await?;
+            lobby.set_asip(Asip::V2);
+            println!("viewer seat over {v:?}: reply as {:?}, gsurl {}", seat.reply_format, seat.gsurl);
+            GameServer::sit(http, &seat, server_asip).await?
+        }
+    };
+    println!("following on {}", server.url());
     let state = server.game_state().await?;
     println!("gamestate:");
     show(&state);

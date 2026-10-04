@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 
+use howdah_arimaa::Color;
+
 use crate::state::{GameState, Role};
 use crate::wire::{Format, Record, encode_request};
 
@@ -121,6 +123,25 @@ pub fn redact(text: &str) -> String {
     out
 }
 
+/// Redacts secret values in a URL's query.
+pub fn redact_query(url: &str) -> String {
+    let Some((base, query)) = url.split_once('?') else { return url.to_string() };
+    let parts: Vec<String> = query
+        .split('&')
+        .map(|p| match p.split_once('=') {
+            Some((k, _)) if SECRETS.contains(&k) => format!("{k}=<redacted>"),
+            _ => p.to_string(),
+        })
+        .collect();
+    format!("{base}?{}", parts.join("&"))
+}
+
+/// The text between `start` and the next `end` in `text`.
+fn between<'a>(text: &'a str, start: &str, end: char) -> Option<&'a str> {
+    let rest = &text[text.find(start)? + start.len()..];
+    Some(&rest[..rest.find(end)?])
+}
+
 /// The HTTP side shared by the lobby and game servers.
 #[derive(Clone)]
 pub struct Http {
@@ -133,9 +154,106 @@ impl Http {
     pub fn new(user_agent: &str, log: Option<NetLog>) -> Result<Http, Error> {
         let client = reqwest::Client::builder()
             .user_agent(user_agent)
+            // The browser login answers with a redirect that sets the cookie.
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
         Ok(Http { client, last: Arc::new(Mutex::new(None)), log })
+    }
+
+    /// Posts the browser login form and returns the cookies it sets (the
+    /// session is `sid`). A successful login is a redirect; a page back
+    /// means it failed, and its text is the error.
+    pub async fn login_form(
+        &self,
+        url: &str,
+        params: &[(&str, String)],
+    ) -> Result<Vec<(String, String)>, Error> {
+        {
+            let mut last = self.last.lock().await;
+            if let Some(t) = *last {
+                tokio::time::sleep_until((t + MIN_INTERVAL).into()).await;
+            }
+            *last = Some(Instant::now());
+        }
+        let started = Instant::now();
+        let sent = self
+            .client
+            .post(url)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Referer", url)
+            .body(encode_request(Format::KeyValue, params))
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()));
+        let status = sent.as_ref().ok().map(|r| r.status().as_u16());
+        let mut cookies = Vec::new();
+        if let Ok(r) = &sent {
+            for v in r.headers().get_all("set-cookie") {
+                let pair = v.to_str().unwrap_or("").split(';').next().unwrap_or("");
+                if let Some((k, v)) = pair.split_once('=') {
+                    cookies.push((k.trim().to_string(), v.trim().to_string()));
+                }
+            }
+        }
+        if let Some(log) = &self.log {
+            let request = params
+                .iter()
+                .map(|(k, v)| {
+                    (k.to_string(), if SECRETS.contains(k) { "<redacted>".into() } else { v.clone() })
+                })
+                .collect();
+            let names: Vec<&str> = cookies.iter().map(|(k, _)| k.as_str()).collect();
+            let reply = format!("<sets cookies {names:?}>");
+            log(&Exchange { url: url.to_string(), request, status, reply, elapsed: started.elapsed() });
+        }
+        let response = sent?;
+        match response.status().as_u16() {
+            404 => Err(Error::Refused),
+            300..400 if cookies.iter().any(|(k, _)| k == "sid") => Ok(cookies),
+            200 => {
+                let page = response.text().await.unwrap_or_default();
+                Err(Error::Server(format!("login refused: {}", page_text(&page, ""))))
+            }
+            s => Err(Error::Status(s)),
+        }
+    }
+
+    /// Gets a page, sending the lobby session as the `sid` cookie when
+    /// given. The log shows the URL with secrets redacted and only the
+    /// page's size, since pages carry session ids.
+    pub async fn get_page(&self, url: &str, cookies: Option<&str>) -> Result<String, Error> {
+        {
+            let mut last = self.last.lock().await;
+            if let Some(t) = *last {
+                tokio::time::sleep_until((t + MIN_INTERVAL).into()).await;
+            }
+            *last = Some(Instant::now());
+        }
+        let started = Instant::now();
+        let mut request = self.client.get(url).header("Referer", url).timeout(REQUEST_TIMEOUT);
+        if let Some(cookies) = cookies {
+            request = request.header("Cookie", cookies);
+        }
+        let (status, reply) = match request.send().await {
+            Ok(r) => (Some(r.status().as_u16()), r.text().await.map_err(|e| Error::Network(e.to_string()))),
+            Err(e) => (None, Err(Error::Network(e.to_string()))),
+        };
+        if let Some(log) = &self.log {
+            let text = match &reply {
+                Ok(t) => format!("<a page of {} bytes>", t.len()),
+                Err(e) => format!("<{e}>"),
+            };
+            let url = redact_query(url);
+            log(&Exchange { url, request: Vec::new(), status, reply: text, elapsed: started.elapsed() });
+        }
+        let reply = reply?;
+        match status {
+            Some(404) => Err(Error::Refused),
+            Some(s) if !(200..300).contains(&s) => Err(Error::Status(s)),
+            _ => Ok(reply),
+        }
     }
 
     /// Posts `params` in `format` and decodes the reply. `wait` is how long
@@ -257,6 +375,17 @@ impl Seat {
     }
 }
 
+/// How a viewer seat was made, which decides how quickly moves arrive.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ViewerSeat {
+    /// The browser client's way (`opengamewin.cgi`): moves arrive as
+    /// they're made.
+    Browser,
+    /// An ASIP viewer seat, used when the browser way failed (the reason
+    /// is given): the server sends moves in ~10 s steps.
+    Asip { why: String },
+}
+
 /// A gameroom (lobby) session.
 pub struct Lobby {
     http: Http,
@@ -265,12 +394,14 @@ pub struct Lobby {
     asip: Asip,
     sid: Option<String>,
     grid: Option<String>,
+    /// The browser login's cookies (`sid` among them), as a `Cookie` header.
+    cookies: Option<String>,
 }
 
 impl Lobby {
     pub fn new(http: Http, base: &str, asip: Asip) -> Lobby {
         let base = if base.ends_with('/') { base.to_string() } else { format!("{base}/") };
-        Lobby { http, base, asip, sid: None, grid: None }
+        Lobby { http, base, asip, sid: None, grid: None, cookies: None }
     }
 
     /// Switches the ASIP version for later requests, keeping the session.
@@ -291,7 +422,20 @@ impl Lobby {
         self.sid.clone().ok_or(Error::NotLoggedIn)
     }
 
+    /// Logs in as the browser client does (`login.cgi`). Its session
+    /// works for the ASIP lobby too, and [`Lobby::watch`] needs it.
     pub async fn login(&mut self, username: &str, password: &str) -> Result<(), Error> {
+        let url = format!("{}login.cgi", self.base);
+        let params = [("email", username.into()), ("password", password.into()), ("timezone", "0".into())];
+        let cookies = self.http.login_form(&url, &params).await?;
+        self.sid = cookies.iter().find(|(k, _)| k == "sid").map(|(_, v)| v.clone());
+        self.cookies = Some(cookies.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; "));
+        Ok(())
+    }
+
+    /// Logs in over ASIP. Only [`Lobby::login`]'s session can get a viewer
+    /// seat the browser's way.
+    pub async fn login_asip(&mut self, username: &str, password: &str) -> Result<(), Error> {
         let r = self
             .post(
                 self.asip,
@@ -307,6 +451,7 @@ impl Lobby {
     pub async fn logout(&mut self) -> Result<(), Error> {
         let sid = self.sid()?;
         self.sid = None;
+        self.cookies = None;
         self.post(self.asip, &[("action", "logout".into()), ("sid", sid)]).await.map(drop)
     }
 
@@ -317,10 +462,15 @@ impl Lobby {
     }
 
     /// Reserves a seat at game `gid`: a player's side, or a viewer's.
+    /// Viewer seats work only over ASIP 1.0 (2.0 gives HTTP 500).
     pub async fn reserve_seat(&self, gid: &str, role: Role) -> Result<Seat, Error> {
+        self.reserve_seat_over(self.asip, gid, role).await
+    }
+
+    async fn reserve_seat_over(&self, asip: Asip, gid: &str, role: Role) -> Result<Seat, Error> {
         let r = self
             .post(
-                self.asip,
+                asip,
                 &[
                     ("action", "reserveseat".into()),
                     ("sid", self.sid()?),
@@ -339,14 +489,71 @@ impl Lobby {
         })
     }
 
+    /// Watches game `gid` as a viewer, the board seen from `side`, as the
+    /// browser client does: the seat from `opengamewin.cgi` (ASIP viewer
+    /// seats get moves only in ~10 s steps), followed on the browser
+    /// client's game server, `client3gs.cgi` (the one the server is sized
+    /// for, sending only new moves). If that fails, an ASIP viewer seat is
+    /// followed over ASIP 1.0 instead, when the gameroom id is known (from
+    /// an ASIP login).
+    pub async fn watch(&self, gid: &str, side: Color) -> Result<(GameServer, ViewerSeat), Error> {
+        match self.browser_seat(gid, side).await {
+            Ok(server) => Ok((server, ViewerSeat::Browser)),
+            Err(e) if self.grid.is_some() => {
+                let seat = self.reserve_seat_over(Asip::V1, gid, Role::Viewer).await?;
+                let server = GameServer::sit(self.http.clone(), &seat, Asip::V1).await?;
+                Ok((server, ViewerSeat::Asip { why: e.to_string() }))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// The browser client's way to a viewer seat: `opengamewin.cgi` (with
+    /// the lobby session as the `sid` cookie) reserves it and sends the
+    /// window to `js_sit.cgi`, whose page holds the game server session.
+    async fn browser_seat(&self, gid: &str, side: Color) -> Result<GameServer, Error> {
+        if gid.is_empty() || !gid.chars().all(|c| c.is_ascii_digit()) {
+            return Err(Error::BadReply(format!("not a game id: {gid:?}")));
+        }
+        let sid = self.sid()?;
+        let side = if side == Color::Gold { 'w' } else { 'b' };
+        let url = format!("{}opengamewin.cgi?client=1&gameid={gid}&role=v&side={side}", self.base);
+        let cookies = self.cookies.clone().unwrap_or_else(|| format!("sid={sid}"));
+        let page = self.http.get_page(&url, Some(&cookies)).await?;
+        // The page also has a commented-out refresh to `gameroom.cgi`.
+        let game_page = page
+            .split("URL=")
+            .skip(1)
+            .filter_map(|rest| rest.split('"').next())
+            .find(|u| u.contains("js_sit.cgi"));
+        let Some(game_page) = game_page else {
+            return Err(Error::BadReply(format!(
+                "opengamewin.cgi gave no game page: {}",
+                page_text(&page, &sid)
+            )));
+        };
+        let page = self.http.get_page(game_page, None).await?;
+        let Some(gs_sid) = between(&page, "arimaa.vars.sessionid = \"", '"') else {
+            return Err(Error::BadReply(format!("js_sit.cgi gave no session: {}", page_text(&page, &sid))));
+        };
+        let url = between(&page, "arimaa.vars.webservice = \"", '"')
+            .map_or_else(|| format!("{}gameserver/client3gs.cgi", self.root()), str::to_string);
+        Ok(GameServer::join(self.http.clone(), &url, Format::Json, gs_sid))
+    }
+
     /// Makes a game server URL absolute. ASIP 2.0 can return one relative
     /// to the game server directory (a 4steps workaround).
     fn resolve(&self, gsurl: &str) -> String {
         if gsurl.starts_with("http://") || gsurl.starts_with("https://") {
             return gsurl.to_string();
         }
-        let root = self.base.trim_end_matches('/').rsplit_once('/').map_or(self.base.as_str(), |(r, _)| r);
-        format!("{root}/java/ys/ms4/v5/{}", gsurl.trim_start_matches('/'))
+        format!("{}java/ys/ms4/v5/{}", self.root(), gsurl.trim_start_matches('/'))
+    }
+
+    /// The site directory above the gameroom (`…/arimaa/`).
+    fn root(&self) -> &str {
+        let trimmed = self.base.trim_end_matches('/');
+        trimmed.rsplit_once('/').map_or(self.base.as_str(), |(r, _)| &self.base[..r.len() + 1])
     }
 }
 
@@ -388,15 +595,23 @@ impl GameServer {
         })
     }
 
-    pub fn url(&self) -> &str {
-        &self.url
+    /// Follows a game with a session that's already seated (from the
+    /// browser client's seat).
+    fn join(http: Http, url: &str, format: Format, sid: &str) -> GameServer {
+        GameServer {
+            http,
+            url: url.to_string(),
+            format,
+            sid: sid.to_string(),
+            auth: None,
+            lastchange: "0".into(),
+            moves: String::new(),
+            chat: String::new(),
+        }
     }
 
-    /// Talks to another game server CGI from now on, in `format`, keeping
-    /// the session (to try the browser client's `client3gs.cgi`).
-    pub fn switch_to(&mut self, url: &str, format: Format) {
-        self.url = url.to_string();
-        self.format = format;
+    pub fn url(&self) -> &str {
+        &self.url
     }
 
     /// The full game state.
@@ -473,6 +688,23 @@ impl GameServer {
     }
 }
 
+/// A page's text without tags, short, with the session id redacted, for
+/// errors.
+fn page_text(page: &str, sid: &str) -> String {
+    let mut text = String::new();
+    let mut in_tag = false;
+    for c in page.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            c if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ").replace(sid, "<redacted>");
+    text.chars().take(200).collect()
+}
+
 /// The new part of `moves` or `chat` in an update: the field itself in
 /// ASIP 1.0, or `movesadd`/`chatadd` as the browser client reads them.
 fn added(r: &Record, key: &str) -> String {
@@ -494,6 +726,18 @@ mod tests {
             numbers,
             r#"{"sid":"<redacted>","me":{"auth":"<redacted>","id":"1"},"n":[{"sid":"<redacted>"}]}"#
         );
+    }
+
+    #[test]
+    fn pages_are_read() {
+        let page = r#"<meta CONTENT="0; URL=http://x/v5/js_sit.cgi?sid=123&grid=3&rand=9">"#;
+        assert_eq!(between(page, "URL=", '"'), Some("http://x/v5/js_sit.cgi?sid=123&grid=3&rand=9"));
+        assert_eq!(between(r#"vars.sessionid = "42";"#, "vars.sessionid = \"", '"'), Some("42"));
+        assert_eq!(
+            redact_query("http://x/js_sit.cgi?sid=123&grid=3"),
+            "http://x/js_sit.cgi?sid=<redacted>&grid=3"
+        );
+        assert_eq!(page_text("<b>Error</b> for 123", "123"), "Error for <redacted>");
     }
 
     #[test]
