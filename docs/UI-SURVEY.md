@@ -152,8 +152,9 @@ cover it.
   recorded `timeused`. Autoplay through the game either at a fixed speed or
   at the pace the moves were actually played. lichess has `autoplay.ts` with similar modes. It fits our
   animation queue, which already paces by `animationBudgetMs`.
-- **[P2] Takeback request and accept** for online games. For local HvB,
-  offer a takeback to the human's last turn. The arimaa.com client also
+- **[P2] Takeback request and accept** for online games. Local games
+  have takebacks already (an option when starting, `VARIATIONS.md`). The
+  arimaa.com client also
   has buttons (some hidden) for adjourn, draw request, resign and pass.
 - **[P1] Repetition message that names the earlier plies.** arimaa.com
   says "Position repeats 3 times. Same as: 12g 14g". Our commit blocker

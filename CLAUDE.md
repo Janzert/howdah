@@ -101,6 +101,15 @@ Sharp, OpFor and other AEI engines behave.
       a plan. `commit_turn(plan)` plays the turn (or keeps it as a plan);
       with no turn, it plays `plan_to_play`, the plan's move after live
       on the shown line.
+    - Undo (`undo_step`) with no step to undo reopens the move into the
+      shown position minus its last step (`reopen`; the move stays in the
+      tree). At the live node it's a takeback, if the match allows them
+      (`MatchSpec.takebacks`): `take_back_target` goes back to the last
+      position with a human to move (one ply between engines, never into
+      the setups), and the clocks are restored from `Match::turn_starts`.
+      The taken-back moves stay as the continuation, and become a
+      variation when a different move is played. The controller stops an
+      engine whose turn was taken back and ignores its reply.
     - Engine moves enter through `apply_engine_move`, as the live node's
       first child (a matching plan becomes the move). The board follows
       them only if you're watching the live position.

@@ -7,11 +7,12 @@
     view: SessionView;
     onCommit: () => void;
     onUndo: () => void;
+    onTakeBack: () => void;
     onCancel: () => void;
     onMoveNow: () => void;
     onEndMatch: () => void;
   }
-  let { view, onCommit, onUndo, onCancel, onMoveNow, onEndMatch }: Props = $props();
+  let { view, onCommit, onUndo, onTakeBack, onCancel, onMoveNow, onEndMatch }: Props = $props();
   const inMatch = $derived(view.players != null);
   const browsing = $derived(inMatch && view.livePly !== view.ply && view.result == null);
   // In a match, a move that isn't the human's live move is a plan.
@@ -49,6 +50,7 @@
     {#if browsing}<div class="note">Away from the live game; press End to follow it.</div>{/if}
     <div class="buttons">
       <button onclick={onMoveNow}>Move now <kbd>Space</kbd></button>
+      {#if view.canTakeBack}<button onclick={onTakeBack}>Take back</button>{/if}
     </div>
   {:else if browsing && !view.turn}
     <div class="status">Away from the live game</div>
@@ -93,7 +95,7 @@
       <div class="note">Committing adds a variation.</div>
     {/if}
     <div class="buttons">
-      <button onclick={onUndo} disabled={!turn}>Undo step <kbd>⌫</kbd></button>
+      <button onclick={onUndo} disabled={!view.canUndo}>Undo step <kbd>⌫</kbd></button>
       <button onclick={onCancel} disabled={!turn}>Reset <kbd>Esc</kbd></button>
       <button class="primary" onclick={onCommit} disabled={!turn || turn.commitBlocker != null}>
         Commit <kbd>⏎</kbd>
@@ -102,6 +104,9 @@
   {/if}
   {#if inMatch && !view.result}
     <div class="buttons">
+      {#if view.canTakeBack && !view.thinking}
+        <button class="subtle" onclick={onTakeBack} title="Undo played moves back to your last move">Take back</button>
+      {/if}
       <button class="subtle" onclick={onEndMatch} title="Stop the match; the game stays for analysis">Stop match</button>
     </div>
   {/if}

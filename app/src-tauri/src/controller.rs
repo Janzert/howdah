@@ -231,6 +231,16 @@ impl Coordinator {
             self.pending = None;
             self.generation = Some(generation);
         }
+        // A takeback can leave an engine thinking about a turn that's gone:
+        // stop it, and its reply (for the old request) is ignored.
+        if let Some(p) = &self.pending
+            && turn.as_ref().is_none_or(|t| (t.side, t.ply) != (p.side, p.ply))
+        {
+            if let Some(a) = &self.actors[p.side.index()] {
+                let _ = a.cmd.send(ActorCmd::Stop);
+            }
+            self.pending = None;
+        }
         for side in Color::ALL {
             let wanted = &engines[side.index()];
             let current = self.actors[side.index()].as_ref().map(|a| &a.engine_id);

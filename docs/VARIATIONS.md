@@ -149,6 +149,13 @@ being played.
   each turn. At `live` on your move the finished turn is a plan; only
   Commit plays a move. Shift+Enter ends a shorter turn as a plan. A
   setting turns it off.
+- **Undo across turns and takebacks:** Backspace with no step to undo
+  reopens the previous move (minus its last step). At `live` that undoes
+  a played move, which only a match started with takebacks allows: it
+  goes back to the last human move (skipping engine moves; one ply when
+  engines play both sides), restores both clocks to the start of that
+  turn, and keeps the taken-back moves, which become a variation once a
+  different move is played.
 
   This changes the current rule (`require_input` refuses input unless it's
   your turn at the latest move). Input at `live` on your own turn still

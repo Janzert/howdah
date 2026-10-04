@@ -59,6 +59,7 @@ pub fn run() {
             commands::cancel_turn,
             commands::commit_turn,
             commands::set_continue_turns,
+            commands::take_back,
             commands::setup_swap,
             commands::commit_setup,
             commands::start_match,

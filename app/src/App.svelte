@@ -125,7 +125,7 @@
   function rematch(): Promise<string | null> {
     if (view?.players && lastSpec) return startGame(lastSpec);
     const human = { kind: 'human' } as const;
-    return startGame({ gold: human, silver: human, goldTimeControl: null, silverTimeControl: null });
+    return startGame({ gold: human, silver: human, goldTimeControl: null, silverTimeControl: null, takebacks: false });
   }
 
   const swappedSpec = $derived.by((): MatchSpec | null => {
@@ -136,6 +136,7 @@
       silver: s.gold,
       goldTimeControl: s.silverTimeControl,
       silverTimeControl: s.goldTimeControl,
+      takebacks: s.takebacks,
     };
     return JSON.stringify(swapped) === JSON.stringify(s) ? null : swapped;
   });
@@ -352,7 +353,7 @@
       if (v.turn && v.canInput) run(api.commitTurn(true));
     },
     undoStep: (v) => {
-      if (v.turn && v.canInput) run(api.undoStep());
+      if (v.canUndo) run(api.undoStep());
     },
     resetTurn: (v) => {
       if (v.turn && v.canInput) run(api.cancelTurn());
@@ -432,6 +433,7 @@
         {view}
         onCommit={commit}
         onUndo={() => run(api.undoStep())}
+        onTakeBack={() => run(api.takeBack())}
         onCancel={() => run(api.cancelTurn())}
         onMoveNow={() => run(api.engineMoveNow())}
         onEndMatch={() => run(api.endMatch())}

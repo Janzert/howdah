@@ -6,4 +6,8 @@ export type MatchSpec = { gold: PlayerSpec, silver: PlayerSpec,
  * Arimaa time control per side, e.g. `30s/5m`; `None` leaves that side
  * untimed.
  */
-goldTimeControl: string | null, silverTimeControl: string | null, };
+goldTimeControl: string | null, silverTimeControl: string | null, 
+/**
+ * Whether played moves can be taken back.
+ */
+takebacks: boolean, };

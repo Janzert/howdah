@@ -34,6 +34,7 @@
   let separate = $state(pref('newgame.separate', '0') === '1');
   let goldTc = $state(pref('newgame.tc.gold', ''));
   let silverTc = $state(pref('newgame.tc.silver', ''));
+  let takebacks = $state(pref('newgame.takebacks', '0') === '1');
   let error = $state<string | null>(null);
   let dialog: HTMLDialogElement;
 
@@ -62,12 +63,14 @@
     savePref('newgame.separate', separate ? '1' : '0');
     savePref('newgame.tc.gold', goldTc);
     savePref('newgame.tc.silver', silverTc);
+    savePref('newgame.takebacks', takebacks ? '1' : '0');
     const [g, s] = separate ? [goldTc, silverTc] : [timeControl, timeControl];
     error = await onStart({
       gold: player(gold),
       silver: player(silver),
       goldTimeControl: g.trim() || null,
       silverTimeControl: s.trim() || null,
+      takebacks,
     });
     if (!error) onClose();
   }
@@ -102,6 +105,14 @@
         Separate time control for each player
       </label>
       <p class="hint">move/reserve[/percent/max reserve/game limit/max turn], e.g. <code>30s/2m</code></p>
+    </div>
+    <span></span>
+    <div>
+      <label class="check">
+        <input type="checkbox" bind:checked={takebacks} />
+        Allow takebacks
+      </label>
+      <p class="hint">Undo played moves (Backspace or Take back), back to a human's move; the clocks go back too.</p>
     </div>
   </div>
   {#if engines.length === 0}

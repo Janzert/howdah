@@ -87,6 +87,16 @@ playsLive: boolean,
  */
 planMove: string | null, 
 /**
+ * Whether Undo step (Backspace) has something to undo: a step, the
+ * move into the shown position, or a takeback.
+ */
+canUndo: boolean, 
+/**
+ * Whether played moves can be taken back now (a match with takebacks,
+ * shown at the live position).
+ */
+canTakeBack: boolean, 
+/**
  * In a match, the ply of the live position if it's on the line being
  * shown.
  */

@@ -200,6 +200,11 @@ impl Backend {
         self.mutate(|s| s.commit_turn(plan).map(|_| Vec::new()))
     }
 
+    /// Takes back played moves to the last human move (one ply between engines).
+    pub fn take_back(&self) -> Result<(), ApiError> {
+        self.mutate(|s| s.take_back())
+    }
+
     /// Whether a step after a full turn starts the other side's turn.
     pub fn set_continue_turns(&self, on: bool) -> Result<(), ApiError> {
         self.mutate(|s| {
@@ -240,7 +245,7 @@ impl Backend {
         };
         let tcs = [parse(&spec.gold_time_control)?, parse(&spec.silver_time_control)?];
         self.mutate(|s| {
-            s.start_match(players, tcs);
+            s.start_match(players, tcs, spec.takebacks);
             Ok(Vec::new())
         })
     }
@@ -341,6 +346,7 @@ impl Backend {
             "undo_step" => ok(self.undo_step()?),
             "cancel_turn" => ok(self.cancel_turn()?),
             "commit_turn" => ok(self.commit_turn(arg(args, "plan")?)?),
+            "take_back" => ok(self.take_back()?),
             "set_continue_turns" => ok(self.set_continue_turns(arg(args, "on")?)?),
             "setup_swap" => ok(self.setup_swap(arg(args, "a")?, arg(args, "b")?)?),
             "commit_setup" => ok(self.commit_setup()?),

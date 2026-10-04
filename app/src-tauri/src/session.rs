@@ -84,6 +84,28 @@ struct Match {
     turn_started: Instant,
     /// How long the most recent move took.
     last_move_time: Option<Duration>,
+    /// Whether played moves can be taken back ([`Session::take_back`]).
+    takebacks: bool,
+    /// The clocks when each live node's turn began, so a takeback can
+    /// restore them.
+    turn_starts: HashMap<NodeId, TurnStart>,
+}
+
+/// The clocks at the start of a turn.
+#[derive(Clone, Copy, Debug)]
+struct TurnStart {
+    /// Game time used so far (for the game time limit).
+    elapsed: Duration,
+    reserves: Option<[Duration; 2]>,
+}
+
+impl Match {
+    fn turn_start(&self, now: Instant) -> TurnStart {
+        TurnStart {
+            elapsed: self.clock.as_ref().map_or(Duration::ZERO, |c| now.saturating_duration_since(c.game_started)),
+            reserves: self.clock.as_ref().map(|c| c.reserves),
+        }
+    }
 }
 
 /// What the controller needs to ask an engine for a move.
@@ -413,21 +435,30 @@ impl Session {
 
     /// Starts a new game between the given players, with a time control per
     /// side (gold, silver); `None` leaves that side untimed.
-    pub fn start_match(&mut self, players: [Player; 2], time_controls: [Option<TimeControl>; 2]) {
+    /// With `takebacks`, played moves can be taken back.
+    pub fn start_match(
+        &mut self,
+        players: [Player; 2],
+        time_controls: [Option<TimeControl>; 2],
+        takebacks: bool,
+    ) {
         let now = Instant::now();
         let clock = time_controls.iter().any(Option::is_some).then(|| Clock {
             tcs: time_controls,
             reserves: time_controls.map(|tc| tc.map_or(Duration::ZERO, |t| t.starting_reserve())),
             game_started: now,
         });
-        let matchup = Match {
+        let mut matchup = Match {
             players,
             live: GameTree::ROOT,
             clock,
             thinking: None,
             turn_started: Instant::now(),
             last_move_time: None,
+            takebacks,
+            turn_starts: HashMap::new(),
         };
+        matchup.turn_starts.insert(GameTree::ROOT, matchup.turn_start(now));
         self.replace(GameTree::new(), Vec::new(), GameTree::ROOT, Some(matchup));
     }
 
@@ -643,6 +674,8 @@ impl Session {
         self.tree.make_first(node).expect("the node exists");
         if let Some(m) = &mut self.matchup {
             m.live = node;
+            let start = m.turn_start(m.turn_started);
+            m.turn_starts.insert(node, start);
         }
     }
 
@@ -1058,9 +1091,24 @@ impl Session {
         Ok(anim[anim.len() - steps.len()..].to_vec())
     }
 
+    /// Undoes the last step. With no step to undo, it reopens the move that
+    /// led to the shown position (the move stays in the tree) and undoes its
+    /// last step; at the live node of a match that's a takeback.
     pub fn undo_step(&mut self) -> Result<Vec<AnimStep>, ApiError> {
         if self.turn.is_none() {
-            return Err(ApiError::state("no step to undo"));
+            if self.matchup.is_none() || self.cursor_node() != self.live() {
+                return self.reopen();
+            }
+            let target = self.check_take_back()?;
+            if !self.matchup.as_ref().is_some_and(|m| m.players.contains(&Player::Human)) {
+                return Ok(self.take_back_to(target));
+            }
+            // Land in the human's move at `target`, minus its last step.
+            let mut anim = self.back_animation(target + 1);
+            self.make_live_again(target);
+            self.cursor = target + 1;
+            anim.extend(self.reopen()?);
+            return Ok(anim);
         }
         let (anim, _) = self.turn_animation();
         let tb = self.turn.as_mut().unwrap();
@@ -1069,6 +1117,98 @@ impl Session {
             self.turn = None;
         }
         Ok(anim.last().map(|a| a.reversed()).into_iter().collect())
+    }
+
+    /// The move into the shown position as a turn in progress from the
+    /// position before it, minus its last step; the cursor moves back to
+    /// that position. The move stays in the tree.
+    fn reopen(&mut self) -> Result<Vec<AnimStep>, ApiError> {
+        let Some(Move::Steps(effects)) = self.tree[self.cursor_node()].mv().cloned() else {
+            return Err(ApiError::state("no step to undo"));
+        };
+        let ply = self.cursor - 1;
+        let anim: Vec<AnimStep> = self.move_animation(ply).last().map(|a| a.reversed()).into_iter().collect();
+        let mut tb = TurnBuilder::new(self.tree[self.line[ply]].position());
+        for e in &effects[..effects.len() - 1] {
+            tb.try_step(e.step).map_err(ApiError::illegal)?;
+        }
+        self.show(self.line[ply]);
+        self.turn = (!tb.steps().is_empty()).then_some(tb);
+        Ok(anim)
+    }
+
+    /// Whether `undo_step` has something to undo.
+    fn can_undo(&self) -> bool {
+        if self.turn.is_some() {
+            return true;
+        }
+        if !matches!(self.tree[self.cursor_node()].mv(), Some(Move::Steps(_))) {
+            return false;
+        }
+        self.matchup.is_none() || self.cursor_node() != self.live() || self.take_back_target().is_some()
+    }
+
+    /// The ply a takeback goes back to: the latest position before the live
+    /// one with a human to move (skipping engine moves), or one ply back
+    /// when engines play both sides. Never into the setups.
+    fn take_back_target(&self) -> Option<usize> {
+        let m = self.matchup.as_ref().filter(|m| m.takebacks)?;
+        if self.live_result().is_some() || self.cursor_node() != m.live {
+            return None;
+        }
+        let live_ply = self.tree[m.live].ply();
+        let human = m.players.contains(&Player::Human);
+        let side = |ply: usize| if ply.is_multiple_of(2) { Color::Gold } else { Color::Silver };
+        (2..live_ply).rev().find(|&p| !human || *self.player(side(p)) == Player::Human)
+    }
+
+    fn check_take_back(&self) -> Result<usize, ApiError> {
+        if !self.matchup.as_ref().is_some_and(|m| m.takebacks) {
+            return Err(ApiError::state("takebacks are off in this game"));
+        }
+        self.take_back_target().ok_or_else(|| ApiError::state("there's no move to take back"))
+    }
+
+    /// Takes back played moves to [`Session::take_back_target`]: the whole
+    /// move, with no turn in progress. They stay in the tree, as a
+    /// variation once a different move is played.
+    pub fn take_back(&mut self) -> Result<Vec<AnimStep>, ApiError> {
+        let target = self.check_take_back()?;
+        Ok(self.take_back_to(target))
+    }
+
+    /// Makes the node at `target` on the shown line live and shows it,
+    /// returning the animation back to it.
+    fn take_back_to(&mut self, target: usize) -> Vec<AnimStep> {
+        self.turn = None;
+        let anim = self.back_animation(target);
+        self.make_live_again(target);
+        self.show(self.line[target]);
+        anim
+    }
+
+    /// The moves from the cursor back to ply `target`, played backward.
+    fn back_animation(&self, target: usize) -> Vec<AnimStep> {
+        (target..self.cursor)
+            .rev()
+            .flat_map(|p| self.move_animation(p).into_iter().rev().map(AnimStep::reversed))
+            .collect()
+    }
+
+    /// Makes the node at `target` on the shown line the live one again, with
+    /// the clocks as they were when its turn began.
+    fn make_live_again(&mut self, target: usize) {
+        let node = self.line[target];
+        let Some(m) = &mut self.matchup else { return };
+        let now = Instant::now();
+        m.live = node;
+        m.thinking = None;
+        m.turn_started = now;
+        let Some(start) = m.turn_starts.get(&node).copied() else { return };
+        if let (Some(clock), Some(reserves)) = (&mut m.clock, start.reserves) {
+            clock.reserves = reserves;
+            clock.game_started = now.checked_sub(start.elapsed).unwrap_or(now);
+        }
     }
 
     pub fn cancel_turn(&mut self) -> Vec<AnimStep> {
@@ -1304,6 +1444,8 @@ impl Session {
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
             can_input: self.can_input(),
             plays_live: self.plays_live(),
+            can_undo: self.can_undo(),
+            can_take_back: self.take_back_target().is_some(),
             plan_move: self.plan_to_play().and_then(|n| {
                 let mv = self.tree[n].mv()?;
                 Some(format!("{} {}", notation::move_label(self.tree[n].ply() - 1), mv.notation()))
@@ -1875,7 +2017,7 @@ mod tests {
     #[test]
     fn human_vs_engine_turn_taking() {
         let mut s = Session::new();
-        s.start_match([Player::Human, engine("bot")], [None, None]);
+        s.start_match([Player::Human, engine("bot")], [None, None], false);
         let g = s.generation();
         let v = s.view();
         assert!(v.can_input);
@@ -1900,7 +2042,7 @@ mod tests {
     #[test]
     fn engine_vs_engine_has_no_draft() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], [None, None]);
+        s.start_match([engine("a"), engine("b")], [None, None], false);
         assert_eq!(s.view().position.pieces.len(), 0);
         assert!(!s.can_input());
         let t = s.engine_turn().unwrap();
@@ -1910,7 +2052,7 @@ mod tests {
     #[test]
     fn stale_and_illegal_engine_moves() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], [None, None]);
+        s.start_match([engine("a"), engine("b")], [None, None], false);
         let g = s.generation();
         assert!(s.apply_engine_move(g + 1, Color::Gold, 0, &setup_text(Color::Gold)).is_err(), "old game");
         assert!(s.apply_engine_move(g, Color::Silver, 0, &setup_text(Color::Silver)).is_err(), "wrong side");
@@ -1927,7 +2069,7 @@ mod tests {
     #[test]
     fn engine_moves_follow_only_when_watching_live() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], [None, None]);
+        s.start_match([engine("a"), engine("b")], [None, None], false);
         let g = s.generation();
         s.apply_engine_move(g, Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
         s.apply_engine_move(g, Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
@@ -1944,7 +2086,7 @@ mod tests {
     /// A human (gold) against an engine, with both setups played.
     fn human_vs_engine_started() -> Session {
         let mut s = Session::new();
-        s.start_match([Player::Human, engine("bot")], [None, None]);
+        s.start_match([Player::Human, engine("bot")], [None, None], false);
         s.commit_setup().unwrap();
         s.apply_engine_move(s.generation(), Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
         s
@@ -2035,6 +2177,114 @@ mod tests {
     }
 
     #[test]
+    fn backspace_reopens_the_previous_move() {
+        let mut s = Session::new();
+        s.commit_setup().unwrap();
+        s.commit_setup().unwrap();
+        full_gold_turn(&mut s);
+        s.commit_turn(false).unwrap();
+        assert!(s.view().can_undo);
+        let anim = s.undo_step().unwrap();
+        assert_eq!((anim.len(), anim[0].from, anim[0].to), (1, sq("d5"), sq("e5")));
+        let v = s.view();
+        assert_eq!((v.ply, v.turn.unwrap().steps.len()), (2, 3));
+        assert_eq!(s.tree[s.line[3]].mv().unwrap().notation(), "Ee2n Ee3n Ee4n Ee5w", "the move stays");
+        // The setups aren't reopened.
+        s.cancel_turn();
+        assert!(!s.view().can_undo && s.undo_step().is_err());
+    }
+
+    /// A human (gold) against an engine with takebacks, after gold's
+    /// elephant move and the engine's reply.
+    fn takeback_game() -> Session {
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("bot")], [None, None], true);
+        s.commit_setup().unwrap();
+        s.apply_engine_move(s.generation(), Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
+        full_gold_turn(&mut s);
+        s.commit_turn(false).unwrap();
+        s.apply_engine_move(s.generation(), Color::Silver, 3, "ee7s").unwrap();
+        s
+    }
+
+    #[test]
+    fn backspace_takes_back_to_the_humans_move() {
+        let mut s = takeback_game();
+        assert!(s.view().can_take_back);
+        let anim = s.undo_step().unwrap();
+        assert_eq!(anim.len(), 2, "the engine's step, then gold's last step");
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply, v.plays_live), (2, Some(2), true));
+        assert_eq!(v.turn.unwrap().steps.len(), 3);
+        assert!(s.engine_turn().is_none());
+        // A different move replaces the old line, which stays as a variation.
+        s.try_step(sq("d2"), sq("d3")).unwrap();
+        s.commit_turn(false).unwrap();
+        let live = s.matchup.as_ref().unwrap().live;
+        assert_eq!(s.tree[live].mv().unwrap().notation(), "Ee2n Ee3n Ee4n Md2n");
+        assert!(s.tree.is_main_line(live));
+        assert_eq!(s.tree[s.tree[live].parent().unwrap()].children().len(), 2);
+        assert_eq!(s.engine_turn().unwrap().ply, 3);
+    }
+
+    #[test]
+    fn take_back_while_the_engine_thinks() {
+        let mut s = takeback_game();
+        s.take_back().unwrap();
+        s.try_step(sq("d2"), sq("d3")).unwrap();
+        s.commit_turn(false).unwrap();
+        assert_eq!(s.engine_turn().unwrap().ply, 3);
+        // The engine is to move: taking back undoes only gold's move.
+        let anim = s.take_back().unwrap();
+        assert_eq!(anim.len(), 1);
+        let v = s.view();
+        assert_eq!((v.ply, v.live_ply, v.turn.is_none()), (2, Some(2), true));
+        assert!(s.take_back().is_err(), "not into the setups");
+    }
+
+    #[test]
+    fn takebacks_between_engines_undo_one_ply() {
+        let mut s = Session::new();
+        s.start_match([engine("a"), engine("b")], [None, None], true);
+        let g = s.generation();
+        s.apply_engine_move(g, Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
+        s.apply_engine_move(g, Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
+        s.apply_engine_move(g, Color::Gold, 2, "Ee2n Ee3n").unwrap();
+        s.apply_engine_move(g, Color::Silver, 3, "ee7s").unwrap();
+        s.undo_step().unwrap();
+        assert_eq!(s.view().live_ply, Some(3));
+        assert_eq!(s.engine_turn().unwrap().side, Color::Silver);
+    }
+
+    #[test]
+    fn a_takeback_restores_the_clocks() {
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("bot")], [Some("30s/2m".parse().unwrap()); 2], true);
+        s.commit_setup().unwrap();
+        s.apply_engine_move(s.generation(), Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
+        let reserves = |s: &Session| s.matchup.as_ref().unwrap().clock.as_ref().unwrap().reserves;
+        let before = reserves(&s);
+        // Gold takes 50 s over its 30 s move time.
+        s.matchup.as_mut().unwrap().turn_started -= Duration::from_secs(50);
+        full_gold_turn(&mut s);
+        s.commit_turn(false).unwrap();
+        s.apply_engine_move(s.generation(), Color::Silver, 3, "ee7s").unwrap();
+        assert_ne!(reserves(&s), before);
+        s.take_back().unwrap();
+        assert_eq!(reserves(&s), before);
+    }
+
+    #[test]
+    fn takebacks_are_off_by_default() {
+        let mut s = human_vs_engine_started();
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn(false).unwrap();
+        let v = s.view();
+        assert!(!v.can_take_back && !v.can_undo);
+        assert!(s.undo_step().is_err());
+    }
+
+    #[test]
     fn a_plan_matching_the_engine_move_becomes_the_game() {
         let mut s = human_vs_engine_started();
         s.try_step(sq("e2"), sq("e3")).unwrap();
@@ -2068,7 +2318,7 @@ mod tests {
     #[test]
     fn plans_stay_as_analysis_after_the_game_ends() {
         let mut s = Session::new();
-        s.start_match([Player::Human, engine("b")], [Some("1s/0".parse().unwrap()); 2]);
+        s.start_match([Player::Human, engine("b")], [Some("1s/0".parse().unwrap()); 2], false);
         s.commit_setup().unwrap();
         s.apply_engine_move(s.generation(), Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
         s.goto(1).unwrap();
@@ -2107,7 +2357,7 @@ mod tests {
     #[test]
     fn timeouts_and_failures() {
         let mut s = Session::new();
-        s.start_match([Player::Human, engine("b")], [Some("1s/0".parse().unwrap()); 2]);
+        s.start_match([Player::Human, engine("b")], [Some("1s/0".parse().unwrap()); 2], false);
         let v = s.view();
         let clock = v.clock.unwrap();
         assert_eq!((clock.running, clock.turn_allowance_ms), (Some(Color::Gold), 1000));
@@ -2120,7 +2370,7 @@ mod tests {
         assert!(s.view().clock.unwrap().running.is_none());
 
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], [None, None]);
+        s.start_match([engine("a"), engine("b")], [None, None], false);
         let g = s.generation();
         s.engine_failed(g, Color::Gold, "crashed".into());
         assert_eq!(s.view().result.unwrap().reason, WinReason::Forfeit);
@@ -2130,7 +2380,7 @@ mod tests {
     fn separate_time_controls_per_side() {
         let mut s = Session::new();
         let gold: TimeControl = "1s/0".parse().unwrap();
-        s.start_match([engine("a"), engine("b")], [Some(gold), None]);
+        s.start_match([engine("a"), engine("b")], [Some(gold), None], false);
         let clock = s.view().clock.unwrap();
         assert_eq!(clock.gold.unwrap().move_time_ms, 1000);
         assert!(clock.silver.is_none());
@@ -2148,7 +2398,7 @@ mod tests {
         let mut s = Session::new();
         // 1 h per move, but a 1 s game limit.
         let tc: TimeControl = "1h/0/100/0/1s".parse().unwrap();
-        s.start_match([engine("a"), engine("b")], [Some(tc); 2]);
+        s.start_match([engine("a"), engine("b")], [Some(tc); 2], false);
         assert!(s.view().clock.unwrap().game_remaining_ms.unwrap() <= 1000);
         assert!(s.check_timeout(Instant::now() + Duration::from_secs(2)));
         let v = s.view();
@@ -2159,7 +2409,7 @@ mod tests {
     #[test]
     fn moves_are_timed_without_a_clock() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], [None, None]);
+        s.start_match([engine("a"), engine("b")], [None, None], false);
         assert_eq!(s.last_move_time(), None);
         std::thread::sleep(Duration::from_millis(20));
         s.apply_engine_move(s.generation(), Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
@@ -2170,7 +2420,7 @@ mod tests {
     #[test]
     fn end_match_returns_to_free_play() {
         let mut s = Session::new();
-        s.start_match([engine("a"), engine("b")], [None, None]);
+        s.start_match([engine("a"), engine("b")], [None, None], false);
         let g = s.generation();
         s.end_match();
         assert!(s.generation() > g);
@@ -2298,7 +2548,7 @@ mod tests {
         assert_eq!(s.engine_turn(), None, "still the human's turn");
         assert_eq!(s.view().ply, 4);
         let mut s = Session::new();
-        s.start_match([Player::Human, engine("bot")], [None, None]);
+        s.start_match([Player::Human, engine("bot")], [None, None], false);
         assert!(s.add_line(GameTree::ROOT, &[setup_text(Color::Gold)]).is_err(), "setups aren't planned");
     }
 

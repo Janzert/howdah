@@ -52,6 +52,8 @@ export const api = {
   /** Ends the turn; `plan` keeps a turn on your move in a match as a plan
    * instead of playing it. With no turn, plays the shown plan's move. */
   commitTurn: (plan = false) => invoke<void>('commit_turn', { plan }),
+  /** Takes back played moves, back to the last human move. */
+  takeBack: () => invoke<void>('take_back'),
   setContinueTurns: (on: boolean) => invoke<void>('set_continue_turns', { on }),
   setupSwap: (a: Square, b: Square) => invoke<void>('setup_swap', { a, b }),
   commitSetup: () => invoke<void>('commit_setup'),

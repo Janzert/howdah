@@ -204,6 +204,12 @@ pub struct SessionView {
     /// The plan move Enter would play (`3g Ee2n …`), when the cursor is in
     /// a plan for the user's move.
     pub plan_move: Option<String>,
+    /// Whether Undo step (Backspace) has something to undo: a step, the
+    /// move into the shown position, or a takeback.
+    pub can_undo: bool,
+    /// Whether played moves can be taken back now (a match with takebacks,
+    /// shown at the live position).
+    pub can_take_back: bool,
     /// In a match, the ply of the live position if it's on the line being
     /// shown.
     pub live_ply: Option<usize>,
@@ -375,6 +381,9 @@ pub struct MatchSpec {
     /// untimed.
     pub gold_time_control: Option<String>,
     pub silver_time_control: Option<String>,
+    /// Whether played moves can be taken back.
+    #[serde(default)]
+    pub takebacks: bool,
 }
 
 /// A configured engine.
