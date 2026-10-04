@@ -66,7 +66,12 @@ endDetail: string | null,
 /**
  * Present during a match (a game with an engine or a clock).
  */
-players: PlayersView | null, clock: ClockView | null, 
+players: PlayersView | null, 
+/**
+ * The players' names from the record's `Gold` and `Silver` tags (a
+ * loaded game's players), for when there's no match.
+ */
+tagNames: [string | null, string | null], clock: ClockView | null, 
 /**
  * The side whose engine is thinking.
  */

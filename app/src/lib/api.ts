@@ -5,8 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ApiError } from './bindings/ApiError';
 import type { EngineIdentity } from './bindings/EngineIdentity';
 import type { EngineSpec } from './bindings/EngineSpec';
+import type { GameroomGames } from './bindings/GameroomGames';
 import type { GameroomStatus } from './bindings/GameroomStatus';
-import type { LiveGameView } from './bindings/LiveGameView';
 import type { MatchSpec } from './bindings/MatchSpec';
 import type { MoveReplay } from './bindings/MoveReplay';
 import type { NodeId } from './bindings/NodeId';
@@ -96,11 +96,13 @@ export const api = {
   gameroomLogin: (username: string, password: string, remember: boolean) =>
     invoke<GameroomStatus>('gameroom_login', { username, password, remember }),
   gameroomLogout: () => invoke<void>('gameroom_logout'),
-  /** The games being played on arimaa.com now. */
-  liveGames: () => invoke<LiveGameView[]>('live_games'),
-  /** Follows an arimaa.com game in this session, as a viewer. Changes arrive
-   * as `game://changed` and `gameroom://watch` events. */
-  watchGame: (gid: string) => invoke<void>('watch_game', { session, gid }),
+  /** The games being played on arimaa.com now, and the last few finished. */
+  gameroomGames: () => invoke<GameroomGames>('gameroom_games'),
+  /** Opens an arimaa.com game in this session. A live game (its gameroom
+   * id) is followed as a viewer, with changes arriving as `game://changed`
+   * and `gameroom://watch` events; a finished game (its permanent id) is
+   * loaded whole. */
+  openGameroomGame: (gid: string) => invoke<void>('open_gameroom_game', { session, gid }),
   /** Stops following the game; it stays on the board. */
   stopWatching: () => invoke<void>('stop_watching', { session }),
   /** The game this session follows, if any. */

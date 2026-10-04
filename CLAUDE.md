@@ -77,11 +77,13 @@ Sharp, OpFor and other AEI engines behave.
   - `wire`: `Record` decodes either reply format (`key=value` for ASIP
     1.0, JSON for 2.0); `encode_request` encodes requests.
   - `client`: `Lobby` (`login` the browser's way through `login.cgi`, or
-    `login_asip`; `live_games` from ASIP 2.0 `state`; `reserve_seat`;
+    `login_asip`; `games` (live and recently finished) from ASIP 2.0
+    `state`; `reserve_seat`;
     `find_game_id`, a finished game's permanent id over ASIP 1.0;
     `watch`, which gets a viewer seat the browser client's way and follows
     it on `client3gs.cgi`, since ASIP viewer seats get moves only in ~10 s
-    steps) and `GameServer` (`sit`, `game_state`, the `update`
+    steps; `open`, the same by id for a live or a finished game) and
+    `GameServer` (`sit`, `game_state`, the `update`
     long poll, which adds each reply's new moves and chat to what came
     before and refetches the full state if the lengths don't match). `Http`
     sends a Referer, spaces requests a second apart (except long polls),
@@ -90,6 +92,10 @@ Sharp, OpFor and other AEI engines behave.
   - `state`: `GameState` from a reply: players, moves without numbers
     (`split_moves`), result (`parse_result`), and `ServerClock` worked out
     as the browser client does.
+  - `finished`: `RecentGame` (the lobby's `recentgames`) and
+    `FinishedGame`, read from a finished game's viewer page
+    (`opengamewin.cgi`, the `arimaa.vars` lines), with `record()` making a
+    `GameRecord` (players, ratings, time control, date, `GameId`, result).
   - `examples/probe.rs` runs it against the live server by hand (see the
     parent repo's notes on probing first). Never in tests or CI.
 - `app/src-tauri`: thin shell.
@@ -165,7 +171,10 @@ Sharp, OpFor and other AEI engines behave.
       `SessionView.storedAnalysis` on return. `add_line` adds a PV as a
       variation (a plan in a match); `preview_line` is the hover preview.
   - `gameroom.rs`: spectating arimaa.com games (use case 3). `Gameroom`
-    holds the login and lists live games. "Remember password" saves the
+    holds the login and lists live and recently finished games
+    (`gameroom_games`). `open` (command `open_gameroom_game`) opens a game
+    by id: a finished one is loaded whole as a record
+    (`Session::load_record`), a live one is watched as below. "Remember password" saves the
     login in `gameroom-login.json` in the config dir (`SavedLogin`, mode
     600): the password XORed with a fixed key and hex-encoded, which is
     obfuscation, not encryption. The password never goes back to the
@@ -240,9 +249,11 @@ Sharp, OpFor and other AEI engines behave.
   - `CommentBox.svelte`, under the move list, edits the shown move's
     comment (the game comment at the start; saved on blur or Ctrl+Enter,
     Esc reverts) and toggles its move glyphs.
-  - `WatchDialog.svelte` (Watch): the gameroom login (with "Remember
-    password"; a saved login fills the username, and the password field
-    says "Saved password"), then the live games with a Watch button each. `WatchPanel.svelte` under the comment box
+  - `WatchDialog.svelte` (toolbar button "arimaa.com"): the gameroom
+    login (with "Remember password"; a saved login fills the username, and
+    the password field says "Saved password"), then the live games with a
+    Watch button each, the recently finished ones with Open, and a game id
+    field (a permanent id loads a finished game, a gameroom id watches). `WatchPanel.svelte` under the comment box
     shows the followed game's state (spectators don't get the chat). TurnBar shows the player to
     move and "Stop watching" (`end_match`), and its turn buttons only once
     the user starts planning a move. Following the live game is the
@@ -288,7 +299,8 @@ Sharp, OpFor and other AEI engines behave.
       ghosts. It's hidden once the player takes a step.
   - `PlayerBar.svelte` shows names, clocks and captures (from
     `SessionView.captured`: the opponent's pieces, rabbits grouped as ×n).
-    The bars show in free play too.
+    The bars show in free play too, named from the record's `Gold`/`Silver`
+    tags (`SessionView.tagNames`) when there's no match.
   - `lib/sound.ts`: Web Audio. Sounds are embedded (`?inline`), decoded
     once by our own `lib/wav.ts` (8/16-bit PCM), and played as buffer
     sources, so overlapping sounds mix.

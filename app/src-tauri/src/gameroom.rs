@@ -21,17 +21,27 @@
 //! final state usually carries it (`finishedId`); otherwise it's looked up
 //! with `findgameid`, a few times, since right after the end the server may
 //! not know it yet.
+//!
+//! Games are opened by id ([`open`]) the browser gameroom's way: a live
+//! game's id gets a viewer seat and is followed as above, and a finished
+//! game's permanent id gets the whole game, loaded as a record. The lobby's
+//! `state` lists both the live games and the last few finished ones.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use howdah_arimaa::{Color, TimeControl};
-use howdah_gameroom::{Asip, DEFAULT_GAMEROOM, Error, GameServer, GameState, Http, Lobby, ViewerSeat};
+use howdah_arimaa::{Color, GameRecord, TimeControl};
+use howdah_gameroom::{
+    Asip, DEFAULT_GAMEROOM, Error, GameServer, GameState, Http, Lobby, Opened, RecentGame, ViewerSeat,
+    parse_result,
+};
 
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, SharedSession};
-use crate::dto::{AnimStep, ApiError, GameroomStatus, LiveGameView, WatchState, WatchView};
+use crate::dto::{
+    AnimStep, ApiError, GameroomGames, GameroomStatus, LiveGameView, RecentGameView, WatchState, WatchView,
+};
 use crate::session::{Player, RemoteClock, Session};
 
 /// Event carrying a [`WatchView`].
@@ -187,11 +197,13 @@ impl Gameroom {
         }
     }
 
-    pub async fn live_games(&self) -> Result<Vec<LiveGameView>, ApiError> {
+    /// The live games and the last few finished ones.
+    pub async fn games(&self) -> Result<GameroomGames, ApiError> {
         let lobby = self.lobby.lock().await;
         let lobby = lobby.as_ref().ok_or_else(|| ApiError::state("log in to arimaa.com first"))?;
-        let games = lobby.live_games().await.map_err(net_error)?;
-        Ok(games
+        let games = lobby.games().await.map_err(net_error)?;
+        let live = games
+            .live
             .into_iter()
             .map(|g| {
                 let [gold, silver] = g.players;
@@ -204,7 +216,8 @@ impl Gameroom {
                     postal: g.postal,
                 }
             })
-            .collect())
+            .collect();
+        Ok(GameroomGames { live, recent: games.recent.into_iter().map(recent_view).collect() })
     }
 
     /// The permanent id of finished game `gid`.
@@ -214,16 +227,43 @@ impl Gameroom {
         lobby.find_game_id(gid).await.map_err(net_error)
     }
 
-    /// A viewer seat at game `gid`, and its full state.
-    async fn seat(&self, gid: &str) -> Result<(GameServer, ViewerSeat, GameState), ApiError> {
-        let (mut server, how) = {
-            let lobby = self.lobby.lock().await;
-            let lobby = lobby.as_ref().ok_or_else(|| ApiError::state("log in to arimaa.com first"))?;
-            lobby.watch(gid, Color::Gold).await.map_err(net_error)?
-        };
-        let state = server.game_state().await.map_err(net_error)?;
-        Ok((server, how, state))
+    /// Opens game `gid`: a viewer seat at a live game, or a finished game
+    /// whole.
+    async fn open(&self, gid: &str) -> Result<Opened, ApiError> {
+        let lobby = self.lobby.lock().await;
+        let lobby = lobby.as_ref().ok_or_else(|| ApiError::state("log in to arimaa.com first"))?;
+        lobby.open(gid, Color::Gold).await.map_err(net_error)
     }
+}
+
+fn recent_view(g: RecentGame) -> RecentGameView {
+    let [gold, silver] = g.players;
+    let [gold_rating, silver_rating] = g.ratings;
+    let result = match (&g.result, &g.reason) {
+        (Some(w), Some(r)) => parse_result(&format!("{w}{r}")),
+        _ => None,
+    };
+    RecentGameView {
+        gid: g.id,
+        gold,
+        silver,
+        gold_rating,
+        silver_rating,
+        time_control: g.time_control,
+        rated: g.rated,
+        postal: g.postal,
+        result,
+        moves: g.moves,
+        ended_ms: g.ended.and_then(|t| u64::try_from(t).ok()).map(|t| t * 1000),
+    }
+}
+
+/// A game opened by id.
+pub enum Open {
+    /// A live game, now followed in the session.
+    Watching(Watch),
+    /// A finished game, to load into the session.
+    Finished(GameRecord),
 }
 
 /// A session's followed game.
@@ -264,11 +304,20 @@ pub struct Target {
     pub events: Events,
 }
 
-/// Seats a viewer at game `gid`, makes `target`'s session that game, and
-/// starts following it.
-pub async fn watch(gameroom: &Arc<Gameroom>, gid: &str, target: Target) -> Result<Watch, ApiError> {
+/// Opens game `gid`. A finished game comes back as its record; a live
+/// one gets a viewer seat, becomes `target`'s session's game, and is
+/// followed.
+pub async fn open(gameroom: &Arc<Gameroom>, gid: &str, target: Target) -> Result<Open, ApiError> {
     let gid = gid.trim();
-    let (server, how, state) = gameroom.seat(gid).await?;
+    let (mut server, how) = match gameroom.open(gid).await? {
+        Opened::Live(server, how) => (server, how),
+        Opened::Finished(game) => {
+            return game.record().map(Open::Finished).map_err(|e| {
+                ApiError::state(format!("arimaa.com game {gid} doesn't read as a game: {}", e.error))
+            });
+        }
+    };
+    let state = server.game_state().await.map_err(net_error)?;
     let generation = {
         let mut s = lock(&target.session);
         start(&mut s, &state);
@@ -294,7 +343,7 @@ pub async fn watch(gameroom: &Arc<Gameroom>, gid: &str, target: Target) -> Resul
         Next::Stop => tauri::async_runtime::spawn(find_id(gameroom, target, generation, view2)),
     };
     let task = Some(task);
-    Ok(Watch { view, task })
+    Ok(Open::Watching(Watch { view, task }))
 }
 
 /// Starts a match between the game's players, as the server reports them.
@@ -564,6 +613,19 @@ mod tests {
         assert!(s.export(false).contains("[GameId \"671437\"]"), "{}", s.export(false));
         let result = GameResult { winner: Color::Silver, reason: WinReason::Timeout };
         assert_eq!(s.view().result, Some(result));
+    }
+
+    #[test]
+    fn recent_games_are_shown() {
+        let r = Record::decode(
+            r#"{"recentgames":[{"id":"671441","wusername":"a","busername":"b","result":"b",
+                "termination":"t","plycount":"6","endts":"1791110910","rated":"1"}]}"#,
+        )
+        .unwrap();
+        let game = RecentGame::from_record(&r.list("recentgames")[0]).unwrap();
+        let v = recent_view(game);
+        assert_eq!(v.result, Some(GameResult { winner: Color::Silver, reason: WinReason::Timeout }));
+        assert_eq!((v.moves, v.ended_ms, v.rated), (Some(6), Some(1_791_110_910_000), true));
     }
 
     #[test]

@@ -65,7 +65,7 @@
 <div class="bar" class:active={toMove}>
   <span class="dot {side}"></span>
   <span class="name">
-    {player?.name ?? (side === 'gold' ? 'Gold' : 'Silver')}
+    {player?.name ?? view.tagNames[side === 'gold' ? 0 : 1] ?? (side === 'gold' ? 'Gold' : 'Silver')}
     {#if player?.kind === 'engine'}<span class="tag">engine</span>{/if}
   </span>
   {#if thinking}<span class="thinking">thinking…</span>{/if}

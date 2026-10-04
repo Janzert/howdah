@@ -1,13 +1,16 @@
 <script lang="ts">
   import { api, errorMessage } from './api';
-  import type { LiveGameView } from './bindings/LiveGameView';
+  import type { GameroomGames } from './bindings/GameroomGames';
+  import type { RecentGameView } from './bindings/RecentGameView';
+  import type { WinReason } from './bindings/WinReason';
 
   interface Props {
-    /** Follows a game; resolves to an error message, or null on success. */
-    onWatch: (gid: string) => Promise<string | null>;
+    /** Opens a game by id: follows a live one, loads a finished one.
+     * Resolves to an error message, or null on success. */
+    onOpen: (gid: string) => Promise<string | null>;
     onClose: () => void;
   }
-  let { onWatch, onClose }: Props = $props();
+  let { onOpen, onClose }: Props = $props();
 
   function pref(key: string): string {
     try {
@@ -32,7 +35,9 @@
   /** The username whose password the backend has saved. */
   let savedUser = $state<string | null>(null);
   const usesSaved = $derived(savedUser != null && username.trim() === savedUser && password === '');
-  let games = $state<LiveGameView[] | null>(null);
+  let games = $state<GameroomGames | null>(null);
+  /** The id typed into "Open game". */
+  let gameId = $state('');
   let busy = $state(false);
   let error = $state<string | null>(null);
   let dialog: HTMLDialogElement;
@@ -68,7 +73,7 @@
 
   function refresh() {
     return attempt(async () => {
-      games = await api.liveGames();
+      games = await api.gameroomGames();
     });
   }
 
@@ -80,7 +85,7 @@
       savedUser = s.savedUsername;
       user = s.username;
       savePref('gameroom.username', username.trim());
-      games = await api.liveGames();
+      games = await api.gameroomGames();
     });
   }
 
@@ -92,16 +97,51 @@
     });
   }
 
-  async function watch(gid: string) {
+  async function open(gid: string) {
     busy = true;
-    error = await onWatch(gid);
+    error = await onOpen(gid.trim());
     busy = false;
     if (!error) onClose();
+  }
+
+  function openById(e: SubmitEvent) {
+    e.preventDefault();
+    open(gameId);
+  }
+
+  const reasons: Record<WinReason, string> = {
+    goal: 'goal',
+    elimination: 'elimination',
+    immobilization: 'immobilization',
+    timeout: 'time',
+    resignation: 'resignation',
+    illegalMove: 'illegal move',
+    score: 'score',
+    forfeit: 'forfeit',
+  };
+
+  /** "Gold won by goal · 33 moves · Oct 4, 10:23 · rated" */
+  function recentMeta(g: RecentGameView): string {
+    const parts = [];
+    if (g.result) parts.push(`${g.result.winner === 'gold' ? 'Gold' : 'Silver'} won by ${reasons[g.result.reason]}`);
+    if (g.moves != null) parts.push(`${g.moves} moves`);
+    if (g.endedMs != null) {
+      parts.push(
+        new Date(g.endedMs).toLocaleString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        }),
+      );
+    }
+    if (g.rated) parts.push('rated');
+    return parts.join(' · ');
   }
 </script>
 
 <dialog bind:this={dialog} onclose={onClose} aria-labelledby="watch-title">
-  <h2 id="watch-title">Watch a game on arimaa.com</h2>
+  <h2 id="watch-title">Games on arimaa.com</h2>
   {#if user === null}
     <form onsubmit={login}>
       <div class="grid">
@@ -125,7 +165,7 @@
         </label>
       </div>
       <p class="hint">
-        Watching needs a gameroom login (a human account). The password goes over plain HTTP, as arimaa.com requires.
+        Watching and opening games needs a gameroom login (a human account). The password goes over plain HTTP, as arimaa.com requires.
         {#if remember}
           It's saved on this computer obfuscated, not encrypted: anyone who can read your files could recover it.
         {:else}
@@ -144,11 +184,12 @@
       Logged in as <strong>{user}</strong>
       <button class="subtle" onclick={logout} disabled={busy}>Log out</button>
     </div>
-    {#if games && games.length === 0}
+    <h3>Live</h3>
+    {#if games && games.live.length === 0}
       <p class="hint">No games are being played right now.</p>
     {:else if games}
       <ul class="games" aria-label="Live games">
-        {#each games as g (g.gid)}
+        {#each games.live as g (g.gid)}
           <li>
             <span class="players">
               <span class="dot gold"></span>{g.gold ?? '?'}
@@ -158,11 +199,42 @@
             <span class="meta">
               {g.timeControl ?? ''}{g.rated ? ' · rated' : ''}{g.postal ? ' · postal' : ''}
             </span>
-            <button onclick={() => watch(g.gid)} disabled={busy} aria-label="Watch game {g.gid}">Watch</button>
+            <button onclick={() => open(g.gid)} disabled={busy} aria-label="Watch game {g.gid}">Watch</button>
           </li>
         {/each}
       </ul>
     {/if}
+    <h3>Recently finished</h3>
+    {#if games && games.recent.length === 0}
+      <p class="hint">The gameroom lists no finished games.</p>
+    {:else if games}
+      <ul class="games" aria-label="Recently finished games">
+        {#each games.recent as g (g.gid)}
+          <li>
+            <span class="game">
+              <span class="players">
+                <span class="dot gold"></span>{g.gold ?? '?'}
+                {#if g.goldRating}<span class="rating">{g.goldRating}</span>{/if}
+                <span class="vs">vs</span>
+                <span class="dot silver"></span>{g.silver ?? '?'}
+                {#if g.silverRating}<span class="rating">{g.silverRating}</span>{/if}
+              </span>
+              <span class="meta">{recentMeta(g)}</span>
+            </span>
+            <button onclick={() => open(g.gid)} disabled={busy} aria-label="Open game {g.gid}">Open</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <form class="by-id" onsubmit={openById}>
+      <label for="gr-game-id">Game id</label>
+      <input id="gr-game-id" bind:value={gameId} inputmode="numeric" placeholder="e.g. 671438" autocomplete="off" />
+      <button type="submit" disabled={busy || !/^\s*\d+\s*$/.test(gameId)}>Open</button>
+    </form>
+    <p class="hint">
+      A finished game's id (as in the gameroom's game lists and the archive) loads the whole game; a live game's
+      gameroom id watches it.
+    </p>
     {#if error}<p class="error">{error}</p>{/if}
     <div class="buttons">
       <button onclick={refresh} disabled={busy}>Refresh</button>
@@ -190,6 +262,12 @@
     margin: 0 0 12px;
     font-size: 16px;
   }
+  h3 {
+    margin: 12px 0 6px;
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 600;
+  }
   .grid {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -213,7 +291,7 @@
     list-style: none;
     margin: 0;
     padding: 0;
-    max-height: 50vh;
+    max-height: 30vh;
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -236,6 +314,33 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+  .game {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+  .game .meta {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rating {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .by-id {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 13px;
+  }
+  .by-id input {
+    flex: 1;
+    min-width: 0;
   }
   .vs,
   .meta {

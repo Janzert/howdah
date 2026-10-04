@@ -479,10 +479,14 @@ impl Session {
 
     /// Loads a record, showing the end of its main line.
     pub fn load(&mut self, record: &str) -> Result<(), ApiError> {
-        let record = GameRecord::parse(record)?;
+        self.load_record(GameRecord::parse(record)?);
+        Ok(())
+    }
+
+    /// Makes `record` the game, showing the end of its main line.
+    pub fn load_record(&mut self, record: GameRecord) {
         let end = record.tree.line_end(GameTree::ROOT);
         self.replace(record.tree, record.tags, end, None);
-        Ok(())
     }
 
     /// Starts a new game between the given players, with a time control per
@@ -1622,6 +1626,9 @@ impl Session {
                 .matchup
                 .as_ref()
                 .map(|m| PlayersView { gold: m.players[0].view(), silver: m.players[1].view() }),
+            tag_names: ["Gold", "Silver"].map(|name| {
+                self.tags.iter().find(|(n, v)| n == name && !v.trim().is_empty()).map(|(_, v)| v.clone())
+            }),
             clock: self.clock_view(),
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
             can_input: self.can_input(),
@@ -2105,6 +2112,16 @@ mod tests {
         s.commit_turn(false).unwrap();
         s.promote(s.cursor_node()).unwrap();
         assert!(s.delete_from(live).is_err());
+    }
+
+    #[test]
+    fn loaded_games_name_their_players() {
+        let mut s = Session::new();
+        s.load("[Gold \"alice\"]\n\n1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2\n")
+            .unwrap();
+        assert_eq!(s.view().tag_names, [Some("alice".to_string()), None]);
+        s.new_game();
+        assert_eq!(s.view().tag_names, [None, None]);
     }
 
     #[test]

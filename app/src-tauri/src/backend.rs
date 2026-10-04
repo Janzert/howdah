@@ -29,7 +29,7 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, EngineIdentity, EngineSpec, GameroomStatus, LiveGameView, MatchSpec, MoveReplay,
+    AnimStep, ApiError, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay,
     PlayerSpec, PositionView, SessionId, SessionUpdate, SessionView, StepTarget, WatchView,
 };
 use crate::engines::{self, EngineRegistry};
@@ -454,27 +454,40 @@ impl Backend {
         self.gameroom.logout().await
     }
 
-    /// The games being played in the gameroom now.
-    pub async fn live_games(&self) -> Result<Vec<LiveGameView>, ApiError> {
-        self.gameroom.live_games().await
+    /// The games being played in the gameroom now, and the last few
+    /// finished.
+    pub async fn gameroom_games(&self) -> Result<GameroomGames, ApiError> {
+        self.gameroom.games().await
     }
 
-    /// Follows arimaa.com game `gid` in session `id`, as a viewer: the
-    /// session becomes that game, and moves, clocks, chat and the result
-    /// arrive as the server reports them (see `gameroom.rs`).
-    pub async fn watch_game(&self, id: SessionId, gid: &str) -> Result<(), ApiError> {
+    /// Opens arimaa.com game `gid` in session `id`. A live game (its
+    /// gameroom id) is followed as a viewer: the session becomes that game,
+    /// and moves, clocks and the result arrive as the server reports them
+    /// (see `gameroom.rs`). A finished game (its permanent id) is loaded
+    /// whole.
+    pub async fn open_gameroom_game(&self, id: SessionId, gid: &str) -> Result<(), ApiError> {
         let handle = self.handle(id)?;
         let target = gameroom::Target {
             session: handle.session.clone(),
             controller: handle.controller.clone(),
             events: handle.events.clone(),
         };
-        let watch = gameroom::watch(&self.gameroom, gid, target).await?;
-        // An earlier watch's task ends as it's dropped, without a "stopped"
-        // event, which would hide the new one.
-        let old = handle.watch().replace(watch);
-        drop(old);
-        Ok(())
+        match gameroom::open(&self.gameroom, gid, target).await? {
+            gameroom::Open::Watching(watch) => {
+                // An earlier watch's task ends as it's dropped, without a
+                // "stopped" event, which would hide the new one.
+                let old = handle.watch().replace(watch);
+                drop(old);
+                Ok(())
+            }
+            gameroom::Open::Finished(record) => {
+                handle.stop_watching();
+                self.mutate(id, |s| {
+                    s.load_record(record);
+                    Ok(Vec::new())
+                })
+            }
+        }
     }
 
     /// Stops following the session's gameroom game; the game stays.
@@ -566,8 +579,8 @@ impl Backend {
                 )
                 .await?),
             "gameroom_logout" => ok(self.gameroom_logout().await?),
-            "live_games" => ok(self.live_games().await?),
-            "watch_game" => ok(self.watch_game(sid()?, &arg::<String>(args, "gid")?).await?),
+            "gameroom_games" => ok(self.gameroom_games().await?),
+            "open_gameroom_game" => ok(self.open_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?),
             "stop_watching" => ok(self.stop_watching(sid()?)?),
             "watch_status" => ok(self.watch_status(sid()?)?),
             _ => Err(ApiError::state(format!("unknown command {cmd:?}"))),

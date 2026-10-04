@@ -361,9 +361,9 @@
     }
   }
 
-  async function watchGame(gid: string): Promise<string | null> {
+  async function openGameroomGame(gid: string): Promise<string | null> {
     try {
-      await api.watchGame(gid);
+      await api.openGameroomGame(gid);
       lastSpec = null;
       return null;
     } catch (e) {
@@ -533,7 +533,9 @@
     {/if}
     <div class="tools">
       <button onclick={() => (showNewGame = true)}>New game</button>
-      <button onclick={() => (showWatch = true)} title="Watch a game being played on arimaa.com">Watch</button>
+      <button onclick={() => (showWatch = true)} title="Watch live games on arimaa.com, or open finished ones">
+        arimaa.com
+      </button>
       <button onclick={() => (showEngines = true)}>Engines</button>
       <button onclick={toggleAnalysis} aria-pressed={analysing} title="Analyse the shown position with an engine (l)">
         Analysis
@@ -578,7 +580,7 @@
   />
 {/if}
 {#if showWatch}
-  <WatchDialog onWatch={watchGame} onClose={() => (showWatch = false)} />
+  <WatchDialog onOpen={openGameroomGame} onClose={() => (showWatch = false)} />
 {/if}
 {#if showSettings}
   <SettingsDialog onClose={() => (showSettings = false)} />

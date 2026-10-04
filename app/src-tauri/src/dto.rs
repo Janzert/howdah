@@ -205,6 +205,9 @@ pub struct SessionView {
     pub end_detail: Option<String>,
     /// Present during a match (a game with an engine or a clock).
     pub players: Option<PlayersView>,
+    /// The players' names from the record's `Gold` and `Silver` tags (a
+    /// loaded game's players), for when there's no match.
+    pub tag_names: [Option<String>; 2],
     pub clock: Option<ClockView>,
     /// The side whose engine is thinking.
     pub thinking: Option<Color>,
@@ -590,6 +593,38 @@ pub struct LiveGameView {
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
+}
+
+/// A game recently finished on arimaa.com, from the gameroom's list.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RecentGameView {
+    /// The permanent id.
+    pub gid: String,
+    pub gold: Option<String>,
+    pub silver: Option<String>,
+    pub gold_rating: Option<String>,
+    pub silver_rating: Option<String>,
+    pub time_control: Option<String>,
+    pub rated: bool,
+    pub postal: bool,
+    pub result: Option<GameResult>,
+    /// The last move's number (`5` for a game ending at 5b).
+    pub moves: Option<u32>,
+    /// When it ended, in milliseconds since the Unix epoch.
+    #[ts(type = "number | null")]
+    pub ended_ms: Option<u64>,
+}
+
+/// The gameroom's game lists.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GameroomGames {
+    pub live: Vec<LiveGameView>,
+    /// The last few games finished, newest first.
+    pub recent: Vec<RecentGameView>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
