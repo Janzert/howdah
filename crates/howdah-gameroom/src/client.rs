@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 
 use howdah_arimaa::Color;
 
+use crate::finished::{FinishedGame, RecentGame};
 use crate::state::{GameState, Role};
 use crate::wire::{Format, Record, encode_request};
 
@@ -386,6 +387,21 @@ pub enum ViewerSeat {
     Asip { why: String },
 }
 
+/// The lobby's game lists, from one `state` request.
+#[derive(Clone, Debug, Default)]
+pub struct LobbyGames {
+    pub live: Vec<GameInfo>,
+    /// The last few games finished in the gameroom, newest first.
+    pub recent: Vec<RecentGame>,
+}
+
+/// A game opened by id: a live one is followed from a viewer seat, and a
+/// finished one comes whole.
+pub enum Opened {
+    Live(GameServer, ViewerSeat),
+    Finished(FinishedGame),
+}
+
 /// A gameroom (lobby) session.
 pub struct Lobby {
     http: Http,
@@ -457,8 +473,17 @@ impl Lobby {
 
     /// The live games (ASIP 2.0's `state`; ASIP 1.0 has no such list).
     pub async fn live_games(&self) -> Result<Vec<GameInfo>, Error> {
+        Ok(self.games().await?.live)
+    }
+
+    /// The live and recently finished games, from one ASIP 2.0 `state`
+    /// (the request the browser lobby makes every 20 s).
+    pub async fn games(&self) -> Result<LobbyGames, Error> {
         let r = self.post(Asip::V2, &[("action", "state".into()), ("sid", self.sid()?)]).await?;
-        Ok(r.list("livegames").iter().filter_map(GameInfo::from_record).collect())
+        Ok(LobbyGames {
+            live: r.list("livegames").iter().filter_map(GameInfo::from_record).collect(),
+            recent: r.list("recentgames").iter().filter_map(RecentGame::from_record).collect(),
+        })
     }
 
     /// Reserves a seat at game `gid`: a player's side, or a viewer's.
@@ -510,29 +535,46 @@ impl Lobby {
     /// followed over ASIP 1.0 instead, when the gameroom id is known (from
     /// an ASIP login).
     pub async fn watch(&self, gid: &str, side: Color) -> Result<(GameServer, ViewerSeat), Error> {
-        match self.browser_seat(gid, side).await {
-            Ok(server) => Ok((server, ViewerSeat::Browser)),
+        match self.open(gid, side).await? {
+            Opened::Live(server, how) => Ok((server, how)),
+            Opened::Finished(_) => Err(Error::Server(format!("game {gid} has ended"))),
+        }
+    }
+
+    /// Opens game `gid` as the browser gameroom does, whether it's live
+    /// (a gameroom id: followed as [`Lobby::watch`] says) or finished (a
+    /// permanent id: the whole game, from its viewer page).
+    pub async fn open(&self, gid: &str, side: Color) -> Result<Opened, Error> {
+        match self.browser_open(gid, side).await {
+            Ok(opened) => Ok(opened),
+            Err(e @ (Error::NotLoggedIn | Error::Server(_))) => Err(e),
             Err(e) if self.grid.is_some() => {
                 let seat = self.reserve_seat_over(Asip::V1, gid, Role::Viewer).await?;
                 let server = GameServer::sit(self.http.clone(), &seat, Asip::V1).await?;
-                Ok((server, ViewerSeat::Asip { why: e.to_string() }))
+                Ok(Opened::Live(server, ViewerSeat::Asip { why: e.to_string() }))
             }
             Err(e) => Err(e),
         }
     }
 
-    /// The browser client's way to a viewer seat: `opengamewin.cgi` (with
-    /// the lobby session as the `sid` cookie) reserves it and sends the
-    /// window to `js_sit.cgi`, whose page holds the game server session.
-    async fn browser_seat(&self, gid: &str, side: Color) -> Result<GameServer, Error> {
+    /// The browser client's way into a game: `opengamewin.cgi` (with the
+    /// lobby session as the `sid` cookie). For a live game it reserves a
+    /// viewer seat and sends the window to `js_sit.cgi`, whose page holds
+    /// the game server session; a finished game's page holds the game.
+    /// An id the server doesn't know gets an error page (a
+    /// [`Error::Server`] with its message).
+    async fn browser_open(&self, gid: &str, side: Color) -> Result<Opened, Error> {
         if gid.is_empty() || !gid.chars().all(|c| c.is_ascii_digit()) {
-            return Err(Error::BadReply(format!("not a game id: {gid:?}")));
+            return Err(Error::Server(format!("not a game id: {gid:?}")));
         }
         let sid = self.sid()?;
         let side = if side == Color::Gold { 'w' } else { 'b' };
         let url = format!("{}opengamewin.cgi?client=1&gameid={gid}&role=v&side={side}", self.base);
         let cookies = self.cookies.clone().unwrap_or_else(|| format!("sid={sid}"));
         let page = self.http.get_page(&url, Some(&cookies)).await?;
+        if let Some(game) = FinishedGame::from_page(gid, &page) {
+            return Ok(Opened::Finished(game));
+        }
         // The page also has a commented-out refresh to `gameroom.cgi`.
         let game_page = page
             .split("URL=")
@@ -540,6 +582,9 @@ impl Lobby {
             .filter_map(|rest| rest.split('"').next())
             .find(|u| u.contains("js_sit.cgi"));
         let Some(game_page) = game_page else {
+            if let Some(e) = error_page(&page) {
+                return Err(Error::Server(page_text(&e, &sid)));
+            }
             return Err(Error::BadReply(format!(
                 "opengamewin.cgi gave no game page: {}",
                 page_text(&page, &sid)
@@ -551,7 +596,8 @@ impl Lobby {
         };
         let url = between(&page, "arimaa.vars.webservice = \"", '"')
             .map_or_else(|| format!("{}gameserver/client3gs.cgi", self.root()), str::to_string);
-        Ok(GameServer::join(self.http.clone(), &url, Format::Json, gs_sid))
+        let server = GameServer::join(self.http.clone(), &url, Format::Json, gs_sid);
+        Ok(Opened::Live(server, ViewerSeat::Browser))
     }
 
     /// Makes a game server URL absolute. ASIP 2.0 can return one relative
@@ -714,8 +760,25 @@ fn page_text(page: &str, sid: &str) -> String {
             _ => {}
         }
     }
-    let text = text.split_whitespace().collect::<Vec<_>>().join(" ").replace(sid, "<redacted>");
+    let mut text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if !sid.is_empty() {
+        text = text.replace(sid, "<redacted>");
+    }
     text.chars().take(200).collect()
+}
+
+/// The message of a gameroom error page ("Expired Game" with "Cannot find
+/// the game id for this game.", say): its heading and its bold text.
+fn error_page(page: &str) -> Option<String> {
+    if !page.contains("Use the back button") {
+        return None;
+    }
+    let heading = between(page, "<h2 align=center>", '<')?.trim();
+    let detail = page.rsplit_once("<b>").and_then(|(_, rest)| rest.split_once("</b>")).map(|(b, _)| b);
+    Some(match detail {
+        Some(detail) => format!("{heading}: {detail}"),
+        None => heading.to_string(),
+    })
 }
 
 /// The new part of `moves` or `chat` in an update: the field itself in
@@ -751,6 +814,11 @@ mod tests {
             "http://x/js_sit.cgi?sid=<redacted>&grid=3"
         );
         assert_eq!(page_text("<b>Error</b> for 123", "123"), "Error for <redacted>");
+        let expired = "<h2 align=center>Expired Game</h2>\n<p><i>Use the back button of your browser.</i>\n\
+            <p align=center><b>Cannot find the game id for this game. <!-- playerid = 1, gameid = 2 --></b></p>";
+        let e = error_page(expired).unwrap();
+        assert_eq!(page_text(&e, ""), "Expired Game: Cannot find the game id for this game.");
+        assert_eq!(error_page("<html>a login page</html>"), None);
     }
 
     #[test]

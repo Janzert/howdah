@@ -14,6 +14,9 @@
 //! - [`Lobby`]: login, the live-games list, seat reservation, and
 //!   [`Lobby::watch`]: a viewer seat the browser client's way
 //!   (`opengamewin.cgi`), since ASIP viewer seats get moves in ~10 s steps.
+//!   [`Lobby::open`] opens a game by id the same way, live or finished
+//!   ([`FinishedGame`], read from the viewer page), and [`Lobby::games`]
+//!   lists the live and recently finished games.
 //! - [`GameServer`]: sit, `gamestate`, and the `updategamestate` long poll
 //!   (keeping the moves and chat received so far).
 //! - Requests carry a Referer (the server refuses requests under the
@@ -24,12 +27,15 @@
 //! `examples/probe.rs` runs these against the live server by hand.
 
 pub mod client;
+pub mod finished;
 pub mod state;
 pub mod wire;
 
 pub use client::{
-    Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, NetLog, Seat, ViewerSeat,
+    Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog, Opened,
+    Seat, ViewerSeat,
 };
+pub use finished::{FinishedGame, RecentGame};
 pub use state::{GameState, Role, ServerClock, parse_result, split_moves};
 pub use wire::{Format, Record};
 
