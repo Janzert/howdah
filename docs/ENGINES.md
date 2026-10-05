@@ -35,10 +35,14 @@ working Python controller. Engine quirks live in one place in the code,
 
 ## bot_Sharp
 
-[arimaasharp](https://github.com/lightvector/arimaasharp), C++: the
-strongest bot as of 2015 and the reference strong engine for play and
-engine-vs-engine tests. Run it as `sharp aei`. Built and checked on Linux
-with GCC 13; the source has `#ifdef`s for Windows and macOS, untested.
+[arimaasharp](https://github.com/lightvector/arimaasharp) by David Wu,
+C++: the strongest bot as of 2015 and the reference strong engine for play
+and engine-vs-engine tests. We use our fork,
+[Janzert/arimaasharp](https://github.com/Janzert/arimaasharp), which builds
+with CMake and current compilers and allows `verbose` outside dev builds.
+Run it as `sharp aei`. Built and checked on Linux with GCC 13 and on
+Windows with clang-cl; the fork's CI builds it and runs its self-tests on
+Linux, macOS and Windows.
 
 - **Search output is `log` lines**, not `info`. By default only a summary
   when the search ends: `log Depth 12.0233+ Eval 71 Time 2.81 Seed …`.

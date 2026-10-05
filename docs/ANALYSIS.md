@@ -294,7 +294,7 @@ These aren't in the first version, but the design above leaves room:
 - **Threat mode (`x`):** analyse as if the side to move passed. That needs
   the position with the other side to move, which only `setposition` can
   give. It loses the history (so repetition isn't seen), and Sharp ignores
-  the side, so it would need a patch in `tools/build-sharp.sh` first.
+  the side, so it would need a change in our Sharp fork first.
   OpFor honors the side.
 - **Several engines:** the controller keys runs by a slot id instead of
   holding one, `AnalysisView` carries the slot, and each slot gets a panel

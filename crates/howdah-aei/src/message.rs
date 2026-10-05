@@ -90,8 +90,8 @@ impl Info {
 ///
 /// `log Depth 12.0233+ Eval 71 Time 2.80995 Seed 47d0b298fc1972e4`
 ///
-/// and with its `verbose` option (which our build of Sharp allows outside
-/// dev builds, see `tools/build-sharp.sh`) it also reports each finished
+/// and with its `verbose` option (which our fork of Sharp allows outside
+/// dev builds, github.com/Janzert/arimaasharp) it also reports each finished
 /// iteration (`ID`) and each new best move within one (`FS`):
 ///
 /// `log ID Depth:  12  Eval:  90  Time: 2.37/4.89  PV: Ee2n Ee3n Ee4n Ee5n  ed7s hh7s qpss`

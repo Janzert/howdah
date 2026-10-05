@@ -69,8 +69,8 @@ impl Profile {
     pub fn analysis_options(self) -> &'static [(&'static str, &'static str)] {
         match self {
             // Sharp has no `go infinite`; `ignoretc` makes `go` search until
-            // `stop`. `verbose` needs our build of Sharp (see
-            // `tools/build-sharp.sh` in the parent repo).
+            // `stop`. `verbose` needs our fork of Sharp
+            // (github.com/Janzert/arimaasharp).
             Profile::Sharp => &[("ignoretc", "true"), ("verbose", "true")],
             Profile::OpFor | Profile::Generic => &[],
         }

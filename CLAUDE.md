@@ -58,9 +58,9 @@ Sharp, OpFor and other AEI engines behave.
     and, with its `verbose` option, `ID`/`FS` progress lines with a PV.
     `Profile` (picked from `id name`: Sharp, OpFor, Generic) holds engine
     quirks: the options analysis needs and how to read scores (`Score`,
-    from the mover's side). Our build of Sharp
-    (`tools/build-sharp.sh` in the parent repo) allows `verbose` outside
-    dev builds.
+    from the mover's side). Our fork of Sharp
+    (github.com/Janzert/arimaasharp) allows `verbose` outside dev
+    builds.
   - `play_match`: engine vs engine with clocks, following pyrimaa's
     `game.py` (option names, timeouts, `stop` before the deadline, and
     losses by illegal move, crash, timeout, resignation or turn limit).
