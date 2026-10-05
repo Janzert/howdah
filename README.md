@@ -36,7 +36,7 @@ If the window is blank on NVIDIA or some Wayland setups, run with
 
 **Windows**: Microsoft C++ Build Tools ("Desktop development with C++")
 and WebView2, which ships with Windows 10/11. WebView2 is Chromium-based,
-so rendering can differ slightly from WebKitGTK.
+so rendering can differ slightly from WebKitGTK. Tested on Windows 11.
 
 **macOS**: Xcode Command Line Tools (`xcode-select --install`). It uses
 WKWebView, which is close to WebKitGTK.
