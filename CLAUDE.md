@@ -571,6 +571,11 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
   overrides); otherwise run `npx playwright install chromium`. The bridge
   holds one session, so tests run serially and start with `newGame`.
 
+- CI (`.github/workflows/ci.yml`, Linux, Windows and macOS) runs the
+  checks above with clippy's warnings as errors, builds the frontend
+  first (the app crate embeds `app/dist`), and on Linux also checks
+  rustfmt, that the TS bindings are regenerated, and the e2e tests. Keep
+  it free of anything that talks to arimaa.com.
 - Linux system packages: see README.md (WebKitGTK 4.1 is the essential one).
 - TypeScript is pinned to 6.x because svelte-check doesn't support TS 7 yet.
 - Tauri 3 is in alpha; stay on 2.x.

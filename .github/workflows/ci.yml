@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: npm ci
+        working-directory: app
+        run: npm ci
+      # The app crate embeds the built frontend (app/dist), so build it first.
+      - name: Frontend build
+        working-directory: app
+        run: npm run build
+
+      - name: rustfmt
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust tests
+        run: |
+          # The app's controller tests run the bundled test engine.
+          cargo build -p howdah-aei --bin aei-test-engine
+          cargo test --workspace
+      - name: TypeScript bindings are up to date
+        if: runner.os == 'Linux'
+        working-directory: app
+        run: |
+          npm run bindings
+          git diff --exit-code -- src/lib/bindings
+      - name: svelte-check
+        working-directory: app
+        run: npm run check
+      - name: vitest
+        working-directory: app
+        run: npm test
+
+      # The UI smoke tests: the frontend in Chromium against the dev bridge.
+      - name: Playwright smoke tests
+        if: runner.os == 'Linux'
+        working-directory: app
+        run: |
+          npx playwright install --with-deps chromium
+          npm run e2e
+      - uses: actions/upload-artifact@v7
+        if: failure() && runner.os == 'Linux'
+        with:
+          name: playwright-results
+          path: app/test-results/
+          if-no-files-found: ignore
+
+      - name: Tauri build
+        working-directory: app
+        run: npm run tauri build -- --ci
+      - uses: actions/upload-artifact@v7
+        with:
+          name: howdah-${{ runner.os }}
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/msi/*.msi
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
