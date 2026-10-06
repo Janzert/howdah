@@ -23,8 +23,10 @@
 //! live node is *sent* instead ([`Session::outgoing_move`]): it's added
 //! to the tree as the main continuation and shown, and played only when
 //! the server's list has it. If the server refuses it
-//! ([`Session::move_refused`]), it stays as a plan. No engine is asked to
-//! move in such a game yet.
+//! ([`Session::move_refused`]), it stays as a plan. Takebacks there are
+//! requests the other side answers ([`Session::request_takeback`],
+//! [`Session::answer_takeback`]). No engine is asked to move in such a
+//! game yet.
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -38,7 +40,7 @@ use howdah_arimaa::{
 use crate::dto::{
     AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, LastMoveView, LastStepView,
     MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView,
-    PlayersView, PositionView, SessionView, SideClockView, StepTarget, TurnStepView, TurnView,
+    PlayersView, PositionView, SessionView, SideClockView, StepTarget, TakebackView, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -113,6 +115,32 @@ struct Match {
     /// In a game with a remote side, the human's move sent to the server
     /// and not yet in its list: a child of the live node.
     outgoing: Option<NodeId>,
+    /// In a game with a remote side, a takeback request: the user's or
+    /// the opponent's.
+    takeback: Option<Takeback>,
+    /// Whether the user may ask for takebacks in a game with a remote side
+    /// (not in rated games).
+    takeback_requests: bool,
+}
+
+/// A takeback request in a game on a server, as far as it got.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Takeback {
+    /// The side asking.
+    by: Color,
+    state: TakebackState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TakebackState {
+    /// The user's request, not yet sent.
+    Asking,
+    /// The user's request, sent; the server doesn't show it yet.
+    Sent,
+    /// The server shows the request, and the other side hasn't answered.
+    Pending,
+    /// The user's answer to the opponent's request, sent or not yet.
+    Answer { accept: bool, sent: bool },
 }
 
 /// The clocks at the start of a turn.
@@ -162,6 +190,30 @@ pub struct OutgoingMove {
     pub ply: usize,
     /// The move in notation, captures included, as the server wants it.
     pub text: String,
+}
+
+/// Something to tell the server about a takeback, in a game with a
+/// remote side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TakebackAction {
+    /// Ask for the user's last move back.
+    Request,
+    /// Answer the opponent's request (accept or decline).
+    Reply(bool),
+}
+
+/// A [`TakebackAction`] waiting to be sent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutgoingTakeback {
+    pub generation: u64,
+    pub action: TakebackAction,
+}
+
+/// What came of a takeback request when the server stopped showing it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TakebackEnd {
+    /// The user's request was declined (the moves stayed).
+    Declined,
 }
 
 /// What the controller needs to ask an engine for a move.
@@ -548,6 +600,8 @@ impl Session {
             takebacks,
             turn_starts: HashMap::new(),
             outgoing: None,
+            takeback: None,
+            takeback_requests: true,
         };
         matchup.turn_starts.insert(GameTree::ROOT, matchup.turn_start(now));
         self.replace(GameTree::new(), Vec::new(), GameTree::ROOT, Some(matchup));
@@ -815,6 +869,8 @@ impl Session {
             let Some(m) = &mut self.matchup else { unreachable!("checked above") };
             m.live = path[agree];
             m.thinking = None;
+            // A takeback: any request has its answer.
+            m.takeback = None;
         }
         let mut added = 0;
         let mut refused = None;
@@ -930,6 +986,7 @@ impl Session {
         }
         if let Some(m) = &mut self.matchup {
             m.outgoing = None;
+            m.takeback = None;
         }
         match self.live_result() {
             None => self.finish(result, detail),
@@ -941,6 +998,162 @@ impl Session {
             }
         }
         Ok(())
+    }
+
+    /// The user's side in a game with a remote side.
+    fn user_side(&self) -> Option<Color> {
+        let m = self.matchup.as_ref().filter(|m| m.server_clock())?;
+        [Color::Gold, Color::Silver].into_iter().find(|c| m.players[c.index()] == Player::Human)
+    }
+
+    /// Why the user can't ask for a takeback now, in a game with a remote
+    /// side, or `None` if they can.
+    fn takeback_blocker(&self) -> Option<&'static str> {
+        let Some(m) = self.matchup.as_ref().filter(|_| self.user_side().is_some()) else {
+            return Some("takebacks are asked only in a game you play on a server");
+        };
+        if !m.takeback_requests {
+            Some("takebacks aren't asked in rated games")
+        } else if self.live_result().is_some() {
+            Some("the game is over")
+        } else if m.takeback.is_some() {
+            Some("a takeback request is already open")
+        } else if m.outgoing.is_some() {
+            Some("your move is on its way to the server")
+        } else if self.back_to_human(m).is_none() {
+            Some("there's no move to take back")
+        } else {
+            None
+        }
+    }
+
+    /// Stops the user asking for takebacks in this match (a rated game on
+    /// a server). The opponent's requests can still be answered.
+    pub fn forbid_takeback_requests(&mut self) {
+        if let Some(m) = &mut self.matchup {
+            m.takeback_requests = false;
+        }
+    }
+
+    /// Asks the opponent to take back the user's last move, in a game with
+    /// a remote side: on the user's turn the server takes back two plies
+    /// (the opponent's move too), on the opponent's turn one. The request
+    /// goes out through [`Session::outgoing_takeback`]; if it's accepted,
+    /// the server's list goes back ([`Session::sync_remote`]).
+    pub fn request_takeback(&mut self) -> Result<(), ApiError> {
+        if let Some(why) = self.takeback_blocker() {
+            return Err(ApiError::state(why));
+        }
+        let by = self.user_side().expect("checked above");
+        if let Some(m) = &mut self.matchup {
+            m.takeback = Some(Takeback { by, state: TakebackState::Asking });
+        }
+        Ok(())
+    }
+
+    /// Answers the opponent's takeback request, in a game with a remote
+    /// side. The answer goes out through [`Session::outgoing_takeback`].
+    pub fn answer_takeback(&mut self, accept: bool) -> Result<(), ApiError> {
+        let user = self.user_side();
+        let Some(t) = self.matchup.as_mut().and_then(|m| m.takeback.as_mut()) else {
+            return Err(ApiError::state("there's no takeback request to answer"));
+        };
+        if user.is_none_or(|u| u == t.by) || t.state != TakebackState::Pending {
+            return Err(ApiError::state("there's no takeback request to answer"));
+        }
+        t.state = TakebackState::Answer { accept, sent: false };
+        Ok(())
+    }
+
+    /// The takeback request or answer to send to the server, if any.
+    pub fn outgoing_takeback(&self) -> Option<OutgoingTakeback> {
+        let action = match self.matchup.as_ref()?.takeback?.state {
+            TakebackState::Asking => TakebackAction::Request,
+            TakebackState::Answer { accept, sent: false } => TakebackAction::Reply(accept),
+            _ => return None,
+        };
+        Some(OutgoingTakeback { generation: self.generation, action })
+    }
+
+    /// The server took `action` (answered `ok`).
+    pub fn takeback_sent(&mut self, generation: u64, action: TakebackAction) -> Result<(), ApiError> {
+        let t = self.takeback_mut(generation)?;
+        match (action, t.state) {
+            (TakebackAction::Request, TakebackState::Asking) => t.state = TakebackState::Sent,
+            (TakebackAction::Reply(a), TakebackState::Answer { accept, sent: false }) if a == accept => {
+                t.state = TakebackState::Answer { accept, sent: true };
+            }
+            _ => return Err(ApiError::state("no such takeback action on its way")),
+        }
+        Ok(())
+    }
+
+    /// `action` didn't reach the server, or the server refused it or never
+    /// showed it: a request is dropped, and an answer can be given again.
+    pub fn takeback_failed(&mut self, generation: u64, action: TakebackAction) -> Result<(), ApiError> {
+        let t = self.takeback_mut(generation)?;
+        match (action, t.state) {
+            (TakebackAction::Request, TakebackState::Asking | TakebackState::Sent) => {
+                self.matchup.as_mut().expect("checked above").takeback = None;
+            }
+            (TakebackAction::Reply(_), TakebackState::Answer { .. }) => t.state = TakebackState::Pending,
+            _ => return Err(ApiError::state("no such takeback action on its way")),
+        }
+        Ok(())
+    }
+
+    /// Whether the user's takeback request was sent and the server hasn't
+    /// shown it yet.
+    pub fn takeback_unconfirmed(&self) -> bool {
+        self.matchup.as_ref().and_then(|m| m.takeback).is_some_and(|t| t.state == TakebackState::Sent)
+    }
+
+    fn takeback_mut(&mut self, generation: u64) -> Result<&mut Takeback, ApiError> {
+        if generation != self.generation {
+            return Err(ApiError::state("stale takeback"));
+        }
+        self.matchup
+            .as_mut()
+            .and_then(|m| m.takeback.as_mut())
+            .ok_or_else(|| ApiError::state("there's no takeback request"))
+    }
+
+    /// Brings the takeback request in line with the server's: `by` is the
+    /// side whose request it shows, if any. Call it after
+    /// [`Session::sync_remote`], which settles an accepted request; a
+    /// request of the user's that the server stops showing without going
+    /// back was declined.
+    pub fn sync_takeback(
+        &mut self,
+        generation: u64,
+        by: Option<Color>,
+    ) -> Result<Option<TakebackEnd>, ApiError> {
+        if generation != self.generation || !self.server_game() {
+            return Err(ApiError::state("no game with a remote player"));
+        }
+        let user = self.user_side();
+        let Some(m) = &mut self.matchup else { unreachable!("checked above") };
+        let mut end = None;
+        m.takeback = match (by, m.takeback) {
+            // Shown: the user's request reached the server; an answer on
+            // its way stays until the server takes it.
+            (Some(by), Some(t)) if t.by == by => Some(match t.state {
+                TakebackState::Asking | TakebackState::Sent => Takeback { by, state: TakebackState::Pending },
+                _ => t,
+            }),
+            (Some(by), _) => Some(Takeback { by, state: TakebackState::Pending }),
+            // Not shown: a request not yet sent, or one the server may not
+            // have shown yet, stays.
+            (None, Some(t)) if matches!(t.state, TakebackState::Asking | TakebackState::Sent) => Some(t),
+            (None, Some(t)) => {
+                if Some(t.by) == user && t.state == TakebackState::Pending {
+                    end = Some(TakebackEnd::Declined);
+                }
+                None
+            }
+            (None, None) => None,
+        };
+        Ok(end)
     }
 
     /// Makes `node`, a child of the live node, the match's new live node
@@ -1433,6 +1646,12 @@ impl Session {
         if self.live_result().is_some() || self.cursor_node() != m.live {
             return None;
         }
+        self.back_to_human(m)
+    }
+
+    /// The latest ply before the live one with a human to move, after the
+    /// setups; any ply back when no human plays.
+    fn back_to_human(&self, m: &Match) -> Option<usize> {
         let live_ply = self.tree[m.live].ply();
         let human = m.players.contains(&Player::Human);
         let side = |ply: usize| if ply.is_multiple_of(2) { Color::Gold } else { Color::Silver };
@@ -1714,6 +1933,15 @@ impl Session {
             cursor: self.cursor_node(),
             live: self.matchup.as_ref().map(|m| m.live),
             sent: self.matchup.as_ref().and_then(|m| m.outgoing),
+            takeback: self.matchup.as_ref().and_then(|m| m.takeback).map(|t| TakebackView {
+                by: t.by,
+                shown: matches!(t.state, TakebackState::Pending | TakebackState::Answer { .. }),
+                answer: match t.state {
+                    TakebackState::Answer { accept, .. } => Some(accept),
+                    _ => None,
+                },
+            }),
+            can_ask_takeback: self.takeback_blocker().is_none(),
             ply: self.cursor,
             phase: self.phase(),
             position: position_view(&position, &ids),
@@ -2606,6 +2834,127 @@ mod tests {
         let result = GameResult { winner: Color::Silver, reason: WinReason::Timeout };
         s.finish_remote(g, result, None).unwrap();
         assert_eq!(s.outgoing_move(), None);
+    }
+
+    /// [`human_vs_remote`] after gold's move 2 and silver's reply: gold to
+    /// move, with a move to take back.
+    fn human_vs_remote_with_moves() -> (Session, u64) {
+        let (mut s, g) = human_vs_remote();
+        s.sync_remote(g, &sample_moves(4)).unwrap();
+        (s, g)
+    }
+
+    #[test]
+    fn the_user_asks_for_a_takeback() {
+        let (mut s, g) = human_vs_remote();
+        assert!(!s.view().can_ask_takeback, "only setups so far");
+        assert!(s.request_takeback().is_err());
+        let (mut s, g2) = human_vs_remote_with_moves();
+        assert_eq!(g, g2);
+        assert!(s.view().can_ask_takeback);
+        s.request_takeback().unwrap();
+        let v = s.view();
+        let t = v.takeback.unwrap();
+        assert_eq!((t.by, t.shown, t.answer), (Color::Gold, false, None));
+        assert!(!v.can_ask_takeback, "one request at a time");
+        assert!(s.request_takeback().is_err());
+        let out = s.outgoing_takeback().unwrap();
+        assert_eq!(out, OutgoingTakeback { generation: g, action: TakebackAction::Request });
+        // A state from before the request reached the server leaves it.
+        s.sync_takeback(g, None).unwrap();
+        assert_eq!(s.outgoing_takeback(), Some(out));
+        s.takeback_sent(g, TakebackAction::Request).unwrap();
+        assert_eq!(s.outgoing_takeback(), None);
+        assert!(s.takeback_unconfirmed());
+        assert_eq!(s.sync_takeback(g, None).unwrap(), None, "maybe not shown yet");
+        assert!(s.view().takeback.is_some());
+        s.sync_takeback(g, Some(Color::Gold)).unwrap();
+        assert!(s.view().takeback.unwrap().shown && !s.takeback_unconfirmed());
+        assert!(s.answer_takeback(true).is_err(), "not the user's to answer");
+        // Accepted: the server's list goes back two plies.
+        s.sync_remote(g, &sample_moves(2)).unwrap();
+        assert_eq!(s.sync_takeback(g, None).unwrap(), None);
+        let v = s.view();
+        assert_eq!((v.takeback, v.live_ply, v.ply), (None, Some(2), 2));
+    }
+
+    #[test]
+    fn rated_games_have_no_takeback_requests() {
+        let (mut s, g) = human_vs_remote_with_moves();
+        s.forbid_takeback_requests();
+        assert!(!s.view().can_ask_takeback);
+        assert!(s.request_takeback().unwrap_err().message.contains("rated"));
+        s.sync_takeback(g, Some(Color::Silver)).unwrap();
+        s.answer_takeback(false).unwrap();
+    }
+
+    #[test]
+    fn a_takeback_request_can_be_declined_or_lost() {
+        let (mut s, g) = human_vs_remote_with_moves();
+        s.request_takeback().unwrap();
+        s.takeback_sent(g, TakebackAction::Request).unwrap();
+        s.sync_takeback(g, Some(Color::Gold)).unwrap();
+        assert_eq!(s.sync_takeback(g, None).unwrap(), Some(TakebackEnd::Declined));
+        let v = s.view();
+        assert_eq!((v.takeback, v.live_ply), (None, Some(4)));
+        assert!(v.can_ask_takeback, "the user can ask again");
+        // One the server never shows, or refuses, is dropped.
+        s.request_takeback().unwrap();
+        assert!(s.takeback_failed(g + 1, TakebackAction::Request).is_err(), "old game");
+        s.takeback_failed(g, TakebackAction::Request).unwrap();
+        assert_eq!(s.view().takeback, None);
+        // So is one when the game ends.
+        s.request_takeback().unwrap();
+        let result = GameResult { winner: Color::Silver, reason: WinReason::Resignation };
+        s.finish_remote(g, result, None).unwrap();
+        let v = s.view();
+        assert_eq!((v.takeback, v.can_ask_takeback), (None, false));
+    }
+
+    #[test]
+    fn the_user_answers_the_opponents_request() {
+        let (mut s, g) = human_vs_remote_with_moves();
+        assert!(s.answer_takeback(true).is_err(), "nothing to answer");
+        s.sync_takeback(g, Some(Color::Silver)).unwrap();
+        let v = s.view();
+        let t = v.takeback.unwrap();
+        assert_eq!((t.by, t.shown, t.answer), (Color::Silver, true, None));
+        assert!(!v.can_ask_takeback, "answer first");
+        assert_eq!(s.outgoing_takeback(), None, "nothing to send until the user answers");
+        s.answer_takeback(false).unwrap();
+        assert_eq!(s.outgoing_takeback().unwrap().action, TakebackAction::Reply(false));
+        assert!(s.answer_takeback(true).is_err(), "already answered");
+        // The answer didn't get through: it can be given again.
+        s.takeback_failed(g, TakebackAction::Reply(false)).unwrap();
+        assert_eq!(s.view().takeback.unwrap().answer, None);
+        s.answer_takeback(true).unwrap();
+        s.takeback_sent(g, TakebackAction::Reply(true)).unwrap();
+        assert_eq!(s.outgoing_takeback(), None);
+        s.sync_takeback(g, Some(Color::Silver)).unwrap();
+        assert_eq!(s.view().takeback.unwrap().answer, Some(true), "the server hasn't acted yet");
+        // Silver's move 2 goes back.
+        s.sync_remote(g, &sample_moves(3)).unwrap();
+        s.sync_takeback(g, None).unwrap();
+        let v = s.view();
+        assert_eq!((v.takeback, v.live_ply), (None, Some(3)));
+    }
+
+    #[test]
+    fn spectators_see_takeback_requests_but_dont_answer() {
+        let mut s = Session::new();
+        s.start_match([remote("a"), remote("b")], [None, None], false);
+        let g = s.generation();
+        s.sync_remote(g, &sample_moves(4)).unwrap();
+        assert!(!s.view().can_ask_takeback);
+        assert!(s.request_takeback().is_err());
+        s.sync_takeback(g, Some(Color::Gold)).unwrap();
+        assert_eq!(s.view().takeback.unwrap().by, Color::Gold);
+        assert!(s.answer_takeback(true).is_err());
+        assert_eq!(s.sync_takeback(g, None).unwrap(), None, "not the user's request");
+        // And a local game has none.
+        let mut s = Session::new();
+        s.start_match([Player::Human, Player::Human], [None, None], true);
+        assert!(s.sync_takeback(s.generation(), None).is_err());
     }
 
     #[test]

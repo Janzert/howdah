@@ -73,6 +73,10 @@ export const api = {
   commitTurn: (plan = false) => invoke<void>('commit_turn', { session, plan }),
   /** Takes back played moves, back to the last human move. */
   takeBack: () => invoke<void>('take_back', { session }),
+  /** In a game on arimaa.com, asks the opponent to take back your last move. */
+  requestTakeback: () => invoke<void>('request_takeback', { session }),
+  /** Accepts or declines the opponent's takeback request. */
+  answerTakeback: (accept: boolean) => invoke<void>('answer_takeback', { session, accept }),
   setContinueTurns: (on: boolean) => invoke<void>('set_continue_turns', { session, on }),
   setupSwap: (a: Square, b: Square) => invoke<void>('setup_swap', { session, a, b }),
   commitSetup: () => invoke<void>('commit_setup', { session }),

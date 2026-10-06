@@ -38,7 +38,9 @@
 //! server answers a move it drops with `ok` too (it does so for a few
 //! seconds after refusing one), so a move counts as played only once the
 //! server's list has it: if it hasn't come back after a few seconds, the
-//! task checks the full state and sends it again.
+//! task checks the full state and sends it again. The same task sends the
+//! user's takeback requests and answers ([`send_takeback`]); the server's
+//! state says which request is open.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -57,7 +59,7 @@ use crate::dto::{
     AnimStep, ApiError, GameroomGames, GameroomStatus, LiveGameView, PastGameView, PlayerGamesView,
     PlayerMatchView, RecentGameView, WatchState, WatchView,
 };
-use crate::session::{OutgoingMove, Player, RemoteClock, Session};
+use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
 /// Event carrying a [`WatchView`].
 pub const WATCH_UPDATE: &str = "gameroom://watch";
@@ -515,6 +517,11 @@ fn start(s: &mut Session, state: &GameState) {
     }
     let tc: Option<TimeControl> = state.time_control.as_deref().and_then(|t| t.parse().ok());
     s.start_match(players, [tc; 2], false);
+    // Whether the server takes takeback requests in rated games isn't
+    // known; don't ask.
+    if state.rated {
+        s.forbid_takeback_requests();
+    }
     // As the arimaa.com archive has them.
     let event = state.raw.nonempty("event").unwrap_or_else(|| "Casual game".into());
     let mut tags = vec![("Event".to_string(), event), ("Site".into(), "Over the Net".into())];
@@ -549,13 +556,23 @@ enum Outcome {
     Failed(String),
 }
 
-/// Brings the session up to the server's state: its moves, clocks and
-/// result. Returns the animation for a single new move.
-fn apply(s: &mut Session, generation: u64, state: &GameState) -> (Vec<AnimStep>, Outcome) {
+/// What a server state did to the session.
+struct Applied {
+    /// The animation for a single new move.
+    animation: Vec<AnimStep>,
+    outcome: Outcome,
+    /// What came of a takeback request the server stopped showing.
+    takeback: Option<TakebackEnd>,
+}
+
+/// Brings the session up to the server's state: its moves, takeback
+/// request, clocks and result.
+fn apply(s: &mut Session, generation: u64, state: &GameState) -> Applied {
     let (animation, mut outcome) = match s.sync_remote(generation, &state.moves) {
         Ok(a) => (a, Outcome::Playing),
         Err(e) => (Vec::new(), Outcome::Failed(e.message)),
     };
+    let takeback = s.sync_takeback(generation, state.takeback).ok().flatten();
     if let Some(c) = state.clock {
         let reported =
             RemoteClock { reserves: c.reserves, turn_elapsed: c.turn_elapsed, game_elapsed: c.game_elapsed };
@@ -579,22 +596,22 @@ fn apply(s: &mut Session, generation: u64, state: &GameState) -> (Vec<AnimStep>,
             (None, None) => {}
         }
     }
-    (animation, outcome)
+    Applied { animation, outcome, takeback }
 }
 
 /// Brings the session and the watch view up to the server's state, and
 /// sends out what changed.
 fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<WatchView>) -> Next {
-    let outcome = {
+    let (outcome, takeback) = {
         let mut s = lock(&target.session);
         if s.generation() != generation {
             drop(s);
             set_state(target, view, WatchState::Stopped, None);
             return Next::Stop;
         }
-        let (animation, outcome) = apply(&mut s, generation, state);
+        let Applied { animation, outcome, takeback } = apply(&mut s, generation, state);
         emit_session(&target.events, &s, animation, None);
-        outcome
+        (outcome, takeback)
     };
     target.controller.poke();
     let mut v = lock(view);
@@ -604,6 +621,9 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
             if v.state == WatchState::Reconnecting {
                 v.state = WatchState::Following;
                 v.detail = None;
+            }
+            if takeback == Some(TakebackEnd::Declined) {
+                v.detail = Some("your takeback request was declined".into());
             }
             Next::Follow
         }
@@ -774,13 +794,18 @@ async fn send_moves(
 ) {
     // The move last sent, how many times, and when.
     let mut sent: Option<(OutgoingMove, u32, Instant)> = None;
+    // When the user's takeback request was sent, until the server shows it.
+    let mut asked: Option<Instant> = None;
     loop {
-        match &sent {
+        let move_due = sent.as_ref().map(|(_, tries, at)| *at + (CONFIRM_WAIT * *tries).min(MAX_BACKOFF));
+        match move_due.into_iter().chain(asked.map(|at| at + CONFIRM_WAIT)).min() {
             None => wake.notified().await,
-            Some((_, tries, at)) => {
-                let due = *at + (CONFIRM_WAIT * *tries).min(MAX_BACKOFF);
+            Some(due) => {
                 let _ = tokio::time::timeout_at(due.into(), wake.notified()).await;
             }
+        }
+        if !send_takeback(&target, generation, &view, &actions, &mut asked).await {
+            return;
         }
         let out = {
             let s = lock(&target.session);
@@ -839,6 +864,73 @@ async fn send_moves(
             }
         }
     }
+}
+
+/// Sends the user's takeback request or answer
+/// ([`Session::outgoing_takeback`]), for [`send_moves`]. A request the
+/// server hasn't shown [`CONFIRM_WAIT`] after it was sent (`asked`) is
+/// checked against the full state, and dropped if it's still missing: the
+/// user can ask again. Returns false once the session has moved on.
+async fn send_takeback(
+    target: &Target,
+    generation: u64,
+    view: &Mutex<WatchView>,
+    actions: &Mutex<Actions>,
+    asked: &mut Option<Instant>,
+) -> bool {
+    let (out, unconfirmed) = {
+        let s = lock(&target.session);
+        if s.generation() != generation {
+            return false;
+        }
+        (s.outgoing_takeback(), s.takeback_unconfirmed())
+    };
+    if !unconfirmed {
+        *asked = None;
+    } else if asked.is_some_and(|at| at.elapsed() >= CONFIRM_WAIT) {
+        *asked = None;
+        let act = lock(actions).clone();
+        if let Ok(r) = act.act("gamestate", &[("wait", "0".into())]).await {
+            update(target, generation, &GameState::from_record(r), view);
+        }
+        let mut s = lock(&target.session);
+        if s.takeback_unconfirmed() && s.takeback_failed(generation, TakebackAction::Request).is_ok() {
+            emit_session(&target.events, &s, Vec::new(), None);
+            drop(s);
+            let detail = "arimaa.com didn't take the takeback request".to_string();
+            set_state(target, view, WatchState::Following, Some(detail));
+        }
+    }
+    let Some(out) = out else { return true };
+    let (name, value, what) = match out.action {
+        TakebackAction::Request => ("takeback", "req", "request"),
+        TakebackAction::Reply(true) => ("takebackreply", "yes", "answer"),
+        TakebackAction::Reply(false) => ("takebackreply", "no", "answer"),
+    };
+    let act = lock(actions).clone();
+    let reply = act.act(name, &[(name, value.into())]).await;
+    let mut s = lock(&target.session);
+    let detail = match reply {
+        Ok(_) => {
+            if s.takeback_sent(generation, out.action).is_ok() && out.action == TakebackAction::Request {
+                *asked = Some(Instant::now());
+            }
+            None
+        }
+        Err(Error::Server(message)) => {
+            let _ = s.takeback_failed(generation, out.action);
+            Some(format!("arimaa.com refused the takeback {what}: {message}"))
+        }
+        Err(e) => {
+            let _ = s.takeback_failed(generation, out.action);
+            Some(format!("sending the takeback {what} failed ({e})"))
+        }
+    };
+    emit_session(&target.events, &s, Vec::new(), None);
+    drop(s);
+    // A note from before (a declined request, say) is out of date.
+    set_state(target, view, WatchState::Following, detail);
+    true
 }
 
 /// Looks up an ended game's permanent id if its final state had none,
@@ -921,7 +1013,7 @@ mod tests {
         let first = state("2w Ee2n", "");
         start(&mut s, &first);
         let g = s.generation();
-        assert_eq!(apply(&mut s, g, &first).1, Outcome::Playing);
+        assert_eq!(apply(&mut s, g, &first).outcome, Outcome::Playing);
         let v = s.view();
         assert_eq!(v.ply, 3);
         let players = v.players.unwrap();
@@ -934,9 +1026,9 @@ mod tests {
 
         // A new move animates; the same state again changes nothing.
         let next = state("2w Ee2n%132b ed7s", "");
-        let (animation, outcome) = apply(&mut s, g, &next);
+        let Applied { animation, outcome, .. } = apply(&mut s, g, &next);
         assert!(!animation.is_empty() && outcome == Outcome::Playing);
-        assert!(apply(&mut s, g, &next).0.is_empty());
+        assert!(apply(&mut s, g, &next).animation.is_empty());
     }
 
     #[test]
@@ -963,7 +1055,7 @@ mod tests {
 
         // Gold asks on its turn: silver's move and gold's go back.
         let back = state("2w Ee2n%132b ed7s%133w takeback%132b takeback%132w", "");
-        assert_eq!(apply(&mut s, g, &back).1, Outcome::Playing);
+        assert_eq!(apply(&mut s, g, &back).outcome, Outcome::Playing);
         assert_eq!(s.view().ply, 2);
         let again = state("2w Ee2n%132b ed7s%133w takeback%132b takeback%132w Ee2n Ee3n%132b", "");
         apply(&mut s, g, &again);
@@ -973,12 +1065,43 @@ mod tests {
     }
 
     #[test]
+    fn takeback_requests_follow_the_server() {
+        let mut s = Session::new();
+        let first = state("2w Ee2n%132b ed7s%133w", "role=w\n");
+        start(&mut s, &first);
+        let g = s.generation();
+        apply(&mut s, g, &first);
+        s.request_takeback().unwrap();
+        assert_eq!(s.outgoing_takeback().unwrap().action, TakebackAction::Request);
+        s.takeback_sent(g, TakebackAction::Request).unwrap();
+        let asked = state("2w Ee2n%132b ed7s%133w", "role=w\ntakeback=w 3w\n");
+        assert_eq!(apply(&mut s, g, &asked).takeback, None);
+        assert!(s.view().takeback.unwrap().shown);
+        // Silver says no: the request is gone, and the moves stay.
+        let applied = apply(&mut s, g, &state("2w Ee2n%132b ed7s%133w", "role=w\ndenied_w=1\n"));
+        assert_eq!(applied.takeback, Some(TakebackEnd::Declined));
+        let v = s.view();
+        assert_eq!((v.takeback, v.live_ply), (None, Some(4)));
+
+        // Silver asks, and the user agrees.
+        let asked = state("2w Ee2n%132b ed7s%133w", "role=w\ntakeback=b 3w\n");
+        apply(&mut s, g, &asked);
+        s.answer_takeback(true).unwrap();
+        assert_eq!(s.outgoing_takeback().unwrap().action, TakebackAction::Reply(true));
+        s.takeback_sent(g, TakebackAction::Reply(true)).unwrap();
+        let back = state("2w Ee2n%132b ed7s%133w takeback%132b", "role=w\nturn=b\n");
+        assert_eq!(apply(&mut s, g, &back).takeback, None, "a takeback, not a refusal");
+        let v = s.view();
+        assert_eq!((v.takeback, v.live_ply), (None, Some(3)));
+    }
+
+    #[test]
     fn the_servers_result_ends_the_game() {
         let mut s = Session::new();
         let ended = state("2w Ee2n", "result=b\nreason=t\nfinishedId=671437\n");
         start(&mut s, &ended);
         let g = s.generation();
-        assert_eq!(apply(&mut s, g, &ended).1, Outcome::Ended);
+        assert_eq!(apply(&mut s, g, &ended).outcome, Outcome::Ended);
         assert!(s.export(false).contains("[GameId \"671437\"]"), "{}", s.export(false));
         let result = GameResult { winner: Color::Silver, reason: WinReason::Timeout };
         assert_eq!(s.view().result, Some(result));
@@ -1005,8 +1128,8 @@ mod tests {
         let g = s.generation();
         apply(&mut s, g, &first);
         let illegal = state("2w Ee2n%132b Ee3n", "");
-        assert!(matches!(apply(&mut s, g, &illegal).1, Outcome::Failed(_)));
+        assert!(matches!(apply(&mut s, g, &illegal).outcome, Outcome::Failed(_)));
         let unknown = state("2w Ee2n", "result=wz\n");
-        assert!(matches!(apply(&mut s, g, &unknown).1, Outcome::Failed(e) if e.contains("\"wz\"")));
+        assert!(matches!(apply(&mut s, g, &unknown).outcome, Outcome::Failed(e) if e.contains("\"wz\"")));
     }
 }

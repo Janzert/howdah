@@ -171,6 +171,19 @@ pub struct TurnView {
     pub commit_blocker: Option<String>,
 }
 
+/// A takeback request in a game on a server.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TakebackView {
+    /// The side asking.
+    pub by: Color,
+    /// Whether the server shows the request (the user's has reached it).
+    pub shown: bool,
+    /// The user's answer to the opponent's request, while it's on its way.
+    pub answer: Option<bool>,
+}
+
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -188,6 +201,11 @@ pub struct SessionView {
     /// In a game with a remote side, the user's move sent to the server
     /// and not yet played there (a child of `live`).
     pub sent: Option<NodeId>,
+    /// In a game with a remote side, an open takeback request.
+    pub takeback: Option<TakebackView>,
+    /// Whether the user can ask for a takeback now (a game they play on a
+    /// server, with a move of theirs to take back).
+    pub can_ask_takeback: bool,
     /// Ply being shown (0 = empty board, `moves.len()` = latest).
     pub ply: usize,
     pub phase: Phase,

@@ -169,6 +169,16 @@ Sharp, OpFor and other AEI engines behave.
       is on its way at a time; a different server move or the game's end
       drops it, and `move_refused` turns it back into a plan (Enter
       resends it).
+    - Takeback requests in such a game (`Match.takeback`):
+      `request_takeback` asks for the user's last move back (refused
+      while a move is on its way or a request is open, and in rated games:
+      `forbid_takeback_requests`), `answer_takeback`
+      answers the opponent's. `outgoing_takeback` gives what to send,
+      `takeback_sent`/`takeback_failed` record how that went, and
+      `sync_takeback` follows the server's `takeback` field (after
+      `sync_remote`, whose going back settles an accepted request; a
+      shown request of the user's that disappears without that was
+      declined). `SessionView.takeback` and `canAskTakeback` show it.
   - `controller.rs`: a background coordinator task per session, plus one
     actor task per engine process. `Controller::shutdown` ends it when its
     session closes, which quits its engines.
@@ -222,7 +232,9 @@ Sharp, OpFor and other AEI engines behave.
     after `CONFIRM_WAIT` (growing with each try) is checked against a
     `gamestate` and sent again, since the server answers `ok` to moves it
     drops; an error reply calls `move_refused` and shows the message in
-    `WatchView.detail`. A player's reseat takes the same side again. A
+    `WatchView.detail`. The same task sends takeback requests and answers
+    (`send_takeback`); a request the server hasn't shown after
+    `CONFIRM_WAIT` is checked with a `gamestate` and dropped if missing. A player's reseat takes the same side again. A
     session's `Watch` lives in its `SessionHandle`; `new_game`,
     `load_game`, `start_match` and `end_match` stop and forget it. The
     record gets the archive's `Event` and `Site` ("Over the Net"), and at
@@ -294,7 +306,9 @@ Sharp, OpFor and other AEI engines behave.
     game, a gameroom id watches). It refreshes the lists every 20 s while
     open, and after an error checks the login, showing the login form if
     it has expired. `WatchPanel.svelte` under the comment box
-    shows the followed game's state (spectators don't get the chat). TurnBar shows the player to
+    shows the followed game's state (spectators don't get the chat), and,
+    at a player's seat, "Ask for takeback" or Accept/Decline for the
+    opponent's request. TurnBar shows the player to
     move and "Stop watching" (`end_match`), and its turn buttons only once
     the user starts planning a move. Following the live game is the
     match's usual behaviour (the board follows at the live node, otherwise

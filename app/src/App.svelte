@@ -505,7 +505,7 @@
       <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
       <CommentBox {view} {run} />
       {#if watch}
-        <WatchPanel {watch} />
+        <WatchPanel {watch} {view} {run} />
       {/if}
       {#if hasEngine && view.players}
         <EnginePanel players={view.players} resetKey={matchKey} />

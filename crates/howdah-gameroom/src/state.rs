@@ -72,6 +72,9 @@ pub struct GameState {
     /// Every move, without move numbers (`moves` split by line).
     pub moves: Vec<String>,
     pub chat: String,
+    /// The side asking for a takeback, while the request waits for an
+    /// answer (`takeback=w 7w`: gold, at move 7w).
+    pub takeback: Option<Color>,
     /// The result, once the game is over.
     pub result: Option<GameResult>,
     /// The raw two-letter result, for results [`GameResult`] can't hold.
@@ -105,6 +108,7 @@ impl GameState {
             turn: raw.str("turn").as_deref().and_then(side_from_letter),
             moves: split_moves(&raw.str("moves").unwrap_or_default()),
             chat: raw.str("chat").unwrap_or_default(),
+            takeback: raw.nonempty("takeback").and_then(|t| side_from_letter(t.split_whitespace().next()?)),
             result,
             result_code,
             finished_id: raw.nonempty("finishedId"),
@@ -224,5 +228,15 @@ mod tests {
         assert_eq!(clock.reserves, [Duration::from_secs(60), Duration::from_secs(45)]);
         assert_eq!(clock.turn_elapsed, Duration::from_secs(10));
         assert_eq!(clock.game_elapsed, Some(Duration::from_secs(300)));
+        assert_eq!(s.takeback, None);
+    }
+
+    #[test]
+    fn takeback_requests() {
+        // As in game 539467's updates, while silver's answer was awaited.
+        let s = GameState::from_record(Record::decode(r#"{"turn":"b","takeback":"w 6b"}"#).unwrap());
+        assert_eq!(s.takeback, Some(Color::Gold));
+        let s = GameState::from_record(Record::decode(r#"{"turn":"b","denied_w":"1"}"#).unwrap());
+        assert_eq!(s.takeback, None);
     }
 }

@@ -11,6 +11,7 @@ import type { NodeId } from "./NodeId";
 import type { Phase } from "./Phase";
 import type { PlayersView } from "./PlayersView";
 import type { PositionView } from "./PositionView";
+import type { TakebackView } from "./TakebackView";
 import type { TurnView } from "./TurnView";
 
 export type SessionView = { 
@@ -39,6 +40,15 @@ live: NodeId | null,
  * and not yet played there (a child of `live`).
  */
 sent: NodeId | null, 
+/**
+ * In a game with a remote side, an open takeback request.
+ */
+takeback: TakebackView | null, 
+/**
+ * Whether the user can ask for a takeback now (a game they play on a
+ * server, with a move of theirs to take back).
+ */
+canAskTakeback: boolean, 
 /**
  * Ply being shown (0 = empty board, `moves.len()` = latest).
  */

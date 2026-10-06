@@ -181,6 +181,16 @@ pub fn take_back(state: State<Backend>, session: SessionId) -> Result<(), ApiErr
 }
 
 #[tauri::command]
+pub fn request_takeback(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
+    state.request_takeback(session)
+}
+
+#[tauri::command]
+pub fn answer_takeback(state: State<Backend>, session: SessionId, accept: bool) -> Result<(), ApiError> {
+    state.answer_takeback(session, accept)
+}
+
+#[tauri::command]
 pub fn set_continue_turns(state: State<Backend>, session: SessionId, on: bool) -> Result<(), ApiError> {
     state.set_continue_turns(session, on)
 }

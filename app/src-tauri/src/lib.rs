@@ -67,6 +67,8 @@ pub fn run() {
             commands::commit_turn,
             commands::set_continue_turns,
             commands::take_back,
+            commands::request_takeback,
+            commands::answer_takeback,
             commands::setup_swap,
             commands::commit_setup,
             commands::start_match,

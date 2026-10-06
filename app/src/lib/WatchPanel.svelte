@@ -1,10 +1,18 @@
 <script lang="ts">
+  import { api } from './api';
+  import type { SessionView } from './bindings/SessionView';
   import type { WatchView } from './bindings/WatchView';
 
   interface Props {
     watch: WatchView;
+    view: SessionView;
+    run: (p: Promise<unknown>) => Promise<boolean>;
   }
-  let { watch }: Props = $props();
+  let { watch, view, run }: Props = $props();
+
+  const sideName = (c: 'gold' | 'silver') => (c === 'gold' ? 'Gold' : 'Silver');
+  let takeback = $derived(view.takeback);
+  let playing = $derived(watch.side != null && watch.state !== 'ended');
 
   const STATES: Record<WatchView['state'], string> = {
     following: 'Live',
@@ -27,6 +35,31 @@
   </div>
   {#if watch.event}<div class="note">{watch.event}</div>{/if}
   {#if watch.detail}<div class="note">{watch.detail}</div>{/if}
+  {#if takeback}
+    <div class="takeback" role="status">
+      {#if takeback.by === watch.side}
+        <span>{takeback.shown ? 'Takeback asked; waiting for an answer' : 'Asking for a takeback…'}</span>
+      {:else if takeback.answer != null}
+        <span>{takeback.answer ? 'Accepting' : 'Declining'} the takeback…</span>
+      {:else}
+        <span>{sideName(takeback.by)} asks for a takeback</span>
+        {#if playing}
+          <span class="actions">
+            <button onclick={() => run(api.answerTakeback(true))}>Accept</button>
+            <button onclick={() => run(api.answerTakeback(false))}>Decline</button>
+          </span>
+        {/if}
+      {/if}
+    </div>
+  {:else if playing}
+    <div class="takeback">
+      <button
+        disabled={!view.canAskTakeback}
+        title="Ask your opponent to take back your last move"
+        onclick={() => run(api.requestTakeback())}>Ask for takeback</button
+      >
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -60,6 +93,17 @@
   }
   .state.failed {
     background: var(--warn);
+  }
+  .takeback {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
   }
   .note {
     font-size: 12px;

@@ -327,6 +327,17 @@ impl Backend {
         self.mutate(id, |s| s.take_back())
     }
 
+    /// Asks the opponent in a game on a server to take back the user's last
+    /// move.
+    pub fn request_takeback(&self, id: SessionId) -> Result<(), ApiError> {
+        self.mutate(id, |s| s.request_takeback().map(|_| Vec::new()))
+    }
+
+    /// Answers the opponent's takeback request in a game on a server.
+    pub fn answer_takeback(&self, id: SessionId, accept: bool) -> Result<(), ApiError> {
+        self.mutate(id, |s| s.answer_takeback(accept).map(|_| Vec::new()))
+    }
+
     /// Whether a step after a full turn starts the other side's turn.
     pub fn set_continue_turns(&self, id: SessionId, on: bool) -> Result<(), ApiError> {
         self.mutate(id, |s| {
@@ -586,6 +597,8 @@ impl Backend {
             "cancel_turn" => ok(self.cancel_turn(sid()?)?),
             "commit_turn" => ok(self.commit_turn(sid()?, arg(args, "plan")?)?),
             "take_back" => ok(self.take_back(sid()?)?),
+            "request_takeback" => ok(self.request_takeback(sid()?)?),
+            "answer_takeback" => ok(self.answer_takeback(sid()?, arg(args, "accept")?)?),
             "set_continue_turns" => ok(self.set_continue_turns(sid()?, arg(args, "on")?)?),
             "setup_swap" => ok(self.setup_swap(sid()?, arg(args, "a")?, arg(args, "b")?)?),
             "commit_setup" => ok(self.commit_setup(sid()?)?),
