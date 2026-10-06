@@ -518,7 +518,9 @@ Choices made in step 5 (confirmed with Brian, 2026-10-03):
   written as a block labelled with the next ply.
 
 Not built yet: glyph keys, positional glyphs (`$10`-`$19`), and board
-shapes (`%cal`/`%csl`) stored on moves.
+shapes (`%cal`/`%csl`) stored on moves. Commands live in the comment
+text; the app shows and edits comments without them, and finished
+arimaa.com games get `%emt` from the viewer page's `timeused`.
 
 ## Decided
 

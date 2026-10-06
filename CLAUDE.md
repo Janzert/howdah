@@ -44,7 +44,9 @@ Sharp, OpFor and other AEI engines behave.
     child reuses it, repetition counts only the path to the node, and
     `from_game`/`to_game`/`main_game` convert to and from `Game`. Nodes
     carry an `Annotation` (comment, variation intro and PGN-numbered
-    `Glyph`s). The session keeps its game as one.
+    `Glyph`s). The session keeps its game as one. Comments can hold PGN
+    commands (`[%emt 0:00:12]`): `comment_text` leaves them out, and
+    `set_comment_text`/`set_command` change one part and keep the rest.
   - `record::GameRecord`: tags plus a `GameTree`, read from and written to
     the PGN-style record format (`parse`, `parse_all`, `to_record`). The
     reader is lenient (arimaa.com `Name: value` tags, `White`/`Black`
@@ -95,7 +97,13 @@ Sharp, OpFor and other AEI engines behave.
   - `finished`: `RecentGame` (the lobby's `recentgames`) and
     `FinishedGame`, read from a finished game's viewer page
     (`opengamewin.cgi`, the `arimaa.vars` lines), with `record()` making a
-    `GameRecord` (players, ratings, time control, date, `GameId`, result).
+    `GameRecord` (players, ratings, time control, date, `GameId`, result,
+    and each move's time as `%emt`) and `state()` a final `GameState`.
+  - `players`: the player search (`searchPlayers.cgi`, `PlayerMatch`) and
+    a player's past games (`pastgames.cgi?id=`, `PastGames`, 50 a page),
+    read leniently from their HTML. `Lobby::search_players` and
+    `Lobby::player_games` fetch them. `Error::Expired` is a lobby session
+    that's gone (an ASIP error or the "Session Expired" page).
   - `examples/probe.rs` runs it against the live server by hand (see the
     parent repo's notes on probing first). Never in tests or CI.
 - `app/src-tauri`: thin shell.
@@ -173,11 +181,15 @@ Sharp, OpFor and other AEI engines behave.
   - `gameroom.rs`: spectating arimaa.com games (use case 3). `Gameroom`
     holds the login and lists live and recently finished games
     (`gameroom_games`). `open` (command `open_gameroom_game`) opens a game
-    by id: a finished one is loaded whole as a record
-    (`Session::load_record`), a live one is watched as below. "Remember password" saves the
+    by id: a finished one is loaded whole as a record, shown from the
+    start (`Session::load_record_from_start`), a live one is watched as
+    below. "Remember password" saves the
     login in `gameroom-login.json` in the config dir (`SavedLogin`, mode
     600): the password XORed with a fixed key and hex-encoded, which is
-    obfuscation, not encryption. The password never goes back to the
+    obfuscation, not encryption. Lobby calls go through `with_lobby!`: an
+    expired login is renewed with the saved one (`relogin`), or else the
+    user is logged out. `search_players` and `player_games` find a
+    player's games. The password never goes back to the
     frontend: a login with an empty password uses the saved one, and a
     login without "remember" deletes the file. `watch` seats a viewer (`Lobby::watch`), starts a match between
     two `Player::Remote`s in the session (with record tags), and spawns a
@@ -185,7 +197,11 @@ Sharp, OpFor and other AEI engines behave.
     client does). Each reply goes through `apply`: `sync_remote`,
     `set_remote_clock`, `finish_remote`. The task stops when the game ends,
     on `stop_watching`, or when the session's generation changes; failed
-    polls are retried with a pause growing to 30 s. Its state goes out
+    polls are retried with a pause growing to 30 s. When the game server
+    drops the seat (a server error), `reseat` takes a new one, up to three
+    times in a row; if the game ended meanwhile it asks `findgameid` and
+    applies the finished game's final state (a gameroom id alone could
+    open an unrelated old game with the same number). Its state goes out
     as `gameroom://watch` (`WatchView`, only when changed). A
     session's `Watch` lives in its `SessionHandle`; `new_game`,
     `load_game`, `start_match` and `end_match` stop and forget it. The
@@ -252,8 +268,12 @@ Sharp, OpFor and other AEI engines behave.
   - `WatchDialog.svelte` (toolbar button "arimaa.com"): the gameroom
     login (with "Remember password"; a saved login fills the username, and
     the password field says "Saved password"), then the live games with a
-    Watch button each, the recently finished ones with Open, and a game id
-    field (a permanent id loads a finished game, a gameroom id watches). `WatchPanel.svelte` under the comment box
+    Watch button each, the recently finished ones with Open, a player
+    search (an exact username goes straight to their games, with "Older
+    games" paging), and a game id field (a permanent id loads a finished
+    game, a gameroom id watches). It refreshes the lists every 20 s while
+    open, and after an error checks the login, showing the login form if
+    it has expired. `WatchPanel.svelte` under the comment box
     shows the followed game's state (spectators don't get the chat). TurnBar shows the player to
     move and "Stop watching" (`end_match`), and its turn buttons only once
     the user starts planning a move. Following the live game is the
@@ -300,7 +320,8 @@ Sharp, OpFor and other AEI engines behave.
   - `PlayerBar.svelte` shows names, clocks and captures (from
     `SessionView.captured`: the opponent's pieces, rabbits grouped as ×n).
     The bars show in free play too, named from the record's `Gold`/`Silver`
-    tags (`SessionView.tagNames`) when there's no match.
+    tags (`SessionView.tagNames`) when there's no match, and show ratings
+    from `GoldRating`/`SilverRating` (`SessionView.tagRatings`).
   - `lib/sound.ts`: Web Audio. Sounds are embedded (`?inline`), decoded
     once by our own `lib/wav.ts` (8/16-bit PCM), and played as buffer
     sources, so overlapping sounds mix.

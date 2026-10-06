@@ -10,7 +10,12 @@
 //! moves on to another game (its generation changes).
 //!
 //! The watch's own state (following, reconnecting, ended) goes out
-//! as `gameroom://watch` ([`WatchView`]).
+//! as `gameroom://watch` ([`WatchView`]). If the game server drops the
+//! seat, the watch takes a new one ([`reseat`]), or gets the final state
+//! if the game ended meanwhile.
+//!
+//! An expired lobby login is renewed with the saved login, if there is
+//! one ([`Gameroom::relogin`]); otherwise the user is logged out.
 //!
 //! A login can be remembered ([`SavedLogin`]): the username and the
 //! password, obfuscated, in a file in the app config dir. The password
