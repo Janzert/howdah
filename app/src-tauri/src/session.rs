@@ -121,6 +121,9 @@ struct Match {
     /// Whether the user may ask for takebacks in a game with a remote side
     /// (not in rated games).
     takeback_requests: bool,
+    /// In a game with a remote side, whether the server has stopped the
+    /// clock (before the game starts).
+    clock_stopped: bool,
 }
 
 /// A takeback request in a game on a server, as far as it got.
@@ -178,6 +181,8 @@ pub struct RemoteClock {
     pub turn_elapsed: Duration,
     /// Time since the game started, when the game has a time limit.
     pub game_elapsed: Option<Duration>,
+    /// Whether the side to move's clock runs (not before the game starts).
+    pub running: bool,
 }
 
 /// A human's move waiting to be sent to (or confirmed by) the server, in a
@@ -602,6 +607,7 @@ impl Session {
             outgoing: None,
             takeback: None,
             takeback_requests: true,
+            clock_stopped: false,
         };
         matchup.turn_starts.insert(GameTree::ROOT, matchup.turn_start(now));
         self.replace(GameTree::new(), Vec::new(), GameTree::ROOT, Some(matchup));
@@ -926,6 +932,18 @@ impl Session {
         }
     }
 
+    /// Renames `side`'s remote player (an opponent who sat down after the
+    /// game was opened). Returns whether the name changed.
+    pub fn set_remote_name(&mut self, side: Color, name: &str) -> bool {
+        match self.matchup.as_mut().map(|m| &mut m.players[side.index()]) {
+            Some(Player::Remote { name: n }) if n != name => {
+                *n = name.to_string();
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// The human's move to send to the server, in a game with a remote
     /// side, until the server's list has it.
     pub fn outgoing_move(&self) -> Option<OutgoingMove> {
@@ -963,6 +981,7 @@ impl Session {
         };
         let now = Instant::now();
         m.turn_started = now.checked_sub(reported.turn_elapsed).unwrap_or(now);
+        m.clock_stopped = !reported.running;
         if let Some(clock) = &mut m.clock {
             clock.reserves = reported.reserves;
             if let Some(elapsed) = reported.game_elapsed {
@@ -2073,8 +2092,9 @@ impl Session {
         let m = self.matchup.as_ref()?;
         let clock = m.clock.as_ref()?;
         let ms = |d: Duration| d.as_millis() as u64;
-        let running =
-            self.live_result().is_none().then(|| self.live_side()).filter(|s| clock.tc(*s).is_some());
+        let running = (self.live_result().is_none() && !m.clock_stopped)
+            .then(|| self.live_side())
+            .filter(|s| clock.tc(*s).is_some());
         let (elapsed, allowance) = match running {
             Some(side) => {
                 let tc = clock.tc(side).expect("running side is timed");
@@ -2721,12 +2741,17 @@ mod tests {
             reserves: [Duration::from_secs(30), Duration::from_secs(20)],
             turn_elapsed: Duration::from_secs(5),
             game_elapsed: None,
+            running: true,
         };
         s.set_remote_clock(g, reported).unwrap();
         let clock = s.view().clock.unwrap();
         assert_eq!(clock.gold.unwrap().reserve_ms, 30_000);
         assert_eq!(clock.silver.unwrap().reserve_ms, 20_000);
         assert!(clock.turn_elapsed_ms >= 5_000);
+        // Before the game starts, the server's clock stands still.
+        s.set_remote_clock(g, RemoteClock { running: false, ..reported }).unwrap();
+        assert_eq!(s.view().clock.unwrap().running, None);
+        s.set_remote_clock(g, reported).unwrap();
         let result = GameResult { winner: Color::Silver, reason: WinReason::Timeout };
         s.finish_remote(g, result, None).unwrap();
         assert_eq!(s.view().result, Some(result));

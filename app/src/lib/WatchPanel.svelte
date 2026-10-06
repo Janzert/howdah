@@ -12,7 +12,7 @@
 
   const sideName = (c: 'gold' | 'silver') => (c === 'gold' ? 'Gold' : 'Silver');
   let takeback = $derived(view.takeback);
-  let playing = $derived(watch.side != null && watch.state !== 'ended');
+  let playing = $derived(watch.side != null && watch.state !== 'ended' && !watch.waiting);
 
   const STATES: Record<WatchView['state'], string> = {
     following: 'Live',
@@ -28,14 +28,26 @@
     <span class="state {watch.state}"></span>
     <span>arimaa.com game {watch.gid}</span>
     <span class="label">
-      {STATES[watch.state]}{#if watch.finishedId}<span title="The game's permanent arimaa.com id"
+      {watch.waiting && watch.state === 'following' ? 'Waiting' : STATES[watch.state]}{#if watch.finishedId}<span title="The game's permanent arimaa.com id"
           >&nbsp;· #{watch.finishedId}</span
         >{/if}
     </span>
   </div>
   {#if watch.event}<div class="note">{watch.event}</div>{/if}
   {#if watch.detail}<div class="note">{watch.detail}</div>{/if}
-  {#if takeback}
+  {#if watch.waiting && watch.state !== 'stopped'}
+    <div class="takeback" role="status">
+      <span>Waiting for an opponent to sit</span>
+      <span class="actions">
+        <button title="Take the game off the gameroom's open games" onclick={() => run(api.cancelGameroomGame(watch.gid))}
+          >Cancel game</button
+        >
+      </span>
+    </div>
+    {#if watch.side === 'gold'}
+      <div class="note">Your setup goes to the server once they do.</div>
+    {/if}
+  {:else if takeback}
     <div class="takeback" role="status">
       {#if takeback.by === watch.side}
         <span>{takeback.shown ? 'Takeback asked; waiting for an answer' : 'Asking for a takeback…'}</span>

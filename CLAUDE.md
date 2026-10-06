@@ -79,8 +79,9 @@ Sharp, OpFor and other AEI engines behave.
   - `wire`: `Record` decodes either reply format (`key=value` for ASIP
     1.0, JSON for 2.0); `encode_request` encodes requests.
   - `client`: `Lobby` (`login` the browser's way through `login.cgi`, or
-    `login_asip`; `games` (live and recently finished) from ASIP 2.0
-    `state`; `reserve_seat`;
+    `login_asip`; `games` (live, recently finished, the user's and open
+    games) from ASIP 2.0 `state`, read by `LobbyGames::from_state`;
+    `reserve_seat`;
     `find_game_id`, a finished game's permanent id over ASIP 1.0;
     `watch`, which gets a viewer seat the browser client's way and follows
     it on `client3gs.cgi`, since ASIP viewer seats get moves only in ~10 s
@@ -97,7 +98,8 @@ Sharp, OpFor and other AEI engines behave.
     and `tid` redacted.
   - `state`: `GameState` from a reply: players, the moves played without
     numbers (`split_moves`, which applies the server's `takeback` lines), result (`parse_result`), and `ServerClock` worked out
-    as the browser client does.
+    as the browser client does (`running` is false until the server
+    starts the turn's clock, which it doesn't before the game starts).
   - `finished`: `RecentGame` (the lobby's `recentgames`) and
     `FinishedGame`, read from a finished game's viewer page
     (`opengamewin.cgi`, the `arimaa.vars` lines), with `record()` making a
@@ -236,7 +238,16 @@ Sharp, OpFor and other AEI engines behave.
     drops; an error reply calls `move_refused` and shows the message in
     `WatchView.detail`. The same task sends takeback requests and answers
     (`send_takeback`); a request the server hasn't shown after
-    `CONFIRM_WAIT` is checked with a `gamestate` and dropped if missing. A player's reseat takes the same side again. A
+    `CONFIRM_WAIT` is checked with a `gamestate` and dropped if missing. A player's reseat takes the same side again.
+    `create` (command `create_gameroom_game`) makes a game with `newgame`
+    and sits as `play` does (the browser's way; `newgame`'s own seat goes
+    unused); `cancel_gameroom_game` cancels an open one, and starts a new
+    game in the session if it was playing it. Until an opponent sits
+    (`WatchView.waiting`: not started, the other seat empty) the sender
+    holds the user's first move, and `follow` wakes it when they arrive.
+    An opponent who sits later is named from the state
+    (`Session::set_remote_name`, with the record's tags), and the clock
+    stands still until the server starts it (`RemoteClock.running`). A
     session's `Watch` lives in its `SessionHandle`; `new_game`,
     `load_game`, `start_match` and `end_match` stop and forget it. The
     record gets the archive's `Event` and `Site` ("Over the Net"), and at
@@ -305,10 +316,16 @@ Sharp, OpFor and other AEI engines behave.
     Watch button each, the recently finished ones with Open, a player
     search (an exact username goes straight to their games, with "Older
     games" paging), and a game id field (a permanent id loads a finished
-    game, a gameroom id watches). It refreshes the lists every 20 s while
+    game, a gameroom id watches). Above those: the user's games (Play to
+    take their seat again, Cancel while nobody has sat), the open games
+    others created (Play as the free side), and a New game form (side,
+    time control in the gameroom's format with a few presets, rated; kept
+    in localStorage). It refreshes the lists every 20 s while
     open, and after an error checks the login, showing the login form if
     it has expired. `WatchPanel.svelte` under the comment box
-    shows the followed game's state (spectators don't get the chat), and,
+    shows the followed game's state (spectators don't get the chat),
+    "Waiting for an opponent" with Cancel game while the user's seat
+    waits, and,
     at a player's seat, "Ask for takeback" or Accept/Decline for the
     opponent's request. TurnBar shows the player to
     move and "Stop watching" (`end_match`), and its turn buttons only once
@@ -451,6 +468,8 @@ npm run tauri dev                 # run the app
 npm run bridge                    # dev bridge for the browser preview (port 1421)
 npm run dev -- --port 1430        # Vite for a browser; it uses the bridge (1420 is for tauri dev)
 npm run e2e                       # Playwright smoke tests (starts both if needed)
+npm run bridge -- -- --port 1422  # a second bridge, when 1421 is taken
+BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
 ```
 
 - **Checking UI changes:** run `npm run bridge` and `npm run dev -- --port 1430`

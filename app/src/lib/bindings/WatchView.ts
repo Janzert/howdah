@@ -25,4 +25,9 @@ event: string | null,
 /**
  * The user's side, when they play the game rather than watch it.
  */
-side: Color | null, };
+side: Color | null, 
+/**
+ * Whether the user's seat waits for an opponent to sit down. Their
+ * first move is held until then.
+ */
+waiting: boolean, };

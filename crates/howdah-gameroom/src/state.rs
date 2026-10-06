@@ -54,6 +54,9 @@ pub struct ServerClock {
     pub turn_elapsed: Duration,
     /// Time since the game started (`tcgamenow`).
     pub game_elapsed: Option<Duration>,
+    /// Whether the side to move's clock runs: the server has started its
+    /// turn (`{w,b}startmove`), which it hasn't before the game starts.
+    pub running: bool,
 }
 
 /// What a game server reply says about the game.
@@ -67,6 +70,9 @@ pub struct GameState {
     pub postal: bool,
     /// Whether the game has started (`starttime`).
     pub started: bool,
+    /// Whether both players are seated, so the game can start
+    /// (`canstart`).
+    pub can_start: bool,
     /// Side to move.
     pub turn: Option<Color>,
     /// Every move, without move numbers (`moves` split by line).
@@ -109,6 +115,7 @@ impl GameState {
             rated: raw.flag("rated") || rated_tc,
             postal: raw.flag("postal"),
             started: raw.int("starttime").is_some_and(|t| t > 0),
+            can_start: raw.flag("canstart"),
             turn: raw.str("turn").as_deref().and_then(side_from_letter),
             moves: split_moves(&raw.str("moves").unwrap_or_default()),
             chat: raw.str("chat").unwrap_or_default(),
@@ -168,11 +175,12 @@ fn server_clock(raw: &Record) -> Option<ServerClock> {
         Some(Color::Silver) => raw.int("bstartmove"),
         None => None,
     };
+    let running = started.is_some_and(|s| s > 0);
     let turn_elapsed = match (now, started) {
         (Some(now), Some(start)) if start > 0 => Duration::from_secs((now - start).max(0) as u64),
         _ => Duration::ZERO,
     };
-    Some(ServerClock { reserves, turn_elapsed, game_elapsed: secs("tcgamenow") })
+    Some(ServerClock { reserves, turn_elapsed, game_elapsed: secs("tcgamenow"), running })
 }
 
 #[cfg(test)]

@@ -331,6 +331,26 @@ pub async fn play_gameroom_game(
 }
 
 #[tauri::command]
+pub async fn create_gameroom_game(
+    state: State<'_, Backend>,
+    session: SessionId,
+    side: Color,
+    time_control: String,
+    rated: bool,
+) -> Result<(), ApiError> {
+    state.create_gameroom_game(session, side, &time_control, rated).await
+}
+
+#[tauri::command]
+pub async fn cancel_gameroom_game(
+    state: State<'_, Backend>,
+    session: SessionId,
+    gid: String,
+) -> Result<(), ApiError> {
+    state.cancel_gameroom_game(session, &gid).await
+}
+
+#[tauri::command]
 pub fn stop_watching(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
     state.stop_watching(session)
 }

@@ -366,9 +366,9 @@
     }
   }
 
-  async function openGameroomGame(gid: string): Promise<string | null> {
+  async function openGameroomGame(start: () => Promise<void>): Promise<string | null> {
     try {
-      await api.openGameroomGame(gid);
+      await start();
       lastSpec = null;
       return null;
     } catch (e) {
@@ -538,7 +538,7 @@
     {/if}
     <div class="tools">
       <button onclick={() => (showNewGame = true)}>New game</button>
-      <button onclick={() => (showWatch = true)} title="Watch live games on arimaa.com, or open finished ones">
+      <button onclick={() => (showWatch = true)} title="Play or watch games on arimaa.com, or open finished ones">
         arimaa.com
       </button>
       <button onclick={() => (showEngines = true)}>Engines</button>

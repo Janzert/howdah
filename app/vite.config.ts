@@ -12,9 +12,10 @@ export default defineConfig({
     strictPort: true,
     watch: { ignored: ['**/src-tauri/**'] },
     // The dev bridge (npm run bridge), for running outside Tauri.
+    // BRIDGE_PORT points at a second bridge (`npm run bridge -- --port N`).
     proxy: {
       '/bridge': {
-        target: 'http://127.0.0.1:1421',
+        target: `http://127.0.0.1:${process.env.BRIDGE_PORT ?? 1421}`,
         rewrite: (path) => path.replace(/^\/bridge/, ''),
       },
     },

@@ -536,6 +536,41 @@ impl Backend {
         Ok(())
     }
 
+    /// Creates an arimaa.com game with the user as `side` and plays it in
+    /// session `id`, as [`Backend::play_gameroom_game`] does. Until an
+    /// opponent sits, the user's first move is held (`WatchView.waiting`).
+    pub async fn create_gameroom_game(
+        &self,
+        id: SessionId,
+        side: Color,
+        time_control: &str,
+        rated: bool,
+    ) -> Result<(), ApiError> {
+        let handle = self.handle(id)?;
+        let target = gameroom::Target {
+            session: handle.session.clone(),
+            controller: handle.controller.clone(),
+            events: handle.events.clone(),
+        };
+        let watch = gameroom::create(&self.gameroom, side, time_control, rated, target).await?;
+        let old = handle.watch().replace(watch);
+        drop(old);
+        Ok(())
+    }
+
+    /// Cancels arimaa.com game `gid`, which the user created and nobody
+    /// has joined. If session `id` is playing it, the session starts a new
+    /// game, since nothing was played.
+    pub async fn cancel_gameroom_game(&self, id: SessionId, gid: &str) -> Result<(), ApiError> {
+        let handle = self.handle(id)?;
+        self.gameroom.cancel_game(gid).await?;
+        let playing = handle.watch().as_ref().is_some_and(|w| w.view().gid == gid.trim());
+        if playing {
+            self.new_game(id)?;
+        }
+        Ok(())
+    }
+
     /// Stops following the session's gameroom game; the game stays.
     pub fn stop_watching(&self, id: SessionId) -> Result<(), ApiError> {
         self.handle(id)?.stop_watching();
@@ -637,6 +672,17 @@ impl Backend {
             "open_gameroom_game" => ok(self.open_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?),
             "play_gameroom_game" => {
                 ok(self.play_gameroom_game(sid()?, &arg::<String>(args, "gid")?, arg(args, "side")?).await?)
+            }
+            "create_gameroom_game" => ok(self
+                .create_gameroom_game(
+                    sid()?,
+                    arg(args, "side")?,
+                    &arg::<String>(args, "timeControl")?,
+                    arg(args, "rated")?,
+                )
+                .await?),
+            "cancel_gameroom_game" => {
+                ok(self.cancel_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?)
             }
             "stop_watching" => ok(self.stop_watching(sid()?)?),
             "watch_status" => ok(self.watch_status(sid()?)?),

@@ -608,7 +608,8 @@ pub struct GameroomStatus {
     pub saved_username: Option<String>,
 }
 
-/// A game being played on arimaa.com, from the gameroom's live list.
+/// A game in one of the gameroom's lists: being played, open for a
+/// player to sit, or the user's own. A free seat has no player.
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -694,6 +695,11 @@ pub struct GameroomGames {
     pub live: Vec<LiveGameView>,
     /// The last few games finished, newest first.
     pub recent: Vec<RecentGameView>,
+    /// The user's games: ones they created, waiting for an opponent, and
+    /// ones they play.
+    pub mine: Vec<LiveGameView>,
+    /// Games others created, with a seat to take.
+    pub open: Vec<LiveGameView>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
@@ -733,4 +739,7 @@ pub struct WatchView {
     pub event: Option<String>,
     /// The user's side, when they play the game rather than watch it.
     pub side: Option<Color>,
+    /// Whether the user's seat waits for an opponent to sit down. Their
+    /// first move is held until then.
+    pub waiting: bool,
 }

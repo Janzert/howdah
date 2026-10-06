@@ -1,6 +1,8 @@
 <script lang="ts">
   import { api, errorMessage } from './api';
+  import type { Color } from './bindings/Color';
   import type { GameResult } from './bindings/GameResult';
+  import type { LiveGameView } from './bindings/LiveGameView';
   import type { GameroomGames } from './bindings/GameroomGames';
   import type { PastGameView } from './bindings/PastGameView';
   import type { PlayerMatchView } from './bindings/PlayerMatchView';
@@ -8,9 +10,10 @@
   import type { WinReason } from './bindings/WinReason';
 
   interface Props {
-    /** Opens a game by id: follows a live one, loads a finished one.
-     * Resolves to an error message, or null on success. */
-    onOpen: (gid: string) => Promise<string | null>;
+    /** Runs a request that makes a gameroom game the session's (opening,
+     * joining or creating one). Resolves to an error message, or null on
+     * success. */
+    onOpen: (start: () => Promise<void>) => Promise<string | null>;
     onClose: () => void;
   }
   let { onOpen, onClose }: Props = $props();
@@ -51,6 +54,13 @@
   let players = $state<PlayerMatchView[] | null>(null);
   /** The player whose games are shown, with the pages loaded so far. */
   let picked = $state<{ player: PlayerMatchView; games: PastGameView[]; next: number | null } | null>(null);
+
+  /** The new game form. */
+  let newSide = $state<Color | 'random'>((pref('gameroom.newSide') as Color | 'random') || 'random');
+  let newTc = $state(pref('gameroom.newTc') || '2m/5m/100/0/30m');
+  let newRated = $state(pref('gameroom.newRated') === '1');
+  /** Time controls offered in the form; any other can be typed. */
+  const TIME_CONTROLS = ['15s/3m/100/0/15m', '1m/2m/100/0/10m', '2m/5m/100/0/30m'];
 
   /** How often the open dialog refreshes the lists, as the browser lobby
    * does. */
@@ -152,16 +162,53 @@
     });
   }
 
-  async function open(gid: string) {
+  async function enter(start: () => Promise<void>) {
     busy = true;
-    error = await onOpen(gid.trim());
+    error = await onOpen(start);
     busy = false;
     if (!error) onClose();
+  }
+
+  function open(gid: string) {
+    return enter(() => api.openGameroomGame(gid.trim()));
   }
 
   function openById(e: SubmitEvent) {
     e.preventDefault();
     open(gameId);
+  }
+
+  const same = (a: string | null, b: string | null | undefined) =>
+    a != null && b != null && a.toLowerCase() === b.toLowerCase();
+
+  /** The user's side in one of their games. */
+  function mySide(g: LiveGameView): Color | null {
+    if (same(g.gold, user)) return 'gold';
+    if (same(g.silver, user)) return 'silver';
+    return null;
+  }
+
+  /** The free seat of an open game. */
+  const freeSide = (g: LiveGameView): Color => (g.gold == null ? 'gold' : 'silver');
+
+  function createGame(e: SubmitEvent) {
+    e.preventDefault();
+    savePref('gameroom.newSide', newSide);
+    savePref('gameroom.newTc', newTc.trim());
+    savePref('gameroom.newRated', newRated ? '1' : '0');
+    const side: Color = newSide === 'random' ? (Math.random() < 0.5 ? 'gold' : 'silver') : newSide;
+    enter(() => api.createGameroomGame(side, newTc.trim(), newRated));
+  }
+
+  function cancelGame(gid: string) {
+    attempt(async () => {
+      await api.cancelGameroomGame(gid);
+      games = await api.gameroomGames();
+    });
+  }
+
+  function gameMeta(g: LiveGameView): string {
+    return [g.timeControl ?? '', g.rated ? 'rated' : '', g.postal ? 'postal' : ''].filter((s) => s).join(' · ');
   }
 
   const reasons: Record<WinReason, string> = {
@@ -233,7 +280,7 @@
         </label>
       </div>
       <p class="hint">
-        Watching and opening games needs a gameroom login (a human account). The password goes over plain HTTP, as arimaa.com requires.
+        Playing, watching and opening games needs a gameroom login (a human account). The password goes over plain HTTP, as arimaa.com requires.
         {#if remember}
           It's saved on this computer obfuscated, not encrypted: anyone who can read your files could recover it.
         {:else}
@@ -252,6 +299,79 @@
       Logged in as <strong>{user}</strong>
       <button class="subtle" onclick={logout} disabled={busy}>Log out</button>
     </div>
+    {#if games && games.mine.length > 0}
+      <h3>Your games</h3>
+      <ul class="games" aria-label="Your games">
+        {#each games.mine as g (g.gid)}
+          {@const side = mySide(g)}
+          <li>
+            <span class="game">
+              <span class="players">
+                <span class="dot gold"></span>{g.gold ?? 'open seat'}
+                <span class="vs">vs</span>
+                <span class="dot silver"></span>{g.silver ?? 'open seat'}
+              </span>
+              <span class="meta">{gameMeta(g)}</span>
+            </span>
+            {#if side}
+              <button onclick={() => enter(() => api.playGameroomGame(g.gid, side))} disabled={busy}
+                aria-label="Play game {g.gid}">Play</button
+              >
+            {/if}
+            {#if g.gold == null || g.silver == null}
+              <button onclick={() => cancelGame(g.gid)} disabled={busy} aria-label="Cancel game {g.gid}"
+                >Cancel</button
+              >
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <h3>Open games</h3>
+    {#if games && games.open.length === 0}
+      <p class="hint">Nobody is waiting for an opponent.</p>
+    {:else if games}
+      <ul class="games" aria-label="Open games">
+        {#each games.open as g (g.gid)}
+          {@const side = freeSide(g)}
+          <li>
+            <span class="game">
+              <span class="players">
+                <span class="dot {side === 'gold' ? 'silver' : 'gold'}"></span>{g.gold ?? g.silver ?? '?'}
+                <span class="vs">wants an opponent</span>
+              </span>
+              <span class="meta">{gameMeta(g)}</span>
+            </span>
+            <button onclick={() => enter(() => api.playGameroomGame(g.gid, side))} disabled={busy}
+              aria-label="Sit as {side} in game {g.gid}">Play as {side === 'gold' ? 'Gold' : 'Silver'}</button
+            >
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <h3>New game</h3>
+    <form class="new-game" onsubmit={createGame}>
+      <label for="gr-new-side">Side</label>
+      <select id="gr-new-side" bind:value={newSide}>
+        <option value="random">Random</option>
+        <option value="gold">Gold</option>
+        <option value="silver">Silver</option>
+      </select>
+      <label for="gr-new-tc">Time</label>
+      <input
+        id="gr-new-tc"
+        bind:value={newTc}
+        list="gr-tcs"
+        autocomplete="off"
+        title="Per move / reserve / percent added / reserve limit / game limit"
+      />
+      <datalist id="gr-tcs">
+        {#each TIME_CONTROLS as tc (tc)}<option value={tc}></option>{/each}
+      </datalist>
+      <label class="check"><input type="checkbox" bind:checked={newRated} /> Rated</label>
+      <button type="submit" disabled={busy || !newTc.trim()}>Create</button>
+    </form>
+    <p class="hint">The game waits in the gameroom's open games until someone sits; your first move goes once they do.</p>
     <h3>Live</h3>
     {#if games && games.live.length === 0}
       <p class="hint">No games are being played right now.</p>
@@ -451,6 +571,17 @@
   .rating {
     color: var(--muted);
     font-size: 11px;
+  }
+  .new-game {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .new-game input:not([type='checkbox']) {
+    flex: 1;
+    min-width: 8em;
   }
   .by-id {
     display: flex;

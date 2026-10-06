@@ -120,6 +120,15 @@ export const api = {
    * server. */
   playGameroomGame: (gid: string, side: Color) =>
     invoke<void>('play_gameroom_game', { session, gid, side }),
+  /** Creates an arimaa.com game with the user as `side` and plays it as
+   * `playGameroomGame` does. `timeControl` is in the gameroom's format
+   * (`2m/5m/100/0/30m`). The user's first move waits for an opponent
+   * (`WatchView.waiting`). */
+  createGameroomGame: (side: Color, timeControl: string, rated: boolean) =>
+    invoke<void>('create_gameroom_game', { session, side, timeControl, rated }),
+  /** Cancels a game the user created that nobody has joined; if this
+   * session plays it, the session starts a new game. */
+  cancelGameroomGame: (gid: string) => invoke<void>('cancel_gameroom_game', { session, gid }),
   /** Stops following the game; it stays on the board. */
   stopWatching: () => invoke<void>('stop_watching', { session }),
   /** The game this session follows, if any. */

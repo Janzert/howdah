@@ -9,4 +9,13 @@ export type GameroomGames = { live: Array<LiveGameView>,
 /**
  * The last few games finished, newest first.
  */
-recent: Array<RecentGameView>, };
+recent: Array<RecentGameView>, 
+/**
+ * The user's games: ones they created, waiting for an opponent, and
+ * ones they play.
+ */
+mine: Array<LiveGameView>, 
+/**
+ * Games others created, with a seat to take.
+ */
+open: Array<LiveGameView>, };

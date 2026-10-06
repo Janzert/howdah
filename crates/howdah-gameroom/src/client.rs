@@ -425,6 +425,36 @@ pub struct LobbyGames {
     pub live: Vec<GameInfo>,
     /// The last few games finished in the gameroom, newest first.
     pub recent: Vec<RecentGame>,
+    /// The user's games: ones they created that wait for an opponent, and
+    /// ones they play (`mygames`).
+    pub mine: Vec<GameInfo>,
+    /// Games others created, with a seat free (`opengames`), apart from
+    /// scheduled ones that haven't started and the user's own.
+    pub open: Vec<GameInfo>,
+}
+
+impl LobbyGames {
+    /// The lists in an ASIP 2.0 `state` reply.
+    pub fn from_state(r: &Record) -> LobbyGames {
+        let games = |key: &str| r.list(key).iter().filter_map(GameInfo::from_record).collect::<Vec<_>>();
+        let mine = games("mygames");
+        // The lobby leaves out games scheduled for later (`schts` after the
+        // reply's `time`).
+        let now = r.int("time").unwrap_or(i64::MAX);
+        let open = r
+            .list("opengames")
+            .iter()
+            .filter(|g| g.int("schts").unwrap_or(0) < now)
+            .filter_map(GameInfo::from_record)
+            .filter(|g| !mine.iter().any(|m| m.gid == g.gid))
+            .collect();
+        LobbyGames {
+            live: games("livegames"),
+            recent: r.list("recentgames").iter().filter_map(RecentGame::from_record).collect(),
+            mine,
+            open,
+        }
+    }
 }
 
 /// A game opened by id: a live one is followed from a viewer seat, and a
@@ -523,14 +553,11 @@ impl Lobby {
         Ok(self.games().await?.live)
     }
 
-    /// The live and recently finished games, from one ASIP 2.0 `state`
-    /// (the request the browser lobby makes every 20 s).
+    /// The live, recently finished, the user's and open games, from one
+    /// ASIP 2.0 `state` (the request the browser lobby makes every 20 s).
     pub async fn games(&self) -> Result<LobbyGames, Error> {
         let r = self.post(Asip::V2, &[("action", "state".into()), ("sid", self.sid()?)]).await?;
-        Ok(LobbyGames {
-            live: r.list("livegames").iter().filter_map(GameInfo::from_record).collect(),
-            recent: r.list("recentgames").iter().filter_map(RecentGame::from_record).collect(),
-        })
+        Ok(LobbyGames::from_state(&r))
     }
 
     /// Reserves a seat at game `gid`: a player's side, or a viewer's.
@@ -567,7 +594,8 @@ impl Lobby {
 
     /// Creates a game with the user as `side` (`newgame`). The reply is
     /// the user's seat at it, as from [`Lobby::reserve_seat`]; the game's
-    /// gameroom id comes too, when the reply has it.
+    /// gameroom id comes too, when the reply has it. The app sits
+    /// with [`Lobby::play`] instead, the browser's way.
     pub async fn new_game(
         &self,
         side: Color,
@@ -996,6 +1024,27 @@ mod tests {
             to return to the previous page.</i></p>";
         assert!(error_page(results).unwrap().starts_with("Results"), "search results look like errors");
         assert!(!is_expired("Expired Game: Cannot find the game id for this game."));
+    }
+
+    #[test]
+    fn lobby_lists() {
+        let r = Record::decode(
+            r#"{"time":1000,
+              "mygames":[{"id":"7","wusername":"me","busername":null,"timecontrol":"2m/5m","rated":"0"}],
+              "opengames":[{"id":"7","wusername":"me","busername":""},
+                           {"id":"8","wusername":"","busername":"them","timecontrol":"1m/2m","rated":"1","schts":"0"},
+                           {"id":"9","wusername":"later","busername":"","schts":"5000"}],
+              "livegames":[{"id":"6","wusername":"a","busername":"b"}]}"#,
+        )
+        .unwrap();
+        let games = LobbyGames::from_state(&r);
+        assert_eq!(games.live.len(), 1);
+        assert_eq!(games.mine.len(), 1);
+        assert_eq!(games.mine[0].players, [Some("me".into()), None]);
+        assert_eq!(games.open.len(), 1);
+        let open = &games.open[0];
+        assert_eq!((open.gid.as_str(), open.rated), ("8", true));
+        assert_eq!(open.players, [None, Some("them".into())]);
     }
 
     #[test]

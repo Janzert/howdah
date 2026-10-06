@@ -89,6 +89,8 @@ pub fn run() {
             commands::gameroom_player_games,
             commands::open_gameroom_game,
             commands::play_gameroom_game,
+            commands::create_gameroom_game,
+            commands::cancel_gameroom_game,
             commands::stop_watching,
             commands::watch_status,
         ])

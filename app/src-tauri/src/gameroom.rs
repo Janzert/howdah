@@ -48,8 +48,8 @@ use std::time::{Duration, Instant};
 
 use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
-    Actions, Asip, DEFAULT_GAMEROOM, Error, GameServer, GameState, Http, Lobby, Opened, PastGame, RecentGame,
-    Role, ViewerSeat, parse_result,
+    Actions, Asip, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http, Lobby, Opened, PastGame,
+    RecentGame, Role, ViewerSeat, parse_result,
 };
 use tokio::sync::Notify;
 
@@ -264,22 +264,27 @@ impl Gameroom {
     /// The live games and the last few finished ones.
     pub async fn games(&self) -> Result<GameroomGames, ApiError> {
         let games = with_lobby!(self, |l| l.games())?;
-        let live = games
-            .live
-            .into_iter()
-            .map(|g| {
-                let [gold, silver] = g.players;
-                LiveGameView {
-                    gid: g.gid,
-                    gold,
-                    silver,
-                    time_control: g.time_control,
-                    rated: g.rated,
-                    postal: g.postal,
-                }
-            })
-            .collect();
-        Ok(GameroomGames { live, recent: games.recent.into_iter().map(recent_view).collect() })
+        let views = |list: Vec<GameInfo>| list.into_iter().map(game_view).collect();
+        Ok(GameroomGames {
+            live: views(games.live),
+            recent: games.recent.into_iter().map(recent_view).collect(),
+            mine: views(games.mine),
+            open: views(games.open),
+        })
+    }
+
+    /// Creates a game with the user as `side`, and returns its gameroom
+    /// id. `time_control` is in the gameroom's format (`2m/5m/100/0/30m`).
+    async fn create_game(&self, side: Color, time_control: &str, rated: bool) -> Result<String, ApiError> {
+        let time_control = time_control.trim();
+        time_control.parse::<TimeControl>().map_err(|e| ApiError::illegal(e.to_string()))?;
+        let (gid, _) = with_lobby!(self, |l| l.new_game(side, time_control, rated))?;
+        gid.ok_or_else(|| ApiError::state("arimaa.com created the game but gave no id for it"))
+    }
+
+    /// Cancels game `gid`, which the user created and nobody has joined.
+    pub async fn cancel_game(&self, gid: &str) -> Result<(), ApiError> {
+        with_lobby!(self, |l| l.cancel_open_game(gid.trim()))
     }
 
     /// The permanent id of finished game `gid`.
@@ -315,6 +320,11 @@ impl Gameroom {
         let page = with_lobby!(self, |l| l.player_games(player_id, offset))?;
         Ok(PlayerGamesView { games: page.games.into_iter().map(past_view).collect(), next: page.next })
     }
+}
+
+fn game_view(g: GameInfo) -> LiveGameView {
+    let [gold, silver] = g.players;
+    LiveGameView { gid: g.gid, gold, silver, time_control: g.time_control, rated: g.rated, postal: g.postal }
 }
 
 fn past_view(g: PastGame) -> PastGameView {
@@ -462,6 +472,27 @@ pub async fn play(
     begin(gameroom, gid, server, Seat::Player(side), target).await
 }
 
+/// Creates a game with the user as `side` and plays it in `target`'s
+/// session, as [`play`] does. The user's seat waits for an opponent
+/// (`WatchView.waiting`); their first move is held until one sits.
+pub async fn create(
+    gameroom: &Arc<Gameroom>,
+    side: Color,
+    time_control: &str,
+    rated: bool,
+    target: Target,
+) -> Result<Watch, ApiError> {
+    let gid = gameroom.create_game(side, time_control, rated).await?;
+    // The browser's way to the seat, as for joining; `newgame`'s own
+    // reservation goes unused.
+    play(gameroom, &gid, side, target).await.map_err(|e| {
+        ApiError::state(format!(
+            "created game {gid}, but couldn't take your seat: {} (it's under your games, to resume or cancel)",
+            e.message
+        ))
+    })
+}
+
 /// The user's seat at a game.
 #[derive(Clone, Debug)]
 enum Seat {
@@ -503,6 +534,7 @@ async fn begin(
         finished_id: None,
         event: state.raw.nonempty("event"),
         side: None,
+        waiting: false,
     }));
     set_seat(&mut lock(&view), &seat);
     let next = update(&target, generation, &state, &view);
@@ -516,7 +548,8 @@ async fn begin(
     let view2 = view.clone();
     let task = match next {
         Next::Follow => {
-            let run = follow(gameroom, server, seat, actions, target, generation, view2);
+            let sender = actions.map(|actions| Sender { actions, wake: wake.clone() });
+            let run = follow(gameroom, server, seat, sender, target, generation, view2);
             tauri::async_runtime::spawn(run)
         }
         Next::Stop => tauri::async_runtime::spawn(find_id(gameroom, target, generation, view2)),
@@ -593,9 +626,24 @@ fn apply(s: &mut Session, generation: u64, state: &GameState) -> Applied {
         Err(e) => (Vec::new(), Outcome::Failed(e.message)),
     };
     let takeback = s.sync_takeback(generation, state.takeback).ok().flatten();
+    // An opponent who sat down after the game was opened.
+    for (i, side) in [Color::Gold, Color::Silver].into_iter().enumerate() {
+        if let Some(name) = &state.players[i]
+            && s.set_remote_name(side, name)
+        {
+            s.set_tag(["Gold", "Silver"][i], name);
+            if let Some(r) = state.raw.nonempty(["wrating", "brating"][i]).filter(|r| r.trim() != "0") {
+                s.set_tag(["GoldRating", "SilverRating"][i], &r);
+            }
+        }
+    }
     if let Some(c) = state.clock {
-        let reported =
-            RemoteClock { reserves: c.reserves, turn_elapsed: c.turn_elapsed, game_elapsed: c.game_elapsed };
+        let reported = RemoteClock {
+            reserves: c.reserves,
+            turn_elapsed: c.turn_elapsed,
+            game_elapsed: c.game_elapsed,
+            running: c.running,
+        };
         let _ = s.set_remote_clock(generation, reported);
     }
     if outcome == Outcome::Playing {
@@ -636,6 +684,7 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
     target.controller.poke();
     let mut v = lock(view);
     let before = v.clone();
+    v.waiting = waiting(v.side, state);
     let next = match outcome {
         Outcome::Playing => {
             if v.state == WatchState::Reconnecting {
@@ -665,6 +714,14 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
     next
 }
 
+/// Whether the user's seat (at `side`) waits for an opponent: the game
+/// hasn't started and the other seat is empty.
+fn waiting(side: Option<Color>, state: &GameState) -> bool {
+    side.is_some_and(|side| {
+        !state.started && state.result.is_none() && state.players[side.opponent().index()].is_none()
+    })
+}
+
 /// Shows the seat: the user's side, or how a viewer gets the moves.
 fn set_seat(view: &mut WatchView, seat: &Seat) {
     view.side = match seat {
@@ -688,6 +745,14 @@ fn set_state(target: &Target, view: &Mutex<WatchView>, state: WatchState, detail
     emit(&target.events, WATCH_UPDATE, v.clone());
 }
 
+/// What [`follow`] shares with [`send_moves`] at a player's seat.
+struct Sender {
+    /// The seat's actions, replaced when the seat is.
+    actions: Arc<Mutex<Actions>>,
+    /// Wakes the sender (once an opponent sits).
+    wake: Arc<Notify>,
+}
+
 /// Long-polls the game server until the game ends or the session moves on.
 /// Failed polls are retried with a growing pause; the server may also
 /// close a waiting poll with no reply at all.
@@ -695,12 +760,24 @@ async fn follow(
     gameroom: Arc<Gameroom>,
     mut server: GameServer,
     seat: Seat,
-    actions: Option<Arc<Mutex<Actions>>>,
+    sender: Option<Sender>,
     target: Target,
     generation: u64,
     view: Arc<Mutex<WatchView>>,
 ) {
     let gid = lock(&view).gid.clone();
+    // Once an opponent sits, the sender sends the move it held.
+    let update = |state: &GameState| {
+        let was_waiting = lock(&view).waiting;
+        let next = update(&target, generation, state, &view);
+        if let Some(sender) = &sender
+            && was_waiting
+            && !lock(&view).waiting
+        {
+            sender.wake.notify_one();
+        }
+        next
+    };
     let mut backoff = Duration::from_secs(1);
     let mut reseats = 0;
     loop {
@@ -708,7 +785,7 @@ async fn follow(
             Ok(state) => {
                 backoff = Duration::from_secs(1);
                 reseats = 0;
-                if let Next::Stop = update(&target, generation, &state, &view) {
+                if let Next::Stop = update(&state) {
                     find_id(gameroom, target, generation, view).await;
                     return;
                 }
@@ -731,10 +808,10 @@ async fn follow(
                         set_seat(&mut lock(&view), &how);
                         if let Ok(state) = server.game_state().await {
                             // The sender acts at the new seat.
-                            if let (Some(shared), Some(new)) = (&actions, server.actions()) {
-                                *lock(shared) = new;
+                            if let (Some(sender), Some(new)) = (&sender, server.actions()) {
+                                *lock(&sender.actions) = new;
                             }
-                            if let Next::Stop = update(&target, generation, &state, &view) {
+                            if let Next::Stop = update(&state) {
                                 find_id(gameroom, target, generation, view).await;
                                 return;
                             }
@@ -742,7 +819,7 @@ async fn follow(
                         }
                     }
                     Ok(Reseat::Finished(state)) => {
-                        update(&target, generation, &state, &view);
+                        update(&state);
                         return;
                     }
                     Err(e) => {
@@ -838,6 +915,10 @@ async fn send_moves(
             sent = None;
             continue;
         };
+        // Held until an opponent sits (`follow` wakes this then).
+        if lock(&view).waiting {
+            continue;
+        }
         let tries = match &sent {
             Some((last, tries, at)) if *last == out => {
                 if at.elapsed() < (CONFIRM_WAIT * *tries).min(MAX_BACKOFF) {
@@ -1070,6 +1151,33 @@ mod tests {
         assert_eq!((players.gold.kind, players.silver.kind), (PlayerKind::Human, PlayerKind::Remote));
         assert!(s.plays_live(), "gold's move is the user's");
         assert!(s.export(false).contains("bot_a"), "the record keeps the server's names");
+    }
+
+    #[test]
+    fn a_created_game_waits_for_an_opponent() {
+        let before = |extra: &str| {
+            let text = format!("wplayer=me\ntimecontrol=1/0/0/0/0\nturn=w\nmoves=1w\nrole=w\n{extra}");
+            GameState::from_record(Record::decode(&text).unwrap())
+        };
+        let open = before("");
+        assert!(waiting(Some(Color::Gold), &open), "silver's seat is empty");
+        assert!(!waiting(None, &open), "a viewer waits for nothing");
+        let mut s = Session::new();
+        start(&mut s, &open);
+        let g = s.generation();
+        apply(&mut s, g, &open);
+        assert_eq!(s.view().players.unwrap().silver.name, "Silver");
+
+        // The opponent sits: their name and rating come in.
+        let joined = before("bplayer=them\nbrating=1600\n");
+        assert!(!waiting(Some(Color::Gold), &joined));
+        apply(&mut s, g, &joined);
+        assert_eq!(s.view().players.unwrap().silver.name, "them");
+        let record = s.export(false);
+        assert!(
+            record.contains("[Silver \"them\"]") && record.contains("[SilverRating \"1600\"]"),
+            "{record}"
+        );
     }
 
     #[test]
