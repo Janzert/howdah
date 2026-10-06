@@ -12,7 +12,7 @@
   import type { SessionView } from './lib/bindings/SessionView';
   import type { Square } from './lib/bindings/Square';
   import Board from './lib/board/Board.svelte';
-  import { BoardModel } from './lib/board/boardModel.svelte';
+  import { type AnimHooks, BoardModel } from './lib/board/boardModel.svelte';
   import { nextTick, turnTimeLeft } from './lib/clock';
   import EnginePanel from './lib/EnginePanel.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
@@ -124,6 +124,7 @@
         spec.gold.kind === 'human' && spec.silver.kind === 'human' && !spec.goldTimeControl && !spec.silverTimeControl;
       await (free ? api.newGame() : api.startMatch(spec));
       lastSpec = free ? null : spec;
+      if (!free) play('gameStart');
       return null;
     } catch (e) {
       return errorMessage(e);
@@ -215,10 +216,11 @@
       const ended = justEnded(prev, u.view);
       const setupCommitted = view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;
       setView(u.view);
-      model.apply(u.view.position.pieces, u.animation, animHooks, u.animationBudgetMs);
-      if (setupCommitted) play('place');
+      model.apply(u.view.position.pieces, u.animation, animHooks(u.view.turn != null), u.animationBudgetMs);
+      if (setupCommitted) play('lastStep');
       if (ended) {
-        play('win');
+        const human = loneHuman(u.view);
+        play(human && u.view.result?.winner !== human ? 'loss' : 'win');
         gameEndPending = true;
       }
       if (prev && u.view.moves.length > prev.moves.length && awaitsHumanAgainstEngine(u.view)) {
@@ -231,7 +233,7 @@
         missedMove = null;
       } else if (prev && u.view.liveMove && u.view.liveMove !== prev.liveMove && movedByOpponent(u.view)) {
         missedMove = u.view.liveMove;
-        play('place');
+        play('lastStep');
         // Only a player is asked to come back ("Your move"), not a spectator.
         if (loneHuman(u.view)) requestAttention();
       }
@@ -330,14 +332,16 @@
   function commit() {
     if (!view) return;
     if (view.phase === 'setup') run(api.commitSetup());
-    else if (view.turn || view.planMove) run(api.commitTurn());
+    else if (view.turn) run(api.commitTurn()).then((ok) => ok && play('lastStep'));
+    else if (view.planMove) run(api.commitTurn());
   }
 
-  const animHooks = {
-    // The arimaa.com clients play place.wav for every step.
-    onSlide: () => play('place'),
-    onCapture: () => play('trapped'),
-  };
+  /** Sounds for an animation. Steps of a turn being entered are all soft;
+   * the louder one comes when the move is played. */
+  const animHooks = (entering: boolean): AnimHooks => ({
+    onSlide: (last) => play(last && !entering ? 'lastStep' : 'step'),
+    onCapture: (own) => play(own ? 'ownLoss' : 'capture'),
+  });
 
   function goto(ply: number) {
     if (!view) return;
@@ -357,7 +361,7 @@
     if (!view || view.turn?.steps.length || model.animating) return;
     const replay = await api.moveReplay();
     if (replay && view && !model.animating) {
-      model.replay(replay.before, view.position.pieces, replay.animation, animHooks);
+      model.replay(replay.before, view.position.pieces, replay.animation, animHooks(false));
     }
   }
 

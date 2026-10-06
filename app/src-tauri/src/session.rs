@@ -222,7 +222,7 @@ fn id_base(color: Color) -> PieceId {
 }
 
 /// Moves ids through one applied step and describes it for animation.
-fn apply_ids(map: &mut IdMap, e: &StepEffect) -> AnimStep {
+fn apply_ids(map: &mut IdMap, e: &StepEffect, mover: Color) -> AnimStep {
     let id = map[e.step.from.index() as usize].take().unwrap_or(PieceId::MAX);
     map[e.to.index() as usize] = Some(id);
     let captured = e.capture.map(|c| AnimPiece {
@@ -230,7 +230,7 @@ fn apply_ids(map: &mut IdMap, e: &StepEffect) -> AnimStep {
         piece: c.piece,
         square: c.square,
     });
-    AnimStep { id, from: e.step.from, to: e.to, captured, restored: None }
+    AnimStep { id, from: e.step.from, to: e.to, captured, restored: None, mover }
 }
 
 /// Piece ids for every ply. Setup placements get `base + index`, and ids
@@ -247,7 +247,8 @@ fn compute_ids(game: &Game) -> Vec<IdMap> {
             }
             Move::Steps(effects) => {
                 for e in effects {
-                    apply_ids(&mut map, e);
+                    // Only the ids are kept, so the mover doesn't matter.
+                    apply_ids(&mut map, e, Color::Gold);
                 }
             }
         }
@@ -1165,7 +1166,8 @@ impl Session {
         match &self.game.moves()[ply] {
             Move::Steps(effects) => {
                 let mut map = self.ids[ply];
-                effects.iter().map(|e| apply_ids(&mut map, e)).collect()
+                let mover = self.game.position_at(ply).map_or(Color::Gold, Position::side_to_move);
+                effects.iter().map(|e| apply_ids(&mut map, e, mover)).collect()
             }
             Move::Setup(_) => Vec::new(),
         }
@@ -1174,8 +1176,9 @@ impl Session {
     /// Animation of the in-progress turn's steps so far, plus the resulting ids.
     fn turn_animation(&self) -> (Vec<AnimStep>, IdMap) {
         let mut map = self.ids[self.cursor];
+        let mover = self.cursor_position().side_to_move();
         let anim = match &self.turn {
-            Some(tb) => tb.steps().iter().map(|s| apply_ids(&mut map, &s.effect)).collect(),
+            Some(tb) => tb.steps().iter().map(|s| apply_ids(&mut map, &s.effect, mover)).collect(),
             None => Vec::new(),
         };
         (anim, map)
@@ -1509,6 +1512,7 @@ impl Session {
             to,
             captured: None,
             restored: None,
+            mover: draft[ia].piece.color,
         };
         Ok(vec![slide(ia, a, b), slide(ib, b, a)])
     }
@@ -1845,7 +1849,14 @@ mod tests {
         let anim = s.try_step(sq("e2"), sq("e3")).unwrap();
         assert_eq!(
             anim,
-            vec![AnimStep { id: e, from: sq("e2"), to: sq("e3"), captured: None, restored: None }]
+            vec![AnimStep {
+                id: e,
+                from: sq("e2"),
+                to: sq("e3"),
+                captured: None,
+                restored: None,
+                mover: Color::Gold
+            }]
         );
         assert_eq!(id_at(&s.view(), "e3"), e);
         assert!(s.try_step(sq("a1"), sq("a2")).is_err());

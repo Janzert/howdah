@@ -7,7 +7,9 @@ import { BoardModel, INSTANT_GAP_MS, MAX_BEHIND, ROUTE_STEP_MS, STEP_MS } from '
 const rabbit = (square: number): PieceView[] => [
   { id: 1, piece: { color: 'gold', kind: 'rabbit' }, square, frozen: false },
 ];
-const step = (from: number, to: number): AnimStep[] => [{ id: 1, from, to, captured: null, restored: null }];
+const step = (from: number, to: number): AnimStep[] => [
+  { id: 1, from, to, captured: null, restored: null, mover: 'gold' },
+];
 
 describe('BoardModel', () => {
   beforeEach(() => {
@@ -17,6 +19,25 @@ describe('BoardModel', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("tells the sounds which step is last, and whose piece is captured", async () => {
+    const m = new BoardModel();
+    m.snap(rabbit(0));
+    const slides = vi.fn();
+    m.apply(rabbit(16), [...step(0, 8), ...step(8, 16)], { onSlide: slides });
+    await vi.advanceTimersByTimeAsync(3 * STEP_MS);
+    expect(slides.mock.calls).toEqual([[false], [true]]);
+
+    // The rabbit steps onto c3 alone and is trapped: gold's own loss,
+    // with the capture's sound instead of the step's.
+    const onSlide = vi.fn();
+    const onCapture = vi.fn();
+    const trapped = { id: 1, piece: { color: 'gold', kind: 'rabbit' }, square: 18 } as const;
+    m.apply([], [{ id: 1, from: 16, to: 18, captured: trapped, restored: null, mover: 'gold' }], { onSlide, onCapture });
+    await vi.advanceTimersByTimeAsync(3 * STEP_MS);
+    expect(onSlide).not.toHaveBeenCalled();
+    expect(onCapture.mock.calls).toEqual([[true]]);
   });
 
   it('animates a move and settles on the final position', async () => {

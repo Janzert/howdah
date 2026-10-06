@@ -18,8 +18,10 @@ export interface DisplayPiece {
 }
 
 export interface AnimHooks {
-  onSlide?: () => void;
-  onCapture?: () => void;
+  /** A step without a capture starts; `last` if it ends the animation. */
+  onSlide?: (last: boolean) => void;
+  /** A piece is captured; `own` if it's the mover's own piece. */
+  onCapture?: (own: boolean) => void;
 }
 
 /** Default slide duration per step; see `BoardModel.setBaseSpeed`. */
@@ -158,7 +160,7 @@ export class BoardModel {
       if (behind > MAX_BEHIND) {
         // Far behind: show each move instantly, briefly, until caught up.
         this.snap(item.final);
-        item.hooks.onSlide?.();
+        item.hooks.onSlide?.(true);
         await sleep(INSTANT_GAP_MS);
         continue;
       }
@@ -207,7 +209,7 @@ export class BoardModel {
     const route = anim.filter((a) => a.id === dropped);
     for (const p of this.pieces) p.instant = false;
     if (route.length > 1) await this.rewind(dropped!, route[0].from);
-    for (const a of anim) {
+    for (const [i, a] of anim.entries()) {
       if (gen !== this.generation) return;
       this.updateSpeed(scale);
       if (route.length > 1) this.stepMs = Math.min(this.stepMs, ROUTE_STEP_MS);
@@ -221,7 +223,8 @@ export class BoardModel {
         }
       }
       const p = this.find(a.id);
-      hooks.onSlide?.();
+      // A capture has its own sound instead of the step's, as in 4steps.
+      if (!a.captured) hooks.onSlide?.(i === anim.length - 1);
       if (p && p.square !== a.to) {
         p.square = a.to;
         await sleep(this.stepMs);
@@ -230,7 +233,7 @@ export class BoardModel {
         const c = this.find(a.captured.id);
         if (c) {
           c.fading = 'out';
-          hooks.onCapture?.();
+          hooks.onCapture?.(a.captured.piece.color === a.mover);
           await sleep(this.fadeMs);
           this.pieces = this.pieces.filter((x) => x.id !== c.id);
         }

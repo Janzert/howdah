@@ -127,7 +127,7 @@
         class:muted={!settings.sound}
         bind:value={settings.volume}
         oninput={() => (settings.sound = true)}
-        onchange={() => play('place')}
+        onchange={() => play('lastStep')}
       />
       <span class="value">{settings.volume}%</span>
     </div>

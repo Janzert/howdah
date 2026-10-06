@@ -1,4 +1,7 @@
-// Sound effects (classic arimaa.com set). Whether sound is on and its
+// Sound effects, one per game event, from the classic arimaa.com set and
+// assigned to events as 4steps does: a soft click per step and a louder one
+// for a move's last, separate sounds for capturing and for losing one's own
+// piece on a trap, and for winning and losing. Whether sound is on and its
 // volume are settings (settings.svelte.ts); the app passes them in with
 // `setMuted` and `setVolume`.
 //
@@ -8,15 +11,38 @@
 // instead of cutting each other off. HTML audio elements, which we used
 // before, were unreliable in WebKitGTK: very short clips (place.wav is 45 ms)
 // often didn't play, and overlapping ones were dropped.
+import dogStep from '../sounds/classic/dogStep.wav?inline';
+import drop2 from '../sounds/classic/Drop2.wav?inline';
+import elephantStep from '../sounds/classic/elephantStep.wav?inline';
+import metal2 from '../sounds/classic/Metal2_3.wav?inline';
 import place from '../sounds/classic/place.wav?inline';
-import slide from '../sounds/classic/slide.wav?inline';
+import slide2 from '../sounds/classic/slide2.wav?inline';
 import trapped from '../sounds/classic/trapped.wav?inline';
 import win from '../sounds/classic/win.wav?inline';
 import { dataUrlBytes, decodeWav } from './wav';
 
-export type SoundName = 'slide' | 'place' | 'trapped' | 'win' | 'tick';
+/** The events that make a sound. */
+export type SoundName =
+  | 'step' // a step within a move
+  | 'lastStep' // a move's last step, a committed move or setup, a missed move
+  | 'capture' // an opponent's piece trapped
+  | 'ownLoss' // the mover's own piece trapped
+  | 'gameStart'
+  | 'win' // a game ending, unless the lone human player lost
+  | 'loss'
+  | 'tick'; // the low-time clock
 
-const sources: Record<Exclude<SoundName, 'tick'>, string> = { slide, place, trapped, win };
+// TODO(themes): let a theme override the sound for each event.
+const sources: Record<SoundName, string> = {
+  step: slide2,
+  lastStep: place,
+  capture: trapped,
+  ownLoss: dogStep,
+  gameStart: win,
+  win: drop2,
+  loss: elephantStep,
+  tick: metal2,
+};
 
 let muted = false;
 let gain = 1;
@@ -59,7 +85,6 @@ function init(): AudioContext | null {
   keepAlive.loop = true;
   keepAlive.connect(output);
   keepAlive.start();
-  buffers.set('tick', tickBuffer(context));
   for (const [name, url] of Object.entries(sources) as [SoundName, string][]) {
     try {
       const wav = decodeWav(dataUrlBytes(url));
@@ -71,20 +96,6 @@ function init(): AudioContext | null {
     }
   }
   return context;
-}
-
-/** The low-time clock tick: a short, quickly decaying click. The classic
- * set has no tick, so it's synthesized. */
-function tickBuffer(ctx: AudioContext): AudioBuffer {
-  const rate = ctx.sampleRate;
-  const buffer = ctx.createBuffer(1, Math.round(rate * 0.04), rate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) {
-    const t = i / rate;
-    const tone = Math.sin(2 * Math.PI * 1900 * t) + 0.5 * Math.sin(2 * Math.PI * 3100 * t);
-    data[i] = 0.35 * tone * Math.exp(-t / 0.006);
-  }
-  return buffer;
 }
 
 /**

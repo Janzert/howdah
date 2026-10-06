@@ -494,12 +494,15 @@ pub struct AnimStep {
     pub to: Square,
     pub captured: Option<AnimPiece>,
     pub restored: Option<AnimPiece>,
+    /// The side whose turn the step is in (a push moves the other side's
+    /// piece), so a capture can be told from losing one's own piece.
+    pub mover: Color,
 }
 
 impl AnimStep {
     /// The same step played backward.
     pub fn reversed(self) -> AnimStep {
-        AnimStep { id: self.id, from: self.to, to: self.from, captured: None, restored: self.captured }
+        AnimStep { from: self.to, to: self.from, captured: None, restored: self.captured, ..self }
     }
 }
 

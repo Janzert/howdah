@@ -300,7 +300,12 @@ Sharp, OpFor and other AEI engines behave.
     - An update without animation that doesn't change the position (a clock
       or "thinking" change) doesn't interrupt; any other one cancels the
       queue and snaps.
-    - Every step plays `place.wav`, as the arimaa.com clients do.
+    - Sounds follow 4steps (see `lib/sound.ts`): `AnimHooks.onSlide(last)`
+      gives a soft click per step and a louder one for a move's last (all
+      soft while a turn is being entered; the loud one comes on Play), and
+      `onCapture(own)` tells a capture from losing the mover's own piece,
+      using `AnimStep.mover`. A step with a capture plays only the
+      capture's sound.
     - Hover input (setting `hoverInput`: off, arrows or step mode) reads
       each square's legal single steps from a cache filled from
       `legal_targets` and cleared when `positionKey` changes. Arrows: a
@@ -333,8 +338,12 @@ Sharp, OpFor and other AEI engines behave.
       long-lived gain node with a silent loop playing into it, so the
       output never goes idle between sounds. The loop is what fixed the
       rest; the shared node alone didn't. Keep both.
-    - The low-time tick is synthesized (the classic set has none). It plays
-      while a human's clock runs, on 4steps' schedule (`lib/clock.ts`).
+    - Sounds are named by event (`SoundName`: step, lastStep, capture,
+      ownLoss, gameStart, win, loss, tick), each mapped to a classic file.
+      A match starting plays gameStart; the game ending plays loss when
+      the lone human player lost, otherwise win. The low-time tick
+      (`Metal2_3.wav`) plays while a human's clock runs, on 4steps'
+      schedule (`lib/clock.ts`).
   - Game end: `GameEndDialog.svelte` shows the result in words
     (`lib/result.ts`) after the final move's animation, with rematch and
     swap sides (repeating the last New game spec). `justEnded` keeps it to
