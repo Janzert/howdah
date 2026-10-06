@@ -1,7 +1,9 @@
 //! Game-ending conditions.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::position::Position;
-use crate::turn::TurnBuilder;
+use crate::turn::{Pending, TurnBuilder};
 use crate::types::{Color, Piece, PieceKind, data_type};
 
 data_type! {
@@ -113,14 +115,72 @@ pub fn outcome_after_turn(pos: &Position, mover: Color) -> Option<GameResult> {
         return win(opp, WinReason::Elimination);
     }
     if is_immobilized(pos) {
-        // TODO(rules): a player whose only legal moves would all be third
-        // repetitions is also immobilized (decided: count it as a loss).
-        // That needs full move generation plus the game history. pyrimaa
-        // doesn't check it, and arimaa.com probably catches only the simple
-        // case of a single otherwise legal move.
+        // A player whose only moves would all be third repetitions is
+        // immobilized too: see `outcome_with_history`.
         return win(mover, WinReason::Immobilization);
     }
     None
+}
+
+/// [`outcome_after_turn`], plus the repetition rule's part in
+/// immobilization: a player whose only legal moves would all repeat a
+/// position for the third time can't move, and loses (decided for Howdah;
+/// pyrimaa doesn't check it, and arimaa.com probably catches only the
+/// simple case of a single otherwise legal move). `history` is the
+/// positions that count for repetition, `pos` included: every position
+/// after the setups, up to and including `pos`.
+pub fn outcome_with_history<'a>(
+    pos: &Position,
+    mover: Color,
+    history: impl IntoIterator<Item = &'a Position>,
+) -> Option<GameResult> {
+    outcome_after_turn(pos, mover).or_else(|| {
+        only_repetitions(pos, history)
+            .then_some(GameResult { winner: mover, reason: WinReason::Immobilization })
+    })
+}
+
+/// True if the side to move in `pos` has legal moves but every one would
+/// be a third repetition: its end is already in `history` twice.
+fn only_repetitions<'a>(pos: &Position, history: impl IntoIterator<Item = &'a Position>) -> bool {
+    // Turn ends have the other side to move.
+    let mut counts: HashMap<&Position, u32> = HashMap::new();
+    for p in history.into_iter().filter(|p| p.side_to_move() != pos.side_to_move()) {
+        *counts.entry(p).or_default() += 1;
+    }
+    let twice: HashSet<&Position> = counts.into_iter().filter(|&(_, n)| n >= 2).map(|(p, _)| p).collect();
+    // Usually nothing has been seen twice, and every move is fine.
+    if twice.is_empty() || is_immobilized(pos) {
+        return false;
+    }
+    !has_move_avoiding(&mut TurnBuilder::new(pos), &twice, &mut HashSet::new())
+}
+
+/// Whether some turn from `tb` on ends outside `banned`: a depth-first
+/// search that stops at the first such turn, skipping states already
+/// searched.
+fn has_move_avoiding(
+    tb: &mut TurnBuilder,
+    banned: &HashSet<&Position>,
+    searched: &mut HashSet<(Position, usize, Pending)>,
+) -> bool {
+    if let Ok(turn) = tb.clone().finish()
+        && !banned.contains(&turn.end)
+    {
+        return true;
+    }
+    if tb.steps_left() == 0 || !searched.insert(tb.search_key()) {
+        return false;
+    }
+    for (step, _) in tb.legal_steps() {
+        tb.try_step(step).expect("a legal step");
+        let found = has_move_avoiding(tb, banned, searched);
+        tb.undo();
+        if found {
+            return true;
+        }
+    }
+    false
 }
 
 /// Winner when a game or turn limit is reached: the side with more pieces,
@@ -136,7 +196,7 @@ pub fn limit_score_winner(pos: &Position) -> Color {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::position::tests::pos;
 
@@ -225,5 +285,69 @@ mod tests {
     fn goal_beats_elimination() {
         let r = outcome_after_turn(&pos(Color::Silver, "Rd8 ed5"), Color::Gold);
         assert_eq!(r.unwrap().reason, WinReason::Goal);
+    }
+
+    /// Every position a turn from `p` can end in.
+    pub(crate) fn turn_ends(p: &Position) -> HashSet<Position> {
+        fn collect(tb: &mut TurnBuilder, out: &mut HashSet<Position>) {
+            if let Ok(turn) = tb.clone().finish() {
+                out.insert(turn.end);
+            }
+            for (step, _) in tb.legal_steps() {
+                tb.try_step(step).unwrap();
+                collect(tb, out);
+                tb.undo();
+            }
+        }
+        let mut out = HashSet::new();
+        collect(&mut TurnBuilder::new(p), &mut out);
+        out
+    }
+
+    // Silver's cat can wander; its rabbit is frozen by the elephant.
+    pub(crate) const WANDERING_CAT: &str = "ch8 Cg8 rb2 Eb1 Ra1";
+
+    #[test]
+    fn only_third_repetitions_left_is_immobilization() {
+        let p = pos(Color::Silver, WANDERING_CAT);
+        let ends = turn_ends(&p);
+        assert!(ends.len() > 10, "silver has moves: {}", ends.len());
+        let history = ends.iter().chain(ends.iter()).chain([&p]);
+        let r = outcome_with_history(&p, Color::Gold, history);
+        assert_eq!(r, Some(GameResult { winner: Color::Gold, reason: WinReason::Immobilization }));
+    }
+
+    #[test]
+    fn one_move_that_isnt_a_third_repetition_is_enough() {
+        let p = pos(Color::Silver, WANDERING_CAT);
+        let ends = turn_ends(&p);
+        for spare in &ends {
+            let history = ends.iter().chain(ends.iter().filter(|e| *e != spare)).chain([&p]);
+            assert_eq!(outcome_with_history(&p, Color::Gold, history), None, "{}", spare.to_short_string());
+        }
+        assert_eq!(outcome_with_history(&p, Color::Gold, [&p]), None);
+    }
+
+    #[test]
+    fn repetitions_count_only_positions_with_the_other_side_to_move() {
+        // The same boards with silver to move are other positions.
+        let p = pos(Color::Silver, WANDERING_CAT);
+        let flipped: Vec<Position> = turn_ends(&p)
+            .into_iter()
+            .map(|mut e| {
+                e.set_side_to_move(Color::Silver);
+                e
+            })
+            .collect();
+        let history = flipped.iter().chain(flipped.iter()).chain([&p]);
+        assert_eq!(outcome_with_history(&p, Color::Gold, history), None);
+    }
+
+    #[test]
+    fn plain_immobilization_needs_no_history() {
+        // Silver has no move at all: plain immobilization, history or not.
+        let p = pos(Color::Silver, "ra8 Ca7 Rd4");
+        let r = outcome_with_history(&p, Color::Gold, [&p]);
+        assert_eq!(r, Some(GameResult { winner: Color::Gold, reason: WinReason::Immobilization }));
     }
 }

@@ -26,8 +26,8 @@ data_type! {
 }
 
 /// What the previous step lets or requires the next step do.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Pending {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Pending {
     None,
     /// A push is under way: one of `pushers` must step into `vacated`.
     /// Recording the eligible pushers at the start is equivalent to checking
@@ -140,6 +140,14 @@ impl TurnBuilder {
 
     pub fn steps_left(&self) -> usize {
         MAX_STEPS - self.steps.len()
+    }
+
+    /// What decides the steps and turns that can follow from here (the
+    /// start being fixed): the position, the steps left and what the last
+    /// step allows. Builders from one start with equal keys can end their
+    /// turns in the same positions.
+    pub(crate) fn search_key(&self) -> (Position, usize, Pending) {
+        (self.pos.clone(), self.steps_left(), self.pending())
     }
 
     fn pending(&self) -> Pending {
@@ -329,8 +337,8 @@ impl TurnBuilder {
         if self.pos.same_board(&self.start) {
             return Err(CommitError::NoChange);
         }
-        // TODO(rules): a turn that repeats a position for the third time is
-        // illegal. Needs the game's position history, so it belongs in Game.
+        // A turn that repeats a position for the third time is illegal too;
+        // that needs the game's history, so `Game` and `GameTree` check it.
         Ok(())
     }
 

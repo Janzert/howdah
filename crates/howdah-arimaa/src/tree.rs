@@ -9,7 +9,7 @@
 use crate::error::GameError;
 use crate::game::{Game, Move, build_turn};
 use crate::notation::{self, MoveBody};
-use crate::outcome::{GameResult, outcome_after_turn};
+use crate::outcome::{GameResult, outcome_after_turn, outcome_with_history};
 use crate::position::Position;
 use crate::setup::{Placement, apply_setup};
 use crate::turn::{Turn, TurnBuilder};
@@ -255,6 +255,10 @@ impl Node {
 pub struct GameTree {
     /// Arena of nodes; a deleted node leaves `None`, so ids stay stable.
     nodes: Vec<Option<Node>>,
+    /// Whether a player left with only third repetitions loses (see
+    /// [`outcome_with_history`]). On unless someone else decides the
+    /// results, as a game server does.
+    repetition_immobilization: bool,
 }
 
 impl Default for GameTree {
@@ -288,7 +292,15 @@ impl GameTree {
                 end_marker: None,
                 annotation: Annotation::default(),
             })],
+            repetition_immobilization: true,
         }
+    }
+
+    /// Turns off (or back on) the loss for a player left with only third
+    /// repetitions, for moves added from now on. A game server may not
+    /// apply it, and its results are the game's.
+    pub fn set_repetition_immobilization(&mut self, on: bool) {
+        self.repetition_immobilization = on;
     }
 
     pub fn root(&self) -> NodeId {
@@ -389,20 +401,27 @@ impl GameTree {
     /// (same pieces, same side to move) for the third time. Only positions
     /// on the path from the root to `parent` count.
     pub fn is_third_repetition(&self, parent: NodeId, end: &Position) -> bool {
-        let mut seen = 0;
-        let mut at = self.node(parent);
-        while let Some(n) = at
-            && n.ply >= 2
-        {
-            if n.position == *end {
-                seen += 1;
-                if seen >= 2 {
-                    return true;
-                }
-            }
-            at = n.parent.and_then(|p| self.node(p));
+        self.repetition_history(parent).filter(|p| *p == end).nth(1).is_some()
+    }
+
+    /// The positions that count for repetition after `node`: those on the
+    /// path back from it, after the setups.
+    fn repetition_history(&self, node: NodeId) -> impl Iterator<Item = &Position> {
+        std::iter::successors(self.node(node), |n| n.parent.and_then(|p| self.node(p)))
+            .take_while(|n| n.ply >= 2)
+            .map(|n| &n.position)
+    }
+
+    /// How the game ends after `turn` from `parent`, if it does: the
+    /// position's results, and (unless turned off) the opponent left with
+    /// only third repetitions.
+    pub fn outcome_after(&self, parent: NodeId, turn: &Turn) -> Option<GameResult> {
+        let mover = turn.start.side_to_move();
+        if !self.repetition_immobilization {
+            return outcome_after_turn(&turn.end, mover);
         }
-        false
+        let history = self.repetition_history(parent).chain([&turn.end]);
+        outcome_with_history(&turn.end, mover, history)
     }
 
     /// Adds a turn built with [`GameTree::begin_turn`].
@@ -417,7 +436,7 @@ impl GameTree {
         if self.is_third_repetition(parent, &turn.end) {
             return Err(GameError::Repetition);
         }
-        let result = outcome_after_turn(&turn.end, turn.start.side_to_move());
+        let result = self.outcome_after(parent, &turn);
         let mv = Move::Steps(turn.effects());
         Ok(self.add_child(parent, mv, turn.end, result))
     }
@@ -606,6 +625,35 @@ impl GameTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repetition_immobilization_can_be_turned_off() {
+        use crate::outcome::WinReason;
+        use crate::outcome::tests::{WANDERING_CAT, turn_ends};
+        use crate::position::tests::{pos, step};
+        // As in `Game`'s test: after Ec1w, every silver turn would be a
+        // third repetition.
+        let ends: Vec<Position> = turn_ends(&pos(Color::Silver, WANDERING_CAT)).into_iter().collect();
+        let mut t = GameTree::new();
+        let mut at =
+            t.add_child(GameTree::ROOT, Move::Setup(Vec::new()), Position::empty(Color::Silver), None);
+        let start = pos(Color::Gold, "ch8 Cg8 rb2 Ec1 Ra1");
+        for p in ends.iter().chain(&ends).chain([&start]) {
+            at = t.add_child(at, Move::Setup(Vec::new()), p.clone(), None);
+        }
+        let mut tb = t.begin_turn(at).unwrap();
+        tb.try_step(step("Ec1w")).unwrap();
+        let turn = tb.finish().unwrap();
+        let lost = Some(GameResult { winner: Color::Gold, reason: WinReason::Immobilization });
+        assert_eq!(t.outcome_after(at, &turn), lost);
+        let mut server = t.clone();
+        server.set_repetition_immobilization(false);
+        assert_eq!(server.outcome_after(at, &turn), None);
+        let played = server.add_turn(at, turn.clone()).unwrap();
+        assert_eq!(server[played].result(), None);
+        let played = t.add_turn(at, turn).unwrap();
+        assert_eq!(t[played].result(), lost);
+    }
 
     #[test]
     fn comment_commands() {

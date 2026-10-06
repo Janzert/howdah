@@ -6,7 +6,7 @@
 
 use crate::error::{GameError, RecordError};
 use crate::notation::{self, MoveBody, RecordStep};
-use crate::outcome::{GameResult, outcome_after_turn};
+use crate::outcome::{GameResult, outcome_with_history};
 use crate::position::Position;
 use crate::setup::{Placement, apply_setup};
 use crate::step::StepEffect;
@@ -137,6 +137,15 @@ impl Game {
         history.iter().filter(|p| *p == end).count() >= 2
     }
 
+    /// How the game ends after `turn` from the position at `ply`, if it
+    /// does: the position's results, and the opponent left with only third
+    /// repetitions. Like [`Game::is_third_repetition`], only positions from
+    /// `ply` back count.
+    pub fn outcome_after(&self, ply: usize, turn: &Turn) -> Option<GameResult> {
+        let history = self.positions.get(2..=ply).unwrap_or(&[]).iter().chain([&turn.end]);
+        outcome_with_history(&turn.end, turn.start.side_to_move(), history)
+    }
+
     /// Adds a turn built with [`Game::begin_turn`].
     pub fn play_turn(&mut self, turn: Turn) -> Result<Option<GameResult>, GameError> {
         self.check_can_move()?;
@@ -149,8 +158,7 @@ impl Game {
         if self.is_third_repetition(self.ply_count(), &turn.end) {
             return Err(GameError::Repetition);
         }
-        let mover = turn.start.side_to_move();
-        self.result = outcome_after_turn(&turn.end, mover);
+        self.result = self.outcome_after(self.ply_count(), &turn);
         self.moves.push(Move::Steps(turn.effects()));
         self.positions.push(turn.end);
         Ok(self.result)
@@ -253,6 +261,33 @@ mod tests {
         g.play_turn(tb.finish().unwrap()).unwrap();
         assert_eq!(g.current_position().side_to_move(), Color::Silver);
         assert!(g.to_record().ends_with("2g Ee2n\n"));
+    }
+
+    #[test]
+    fn left_with_only_third_repetitions_loses() {
+        use crate::outcome::WinReason;
+        use crate::outcome::tests::{WANDERING_CAT, turn_ends};
+        use crate::position::tests::{pos, step};
+        // Gold's elephant steps to b1, freezing silver's rabbit. Every turn
+        // silver could answer with already ended a silver turn twice.
+        let end = pos(Color::Silver, WANDERING_CAT);
+        let ends: Vec<Position> = turn_ends(&end).into_iter().collect();
+        let start = pos(Color::Gold, "ch8 Cg8 rb2 Ec1 Ra1");
+        let mut positions = vec![Position::empty(Color::Gold), Position::empty(Color::Silver)];
+        positions.extend(ends.iter().chain(&ends).cloned());
+        positions.push(start.clone());
+        let moves = vec![Move::Setup(Vec::new()); positions.len() - 1];
+        let mut g = Game::from_parts(moves, positions, None, None);
+        let mut tb = g.begin_turn().unwrap();
+        tb.try_step(step("Ec1w")).unwrap();
+        let turn = tb.finish().unwrap();
+        assert_eq!(turn.end, end);
+        let r = Some(GameResult { winner: Color::Gold, reason: WinReason::Immobilization });
+        assert_eq!(g.outcome_after(g.ply_count(), &turn), r);
+        // Counting only up to an earlier ply leaves silver a move.
+        assert_eq!(g.outcome_after(2 + ends.len(), &turn), None);
+        assert_eq!(g.play_turn(turn).unwrap(), r);
+        assert_eq!(g.result(), r);
     }
 
     #[test]

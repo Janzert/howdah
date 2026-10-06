@@ -31,7 +31,9 @@ mod types;
 
 pub use error::{CommitError, GameError, ParseError, RecordError, SetupError, StepError};
 pub use game::{Game, Move};
-pub use outcome::{GameResult, WinReason, is_immobilized, limit_score_winner, outcome_after_turn};
+pub use outcome::{
+    GameResult, WinReason, is_immobilized, limit_score_winner, outcome_after_turn, outcome_with_history,
+};
 pub use position::Position;
 pub use record::GameRecord;
 pub use setup::{Placement, apply_setup, default_setup, validate_setup};

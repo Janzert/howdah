@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 use howdah_arimaa::{
     Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position,
     Route, Square, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder, WinReason, default_setup,
-    limit_score_winner, notation, outcome_after_turn,
+    limit_score_winner, notation,
 };
 
 use crate::dto::{
@@ -419,6 +419,9 @@ impl Session {
     fn replace(&mut self, tree: GameTree, tags: Vec<(String, String)>, at: NodeId, matchup: Option<Match>) {
         let generation = self.generation + 1;
         let (analysis, continue_turns) = (self.analysis.take(), self.continue_turns);
+        // In a server's game, the server's results are the game's.
+        let mut tree = tree;
+        tree.set_repetition_immobilization(!matchup.as_ref().is_some_and(Match::server_clock));
         *self = Session::with_tree(tree, tags, at);
         self.generation = generation;
         self.analysis = analysis;
@@ -1556,7 +1559,7 @@ impl Session {
         let tb = self.turn.as_ref().filter(|tb| self.continue_turns && tb.steps_left() == 0)?;
         let turn = tb.clone().finish().ok()?;
         if self.game.is_third_repetition(self.cursor, &turn.end)
-            || outcome_after_turn(&turn.end, turn.start.side_to_move()).is_some()
+            || self.tree.outcome_after(self.cursor_node(), &turn).is_some()
         {
             return None;
         }

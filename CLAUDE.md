@@ -36,13 +36,21 @@ Howdah plays and watches games on arimaa.com.
     letters), `timecontrol` (`M/R/P/L/G/T` format and reserve arithmetic,
     ported from pyrimaa `util.py`), `notation` (syntax only), and
     `game::Game`: moves plus cached positions per ply. It rejects third
-    repetitions and plays moves from notation (`play_notation`, used for
+    repetitions, and a player whose only moves would all be third
+    repetitions is immobilized (`outcome_with_history`, from
+    `Game::outcome_after`/`GameTree::outcome_after`: a depth-first search
+    for one turn ending outside the positions seen twice, memoized on
+    `TurnBuilder::search_key`, run only when something has been seen
+    twice). It plays moves from notation (`play_notation`, used for
     engine and server moves). `end_game` records external results; `parse`
     validates capture tokens, and `to_record` round-trips.
   - `tree::GameTree`: moves with variations (design in
     `docs/VARIATIONS.md`). An arena of `Node`s with stable `NodeId`s; the
     first child continues the main line. Adding a move that's already a
-    child reuses it, repetition counts only the path to the node, and
+    child reuses it, repetition counts only the path to the node
+    (`set_repetition_immobilization(false)` leaves the repetition loss
+    out; the session does that for a server's game, whose results are the
+    server's), and
     `from_game`/`to_game`/`main_game` convert to and from `Game`. Nodes
     carry an `Annotation` (comment, variation intro and PGN-numbered
     `Glyph`s). The session keeps its game as one. Comments can hold PGN
