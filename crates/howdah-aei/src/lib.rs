@@ -5,6 +5,8 @@
 //! - [`play_match`]: play a full engine-vs-engine game with clocks.
 //! - [`Profile`]: what's known about particular engines (analysis options,
 //!   score scales).
+//! - [`Manifest`]: an engine release described in JSON (AEI's
+//!   `ENGINE_MANIFEST.md`): downloads per platform, arguments and options.
 //!
 //! The protocol is specified in AEI's `AEI_PROTOCOL.md`. Moves coming back
 //! from engines are validated with `howdah-arimaa` before being used. No UI or
@@ -13,12 +15,14 @@
 
 mod engine;
 mod error;
+pub mod manifest;
 mod matchplay;
 mod message;
 mod profile;
 
 pub use engine::{Direction, Engine, EngineConfig, EngineId};
 pub use error::AeiError;
+pub use manifest::{Manifest, ManifestError};
 pub use matchplay::{MatchConfig, MatchEvent, MatchOutcome, play_match};
 pub use message::{EngineMessage, Info, SearchEval, SearchLog, SearchLogKind, split_pv};
 pub use profile::{Profile, Score};

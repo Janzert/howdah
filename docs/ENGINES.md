@@ -98,3 +98,35 @@ LDC).
 - pyrimaa's `simple_engine` and the other simple AEI engines: run as
   `python3 -m pyrimaa.simple_engine` with the AEI checkout as the working
   directory. Good for integration tests.
+
+## Engine manifests (design, 2026-10-06)
+
+Howdah doesn't bundle engines. Each engine release publishes a manifest
+(AEI's `ENGINE_MANIFEST.md`: downloads per platform with SHA-256 digests,
+arguments, options), and Howdah installs from it. `howdah-aei`'s
+`manifest` module reads and checks manifests; the rest is planned:
+
+- **Adding:** the Engines dialog adds a manifest from a URL or a file.
+  Howdah keeps the manifest's contents and where it came from in its own
+  config; the file isn't needed again. A short built-in list of known
+  manifest URLs (Sharp's and OpFor's, as GitHub
+  `releases/latest/download/engine.json`) shows them in the dialog with a
+  Download button from the first run.
+- **Installing** (only when the user clicks): fetch this platform's file
+  over https, check its digest, unpack a `zip` or `tar.gz` refusing
+  entries that leave the directory, mark the program executable, and add
+  it to the engine list with the manifest's arguments, working directory
+  and options. Each version goes in its own directory under the app's
+  data dir (`engines/<id>/<version>/`), so an update doesn't replace a
+  running engine and can be undone.
+- **Updating:** fetch the manifest again from its `update_url` (or the
+  URL it was added from) when the user asks; offer the newer version,
+  never install it unasked.
+- **Options:** the manifest's options give the Engines dialog names,
+  types, bounds and descriptions. When AEI gains a way for an engine to
+  list its options (a `protocol-version 2` engine answering an
+  `options` request), the engine's own list wins and the manifest's
+  descriptions fill in.
+- **Engines added by path** keep working as before, with no manifest.
+- Engine-specific behaviour (`Profile`) stays in code, keyed by the
+  engine's `id name`, not in manifests.
