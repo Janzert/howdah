@@ -123,7 +123,9 @@ game**:
   Leaving the game mid-play ("Leave game") ends the match while the
   game goes on at arimaa.com; analysis stays refused then until another
   game is loaded (decided with Brian, 2026-10-06). Howdah doesn't check
-  the server for live games before allowing it.
+  the server for live games before allowing it. Postal games are no
+  exception (decided 2026-10-06): analysis is off in them too, to start
+  with; that can change if the community wants it.
 
 In a match the target is still the shown node, so with the board
 following the live position, analysis follows the game move by move.
