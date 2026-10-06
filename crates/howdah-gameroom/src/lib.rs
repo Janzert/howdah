@@ -29,6 +29,7 @@
 //! `examples/probe.rs` runs these against the live server by hand.
 
 pub mod client;
+pub mod clock_sync;
 pub mod finished;
 pub mod players;
 pub mod state;
@@ -38,6 +39,7 @@ pub use client::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog,
     Opened, Seat, ViewerSeat,
 };
+pub use clock_sync::ClockSync;
 pub use finished::{FinishedGame, RecentGame};
 pub use players::{PastGame, PastGames, PlayerMatch};
 pub use state::{ChatLine, GameState, Role, ServerClock, parse_chat, parse_result, split_moves};

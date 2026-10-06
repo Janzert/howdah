@@ -96,10 +96,22 @@ Sharp, OpFor and other AEI engines behave.
     sends a Referer, spaces requests a second apart (except long polls),
     and logs exchanges through a `NetLog` with `password`, `sid`, `auth`
     and `tid` redacted.
+  - `clock_sync`: `ClockSync` estimates the server's clock from replies
+    stamped `timeonserver` (whole seconds): each request's send and
+    arrival times bound the offset, the bounds are intersected newest
+    first (dropping samples that contradict newer ones), and the
+    estimate sits above the lower bound by the expected rounding
+    (`1/(k+1)` s for `k` samples) plus half the quickest round trip. It
+    works on the monotonic clock. Each `GameServer` (and its `Actions`)
+    feeds one from every stamped reply (`Http::post_timed` times from
+    when the request goes out, after the spacing wait), and the states
+    it returns carry `ServerClock::estimate`d instants.
   - `state`: `GameState` from a reply: players, the moves played without
     numbers (`split_moves`, which applies the server's `takeback` lines), result (`parse_result`), and `ServerClock` worked out
     as the browser client does (`running` is false until the server
-    starts the turn's clock, which it doesn't before the game starts).
+    starts the turn's clock, which it doesn't before the game starts;
+    `turn_started_at`/`game_started_at` place the turn's and game's
+    start on the local clock when estimated).
     `parse_chat` splits the `chat` field into `ChatLine`s
     (`<side> <label>: <text>`, raw text, the label sometimes missing).
   - `finished`: `RecentGame` (the lobby's `recentgames`) and
@@ -263,7 +275,11 @@ Sharp, OpFor and other AEI engines behave.
     holds the user's first move, and `follow` wakes it when they arrive.
     An opponent who sits later is named from the state
     (`Session::set_remote_name`, with the record's tags), and the clock
-    stands still until the server starts it (`RemoteClock.running`). A
+    stands still until the server starts it (`RemoteClock.running`).
+    The session's remote clock is anchored at the estimated turn start
+    (`RemoteClock.turn_started`, falling back to counting back from the
+    reply), and on the user's own turn it starts earlier by the one-way
+    delay, so it shows the time left for a move sent now. A
     session's `Watch` lives in its `SessionHandle`; `new_game`,
     `load_game`, `start_match` and `end_match` stop and forget it. The
     record gets the archive's `Event` and `Site` ("Over the Net"), and at

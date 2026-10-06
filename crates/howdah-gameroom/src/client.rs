@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 
 use howdah_arimaa::Color;
 
+use crate::clock_sync::ClockSync;
 use crate::finished::{FinishedGame, RecentGame};
 use crate::players::{PastGames, PlayerMatch, parse_past_games, parse_search};
 use crate::state::{GameState, Role};
@@ -299,6 +300,18 @@ impl Http {
         params: &[(&str, String)],
         wait: Option<Duration>,
     ) -> Result<Record, Error> {
+        self.post_timed(url, format, params, wait).await.map(|(r, _)| r)
+    }
+
+    /// [`Http::post`], also returning when the request went out (after any
+    /// wait to space it from the last one).
+    pub async fn post_timed(
+        &self,
+        url: &str,
+        format: Format,
+        params: &[(&str, String)],
+        wait: Option<Duration>,
+    ) -> Result<(Record, Instant), Error> {
         if wait.is_none() {
             let mut last = self.last.lock().await;
             if let Some(t) = *last {
@@ -358,7 +371,7 @@ impl Http {
                 .fold(e, |e, (_, v)| e.replace(v.as_str(), "<redacted>"));
             return Err(if is_expired(&e) { Error::Expired } else { Error::Server(e) });
         }
-        Ok(record)
+        Ok((record, started))
     }
 }
 
@@ -782,6 +795,10 @@ impl Lobby {
 }
 
 /// A seat at a game on the game server.
+///
+/// Every reply stamped with `timeonserver` (the full state, the long
+/// poll, an action's) adds a sample to the seat's [`ClockSync`], and the
+/// states it returns carry clocks placed on the local clock with it.
 pub struct GameServer {
     http: Http,
     url: String,
@@ -791,6 +808,32 @@ pub struct GameServer {
     lastchange: String,
     moves: String,
     chat: String,
+    sync: Arc<std::sync::Mutex<ClockSync>>,
+}
+
+/// Posts a request at a seat, adding the reply's `timeonserver` to `sync`.
+async fn timed_post(
+    http: &Http,
+    sync: &std::sync::Mutex<ClockSync>,
+    url: &str,
+    format: Format,
+    params: &[(&str, String)],
+    wait: Option<Duration>,
+) -> Result<Record, Error> {
+    let (r, sent) = http.post_timed(url, format, params, wait).await?;
+    if let Some(t) = r.int("timeonserver") {
+        sync.lock().unwrap_or_else(|e| e.into_inner()).add(sent, Instant::now(), t);
+    }
+    Ok(r)
+}
+
+/// The state in a full `gamestate` reply, with its clock estimated.
+fn estimated_state(r: Record, sync: &std::sync::Mutex<ClockSync>) -> GameState {
+    let mut state = GameState::from_record(r);
+    if let Some(c) = &mut state.clock {
+        c.estimate(&sync.lock().unwrap_or_else(|e| e.into_inner()));
+    }
+    state
 }
 
 impl GameServer {
@@ -816,6 +859,7 @@ impl GameServer {
             lastchange: "0".into(),
             moves: String::new(),
             chat: String::new(),
+            sync: Default::default(),
         })
     }
 
@@ -831,6 +875,7 @@ impl GameServer {
             lastchange: "0".into(),
             moves: String::new(),
             chat: String::new(),
+            sync: Default::default(),
         }
     }
 
@@ -847,20 +892,26 @@ impl GameServer {
             format: self.format,
             sid: self.sid.clone(),
             auth: self.auth.clone()?,
+            sync: self.sync.clone(),
         })
+    }
+
+    /// The seat's estimate of the server's clock.
+    pub fn clock_sync(&self) -> ClockSync {
+        self.sync.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// The full game state.
     pub async fn game_state(&mut self) -> Result<GameState, Error> {
-        let r = self
-            .http
-            .post(
-                &self.url,
-                self.format,
-                &[("action", "gamestate".into()), ("sid", self.sid.clone()), ("wait", "0".into())],
-                None,
-            )
-            .await?;
+        let r = timed_post(
+            &self.http,
+            &self.sync,
+            &self.url,
+            self.format,
+            &[("action", "gamestate".into()), ("sid", self.sid.clone()), ("wait", "0".into())],
+            None,
+        )
+        .await?;
         Ok(self.take(r, false))
     }
 
@@ -869,23 +920,23 @@ impl GameServer {
     /// what's been received, it fetches the full state instead. (A
     /// takeback doesn't shorten them: the server appends `takeback` lines.)
     pub async fn update(&mut self, maxwait: Duration) -> Result<GameState, Error> {
-        let r = self
-            .http
-            .post(
-                &self.url,
-                self.format,
-                &[
-                    ("action", "updategamestate".into()),
-                    ("sid", self.sid.clone()),
-                    ("wait", "1".into()),
-                    ("lastchange", self.lastchange.clone()),
-                    ("moveslength", self.moves.len().to_string()),
-                    ("chatlength", self.chat.len().to_string()),
-                    ("maxwait", maxwait.as_secs().to_string()),
-                ],
-                Some(maxwait),
-            )
-            .await?;
+        let r = timed_post(
+            &self.http,
+            &self.sync,
+            &self.url,
+            self.format,
+            &[
+                ("action", "updategamestate".into()),
+                ("sid", self.sid.clone()),
+                ("wait", "1".into()),
+                ("lastchange", self.lastchange.clone()),
+                ("moveslength", self.moves.len().to_string()),
+                ("chatlength", self.chat.len().to_string()),
+                ("maxwait", maxwait.as_secs().to_string()),
+            ],
+            Some(maxwait),
+        )
+        .await?;
         let lengths_match = |r: &Record, moves: usize, chat: usize| {
             let added = |k: &str| added(r, k).len();
             let fits = |k: &str, have: usize, add: usize| r.int(k).is_none_or(|n| n as usize == have + add);
@@ -920,7 +971,7 @@ impl GameServer {
         }
         r.fields.insert("moves".into(), self.moves.clone().into());
         r.fields.insert("chat".into(), self.chat.clone().into());
-        GameState::from_record(r)
+        estimated_state(r, &self.sync)
     }
 }
 
@@ -932,6 +983,8 @@ pub struct Actions {
     format: Format,
     sid: String,
     auth: String,
+    /// The seat's clock estimate, shared with its [`GameServer`].
+    sync: Arc<std::sync::Mutex<ClockSync>>,
 }
 
 impl Actions {
@@ -940,7 +993,14 @@ impl Actions {
         let mut params =
             vec![("action", action.to_string()), ("sid", self.sid.clone()), ("auth", self.auth.clone())];
         params.extend(extra.iter().cloned());
-        self.http.post(&self.url, self.format, &params, None).await
+        timed_post(&self.http, &self.sync, &self.url, self.format, &params, None).await
+    }
+
+    /// The full state, as [`GameServer::game_state`] gets it, from this
+    /// handle (it doesn't change what the polling task has received).
+    pub async fn game_state(&self) -> Result<GameState, Error> {
+        let r = self.act("gamestate", &[("wait", "0".into())]).await?;
+        Ok(estimated_state(r, &self.sync))
     }
 }
 

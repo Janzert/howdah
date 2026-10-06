@@ -4,10 +4,11 @@
 //! (`jsClient/pro/arimaa.js`), which is the most definitive source for how
 //! the server's fields are used.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use howdah_arimaa::{Color, GameResult, WinReason};
 
+use crate::clock_sync::ClockSync;
 use crate::wire::Record;
 
 /// A player's role at the table.
@@ -89,6 +90,31 @@ pub struct ServerClock {
     /// Whether the side to move's clock runs: the server has started its
     /// turn (`{w,b}startmove`), which it hasn't before the game starts.
     pub running: bool,
+    /// The server's clock when the turn started (`{w,b}startmove`) and when
+    /// it replied (`timeonserver`), in whole seconds.
+    pub turn_start: Option<i64>,
+    pub server_time: Option<i64>,
+    /// When the turn and the game started, as local instants, from the
+    /// estimated server clock ([`ServerClock::estimate`]). Without them,
+    /// `turn_elapsed` and `game_elapsed` count from the reply's arrival.
+    pub turn_started_at: Option<Instant>,
+    pub game_started_at: Option<Instant>,
+    /// The estimated time for a request to reach the server.
+    pub one_way: Duration,
+}
+
+impl ServerClock {
+    /// Places the turn's and the game's start on the local clock, through
+    /// the estimated server clock.
+    pub fn estimate(&mut self, sync: &ClockSync) {
+        self.turn_started_at =
+            self.turn_start.filter(|_| self.running).and_then(|s| sync.local_instant(s as f64));
+        self.game_started_at = match (self.server_time, self.game_elapsed) {
+            (Some(now), Some(e)) => sync.local_instant(now as f64 - e.as_secs_f64()),
+            _ => None,
+        };
+        self.one_way = sync.one_way_delay();
+    }
 }
 
 /// What a game server reply says about the game.
@@ -212,7 +238,17 @@ fn server_clock(raw: &Record) -> Option<ServerClock> {
         (Some(now), Some(start)) if start > 0 => Duration::from_secs((now - start).max(0) as u64),
         _ => Duration::ZERO,
     };
-    Some(ServerClock { reserves, turn_elapsed, game_elapsed: secs("tcgamenow"), running })
+    Some(ServerClock {
+        reserves,
+        turn_elapsed,
+        game_elapsed: secs("tcgamenow"),
+        running,
+        turn_start: started.filter(|&s| s > 0),
+        server_time: now,
+        turn_started_at: None,
+        game_started_at: None,
+        one_way: Duration::ZERO,
+    })
 }
 
 #[cfg(test)]

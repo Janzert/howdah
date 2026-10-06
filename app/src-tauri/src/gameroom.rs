@@ -668,11 +668,18 @@ fn apply(s: &mut Session, generation: u64, state: &GameState) -> Applied {
         }
     }
     if let Some(c) = state.clock {
+        // On the user's own turn, the clock shows the time left for a
+        // move sent now, which reaches the server a little later.
+        let users_turn = state.turn.is_some_and(|t| state.role == Some(Role::Player(t)));
+        let turn_started =
+            c.turn_started_at.map(|t| if users_turn { t.checked_sub(c.one_way).unwrap_or(t) } else { t });
         let reported = RemoteClock {
             reserves: c.reserves,
             turn_elapsed: c.turn_elapsed,
             game_elapsed: c.game_elapsed,
             running: c.running,
+            turn_started,
+            game_started: c.game_started_at,
         };
         let _ = s.set_remote_clock(generation, reported);
     }
@@ -970,8 +977,8 @@ async fn send_moves(
                 // Not back yet: dropped, or the update hasn't come. The
                 // full state settles which.
                 let act = lock(&actions).clone();
-                if let Ok(r) = act.act("gamestate", &[("wait", "0".into())]).await {
-                    update(&target, generation, &GameState::from_record(r), &view);
+                if let Ok(state) = act.game_state().await {
+                    update(&target, generation, &state, &view);
                     if lock(&target.session).outgoing_move().as_ref() != Some(&out) {
                         sent = None;
                         continue;
@@ -1039,8 +1046,8 @@ async fn send_takeback(
     } else if asked.is_some_and(|at| at.elapsed() >= CONFIRM_WAIT) {
         *asked = None;
         let act = lock(actions).clone();
-        if let Ok(r) = act.act("gamestate", &[("wait", "0".into())]).await {
-            update(target, generation, &GameState::from_record(r), view);
+        if let Ok(state) = act.game_state().await {
+            update(target, generation, &state, view);
         }
         let mut s = lock(&target.session);
         if s.takeback_unconfirmed() && s.takeback_failed(generation, TakebackAction::Request).is_ok() {

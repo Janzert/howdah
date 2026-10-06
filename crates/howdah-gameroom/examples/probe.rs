@@ -54,6 +54,27 @@ use howdah_gameroom::{
     user_agent,
 };
 
+/// The seat's server clock estimate after a reply: how far it is from
+/// this computer's wall clock, how sure it is, and the turn time it gives
+/// against the server's whole seconds.
+fn clock_report(server: &GameServer, s: &GameState) -> String {
+    let sync = server.clock_sync();
+    let now = Instant::now();
+    let wall =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+    let Some(server_now) = sync.server_time(now) else { return "clock: no estimate".into() };
+    let turn =
+        s.clock.and_then(|c| c.turn_started_at).map(|t| now.saturating_duration_since(t).as_secs_f64());
+    format!(
+        "clock: server-wall {:+.3}s, uncertainty {:.3}s, one-way {:.3}s, turn {} (server's whole seconds {})",
+        server_now - wall,
+        sync.uncertainty().map_or(f64::NAN, |d| d.as_secs_f64()),
+        sync.one_way_delay().as_secs_f64(),
+        turn.map_or("-".into(), |t| format!("{t:.2}s")),
+        s.clock.map_or("-".into(), |c| c.turn_elapsed.as_secs().to_string()),
+    )
+}
+
 fn usage() -> ! {
     eprintln!(
         "usage: probe live | probe watch GID [--seat browser|1|2] [--server 1|2] [--polls N] [--maxwait SECS] | probe findgameid TID | probe play [--log FILE]"
@@ -346,6 +367,7 @@ async fn play(lobby: &mut Lobby, http: Http, user: &str, password: &str) -> Resu
                             match server.update(Duration::from_secs(300)).await {
                                 Ok(s) => {
                                     println!("{}", brief(t0, &name2, &s));
+                                    println!("  {}", clock_report(&server, &s));
                                     done = s.result.is_some();
                                     if done {
                                         println!("  {name2} final: {}", public(&s.raw));

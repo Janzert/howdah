@@ -183,6 +183,11 @@ pub struct RemoteClock {
     pub game_elapsed: Option<Duration>,
     /// Whether the side to move's clock runs (not before the game starts).
     pub running: bool,
+    /// When the turn and the game started on the local clock, if the
+    /// server's clock has been estimated; otherwise the elapsed times
+    /// above count back from now.
+    pub turn_started: Option<Instant>,
+    pub game_started: Option<Instant>,
 }
 
 /// A human's move waiting to be sent to (or confirmed by) the server, in a
@@ -993,12 +998,13 @@ impl Session {
             return Err(ApiError::state("no game with a remote player"));
         };
         let now = Instant::now();
-        m.turn_started = now.checked_sub(reported.turn_elapsed).unwrap_or(now);
+        let back = |d: Duration| now.checked_sub(d).unwrap_or(now);
+        m.turn_started = reported.turn_started.unwrap_or_else(|| back(reported.turn_elapsed));
         m.clock_stopped = !reported.running;
         if let Some(clock) = &mut m.clock {
             clock.reserves = reported.reserves;
-            if let Some(elapsed) = reported.game_elapsed {
-                clock.game_started = now.checked_sub(elapsed).unwrap_or(now);
+            if let Some(started) = reported.game_started.or_else(|| reported.game_elapsed.map(back)) {
+                clock.game_started = started;
             }
         }
         Ok(())
@@ -2790,12 +2796,19 @@ mod tests {
             turn_elapsed: Duration::from_secs(5),
             game_elapsed: None,
             running: true,
+            turn_started: None,
+            game_started: None,
         };
         s.set_remote_clock(g, reported).unwrap();
         let clock = s.view().clock.unwrap();
         assert_eq!(clock.gold.unwrap().reserve_ms, 30_000);
         assert_eq!(clock.silver.unwrap().reserve_ms, 20_000);
         assert!(clock.turn_elapsed_ms >= 5_000);
+        // An estimated start is used as it is, not counted back from now.
+        let started = Instant::now() - Duration::from_millis(7_250);
+        s.set_remote_clock(g, RemoteClock { turn_started: Some(started), ..reported }).unwrap();
+        let elapsed = s.view().clock.unwrap().turn_elapsed_ms;
+        assert!((7_250..8_000).contains(&elapsed), "{elapsed}");
         // Before the game starts, the server's clock stands still.
         s.set_remote_clock(g, RemoteClock { running: false, ..reported }).unwrap();
         assert_eq!(s.view().clock.unwrap().running, None);
