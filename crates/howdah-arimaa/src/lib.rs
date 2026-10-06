@@ -37,6 +37,6 @@ pub use record::GameRecord;
 pub use setup::{Placement, apply_setup, default_setup, validate_setup};
 pub use step::{Capture, Step, StepEffect};
 pub use timecontrol::TimeControl;
-pub use tree::{Annotation, GameTree, Glyph, Node, NodeId};
+pub use tree::{Annotation, GameTree, Glyph, Node, NodeId, split_commands};
 pub use turn::{MAX_STEPS, Route, StepKind, Turn, TurnBuilder, TurnStep};
 pub use types::{Color, Dir, Piece, PieceKind, Square, TRAPS};

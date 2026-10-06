@@ -114,6 +114,81 @@ impl Annotation {
     pub fn remove_glyph(&mut self, glyph: Glyph) {
         self.glyphs.retain(|g| *g != glyph);
     }
+
+    /// The comment without its commands (`[%emt 0:00:12]`), which are
+    /// data for programs rather than text for people.
+    pub fn comment_text(&self) -> Option<String> {
+        let (text, _) = split_commands(self.comment.as_deref()?);
+        (!text.is_empty()).then_some(text)
+    }
+
+    /// The arguments of command `name` (`%emt` is `emt`) in the comment.
+    pub fn command(&self, name: &str) -> Option<String> {
+        let (_, commands) = split_commands(self.comment.as_deref()?);
+        commands.into_iter().find(|(n, _)| n == name).map(|(_, args)| args)
+    }
+
+    /// Replaces the comment's text, keeping its commands. Empty text with
+    /// no commands removes the comment.
+    pub fn set_comment_text(&mut self, text: &str) {
+        let (_, commands) = split_commands(self.comment.as_deref().unwrap_or(""));
+        self.comment = join_commands(text.trim(), &commands);
+    }
+
+    /// Sets command `name`'s arguments in the comment, replacing any
+    /// earlier value.
+    pub fn set_command(&mut self, name: &str, args: &str) {
+        let (text, mut commands) = split_commands(self.comment.as_deref().unwrap_or(""));
+        match commands.iter_mut().find(|(n, _)| n == name) {
+            Some((_, a)) => *a = args.to_string(),
+            None => commands.push((name.to_string(), args.to_string())),
+        }
+        self.comment = join_commands(&text, &commands);
+    }
+}
+
+/// Splits a comment into its text and its `[%name args]` commands (the
+/// PGN supplement's form), in order. Each command goes from the text with
+/// one space next to it, so `a [%emt 0:00:12] b` reads `a b`.
+pub fn split_commands(comment: &str) -> (String, Vec<(String, String)>) {
+    let mut text = String::new();
+    let mut commands = Vec::new();
+    let mut rest = comment;
+    while let Some(start) = rest.find("[%") {
+        let Some(len) = rest[start..].find(']') else { break };
+        let (before, command) = (&rest[..start], &rest[start..start + len + 1]);
+        rest = &rest[start + len + 1..];
+        let body = &command[2..command.len() - 1];
+        let (name, args) = body.split_once(char::is_whitespace).unwrap_or((body, ""));
+        if name.is_empty() {
+            text.push_str(before);
+            text.push_str(command);
+            continue;
+        }
+        commands.push((name.to_string(), args.trim().to_string()));
+        match before.strip_suffix(' ') {
+            Some(before) => text.push_str(before),
+            None => {
+                text.push_str(before);
+                rest = rest.strip_prefix(' ').unwrap_or(rest);
+            }
+        }
+    }
+    text.push_str(rest);
+    (text.trim().to_string(), commands)
+}
+
+/// A comment from its text and commands (the commands after the text), or
+/// `None` if both are empty.
+fn join_commands(text: &str, commands: &[(String, String)]) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if !text.is_empty() {
+        parts.push(text.to_string());
+    }
+    parts.extend(
+        commands.iter().map(|(n, a)| if a.is_empty() { format!("[%{n}]") } else { format!("[%{n} {a}]") }),
+    );
+    (!parts.is_empty()).then(|| parts.join(" "))
 }
 
 /// One position in the tree and the move that led to it.
@@ -531,6 +606,30 @@ impl GameTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comment_commands() {
+        let (text, commands) =
+            split_commands("Early. [%emt 0:00:12] Bold [%cal Ge2e5,Rd4d5]\nnext line [%] [%x]");
+        assert_eq!(text, "Early. Bold\nnext line [%]");
+        let expected = [("emt", "0:00:12"), ("cal", "Ge2e5,Rd4d5"), ("x", "")];
+        assert_eq!(commands, expected.map(|(n, a)| (n.to_string(), a.to_string())));
+
+        let mut a = Annotation::default();
+        a.set_command("emt", "0:00:12");
+        assert_eq!(a.comment.as_deref(), Some("[%emt 0:00:12]"));
+        assert_eq!(a.comment_text(), None);
+        a.set_comment_text("Early.\n");
+        assert_eq!(a.comment.as_deref(), Some("Early. [%emt 0:00:12]"));
+        a.set_command("emt", "0:00:15");
+        assert_eq!(a.command("emt").as_deref(), Some("0:00:15"));
+        assert_eq!(a.comment_text().as_deref(), Some("Early."));
+        a.set_comment_text("");
+        assert_eq!(a.comment.as_deref(), Some("[%emt 0:00:15]"));
+        let mut plain = Annotation::default();
+        plain.set_comment_text("  ");
+        assert_eq!(plain.comment, None);
+    }
     use crate::WinReason;
     use crate::setup::default_setup;
 
