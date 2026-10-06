@@ -49,15 +49,15 @@ use std::time::{Duration, Instant};
 use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http, Lobby, Opened, PastGame,
-    RecentGame, Role, ViewerSeat, parse_result,
+    RecentGame, Role, ViewerSeat, parse_chat, parse_result,
 };
 use tokio::sync::Notify;
 
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, GameroomGames, GameroomStatus, LiveGameView, PastGameView, PlayerGamesView,
-    PlayerMatchView, RecentGameView, WatchState, WatchView,
+    AnimStep, ApiError, ChatLineView, GameroomGames, GameroomStatus, LiveGameView, PastGameView,
+    PlayerGamesView, PlayerMatchView, RecentGameView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -423,6 +423,20 @@ impl Watch {
         Ok(async move { act.act("resign", &[]).await.map(drop).map_err(net_error) })
     }
 
+    /// Sends `text` to the game's chat as the user: the request to await.
+    /// The line comes back with the server's next update. Newlines become
+    /// spaces, and an empty message is refused (the server would add an
+    /// empty line).
+    pub fn chat(&self, text: &str) -> Result<impl Future<Output = Result<(), ApiError>> + use<>, ApiError> {
+        let actions = self.actions.as_ref().ok_or_else(|| ApiError::state("only players can chat"))?;
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if text.is_empty() {
+            return Err(ApiError::illegal("type a message first"));
+        }
+        let act = lock(actions).clone();
+        Ok(async move { act.act("chat", &[("chat", text)]).await.map(drop).map_err(net_error) })
+    }
+
     /// Tells the game's tasks the session changed (a move to send, say).
     pub fn poke(&self) {
         self.wake.notify_one();
@@ -550,6 +564,7 @@ async fn begin(
         side: None,
         waiting: false,
         refused: None,
+        chat: Vec::new(),
     }));
     set_seat(&mut lock(&view), &seat);
     let next = update(&target, generation, &state, &view);
@@ -700,6 +715,10 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
     let mut v = lock(view);
     let before = v.clone();
     v.waiting = waiting(v.side, state);
+    v.chat = parse_chat(&state.chat)
+        .into_iter()
+        .map(|l| ChatLineView { side: l.side, label: l.label, text: l.text })
+        .collect();
     let next = match outcome {
         Outcome::Playing => {
             if v.state == WatchState::Reconnecting {

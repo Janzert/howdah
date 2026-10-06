@@ -100,6 +100,8 @@ Sharp, OpFor and other AEI engines behave.
     numbers (`split_moves`, which applies the server's `takeback` lines), result (`parse_result`), and `ServerClock` worked out
     as the browser client does (`running` is false until the server
     starts the turn's clock, which it doesn't before the game starts).
+    `parse_chat` splits the `chat` field into `ChatLine`s
+    (`<side> <label>: <text>`, raw text, the label sometimes missing).
   - `finished`: `RecentGame` (the lobby's `recentgames`) and
     `FinishedGame`, read from a finished game's viewer page
     (`opengamewin.cgi`, the `arimaa.vars` lines), with `record()` making a
@@ -236,7 +238,11 @@ Sharp, OpFor and other AEI engines behave.
     after `CONFIRM_WAIT` (growing with each try) is checked against a
     `gamestate` and sent again, since the server answers `ok` to moves it
     drops; an error reply calls `move_refused` and shows the message in
-    `WatchView.refused` until a move goes through. `Watch::resign`
+    `WatchView.refused` until a move goes through. The game's chat is
+    `WatchView.chat`, parsed afresh from each state; `Watch::chat`
+    (command `send_gameroom_chat`) posts a line from the user's seat,
+    with newlines made spaces and empty messages refused (the server
+    would add an empty line). `Watch::resign`
     (command `resign_gameroom_game`) posts `resign` with the seat's
     `Actions`, which the `Watch` keeps; the result arrives with the next
     update. In a server game the user's player shows their username (the
@@ -339,6 +345,11 @@ Sharp, OpFor and other AEI engines behave.
     its turn buttons only once the user starts planning a move. Following the live game is the
     match's usual behaviour (the board follows at the live node, otherwise
     the missed-move alert).
+  - `ChatPanel.svelte`, below the bottom player bar as in the
+    arimaa.com web client, shows a gameroom game's chat (names from the
+    player bars, the move label, text as plain text) with a message box
+    when the user plays; App shows it at a player's seat, or when a
+    watched game has chat.
   - `RecordDialog.svelte` exports the full record or, with "Main line
     only", a plain record (`export_game(mainLineOnly)`).
   - `lib/events.ts`: typed `on()`. It drops events from other sessions.

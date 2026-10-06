@@ -24,6 +24,7 @@
   import MoveList from './lib/MoveList.svelte';
   import CommentBox from './lib/CommentBox.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
+  import ChatPanel from './lib/ChatPanel.svelte';
   import PlayerBar from './lib/PlayerBar.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
   import { justEnded } from './lib/result';
@@ -486,6 +487,10 @@
     </div>
     {#if view}
       <PlayerBar {view} side={flipped ? 'silver' : 'gold'} {receivedAt} {now} {theme} />
+    {/if}
+    <!-- The game's chat, below the board as in the arimaa.com web client. -->
+    {#if view && watch && (watch.side != null || watch.chat.length > 0)}
+      <ChatPanel {watch} {view} />
     {/if}
     {#if message}<div class="message" role="status">{message}</div>{/if}
   </section>

@@ -132,6 +132,9 @@ export const api = {
   /** Resigns the arimaa.com game this session plays; the result arrives
    * with the server's next update. */
   resignGameroomGame: () => invoke<void>('resign_gameroom_game', { session }),
+  /** Sends a line to the chat of the arimaa.com game this session plays;
+   * it comes back in `WatchView.chat` with the server's next update. */
+  sendGameroomChat: (text: string) => invoke<void>('send_gameroom_chat', { session, text }),
   /** Stops following the game; it stays on the board. */
   stopWatching: () => invoke<void>('stop_watching', { session }),
   /** The game this session follows, if any. */

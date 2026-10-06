@@ -92,6 +92,7 @@ pub fn run() {
             commands::create_gameroom_game,
             commands::cancel_gameroom_game,
             commands::resign_gameroom_game,
+            commands::send_gameroom_chat,
             commands::stop_watching,
             commands::watch_status,
         ])

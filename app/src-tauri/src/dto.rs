@@ -745,4 +745,18 @@ pub struct WatchView {
     /// Why the server refused the user's last move, until a move goes
     /// through.
     pub refused: Option<String>,
+    /// The game's chat, oldest first (players get it; spectators don't).
+    pub chat: Vec<ChatLineView>,
+}
+
+/// A line of a gameroom game's chat.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatLineView {
+    /// Who wrote it, when the server says.
+    pub side: Option<Color>,
+    /// The move it was written at (`6g`), when the server says.
+    pub label: Option<String>,
+    pub text: String,
 }

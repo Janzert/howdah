@@ -356,6 +356,15 @@ pub async fn resign_gameroom_game(state: State<'_, Backend>, session: SessionId)
 }
 
 #[tauri::command]
+pub async fn send_gameroom_chat(
+    state: State<'_, Backend>,
+    session: SessionId,
+    text: String,
+) -> Result<(), ApiError> {
+    state.send_gameroom_chat(session, &text).await
+}
+
+#[tauri::command]
 pub fn stop_watching(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
     state.stop_watching(session)
 }

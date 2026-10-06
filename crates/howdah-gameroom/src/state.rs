@@ -45,6 +45,38 @@ pub fn side_from_letter(s: &str) -> Option<Color> {
     }
 }
 
+/// A line of a game's chat.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChatLine {
+    /// Who wrote it, when the line says.
+    pub side: Option<Color>,
+    /// The move it was written at (`6g`); the server leaves it out for
+    /// some lines (an empty message).
+    pub label: Option<String>,
+    pub text: String,
+}
+
+/// Splits a game's `chat` field into lines. The server writes each as
+/// `<side> <move label>: <text>` (`g 6g: hello`, seen 2026-10-06), as
+/// sent: not escaped. A line that doesn't fit is kept whole as text.
+pub fn parse_chat(chat: &str) -> Vec<ChatLine> {
+    chat.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|line| {
+            let whole = || ChatLine { side: None, label: None, text: line.to_string() };
+            let Some((head, text)) = line.split_once(':') else { return whole() };
+            let mut words = head.split_whitespace();
+            let (Some(side), label, None) =
+                (words.next().and_then(side_from_letter), words.next(), words.next())
+            else {
+                return whole();
+            };
+            let text = text.strip_prefix(' ').unwrap_or(text).to_string();
+            ChatLine { side: Some(side), label: label.map(str::to_string), text }
+        })
+        .collect()
+}
+
 /// The clocks as the server reports them, measured at the reply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ServerClock {
@@ -193,6 +225,26 @@ mod tests {
         assert_eq!(split_moves(text), ["Ra1 Rb1", "ra8 rb8", "Ee2n Ee3n"]);
         assert_eq!(split_moves("1g Ra1\n1s ra8"), ["Ra1", "ra8"]);
         assert!(split_moves("").is_empty());
+    }
+
+    #[test]
+    fn chat_lines() {
+        // As game 539482 had them.
+        let chat =
+            "g 1g: alone before anyone sits\ns 1g: hello <b>bold</b> & \"q\": é\ng: \nno label at all\n";
+        let lines = parse_chat(chat);
+        assert_eq!(lines.len(), 4);
+        assert_eq!(
+            lines[1],
+            ChatLine {
+                side: Some(Color::Silver),
+                label: Some("1g".into()),
+                text: "hello <b>bold</b> & \"q\": é".into()
+            }
+        );
+        assert_eq!(lines[2], ChatLine { side: Some(Color::Gold), label: None, text: String::new() });
+        assert_eq!(lines[3].side, None);
+        assert_eq!(lines[3].text, "no label at all");
     }
 
     #[test]

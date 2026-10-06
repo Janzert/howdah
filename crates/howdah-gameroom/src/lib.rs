@@ -40,7 +40,7 @@ pub use client::{
 };
 pub use finished::{FinishedGame, RecentGame};
 pub use players::{PastGame, PastGames, PlayerMatch};
-pub use state::{GameState, Role, ServerClock, parse_result, split_moves};
+pub use state::{ChatLine, GameState, Role, ServerClock, parse_chat, parse_result, split_moves};
 pub use wire::{Format, Record};
 
 /// The User-Agent for requests: says what the client is.
