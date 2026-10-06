@@ -489,6 +489,15 @@ impl Session {
         self.replace(record.tree, record.tags, end, None);
     }
 
+    /// Makes `record` the game, showing its main line from the start: the
+    /// position after both setups, so the next step forward is the first
+    /// move.
+    pub fn load_record_from_start(&mut self, record: GameRecord) {
+        let main = record.tree.main_line();
+        let at = main[main.len().min(3) - 1];
+        self.replace(record.tree, record.tags, at, None);
+    }
+
     /// Starts a new game between the given players, with a time control per
     /// side (gold, silver); `None` leaves that side untimed.
     /// With `takebacks`, played moves can be taken back.
@@ -2122,6 +2131,19 @@ mod tests {
         assert_eq!(s.view().tag_names, [Some("alice".to_string()), None]);
         s.new_game();
         assert_eq!(s.view().tag_names, [None, None]);
+    }
+
+    #[test]
+    fn records_can_open_at_the_start() {
+        let mut s = Session::new();
+        s.load_record_from_start(GameRecord::parse(SAMPLE).unwrap());
+        let v = s.view();
+        assert_eq!(v.ply, 2, "after both setups");
+        assert!(s.line.len() > 3, "the whole game is on the line");
+        let mut s = Session::new();
+        let setup = "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2\n";
+        s.load_record_from_start(GameRecord::parse(setup).unwrap());
+        assert_eq!(s.view().ply, 1, "a game shorter than its setups shows its end");
     }
 
     #[test]

@@ -483,7 +483,7 @@ impl Backend {
             gameroom::Open::Finished(record) => {
                 handle.stop_watching();
                 self.mutate(id, |s| {
-                    s.load_record(record);
+                    s.load_record_from_start(record);
                     Ok(Vec::new())
                 })
             }
