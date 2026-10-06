@@ -350,6 +350,11 @@ impl Session {
         self.tags = tags;
     }
 
+    /// A tag's value, unless it's missing or blank.
+    fn tag(&self, name: &str) -> Option<String> {
+        self.tags.iter().find(|(n, v)| n == name && !v.trim().is_empty()).map(|(_, v)| v.clone())
+    }
+
     /// Sets one tag, replacing any earlier value.
     pub fn set_tag(&mut self, name: &str, value: &str) {
         match self.tags.iter_mut().find(|(n, _)| n == name) {
@@ -1635,9 +1640,8 @@ impl Session {
                 .matchup
                 .as_ref()
                 .map(|m| PlayersView { gold: m.players[0].view(), silver: m.players[1].view() }),
-            tag_names: ["Gold", "Silver"].map(|name| {
-                self.tags.iter().find(|(n, v)| n == name && !v.trim().is_empty()).map(|(_, v)| v.clone())
-            }),
+            tag_names: ["Gold", "Silver"].map(|name| self.tag(name)),
+            tag_ratings: ["GoldRating", "SilverRating"].map(|name| self.tag(name)),
             clock: self.clock_view(),
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
             can_input: self.can_input(),
@@ -2129,6 +2133,8 @@ mod tests {
         s.load("[Gold \"alice\"]\n\n1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2\n")
             .unwrap();
         assert_eq!(s.view().tag_names, [Some("alice".to_string()), None]);
+        s.set_tag("SilverRating", "1500");
+        assert_eq!(s.view().tag_ratings, [None, Some("1500".to_string())]);
         s.new_game();
         assert_eq!(s.view().tag_names, [None, None]);
     }

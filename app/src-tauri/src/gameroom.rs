@@ -333,6 +333,7 @@ pub async fn open(gameroom: &Arc<Gameroom>, gid: &str, target: Target) -> Result
         },
         delayed,
         finished_id: None,
+        event: state.raw.nonempty("event"),
     }));
     let next = update(&target, generation, &state, &view);
     emit(&target.events, WATCH_UPDATE, lock(&view).clone());
@@ -358,6 +359,11 @@ fn start(s: &mut Session, state: &GameState) {
     for (i, side) in ["Gold", "Silver"].into_iter().enumerate() {
         if let Some(p) = &state.players[i] {
             tags.push((side.into(), p.clone()));
+        }
+        // An unrated player can show as 0.
+        let key = ["wrating", "brating"][i];
+        if let Some(r) = state.raw.nonempty(key).filter(|r| r.trim() != "0") {
+            tags.push((format!("{side}Rating"), r));
         }
     }
     if let Some(tc) = &state.time_control {
@@ -549,7 +555,7 @@ mod tests {
     /// A `gamestate` reply in ASIP 1.0's `key=value` form.
     fn state(moves: &str, extra: &str) -> GameState {
         let text = format!(
-            "wplayer=* bot_a\nbplayer=bot_b\ntimecontrol=1/0/0/0/0\nturn=w\nmoves={SETUPS}{moves}\n\
+            "wplayer=* bot_a\nbplayer=bot_b\nwrating=1500\nbrating=0\ntimecontrol=1/0/0/0/0\nturn=w\nmoves={SETUPS}{moves}\n\
              tcwreserve=0\ntcbreserve=0\ntimeonserver=1000\nwstartmove=990\n{extra}"
         );
         GameState::from_record(Record::decode(&text).unwrap())
@@ -595,6 +601,7 @@ mod tests {
         let clock = v.clock.unwrap();
         assert_eq!(clock.turn_elapsed_ms / 1000, 10, "the turn's time comes from the server");
         assert!(s.export(false).contains("bot_a"), "the players are in the record's tags");
+        assert_eq!(v.tag_ratings, [Some("1500".to_string()), None], "a 0 rating isn't one");
 
         // A new move animates; the same state again changes nothing.
         let next = state("2w Ee2n%132b ed7s", "");

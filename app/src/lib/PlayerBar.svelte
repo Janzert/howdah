@@ -21,6 +21,7 @@
   const clock = $derived(view.clock);
   const toMove = $derived(view.result == null && view.position.sideToMove === side);
   const thinking = $derived(view.thinking === side);
+  const rating = $derived(view.tagRatings[side === 'gold' ? 0 : 1]);
 
   // The opponent's pieces this side has taken off the board (captures
   // include a side's own pieces lost on traps, so this is material, not who
@@ -66,6 +67,7 @@
   <span class="dot {side}"></span>
   <span class="name">
     {player?.name ?? view.tagNames[side === 'gold' ? 0 : 1] ?? (side === 'gold' ? 'Gold' : 'Silver')}
+    {#if rating}<span class="rating" title="Rating">{rating}</span>{/if}
     {#if player?.kind === 'engine'}<span class="tag">engine</span>{/if}
   </span>
   {#if thinking}<span class="thinking">thinking…</span>{/if}
@@ -119,6 +121,12 @@
   }
   .name {
     font-weight: 600;
+  }
+  .rating {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted);
+    margin-left: 4px;
   }
   .tag {
     font-size: 10px;

@@ -25,6 +25,7 @@
         >{/if}
     </span>
   </div>
+  {#if watch.event}<div class="note">{watch.event}</div>{/if}
   {#if watch.detail}<div class="note">{watch.detail}</div>{/if}
 </section>
 

@@ -16,4 +16,8 @@ delayed: boolean,
  * The game's permanent arimaa.com id, once it has ended and the
  * server has given one.
  */
-finishedId: string | null, };
+finishedId: string | null, 
+/**
+ * The server's name for the game ("Casual game", a tournament round).
+ */
+event: string | null, };

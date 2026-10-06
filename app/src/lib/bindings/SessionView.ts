@@ -71,7 +71,11 @@ players: PlayersView | null,
  * The players' names from the record's `Gold` and `Silver` tags (a
  * loaded game's players), for when there's no match.
  */
-tagNames: [string | null, string | null], clock: ClockView | null, 
+tagNames: [string | null, string | null], 
+/**
+ * The players' ratings from the `GoldRating` and `SilverRating` tags.
+ */
+tagRatings: [string | null, string | null], clock: ClockView | null, 
 /**
  * The side whose engine is thinking.
  */

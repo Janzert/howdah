@@ -208,6 +208,8 @@ pub struct SessionView {
     /// The players' names from the record's `Gold` and `Silver` tags (a
     /// loaded game's players), for when there's no match.
     pub tag_names: [Option<String>; 2],
+    /// The players' ratings from the `GoldRating` and `SilverRating` tags.
+    pub tag_ratings: [Option<String>; 2],
     pub clock: Option<ClockView>,
     /// The side whose engine is thinking.
     pub thinking: Option<Color>,
@@ -660,4 +662,6 @@ pub struct WatchView {
     /// The game's permanent arimaa.com id, once it has ended and the
     /// server has given one.
     pub finished_id: Option<String>,
+    /// The server's name for the game ("Casual game", a tournament round).
+    pub event: Option<String>,
 }
