@@ -114,21 +114,30 @@ impl GameState {
     }
 }
 
-/// Splits a `moves` field into moves without their numbers (`2w Ee2n` is
-/// `Ee2n`). A move number with no steps yet (the move being played) is
-/// left out.
+/// Splits a `moves` field into the moves played, without their numbers
+/// (`2w Ee2n` is `Ee2n`). A move number with no steps yet (the move being
+/// played) is left out.
+///
+/// A takeback doesn't shorten the field: the server appends a
+/// `<label> takeback` line for each ply taken back, then the label of the
+/// move to play (`…\n6b cf7s cf6x\n7w takeback\n6b takeback\n6w`). Each
+/// such line undoes the move before it, as in the record format.
 pub fn split_moves(text: &str) -> Vec<String> {
-    text.lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            let (label, body) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
-            let numbered = label.len() > 1
-                && label[..label.len() - 1].chars().all(|c| c.is_ascii_digit())
-                && "wbgs".contains(&label[label.len() - 1..]);
-            let body = if numbered { body.trim() } else { line };
-            (!body.is_empty()).then(|| body.to_string())
-        })
-        .collect()
+    let mut moves = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        let (label, body) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+        let numbered = label.len() > 1
+            && label[..label.len() - 1].chars().all(|c| c.is_ascii_digit())
+            && "wbgs".contains(&label[label.len() - 1..]);
+        let body = if numbered { body.trim() } else { line };
+        if body.eq_ignore_ascii_case("takeback") {
+            moves.pop();
+        } else if !body.is_empty() {
+            moves.push(body.to_string());
+        }
+    }
+    moves
 }
 
 /// Reads a result such as `wg` (gold won by goal). The winner can also be
@@ -168,6 +177,18 @@ mod tests {
         assert_eq!(split_moves(text), ["Ra1 Rb1", "ra8 rb8", "Ee2n Ee3n"]);
         assert_eq!(split_moves("1g Ra1\n1s ra8"), ["Ra1", "ra8"]);
         assert!(split_moves("").is_empty());
+    }
+
+    #[test]
+    fn takeback_lines_undo_moves() {
+        // As the server wrote them in game 539467: a takeback of two plies
+        // asked on gold's turn, gold's move again, then one of one ply.
+        let text = "5w Re1n\n5b ra7s\n6w Rh1n\n6b cf7s cf6x\n7w takeback\n6b takeback\n6w";
+        assert_eq!(split_moves(text), ["Re1n", "ra7s"]);
+        let text = format!("{text} Rh1n\n6b takeback\n6w");
+        assert_eq!(split_moves(&text), ["Re1n", "ra7s"]);
+        assert_eq!(split_moves(&format!("{text} Hh3n\n6b")), ["Re1n", "ra7s", "Hh3n"]);
+        assert!(split_moves("1w takeback").is_empty(), "nothing to take back");
     }
 
     #[test]

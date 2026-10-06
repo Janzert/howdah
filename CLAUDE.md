@@ -95,8 +95,8 @@ Sharp, OpFor and other AEI engines behave.
     sends a Referer, spaces requests a second apart (except long polls),
     and logs exchanges through a `NetLog` with `password`, `sid`, `auth`
     and `tid` redacted.
-  - `state`: `GameState` from a reply: players, moves without numbers
-    (`split_moves`), result (`parse_result`), and `ServerClock` worked out
+  - `state`: `GameState` from a reply: players, the moves played without
+    numbers (`split_moves`, which applies the server's `takeback` lines), result (`parse_result`), and `ServerClock` worked out
     as the browser client does.
   - `finished`: `RecentGame` (the lobby's `recentgames`) and
     `FinishedGame`, read from a finished game's viewer page

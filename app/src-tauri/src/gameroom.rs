@@ -750,6 +750,26 @@ mod tests {
     }
 
     #[test]
+    fn server_takebacks_go_back() {
+        let mut s = Session::new();
+        let first = state("2w Ee2n%132b ed7s%133w", "");
+        start(&mut s, &first);
+        let g = s.generation();
+        apply(&mut s, g, &first);
+        assert_eq!(s.view().ply, 4);
+
+        // Gold asks on its turn: silver's move and gold's go back.
+        let back = state("2w Ee2n%132b ed7s%133w takeback%132b takeback%132w", "");
+        assert_eq!(apply(&mut s, g, &back).1, Outcome::Playing);
+        assert_eq!(s.view().ply, 2);
+        let again = state("2w Ee2n%132b ed7s%133w takeback%132b takeback%132w Ee2n Ee3n%132b", "");
+        apply(&mut s, g, &again);
+        assert_eq!(s.view().ply, 3);
+        let record = s.export(false);
+        assert!(record.contains("Ee3n") && record.contains("ed7s"), "the old moves stay: {record}");
+    }
+
+    #[test]
     fn the_servers_result_ends_the_game() {
         let mut s = Session::new();
         let ended = state("2w Ee2n", "result=b\nreason=t\nfinishedId=671437\n");
