@@ -14,7 +14,9 @@ use howdah_arimaa::Color;
 
 use crate::clock_sync::ClockSync;
 use crate::finished::{FinishedGame, RecentGame};
-use crate::players::{PastGames, PlayerMatch, parse_past_games, parse_search};
+use crate::players::{
+    PastGames, PlayerMatch, PostalGame, parse_past_games, parse_postal_games, parse_search,
+};
 use crate::state::{GameState, Role};
 use crate::wire::{Format, Record, encode_request};
 
@@ -401,6 +403,8 @@ pub struct GameInfo {
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
+    /// The side to move, where the list says (`mygames` does).
+    pub turn: Option<Color>,
 }
 
 impl GameInfo {
@@ -412,6 +416,7 @@ impl GameInfo {
             time_control: r.nonempty("timecontrol"),
             rated: r.flag("rated"),
             postal: r.flag("postal"),
+            turn: r.str("turn").as_deref().and_then(crate::state::side_from_letter),
         })
     }
 }
@@ -780,6 +785,20 @@ impl Lobby {
         Ok(parse_search(&page))
     }
 
+    /// The postal games being played (`postalgames.cgi`, the lobby's
+    /// "Postal Games" page; the live list leaves them out).
+    pub async fn postal_games(&self) -> Result<Vec<PostalGame>, Error> {
+        let sid = self.sid()?;
+        let url = format!("{}postalgames.cgi", self.base);
+        let cookies = self.cookies.clone().unwrap_or_else(|| format!("sid={sid}"));
+        let page = self.http.get_page(&url, Some(&cookies)).await?;
+        if let Some(e) = error_page(&page) {
+            let e = page_text(&e, &sid);
+            return Err(if is_expired(&e) { Error::Expired } else { Error::Server(e) });
+        }
+        Ok(parse_postal_games(&page))
+    }
+
     /// Player `player_id`'s finished games, newest first, 50 from
     /// `offset` on (`pastgames.cgi`, which needs no session).
     pub async fn player_games(&self, player_id: &str, offset: u32) -> Result<PastGames, Error> {
@@ -1107,7 +1126,7 @@ mod tests {
     fn lobby_lists() {
         let r = Record::decode(
             r#"{"time":1000,
-              "mygames":[{"id":"7","wusername":"me","busername":null,"timecontrol":"2m/5m","rated":"0"}],
+              "mygames":[{"id":"7","wusername":"me","busername":null,"timecontrol":"2m/5m","rated":"0","turn":"w"}],
               "opengames":[{"id":"7","wusername":"me","busername":""},
                            {"id":"8","wusername":"","busername":"them","timecontrol":"1m/2m","rated":"1","schts":"0"},
                            {"id":"9","wusername":"later","busername":"","schts":"5000"}],
@@ -1118,6 +1137,7 @@ mod tests {
         assert_eq!(games.live.len(), 1);
         assert_eq!(games.mine.len(), 1);
         assert_eq!(games.mine[0].players, [Some("me".into()), None]);
+        assert_eq!(games.mine[0].turn, Some(Color::Gold));
         assert_eq!(games.open.len(), 1);
         let open = &games.open[0];
         assert_eq!((open.gid.as_str(), open.rated), ("8", true));

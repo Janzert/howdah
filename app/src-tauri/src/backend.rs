@@ -30,8 +30,8 @@ use serde_json::Value;
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay,
-    PlayerGamesView, PlayerMatchView, PlayerSpec, PositionView, SessionId, SessionUpdate, SessionView,
-    StepTarget, WatchView,
+    PlayerGamesView, PlayerMatchView, PlayerSpec, PositionView, PostalGameView, SessionId, SessionUpdate,
+    SessionView, StepTarget, WatchView,
 };
 use crate::engines::{self, EngineRegistry};
 use crate::gameroom::{self, Gameroom, SavedLogin, WATCH_UPDATE, Watch};
@@ -480,6 +480,11 @@ impl Backend {
         self.gameroom.search_players(text).await
     }
 
+    /// The postal games being played in the gameroom.
+    pub async fn gameroom_postal_games(&self) -> Result<Vec<PostalGameView>, ApiError> {
+        self.gameroom.postal_games().await
+    }
+
     /// A gameroom player's finished games, newest first, 50 from `offset`.
     pub async fn gameroom_player_games(
         &self,
@@ -681,6 +686,7 @@ impl Backend {
                 .await?),
             "gameroom_logout" => ok(self.gameroom_logout().await?),
             "gameroom_games" => ok(self.gameroom_games().await?),
+            "gameroom_postal_games" => ok(self.gameroom_postal_games().await?),
             "search_gameroom_players" => {
                 ok(self.search_gameroom_players(&arg::<String>(args, "text")?).await?)
             }

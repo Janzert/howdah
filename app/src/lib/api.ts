@@ -13,6 +13,7 @@ import type { MoveReplay } from './bindings/MoveReplay';
 import type { NodeId } from './bindings/NodeId';
 import type { PlayerGamesView } from './bindings/PlayerGamesView';
 import type { PlayerMatchView } from './bindings/PlayerMatchView';
+import type { PostalGameView } from './bindings/PostalGameView';
 import type { PositionView } from './bindings/PositionView';
 import type { SessionId } from './bindings/SessionId';
 import type { SessionView } from './bindings/SessionView';
@@ -105,6 +106,9 @@ export const api = {
   gameroomLogout: () => invoke<void>('gameroom_logout'),
   /** The games being played on arimaa.com now, and the last few finished. */
   gameroomGames: () => invoke<GameroomGames>('gameroom_games'),
+  /** The postal games being played on arimaa.com (the live list leaves
+   * them out); one page fetch, so only when asked. */
+  gameroomPostalGames: () => invoke<PostalGameView[]>('gameroom_postal_games'),
   /** The arimaa.com players whose username or real name contains `text`. */
   searchGameroomPlayers: (text: string) => invoke<PlayerMatchView[]>('search_gameroom_players', { text }),
   /** A player's finished games, newest first, 50 from `offset`. */

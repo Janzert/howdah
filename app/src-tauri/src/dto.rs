@@ -623,6 +623,24 @@ pub struct LiveGameView {
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
+    /// The side to move, where the list says (the user's games).
+    pub turn: Option<Color>,
+}
+
+/// A postal game being played on arimaa.com, from the gameroom's postal
+/// games page.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PostalGameView {
+    /// The gameroom id, to watch it by.
+    pub gid: String,
+    pub gold: String,
+    pub silver: String,
+    pub gold_rating: Option<String>,
+    pub silver_rating: Option<String>,
+    pub time_control: Option<String>,
+    pub rated: bool,
 }
 
 /// A game recently finished on arimaa.com, from the gameroom's list.
@@ -742,6 +760,8 @@ pub struct WatchView {
     pub event: Option<String>,
     /// The user's side, when they play the game rather than watch it.
     pub side: Option<Color>,
+    /// Whether it's a postal game (moves days apart).
+    pub postal: bool,
     /// Whether the user's seat waits for an opponent to sit down. Their
     /// first move is held until then.
     pub waiting: bool,

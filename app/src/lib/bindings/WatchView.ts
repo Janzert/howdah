@@ -28,6 +28,10 @@ event: string | null,
  */
 side: Color | null, 
 /**
+ * Whether it's a postal game (moves days apart).
+ */
+postal: boolean, 
+/**
  * Whether the user's seat waits for an opponent to sit down. Their
  * first move is held until then.
  */

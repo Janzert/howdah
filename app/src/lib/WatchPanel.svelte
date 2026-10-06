@@ -36,7 +36,7 @@
 <section class="watch" aria-label="arimaa.com game">
   <div class="status">
     <span class="state {watch.state}"></span>
-    <span>arimaa.com game {watch.gid}</span>
+    <span>arimaa.com {watch.postal ? 'postal game' : 'game'} {watch.gid}</span>
     <span class="label">
       {watch.waiting && watch.state === 'following' ? 'Waiting' : STATES[watch.state]}{#if watch.finishedId}<span title="The game's permanent arimaa.com id"
           >&nbsp;· #{watch.finishedId}</span

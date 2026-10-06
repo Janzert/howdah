@@ -1,8 +1,10 @@
 //! Finding a player's games: the gameroom's player search
 //! (`searchPlayers.cgi`, which needs a session) and a player's past games
-//! (`pastgames.cgi?id=<player id>`, 50 a page, newest first).
+//! (`pastgames.cgi?id=<player id>`, 50 a page, newest first); and the
+//! postal games being played (`postalgames.cgi`), which the lobby's live
+//! list leaves out.
 //!
-//! Both are HTML pages made for people, so they're read leniently: a row
+//! All are HTML pages made for people, so they're read leniently: a row
 //! that doesn't parse is skipped rather than failing the page.
 
 use howdah_arimaa::Color;
@@ -39,6 +41,18 @@ pub struct PastGame {
     /// label ("Jan 4, 2014 10:38 am"; "Sun 4:23 pm" in the past week): in
     /// the login's time zone, or UTC without a session.
     pub finished: Option<String>,
+}
+
+/// A postal game being played, from the gameroom's postal games page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PostalGame {
+    /// The gameroom id, to watch it by.
+    pub gid: String,
+    /// Gold's and silver's usernames.
+    pub players: [String; 2],
+    pub ratings: [Option<String>; 2],
+    pub time_control: Option<String>,
+    pub rated: bool,
 }
 
 /// A page of a player's past games.
@@ -143,6 +157,40 @@ fn past_game(before: &str, row: &str) -> Option<PastGame> {
     })
 }
 
+/// The games on the postal games page. Its rows are laid out as a past
+/// games page's, with the board linking `openGame('<gid>', …)`.
+pub fn parse_postal_games(page: &str) -> Vec<PostalGame> {
+    let parts: Vec<&str> = page.split("<font size=1>").collect();
+    parts.windows(2).filter_map(|w| postal_game(w[0], w[1])).collect()
+}
+
+fn postal_game(before: &str, row: &str) -> Option<PostalGame> {
+    let before = &before[..before.rfind("<td")?];
+    let gold = &before[before.rfind("<td")?..];
+    let time_control = text_of(&row[..row.find("</font>")?]);
+    let (rated, time_control) = match time_control.strip_prefix("R ") {
+        Some(tc) => (true, tc.to_string()),
+        None => (false, time_control),
+    };
+    let gid: String = {
+        let r = &row[row.find("openGame('")? + 10..];
+        r.chars().take_while(char::is_ascii_digit).collect()
+    };
+    let after = &row[row.find("</table>")? + 8..];
+    let after = &after[after.find("</td>")? + 5..];
+    let silver = &after[after.find("<td")?..];
+    let silver = &silver[..silver.find("</td>")?];
+    let [(gold_name, gold_rating, _), (silver_name, silver_rating, _)] =
+        [player_cell(gold)?, player_cell(silver)?];
+    (!gid.is_empty()).then_some(PostalGame {
+        gid,
+        players: [gold_name, silver_name],
+        ratings: [gold_rating, silver_rating],
+        time_control: Some(time_control).filter(|t| !t.is_empty()),
+        rated,
+    })
+}
+
 /// A player's cell: the username, the rating, and whether they won (a `*`
 /// next to the name).
 fn player_cell(cell: &str) -> Option<(String, Option<String>, bool)> {
@@ -178,6 +226,53 @@ fn text_of(html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `postalgames.cgi` (2026-10-06), trimmed to its first row, with the
+    /// players renamed.
+    const POSTAL: &str = r#"<tr><td colspan=3 align=center><br><b>Postal Games</b></td></tr><tr>
+  <td align=right>
+    <a href="javascript:playerPage(13566)">gold_player</a>
+    <br><font size=-1>1206 &nbsp; US</font>
+  </td>
+  <td align=center>
+    <nobr><font size=1><b>R</b> <a href="timecontrol.cgi?tc=1d/60d/100/0/300d/21d" target=_blank>1d/60d/100/0/300d/21d</a></font></nobr><br><table background="/arimaa/graphics/BoardWithPiecesIcon.jpg" width=50 height=50 border=0 cellspacing=0 cellpadding=0>
+  <tr>
+    <td >
+<a href="javascript:openGame('539426','v','w');" title="Fri 1:08 am">
+  <img src="/arimaa/graphics/animals/blank.gif" width=25 height=49 border=0>
+</a>
+    </td>
+    <td >
+<!-- a href="javascript:openGame('539426','v','b');" target="watch539426" -->
+<a href="javascript:openGame('539426','v','b');" >
+  <img src="/arimaa/graphics/animals/blank.gif" width=25 height=49 border=0>
+</a>
+    </td>
+  </tr>
+</table>
+
+  </td>
+  <td align=left>
+    <a href="javascript:playerPage(4609)">silver_player</a>
+    <br><font size=-1>US &nbsp; 1000</font>
+  </td>
+</tr>
+<tr>"#;
+
+    #[test]
+    fn postal_games_are_read() {
+        let games = parse_postal_games(POSTAL);
+        assert_eq!(
+            games,
+            [PostalGame {
+                gid: "539426".into(),
+                players: ["gold_player".into(), "silver_player".into()],
+                ratings: [Some("1206".into()), Some("1000".into())],
+                time_control: Some("1d/60d/100/0/300d/21d".into()),
+                rated: true,
+            }]
+        );
+    }
 
     /// `searchPlayers.cgi` for "Janzert", trimmed (2026-10-06).
     const SEARCH: &str = r#"<h2 align=center>Results</h2>

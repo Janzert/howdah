@@ -20,3 +20,20 @@ export const TICK_TIMES_MS: readonly number[] = [
 export function nextTick(left: number, lastTick = Infinity): number | null {
   return TICK_TIMES_MS.find((t) => t < left && t < lastTick) ?? null;
 }
+
+/** A clock's time as text: `m:ss`, `h:mm:ss` from an hour, and from a
+ * day `Nd h:mm` (postal games run for days; seconds don't matter then). */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (d > 0) {
+    // Rounded up to the minute, as the shorter forms are to the second.
+    const mins = Math.ceil(total / 60);
+    return `${Math.floor(mins / 1440)}d ${Math.floor((mins % 1440) / 60)}:${pad(mins % 60)}`;
+  }
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}

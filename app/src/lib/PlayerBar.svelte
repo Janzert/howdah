@@ -3,6 +3,7 @@
   import type { Color } from './bindings/Color';
   import type { PieceKind } from './bindings/PieceKind';
   import type { SessionView } from './bindings/SessionView';
+  import { formatClock } from './clock';
   import { SQ } from './geometry';
   import type { Theme } from './theme';
 
@@ -41,14 +42,7 @@
     captured.map((g) => (g.n > 1 ? `${g.n} ${opponent} ${g.kind}s` : `${opponent} ${g.kind}`)).join(', '),
   );
 
-  function fmt(ms: number): string {
-    const total = Math.max(0, Math.ceil(ms / 1000));
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const s = total % 60;
-    const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
-    return (h > 0 ? `${h}:` : '') + `${mm}:${String(s).padStart(2, '0')}`;
-  }
+  const fmt = formatClock;
 
   const times = $derived.by(() => {
     const mine = clock?.[side];

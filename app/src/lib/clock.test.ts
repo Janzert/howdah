@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClockView } from './bindings/ClockView';
-import { nextTick, TICK_TIMES_MS, turnTimeLeft } from './clock';
+import { formatClock, nextTick, TICK_TIMES_MS, turnTimeLeft } from './clock';
 
 describe('turnTimeLeft', () => {
   const clock: ClockView = {
@@ -47,5 +47,16 @@ describe('nextTick', () => {
       left = tick - 3; // the timer fires a little late
     }
     expect(played).toEqual(TICK_TIMES_MS);
+  });
+});
+
+describe('formatClock', () => {
+  it('writes minutes, hours and days', () => {
+    expect(formatClock(65_000)).toBe('1:05');
+    expect(formatClock(3_600_000 + 5_000)).toBe('1:00:05');
+    // 60 days, as postal reserves run.
+    expect(formatClock(60 * 86_400_000)).toBe('60d 0:00');
+    expect(formatClock(86_400_000 + 3 * 3_600_000 + 7 * 60_000 + 30_000)).toBe('1d 3:08');
+    expect(formatClock(-5)).toBe('0:00');
   });
 });

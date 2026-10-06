@@ -119,9 +119,11 @@ Sharp, OpFor and other AEI engines behave.
     (`opengamewin.cgi`, the `arimaa.vars` lines), with `record()` making a
     `GameRecord` (players, ratings, time control, date, `GameId`, result,
     and each move's time as `%emt`) and `state()` a final `GameState`.
-  - `players`: the player search (`searchPlayers.cgi`, `PlayerMatch`) and
+  - `players`: the player search (`searchPlayers.cgi`, `PlayerMatch`),
     a player's past games (`pastgames.cgi?id=`, `PastGames`, 50 a page),
-    read leniently from their HTML. The page writes times in the
+    and the postal games being played (`postalgames.cgi`, `PostalGame`,
+    `Lobby::postal_games`; the lobby's live list leaves them out), read
+    leniently from their HTML. The page writes times in the
     session's zone (the login's `timezone`, `Lobby::set_timezone`; the
     app sets the computer's), labelled "YLT", which is dropped. `Lobby::search_players` and
     `Lobby::player_games` fetch them. `Error::Expired` is a lobby session
@@ -357,10 +359,16 @@ Sharp, OpFor and other AEI engines behave.
     search (an exact username goes straight to their games, with "Older
     games" paging), and a game id field (a permanent id loads a finished
     game, a gameroom id watches). Above those: the user's games (Play to
-    take their seat again, Cancel while nobody has sat), the open games
-    others created (Play as the free side), and a New game form (side,
-    time control in the gameroom's format with a few presets, rated; kept
-    in localStorage). It refreshes the lists every 20 s while
+    take their seat again, Cancel while nobody has sat; "Your move" first,
+    from `mygames`' `turn`), the open games others created (Play as the
+    free side), and a New game form (side, time control in the gameroom's
+    format with a few presets, the gameroom's postal ones among them,
+    rated; kept in localStorage). "Show postal games" lists the postal
+    games being played (`gameroom_postal_games`, one page fetch, only when
+    asked), to watch. Postal is the server's call from the time control
+    (days per move, or `0/0/0/0/0`, its "No time limit", which `start`
+    makes untimed); `WatchView.postal` labels the panel, and clocks of a
+    day or more read `Nd h:mm` (`formatClock`). It refreshes the lists every 20 s while
     open, and after an error checks the login, showing the login form if
     it has expired. `WatchPanel.svelte` under the comment box
     shows the followed game's state (spectators don't get the chat),

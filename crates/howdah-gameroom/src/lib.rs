@@ -41,7 +41,7 @@ pub use client::{
 };
 pub use clock_sync::ClockSync;
 pub use finished::{FinishedGame, RecentGame};
-pub use players::{PastGame, PastGames, PlayerMatch};
+pub use players::{PastGame, PastGames, PlayerMatch, PostalGame};
 pub use state::{ChatLine, GameState, Role, ServerClock, parse_chat, parse_result, split_moves};
 pub use wire::{Format, Record};
 

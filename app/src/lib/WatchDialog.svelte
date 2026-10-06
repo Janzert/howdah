@@ -6,6 +6,7 @@
   import type { GameroomGames } from './bindings/GameroomGames';
   import type { PastGameView } from './bindings/PastGameView';
   import type { PlayerMatchView } from './bindings/PlayerMatchView';
+  import type { PostalGameView } from './bindings/PostalGameView';
   import type { RecentGameView } from './bindings/RecentGameView';
   import type { WinReason } from './bindings/WinReason';
 
@@ -59,8 +60,31 @@
   let newSide = $state<Color | 'random'>((pref('gameroom.newSide') as Color | 'random') || 'random');
   let newTc = $state(pref('gameroom.newTc') || '2m/5m/100/0/30m');
   let newRated = $state(pref('gameroom.newRated') === '1');
-  /** Time controls offered in the form; any other can be typed. */
-  const TIME_CONTROLS = ['15s/3m/100/0/15m', '1m/2m/100/0/10m', '2m/5m/100/0/30m'];
+  /** Time controls offered in the form; any other can be typed. The
+   * postal ones are the gameroom's own ("No time limit" is its
+   * `0/0/0/0/0`). */
+  const TIME_CONTROLS: [string, string][] = [
+    ['15s/3m/100/0/15m', ''],
+    ['1m/2m/100/0/10m', ''],
+    ['2m/5m/100/0/30m', ''],
+    ['1d/60d/100/0/300d/21d', 'Postal: the most popular'],
+    ['1d/14d/100/14d/0', 'Postal: a day a move, 14 day reserve'],
+    ['0/0/0/0/0', 'Postal: no time limit'],
+  ];
+
+  /** The postal games being played, once asked for. */
+  let postal = $state<PostalGameView[] | null>(null);
+
+  function loadPostal() {
+    attempt(async () => {
+      postal = await api.gameroomPostalGames();
+    });
+  }
+
+  /** The user's games, those waiting on their move first. */
+  const myGames = $derived(
+    games ? [...games.mine].sort((a, b) => Number(myTurn(b)) - Number(myTurn(a))) : [],
+  );
 
   /** How often the open dialog refreshes the lists, as the browser lobby
    * does. */
@@ -188,6 +212,12 @@
     return null;
   }
 
+  /** Whether one of the user's games waits on their move. */
+  function myTurn(g: LiveGameView): boolean {
+    const side = mySide(g);
+    return side != null && g.turn === side && g.gold != null && g.silver != null;
+  }
+
   /** The free seat of an open game. */
   const freeSide = (g: LiveGameView): Color => (g.gold == null ? 'gold' : 'silver');
 
@@ -302,11 +332,12 @@
     {#if games && games.mine.length > 0}
       <h3>Your games</h3>
       <ul class="games" aria-label="Your games">
-        {#each games.mine as g (g.gid)}
+        {#each myGames as g (g.gid)}
           {@const side = mySide(g)}
           <li>
             <span class="game">
               <span class="players">
+                {#if myTurn(g)}<span class="badge">Your move</span>{/if}
                 <span class="dot gold"></span>{g.gold ?? 'open seat'}
                 <span class="vs">vs</span>
                 <span class="dot silver"></span>{g.silver ?? 'open seat'}
@@ -366,7 +397,7 @@
         title="Per move / reserve / percent added / reserve limit / game limit"
       />
       <datalist id="gr-tcs">
-        {#each TIME_CONTROLS as tc (tc)}<option value={tc}></option>{/each}
+        {#each TIME_CONTROLS as [tc, label] (tc)}<option value={tc} {label}></option>{/each}
       </datalist>
       <label class="check"><input type="checkbox" bind:checked={newRated} /> Rated</label>
       <button type="submit" disabled={busy || !newTc.trim()}>Create</button>
@@ -388,6 +419,30 @@
               {g.timeControl ?? ''}{g.rated ? ' · rated' : ''}{g.postal ? ' · postal' : ''}
             </span>
             <button onclick={() => open(g.gid)} disabled={busy} aria-label="Watch game {g.gid}">Watch</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <h3>Postal games</h3>
+    {#if postal == null}
+      <button class="subtle" onclick={loadPostal} disabled={busy}>Show postal games</button>
+    {:else if postal.length === 0}
+      <p class="hint">No postal games are being played.</p>
+    {:else}
+      <ul class="games" aria-label="Postal games">
+        {#each postal as g (g.gid)}
+          <li>
+            <span class="game">
+              <span class="players">
+                <span class="dot gold"></span>{g.gold}
+                {#if g.goldRating}<span class="rating">{g.goldRating}</span>{/if}
+                <span class="vs">vs</span>
+                <span class="dot silver"></span>{g.silver}
+                {#if g.silverRating}<span class="rating">{g.silverRating}</span>{/if}
+              </span>
+              <span class="meta">{[g.timeControl ?? '', g.rated ? 'rated' : ''].filter((s) => s).join(' · ')}</span>
+            </span>
+            <button onclick={() => open(g.gid)} disabled={busy} aria-label="Watch postal game {g.gid}">Watch</button>
           </li>
         {/each}
       </ul>
@@ -571,6 +626,14 @@
   .rating {
     color: var(--muted);
     font-size: 11px;
+  }
+  .badge {
+    flex: none;
+    font-size: 11px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-text);
   }
   .new-game {
     display: flex;

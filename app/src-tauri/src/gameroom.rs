@@ -57,7 +57,7 @@ use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, ChatLineView, GameroomGames, GameroomStatus, LiveGameView, PastGameView,
-    PlayerGamesView, PlayerMatchView, RecentGameView, WatchState, WatchView,
+    PlayerGamesView, PlayerMatchView, PostalGameView, RecentGameView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -332,6 +332,27 @@ impl Gameroom {
             .collect())
     }
 
+    /// The postal games being played (the live list leaves them out).
+    pub async fn postal_games(&self) -> Result<Vec<PostalGameView>, ApiError> {
+        let games = with_lobby!(self, |l| l.postal_games())?;
+        Ok(games
+            .into_iter()
+            .map(|g| {
+                let [gold, silver] = g.players;
+                let [gold_rating, silver_rating] = g.ratings;
+                PostalGameView {
+                    gid: g.gid,
+                    gold,
+                    silver,
+                    gold_rating,
+                    silver_rating,
+                    time_control: g.time_control,
+                    rated: g.rated,
+                }
+            })
+            .collect())
+    }
+
     /// A player's finished games, newest first, 50 from `offset` on.
     pub async fn player_games(&self, player_id: &str, offset: u32) -> Result<PlayerGamesView, ApiError> {
         let page = with_lobby!(self, |l| l.player_games(player_id, offset))?;
@@ -341,7 +362,15 @@ impl Gameroom {
 
 fn game_view(g: GameInfo) -> LiveGameView {
     let [gold, silver] = g.players;
-    LiveGameView { gid: g.gid, gold, silver, time_control: g.time_control, rated: g.rated, postal: g.postal }
+    LiveGameView {
+        gid: g.gid,
+        gold,
+        silver,
+        time_control: g.time_control,
+        rated: g.rated,
+        postal: g.postal,
+        turn: g.turn,
+    }
 }
 
 fn past_view(g: PastGame) -> PastGameView {
@@ -579,6 +608,7 @@ async fn begin(
         finished_id: None,
         event: state.raw.nonempty("event"),
         side: None,
+        postal: state.postal,
         waiting: false,
         refused: None,
         chat: Vec::new(),
@@ -615,7 +645,13 @@ fn start(s: &mut Session, state: &GameState) {
     if let Some(Role::Player(side)) = state.role {
         players[side.index()] = Player::Human;
     }
-    let tc: Option<TimeControl> = state.time_control.as_deref().and_then(|t| t.parse().ok());
+    // The gameroom offers `0/0/0/0/0` as "No time limit" (a postal choice);
+    // by the time control rules it would leave no time at all.
+    let tc: Option<TimeControl> = state
+        .time_control
+        .as_deref()
+        .and_then(|t| t.parse().ok())
+        .filter(|t: &TimeControl| !(t.move_time().is_zero() && t.starting_reserve().is_zero()));
     s.start_match(players, [tc; 2], false);
     // In rated games the server answers `ok` to takeback requests and
     // ignores them (seen in game 539472); don't ask.
@@ -1336,6 +1372,14 @@ mod tests {
             record.contains("[Silver \"them\"]") && record.contains("[SilverRating \"1600\"]"),
             "{record}"
         );
+    }
+
+    #[test]
+    fn a_game_with_no_time_limit_has_no_clocks() {
+        let text = "wplayer=a\nbplayer=b\ntimecontrol=0/0/0/0/0\npostal=1\nturn=w\nmoves=1w\n";
+        let mut s = Session::new();
+        start(&mut s, &GameState::from_record(Record::decode(text).unwrap()));
+        assert!(s.view().clock.is_none());
     }
 
     #[test]
