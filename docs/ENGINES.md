@@ -123,10 +123,14 @@ arguments, options), and Howdah installs from it. `howdah-aei`'s
   URL it was added from) when the user asks; offer the newer version,
   never install it unasked.
 - **Options:** the manifest's options give the Engines dialog names,
-  types, bounds and descriptions. When AEI gains a way for an engine to
+  types, bounds and descriptions (`check`, `spin`, `float`, `combo`,
+  `string`, `file` and `path` with pickers, `button` for actions). When AEI gains a way for an engine to
   list its options (a `protocol-version 2` engine answering an
   `options` request), the engine's own list wins and the manifest's
   descriptions fill in.
+- **A manifest without downloads** (a developer's own build, or no file
+  for this platform) gets no Download button: the user points Howdah at
+  the program, and the manifest supplies its arguments and options.
 - **Engines added by path** keep working as before, with no manifest.
 - Engine-specific behaviour (`Profile`) stays in code, keyed by the
   engine's `id name`, not in manifests.

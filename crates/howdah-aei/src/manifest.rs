@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub const MANIFEST_VERSION: u32 = 1;
 
 /// One release of an engine.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Manifest {
     pub manifest_version: u32,
     /// Stable across releases (`github.com/Janzert/OpFor`).
@@ -36,13 +36,16 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
     /// The files, keyed by platform (`linux-x86_64`; see [`platform`]).
+    /// Empty for an engine installed some other way (a developer's own
+    /// build): no download is offered.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub downloads: BTreeMap<String, Download>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<OptionSpec>,
 }
 
 /// The file for one platform.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Download {
     pub url: String,
     /// The file's SHA-256 digest in hex.
@@ -68,7 +71,7 @@ pub enum Archive {
 }
 
 /// An option the engine takes with `setoption`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OptionSpec {
     pub name: String,
     #[serde(flatten)]
@@ -77,7 +80,7 @@ pub struct OptionSpec {
     pub description: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum OptionKind {
     Check {
@@ -92,6 +95,14 @@ pub enum OptionKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max: Option<i64>,
     },
+    Float {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        min: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max: Option<f64>,
+    },
     Combo {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         default: Option<String>,
@@ -101,6 +112,18 @@ pub enum OptionKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         default: Option<String>,
     },
+    /// A string naming a file; a GUI can offer a file picker.
+    File {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default: Option<String>,
+    },
+    /// A string naming a directory; a GUI can offer a directory picker.
+    Path {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default: Option<String>,
+    },
+    /// An action, sent as `setoption name <name>` with no value.
+    Button,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -153,9 +176,6 @@ impl Manifest {
             if value.trim().is_empty() {
                 return invalid(format!("`{key}` is empty"));
             }
-        }
-        if self.downloads.is_empty() {
-            return invalid("no downloads".into());
         }
         for (platform, d) in &self.downloads {
             d.check().map_err(|m| ManifestError::Invalid(format!("download for {platform}: {m}")))?;
@@ -232,7 +252,26 @@ impl OptionSpec {
                     return Err(format!("the default {d:?} isn't one of the choices"));
                 }
             }
-            OptionKind::Check { .. } | OptionKind::String { .. } => {}
+            OptionKind::Float { default, min, max } => {
+                if [default, min, max].into_iter().flatten().any(|x| !x.is_finite()) {
+                    return Err("bounds and default need to be finite".into());
+                }
+                if let (Some(lo), Some(hi)) = (min, max)
+                    && lo > hi
+                {
+                    return Err(format!("min {lo} is above max {hi}"));
+                }
+                if let Some(d) = default
+                    && (min.is_some_and(|lo| *d < lo) || max.is_some_and(|hi| *d > hi))
+                {
+                    return Err(format!("the default {d} is out of bounds"));
+                }
+            }
+            OptionKind::Check { .. }
+            | OptionKind::String { .. }
+            | OptionKind::File { .. }
+            | OptionKind::Path { .. }
+            | OptionKind::Button => {}
         }
         Ok(())
     }
@@ -300,7 +339,11 @@ mod tests {
               "options": [
                 {{ "name": "hash", "type": "spin", "default": 10, "min": 1, "description": "MB" }},
                 {{ "name": "verbose", "type": "check", "default": false }},
-                {{ "name": "style", "type": "combo", "choices": ["solid", "wild"], "default": "solid" }}
+                {{ "name": "style", "type": "combo", "choices": ["solid", "wild"], "default": "solid" }},
+                {{ "name": "aggression", "type": "float", "default": 0.75, "min": 0, "max": 1.5 }},
+                {{ "name": "book", "type": "file", "default": "" }},
+                {{ "name": "tablebases", "type": "path" }},
+                {{ "name": "clear_hash", "type": "button" }}
               ]
             }}"#
         )
@@ -322,6 +365,34 @@ mod tests {
             m.options[2].kind,
             OptionKind::Combo { default: Some("solid".into()), choices: vec!["solid".into(), "wild".into()] }
         );
+    }
+
+    #[test]
+    fn reads_the_newer_option_types() {
+        let m = Manifest::parse(&example()).unwrap();
+        let kinds: Vec<&OptionKind> = m.options[3..].iter().map(|o| &o.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                &OptionKind::Float { default: Some(0.75), min: Some(0.0), max: Some(1.5) },
+                &OptionKind::File { default: Some(String::new()) },
+                &OptionKind::Path { default: None },
+                &OptionKind::Button,
+            ]
+        );
+    }
+
+    #[test]
+    fn downloads_are_optional() {
+        // A developer's own build: options and arguments, nothing to download.
+        let m = Manifest::parse(
+            r#"{ "manifest_version": 1, "id": "local/mybot", "name": "MyBot", "version": "dev",
+                 "args": ["aei"], "options": [{ "name": "hash", "type": "spin" }] }"#,
+        )
+        .unwrap();
+        assert!(m.downloads.is_empty());
+        assert_eq!(m.download(), None);
+        assert_eq!(m.args, ["aei"]);
     }
 
     #[test]
@@ -366,6 +437,7 @@ mod tests {
         bad("\"default\": \"solid\"", "\"default\": \"calm\"");
         bad("\"name\": \"verbose\"", "\"name\": \"hash\"");
         bad("\"name\": \"verbose\"", "\"name\": \"two words\"");
+        bad("\"default\": 0.75, \"min\": 0", "\"default\": 2.5, \"min\": 0");
         // An unknown type is a syntax error rather than silently dropped.
         let text = example().replace("\"type\": \"check\"", "\"type\": \"slider\"");
         assert!(matches!(Manifest::parse(&text), Err(ManifestError::Syntax(_))));
