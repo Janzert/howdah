@@ -1,7 +1,7 @@
 //! Tauri commands: thin wrappers over [`Backend`], which holds the logic
 //! and documents the conventions.
 
-use howdah_arimaa::{Glyph, NodeId, Square};
+use howdah_arimaa::{Color, Glyph, NodeId, Square};
 use tauri::State;
 
 use crate::backend::Backend;
@@ -308,6 +308,16 @@ pub async fn open_gameroom_game(
     gid: String,
 ) -> Result<(), ApiError> {
     state.open_gameroom_game(session, &gid).await
+}
+
+#[tauri::command]
+pub async fn play_gameroom_game(
+    state: State<'_, Backend>,
+    session: SessionId,
+    gid: String,
+    side: Color,
+) -> Result<(), ApiError> {
+    state.play_gameroom_game(session, &gid, side).await
 }
 
 #[tauri::command]

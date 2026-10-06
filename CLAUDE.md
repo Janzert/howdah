@@ -213,7 +213,16 @@ Sharp, OpFor and other AEI engines behave.
     times in a row; if the game ended meanwhile it asks `findgameid` and
     applies the finished game's final state (a gameroom id alone could
     open an unrelated old game with the same number). Its state goes out
-    as `gameroom://watch` (`WatchView`, only when changed). A
+    as `gameroom://watch` (`WatchView`, only when changed). Playing
+    (`play`, command `play_gameroom_game`) takes the user's seat at a
+    side the browser's way (`Lobby::play`); `start` makes the seat's side
+    (`GameState.role`) `Player::Human`, and a second task, `send_moves`,
+    posts `Session::outgoing_move` with the seat's `Actions`. It wakes on
+    `Watch::poke` (from `Backend::mutate`) and on a timer: a move not back
+    after `CONFIRM_WAIT` (growing with each try) is checked against a
+    `gamestate` and sent again, since the server answers `ok` to moves it
+    drops; an error reply calls `move_refused` and shows the message in
+    `WatchView.detail`. A player's reseat takes the same side again. A
     session's `Watch` lives in its `SessionHandle`; `new_game`,
     `load_game`, `start_match` and `end_match` stop and forget it. The
     record gets the archive's `Event` and `Site` ("Over the Net"), and at

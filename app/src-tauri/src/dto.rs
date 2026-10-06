@@ -713,4 +713,6 @@ pub struct WatchView {
     pub finished_id: Option<String>,
     /// The server's name for the game ("Casual game", a tournament round).
     pub event: Option<String>,
+    /// The user's side, when they play the game rather than watch it.
+    pub side: Option<Color>,
 }

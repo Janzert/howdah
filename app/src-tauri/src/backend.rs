@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use howdah_arimaa::{Glyph, NodeId, Square, TimeControl};
+use howdah_arimaa::{Color, Glyph, NodeId, Square, TimeControl};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -175,6 +175,9 @@ impl Backend {
             emit_session(&handle.events, &session, animation, None);
         }
         handle.controller.poke();
+        if let Some(watch) = handle.watch().as_ref() {
+            watch.poke();
+        }
         Ok(())
     }
 
@@ -505,6 +508,23 @@ impl Backend {
         }
     }
 
+    /// Plays live arimaa.com game `gid` (its gameroom id) in session `id`
+    /// as `side`: the user's seat is taken, the session becomes that game
+    /// with the user as `side`'s human player, and the moves played there
+    /// are sent to the server (see `gameroom.rs`).
+    pub async fn play_gameroom_game(&self, id: SessionId, gid: &str, side: Color) -> Result<(), ApiError> {
+        let handle = self.handle(id)?;
+        let target = gameroom::Target {
+            session: handle.session.clone(),
+            controller: handle.controller.clone(),
+            events: handle.events.clone(),
+        };
+        let watch = gameroom::play(&self.gameroom, gid, side, target).await?;
+        let old = handle.watch().replace(watch);
+        drop(old);
+        Ok(())
+    }
+
     /// Stops following the session's gameroom game; the game stays.
     pub fn stop_watching(&self, id: SessionId) -> Result<(), ApiError> {
         self.handle(id)?.stop_watching();
@@ -602,6 +622,9 @@ impl Backend {
                 .gameroom_player_games(&arg::<String>(args, "playerId")?, arg(args, "offset")?)
                 .await?),
             "open_gameroom_game" => ok(self.open_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?),
+            "play_gameroom_game" => {
+                ok(self.play_gameroom_game(sid()?, &arg::<String>(args, "gid")?, arg(args, "side")?).await?)
+            }
             "stop_watching" => ok(self.stop_watching(sid()?)?),
             "watch_status" => ok(self.watch_status(sid()?)?),
             _ => Err(ApiError::state(format!("unknown command {cmd:?}"))),

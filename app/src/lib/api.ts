@@ -3,6 +3,7 @@
 // `game://changed` event (see events.ts).
 import { invoke } from '@tauri-apps/api/core';
 import type { ApiError } from './bindings/ApiError';
+import type { Color } from './bindings/Color';
 import type { EngineIdentity } from './bindings/EngineIdentity';
 import type { EngineSpec } from './bindings/EngineSpec';
 import type { GameroomGames } from './bindings/GameroomGames';
@@ -110,6 +111,11 @@ export const api = {
    * and `gameroom://watch` events; a finished game (its permanent id) is
    * loaded whole. */
   openGameroomGame: (gid: string) => invoke<void>('open_gameroom_game', { session, gid }),
+  /** Plays live arimaa.com game `gid` (its gameroom id) as `side`: this
+   * session becomes the game, and the user's moves are sent to the
+   * server. */
+  playGameroomGame: (gid: string, side: Color) =>
+    invoke<void>('play_gameroom_game', { session, gid, side }),
   /** Stops following the game; it stays on the board. */
   stopWatching: () => invoke<void>('stop_watching', { session }),
   /** The game this session follows, if any. */
