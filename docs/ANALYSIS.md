@@ -116,7 +116,12 @@ game**:
   can't help the players; analysis is no different.
 - **Refused** while the user plays an arimaa.com game (use case 2), and
   turned off when such a game starts. After it ends, analysis is
-  available again.
+  available again. Built: `Session::plays_online` (a match with a
+  remote side and a human one, without a result) makes `set_analysis`
+  refuse an engine, `start_match` turns analysis off for such a game,
+  and `SessionView.analysisAllowed` disables the Analysis button.
+  Leaving the game ("Leave game") ends the match while the game goes
+  on at arimaa.com, so analysis is allowed again then.
 
 In a match the target is still the shown node, so with the board
 following the live position, analysis follows the game move by move.

@@ -308,6 +308,10 @@
       run(api.setAnalysis(null));
       return;
     }
+    if (view && !view.analysisAllowed) {
+      flash('No analysis while you play a game on arimaa.com');
+      return;
+    }
     const engine = analysisEngine(engines, settings.analysisEngine);
     if (!engine) {
       flash('Add an engine first (Engines)');
@@ -547,7 +551,14 @@
         arimaa.com
       </button>
       <button onclick={() => (showEngines = true)}>Engines</button>
-      <button onclick={toggleAnalysis} aria-pressed={analysing} title="Analyse the shown position with an engine (l)">
+      <button
+        onclick={toggleAnalysis}
+        aria-pressed={analysing}
+        disabled={!analysing && view != null && !view.analysisAllowed}
+        title={view && !view.analysisAllowed
+          ? 'No analysis while you play a game on arimaa.com'
+          : 'Analyse the shown position with an engine (l)'}
+      >
         Analysis
       </button>
       <button onclick={openRecord}>Record</button>

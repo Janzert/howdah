@@ -611,6 +611,11 @@ impl Session {
         };
         matchup.turn_starts.insert(GameTree::ROOT, matchup.turn_start(now));
         self.replace(GameTree::new(), Vec::new(), GameTree::ROOT, Some(matchup));
+        // Analysis stays on across games, but not into an online game the
+        // user plays.
+        if self.plays_online() {
+            self.analysis = None;
+        }
     }
 
     /// Stops the match: the game stays as it is, and both sides become free
@@ -1294,9 +1299,21 @@ impl Session {
         Ok(Vec::new())
     }
 
-    /// Turns analysis on with `engine`, or off with `None`.
-    pub fn set_analysis(&mut self, engine: Option<AnalysisEngine>) {
+    /// Turns analysis on with `engine`, or off with `None`. Turning it on
+    /// is refused while the user plays an online game ([`Session::plays_online`]).
+    pub fn set_analysis(&mut self, engine: Option<AnalysisEngine>) -> Result<(), ApiError> {
+        if engine.is_some() && self.plays_online() {
+            return Err(ApiError::state("analysis is off while you play a game on arimaa.com"));
+        }
         self.analysis = engine;
+        Ok(())
+    }
+
+    /// Whether the user plays a game on a server that hasn't ended: no
+    /// analysis then (`docs/ANALYSIS.md`). Watching one is fine.
+    pub fn plays_online(&self) -> bool {
+        self.matchup.as_ref().is_some_and(|m| m.server_clock() && m.players.contains(&Player::Human))
+            && self.live_result().is_none()
     }
 
     pub fn analysis_engine(&self) -> Option<&AnalysisEngine> {
@@ -2004,6 +2021,7 @@ impl Session {
             }),
             live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
             analysis_engine: self.analysis.as_ref().map(|a| a.id.clone()),
+            analysis_allowed: !self.plays_online(),
             stored_analysis: self.evals.get(&self.cursor_node()).cloned(),
         }
     }
@@ -3372,7 +3390,32 @@ mod tests {
     }
 
     fn analysing(s: &mut Session) {
-        s.set_analysis(Some(AnalysisEngine { id: "e".into(), name: "E".into() }));
+        s.set_analysis(Some(AnalysisEngine { id: "e".into(), name: "E".into() })).unwrap();
+    }
+
+    #[test]
+    fn no_analysis_while_playing_online() {
+        let mut s = Session::new();
+        analysing(&mut s);
+        // Watching an online game: analysis stays on.
+        s.start_match([remote("a"), remote("b")], [None, None], false);
+        assert!(s.view().analysis_engine.is_some() && s.view().analysis_allowed);
+        // Playing one: it goes off, and can't come back on.
+        s.start_match([Player::Human, remote("opponent")], [None, None], false);
+        let v = s.view();
+        assert!(v.analysis_engine.is_none() && !v.analysis_allowed);
+        let engine = AnalysisEngine { id: "e".into(), name: "E".into() };
+        assert!(s.set_analysis(Some(engine.clone())).is_err());
+        assert!(s.set_analysis(None).is_ok());
+        // Once the game is over, it's allowed again.
+        let g = s.generation();
+        s.finish_remote(g, GameResult { winner: Color::Silver, reason: WinReason::Resignation }, None)
+            .unwrap();
+        assert!(s.view().analysis_allowed);
+        s.set_analysis(Some(engine)).unwrap();
+        // A local match never stops it.
+        s.start_match([Player::Human, Player::Human], [None, None], false);
+        assert!(s.view().analysis_engine.is_some());
     }
 
     fn strings(moves: &[&str]) -> Vec<String> {

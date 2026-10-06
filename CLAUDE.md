@@ -205,6 +205,10 @@ Sharp, OpFor and other AEI engines behave.
       session keeps the deepest line per node (`store_analysis`), shown as
       `SessionView.storedAnalysis` on return. `add_line` adds a PV as a
       variation (a plan in a match); `preview_line` is the hover preview.
+      No analysis while the user plays an online game
+      (`Session::plays_online`): `set_analysis` refuses an engine,
+      `start_match` turns it off, and `SessionView.analysisAllowed`
+      disables the button. Watching is fine.
   - `gameroom.rs`: spectating arimaa.com games (use case 3). `Gameroom`
     holds the login and lists live and recently finished games
     (`gameroom_games`). `open` (command `open_gameroom_game`) opens a game

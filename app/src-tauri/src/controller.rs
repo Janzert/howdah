@@ -393,7 +393,7 @@ impl Coordinator {
         {
             let mut s = lock(&self.session);
             if s.analysis_engine().is_some_and(|a| a.id == engine.id) {
-                s.set_analysis(None);
+                let _ = s.set_analysis(None);
                 self.emit(&s, Vec::new());
             }
         }
@@ -1175,7 +1175,7 @@ mod tests {
         {
             let mut s = lock(&session);
             s.load(&format!("1g {}\n1s {}\n2g Ee2n Ee3n\n", SETUPS[0], SETUPS[1])).unwrap();
-            s.set_analysis(Some(AnalysisEngine { id: spec.id.clone(), name: spec.name.clone() }));
+            s.set_analysis(Some(AnalysisEngine { id: spec.id.clone(), name: spec.name.clone() })).unwrap();
         }
         controller.poke();
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -1200,7 +1200,7 @@ mod tests {
         assert_eq!(end["line"]["pv"][0]["label"], "2g");
         assert!(!end["line"]["eval"].is_null(), "{end}");
 
-        lock(&session).set_analysis(None);
+        lock(&session).set_analysis(None).unwrap();
         controller.poke();
         tokio::time::sleep(Duration::from_millis(100)).await;
         let off = lock(&recorder.0).iter().rev().find(|(e, _)| e == ANALYSIS_UPDATE).unwrap().1.clone();

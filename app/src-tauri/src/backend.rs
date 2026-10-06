@@ -394,7 +394,7 @@ impl Backend {
     }
 
     /// Turns analysis on with the engine `engine_id`, or off with `None`.
-    /// (It will be refused while the user plays an online game.)
+    /// Turning it on is refused while the user plays an online game.
     pub fn set_analysis(&self, id: SessionId, engine_id: Option<&str>) -> Result<(), ApiError> {
         let engine = match engine_id {
             Some(e) => {
@@ -407,7 +407,7 @@ impl Backend {
             None => None,
         };
         self.mutate(id, |s| {
-            s.set_analysis(engine);
+            s.set_analysis(engine)?;
             Ok(Vec::new())
         })
     }
