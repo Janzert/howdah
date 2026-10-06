@@ -123,7 +123,9 @@ architecture. Decided and checked against the live server in October 2026.
   following the table's chat (the server keeps it open after the end and
   wakes the long poll for each line). When the server stops answering
   for the table (it clears finished tables away, perhaps sooner for
-  event games), the chat closes with a note instead of the message box.
+  event games), the chat closes with a note instead of the message box; the lines stay
+  (chat only grows, so a state with fewer lines, like a finished game's
+  page, never replaces them).
   The game's panel offers a new open game with the same time control and
   rating, as either side, which leaves the table.
 - **No analysis while playing** (see `ANALYSIS.md`), postal games included,

@@ -978,7 +978,7 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
     let before = v.clone();
     v.waiting = waiting(v.side, state);
     v.away = away(state);
-    v.chat = chat_view(&state.chat);
+    v.chat = kept_chat(&v.chat, chat_view(&state.chat));
     let next = match outcome {
         Outcome::Playing => {
             if v.state == WatchState::Reconnecting {
@@ -1229,6 +1229,13 @@ fn chat_view(chat: &str) -> Vec<ChatLineView> {
         .collect()
 }
 
+/// The chat to show after a state with `new`: chat only grows, so a state
+/// with fewer lines (a finished game's page, which has none, or a table
+/// being cleared away) keeps the lines already shown.
+fn kept_chat(old: &[ChatLineView], new: Vec<ChatLineView>) -> Vec<ChatLineView> {
+    if new.len() < old.len() { old.to_vec() } else { new }
+}
+
 /// Marks the chat closed to the user.
 fn close_chat(target: &Target, view: &Mutex<WatchView>) {
     let mut v = lock(view);
@@ -1273,7 +1280,7 @@ async fn follow_chat(mut server: GameServer, target: Target, generation: u64, vi
             Ok(state) => {
                 backoff = Duration::from_secs(1);
                 let mut v = lock(&view);
-                let (chat, away) = (chat_view(&state.chat), away(&state));
+                let (chat, away) = (kept_chat(&v.chat, chat_view(&state.chat)), away(&state));
                 if (&v.chat, v.away) != (&chat, away) {
                     v.chat = chat;
                     v.away = away;
@@ -1541,6 +1548,17 @@ mod tests {
 
     const SETUPS: &str = "1w Ra1 Rb1 Rc1 Dd1 Re1 Rf1 Dg1 Rh1 Ra2 Mb2 Cc2 Hd2 Ee2 Cf2 Hg2 Rh2%13\
         1b rh7 ra7 rh8 rg8 rf8 rc8 rb8 ra8 cf7 cc7 de8 dd8 hg7 hb7 me7 ed7%13";
+
+    #[test]
+    fn chat_history_survives_a_state_without_it() {
+        let line = |t: &str| ChatLineView { side: Some(Color::Silver), label: None, text: t.into() };
+        let shown = vec![line("gg"), line("thanks")];
+        // A finished game's page has no chat; the lines shown stay.
+        assert_eq!(kept_chat(&shown, chat_view("")), shown);
+        assert_eq!(kept_chat(&shown, vec![line("gg")]), shown);
+        let more = vec![line("gg"), line("thanks"), line("bye")];
+        assert_eq!(kept_chat(&shown, more.clone()), more);
+    }
 
     /// A `gamestate` reply in ASIP 1.0's `key=value` form.
     fn state(moves: &str, extra: &str) -> GameState {
