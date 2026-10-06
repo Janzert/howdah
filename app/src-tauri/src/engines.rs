@@ -99,6 +99,7 @@ fn default_engines() -> Vec<EngineSpec> {
             args: Vec::new(),
             working_dir: None,
             options: Vec::new(),
+            installed: None,
         })
         .into_iter()
         .collect()
@@ -138,6 +139,7 @@ mod tests {
             args: vec![],
             working_dir: None,
             options: Vec::new(),
+            installed: None,
         }
     }
 

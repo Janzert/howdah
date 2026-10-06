@@ -99,12 +99,16 @@ LDC).
   `python3 -m pyrimaa.simple_engine` with the AEI checkout as the working
   directory. Good for integration tests.
 
-## Engine manifests (design, 2026-10-06)
+## Engine manifests (2026-10-06)
 
 Howdah doesn't bundle engines. Each engine release publishes a manifest
 (AEI's `ENGINE_MANIFEST.md`: downloads per platform with SHA-256 digests,
 arguments, options), and Howdah installs from it. `howdah-aei`'s
-`manifest` module reads and checks manifests; the rest is planned:
+`manifest` module reads and checks manifests, and the app's
+`engine_install.rs` does the rest. Built: adding (URL or file),
+suggesting, installing, updating and removing. Not yet: the manifest's
+options in the Engines dialog's settings, and using a download-less
+manifest with a program the user picks. The design:
 
 - **Adding:** the Engines dialog adds a manifest from a URL or a file.
   Howdah keeps the manifest's contents and where it came from in its own

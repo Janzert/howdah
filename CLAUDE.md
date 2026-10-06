@@ -318,7 +318,24 @@ Howdah plays and watches games on arimaa.com.
     right after the end.
   - `engines.rs`: the engine list (`engines.json` in the app config dir).
     It defaults to the bundled `aei-test-engine` when that sits next to the
-    app binary (`cargo build -p howdah-aei --bin aei-test-engine`).
+    app binary (`cargo build -p howdah-aei --bin aei-test-engine`). An
+    engine installed from a manifest carries `EngineSpec.installed` (the
+    manifest's id and version); the Engines dialog's edit form keeps it.
+  - `engine_install.rs`: engine manifests (`howdah_aei::manifest`; plan
+    in `docs/ENGINES.md`). `EngineCatalog` keeps the added manifests and
+    where each came from in `engine-manifests.json` (config dir) and
+    suggests `SUGGESTED` (Sharp's and OpFor's GitHub
+    `releases/latest/download/engine.json`). `install` fetches this
+    platform's file (https only, redirects included, size-capped),
+    checks its SHA-256, unpacks a bare file, `zip` or `tar.gz` into a
+    staging directory (refusing paths that leave it, links and drive
+    letters; a leading `./` and pax headers are fine) and renames it to
+    `<app local data>/engines/<id>/<version>/`, marks the program
+    executable, and registers it: a new engine, or the one installed from
+    the same manifest updated (keeping its id, name and options).
+    `refresh` fetches the newest manifest from its `update_url` (or the
+    URL it came from) without installing. The dev bridge keeps both in
+    its config dir (`installed-engines/`).
   - `dto.rs` holds the view types sent to the UI, with ts-rs derives.
   - `backend.rs`: `Backend` holds the command logic, free of Tauri types.
     It holds several sessions keyed by `SessionId`, each with its own

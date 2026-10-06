@@ -7,6 +7,7 @@ pub mod backend;
 mod commands;
 mod controller;
 pub mod dto;
+pub mod engine_install;
 pub mod engines;
 pub mod gameroom;
 pub mod session;
@@ -17,6 +18,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
 use backend::{Backend, EventSink};
+use engine_install::EngineCatalog;
 use engines::EngineRegistry;
 use gameroom::SavedLogin;
 
@@ -33,8 +35,12 @@ pub fn run() {
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let registry = EngineRegistry::load(config_dir.join("engines.json"));
+            let catalog = EngineCatalog::load(
+                config_dir.join("engine-manifests.json"),
+                app.path().app_local_data_dir()?.join("engines"),
+            );
             let saved_login = SavedLogin::new(Some(config_dir.join("gameroom-login.json")));
-            app.manage(Backend::new(registry, saved_login, Arc::new(app.handle().clone())));
+            app.manage(Backend::new(registry, catalog, saved_login, Arc::new(app.handle().clone())));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -81,6 +87,11 @@ pub fn run() {
             commands::save_engine,
             commands::delete_engine,
             commands::test_engine,
+            commands::engine_catalog,
+            commands::add_engine_manifest,
+            commands::remove_engine_manifest,
+            commands::refresh_engine_manifest,
+            commands::install_engine,
             commands::gameroom_status,
             commands::gameroom_login,
             commands::gameroom_logout,

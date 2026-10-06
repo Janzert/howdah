@@ -1080,6 +1080,7 @@ mod tests {
             args: args.iter().map(|a| a.to_string()).collect(),
             working_dir: None,
             options: vec![EngineOption { name: "threads".into(), value: "2".into() }],
+            installed: None,
         }
     }
 

@@ -452,6 +452,109 @@ pub struct EngineSpec {
     /// a known engine.
     #[serde(default)]
     pub options: Vec<EngineOption>,
+    /// The manifest release it was installed from, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub installed: Option<InstalledFrom>,
+}
+
+/// Which manifest release an engine was installed from.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InstalledFrom {
+    /// The manifest's `id`.
+    pub manifest: String,
+    pub version: String,
+}
+
+/// The engine manifests the user has added, and the suggested ones not
+/// added yet.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct EngineCatalogView {
+    /// This computer's platform, as manifests name it (`linux-x86_64`).
+    pub platform: String,
+    pub manifests: Vec<ManifestView>,
+    pub suggested: Vec<SuggestedEngine>,
+}
+
+/// An engine Howdah suggests, by the URL of its newest manifest.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SuggestedEngine {
+    pub name: String,
+    pub url: String,
+}
+
+/// An engine manifest the user added.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ManifestView {
+    pub id: String,
+    pub name: String,
+    /// The release this manifest describes.
+    pub version: String,
+    pub author: Option<String>,
+    pub description: Option<String>,
+    pub homepage: Option<String>,
+    pub license: Option<String>,
+    /// Where it was fetched from (none for a file).
+    pub source: Option<String>,
+    /// Whether it says where updates are (or came from a URL).
+    pub updatable: bool,
+    /// Whether it has a download for this computer.
+    pub downloadable: bool,
+    /// The version installed from it, and that engine's id.
+    pub installed_version: Option<String>,
+    pub engine_id: Option<String>,
+    pub options: Vec<ManifestOptionView>,
+}
+
+/// An option a manifest describes.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ManifestOptionView {
+    pub name: String,
+    /// `check`, `spin`, `float`, `combo`, `string`, `file`, `path` or `button`.
+    pub kind: String,
+    /// The default as `setoption` would send it.
+    pub default: Option<String>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub choices: Vec<String>,
+    pub description: Option<String>,
+}
+
+impl From<&howdah_aei::manifest::OptionSpec> for ManifestOptionView {
+    fn from(o: &howdah_aei::manifest::OptionSpec) -> Self {
+        use howdah_aei::manifest::OptionKind as K;
+        let (kind, default, min, max, choices) = match &o.kind {
+            K::Check { default } => ("check", default.map(|b| b.to_string()), None, None, vec![]),
+            K::Spin { default, min, max } => {
+                ("spin", default.map(|d| d.to_string()), min.map(|x| x as f64), max.map(|x| x as f64), vec![])
+            }
+            K::Float { default, min, max } => ("float", default.map(|d| d.to_string()), *min, *max, vec![]),
+            K::Combo { default, choices } => ("combo", default.clone(), None, None, choices.clone()),
+            K::String { default } => ("string", default.clone(), None, None, vec![]),
+            K::File { default } => ("file", default.clone(), None, None, vec![]),
+            K::Path { default } => ("path", default.clone(), None, None, vec![]),
+            K::Button => ("button", None, None, None, vec![]),
+        };
+        ManifestOptionView {
+            name: o.name.clone(),
+            kind: kind.into(),
+            default,
+            min,
+            max,
+            choices,
+            description: o.description.clone(),
+        }
+    }
 }
 
 /// One engine option, as `setoption name <name> value <value>` sends it.

@@ -6,9 +6,9 @@ use tauri::State;
 
 use crate::backend::Backend;
 use crate::dto::{
-    ApiError, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay,
-    PlayerGamesView, PlayerMatchView, PositionView, PostalGameView, SessionId, SessionView, StepTarget,
-    WatchView,
+    ApiError, EngineCatalogView, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus, MatchSpec,
+    MoveReplay, PlayerGamesView, PlayerMatchView, PositionView, PostalGameView, SessionId, SessionView,
+    StepTarget, WatchView,
 };
 
 #[tauri::command]
@@ -239,6 +239,38 @@ pub fn delete_engine(state: State<Backend>, id: String) -> Result<(), ApiError> 
 #[tauri::command]
 pub async fn test_engine(spec: EngineSpec) -> Result<EngineIdentity, ApiError> {
     Backend::test_engine(&spec).await
+}
+
+#[tauri::command]
+pub fn engine_catalog(state: State<Backend>) -> EngineCatalogView {
+    state.engine_catalog()
+}
+
+#[tauri::command]
+pub async fn add_engine_manifest(
+    state: State<'_, Backend>,
+    url: Option<String>,
+    text: Option<String>,
+) -> Result<EngineCatalogView, ApiError> {
+    state.add_engine_manifest(url.as_deref(), text.as_deref()).await
+}
+
+#[tauri::command]
+pub fn remove_engine_manifest(state: State<Backend>, id: String) -> Result<EngineCatalogView, ApiError> {
+    state.remove_engine_manifest(&id)
+}
+
+#[tauri::command]
+pub async fn refresh_engine_manifest(
+    state: State<'_, Backend>,
+    id: String,
+) -> Result<EngineCatalogView, ApiError> {
+    state.refresh_engine_manifest(&id).await
+}
+
+#[tauri::command]
+pub async fn install_engine(state: State<'_, Backend>, id: String) -> Result<EngineSpec, ApiError> {
+    state.install_engine(&id).await
 }
 
 #[tauri::command]

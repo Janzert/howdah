@@ -4,6 +4,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ApiError } from './bindings/ApiError';
 import type { Color } from './bindings/Color';
+import type { EngineCatalogView } from './bindings/EngineCatalogView';
 import type { EngineIdentity } from './bindings/EngineIdentity';
 import type { EngineSpec } from './bindings/EngineSpec';
 import type { GameroomGames } from './bindings/GameroomGames';
@@ -96,6 +97,19 @@ export const api = {
   saveEngine: (spec: EngineSpec) => invoke<EngineSpec>('save_engine', { spec }),
   deleteEngine: (id: string) => invoke<void>('delete_engine', { id }),
   testEngine: (spec: EngineSpec) => invoke<EngineIdentity>('test_engine', { spec }),
+  /** The engine manifests added and suggested, with what's installed. */
+  engineCatalog: () => invoke<EngineCatalogView>('engine_catalog'),
+  /** Adds an engine manifest from its address (fetched) or a file's text. */
+  addEngineManifest: (source: { url: string } | { text: string }) =>
+    invoke<EngineCatalogView>('add_engine_manifest', {
+      url: 'url' in source ? source.url : null,
+      text: 'text' in source ? source.text : null,
+    }),
+  removeEngineManifest: (id: string) => invoke<EngineCatalogView>('remove_engine_manifest', { id }),
+  /** Fetches a manifest's newest release; nothing is installed. */
+  refreshEngineManifest: (id: string) => invoke<EngineCatalogView>('refresh_engine_manifest', { id }),
+  /** Downloads and installs a manifest's release for this computer. */
+  installEngine: (id: string) => invoke<EngineSpec>('install_engine', { id }),
   /** Who is logged in to the arimaa.com gameroom. */
   gameroomStatus: () => invoke<GameroomStatus>('gameroom_status'),
   /** Logs in to arimaa.com. An empty password uses the saved one; `remember`

@@ -28,6 +28,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use howdah_lib::backend::{Backend, EventSink};
+use howdah_lib::engine_install::EngineCatalog;
 use howdah_lib::engines::EngineRegistry;
 use howdah_lib::gameroom::SavedLogin;
 use serde_json::Value;
@@ -73,8 +74,10 @@ async fn main() {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
     let (tx, _) = broadcast::channel(1024);
     let registry = EngineRegistry::load(config_dir.join("engines.json"));
+    let catalog =
+        EngineCatalog::load(config_dir.join("engine-manifests.json"), config_dir.join("installed-engines"));
     let saved_login = SavedLogin::new(Some(config_dir.join("gameroom-login.json")));
-    let backend = Arc::new(Backend::new(registry, saved_login, Arc::new(Broadcast(tx.clone()))));
+    let backend = Arc::new(Backend::new(registry, catalog, saved_login, Arc::new(Broadcast(tx.clone()))));
     let app = App { backend, events: tx };
 
     let router =

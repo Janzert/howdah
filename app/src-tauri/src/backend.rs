@@ -29,10 +29,11 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay,
-    PlayerGamesView, PlayerMatchView, PlayerSpec, PositionView, PostalGameView, SessionId, SessionUpdate,
-    SessionView, StepTarget, WatchView,
+    AnimStep, ApiError, EngineCatalogView, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus,
+    MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec, PositionView, PostalGameView,
+    SessionId, SessionUpdate, SessionView, StepTarget, WatchView,
 };
+use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
 use crate::gameroom::{self, Gameroom, SavedLogin, WATCH_UPDATE, Watch};
 use crate::session::{AnalysisEngine, Player, Session};
@@ -125,6 +126,8 @@ pub struct Backend {
     sessions: Mutex<BTreeMap<SessionId, Arc<SessionHandle>>>,
     next_session: AtomicU32,
     engines: SharedRegistry,
+    /// Engine manifests and installing from them.
+    catalog: Arc<Mutex<EngineCatalog>>,
     gameroom: Arc<Gameroom>,
     events: Events,
 }
@@ -132,11 +135,17 @@ pub struct Backend {
 impl Backend {
     /// Creates the backend with the main session open. Needs a Tokio
     /// runtime registered with `tauri::async_runtime`.
-    pub fn new(registry: EngineRegistry, saved_login: SavedLogin, events: Events) -> Backend {
+    pub fn new(
+        registry: EngineRegistry,
+        catalog: EngineCatalog,
+        saved_login: SavedLogin,
+        events: Events,
+    ) -> Backend {
         let backend = Backend {
             sessions: Mutex::new(BTreeMap::new()),
             next_session: AtomicU32::new(MAIN_SESSION.0),
             engines: Arc::new(Mutex::new(registry)),
+            catalog: Arc::new(Mutex::new(catalog)),
             gameroom: Arc::new(Gameroom::new(saved_login, events.clone())),
             events,
         };
@@ -444,6 +453,53 @@ impl Backend {
         self.engines().delete(id)
     }
 
+    /// The engine manifests added and suggested, with what's installed.
+    pub fn engine_catalog(&self) -> EngineCatalogView {
+        let engines = self.engines().list();
+        self.catalog().view(&engines)
+    }
+
+    fn catalog(&self) -> MutexGuard<'_, EngineCatalog> {
+        self.catalog.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Adds an engine manifest from a URL (fetched) or a file's text,
+    /// replacing one with the same id.
+    pub async fn add_engine_manifest(
+        &self,
+        url: Option<&str>,
+        text: Option<&str>,
+    ) -> Result<EngineCatalogView, ApiError> {
+        match (url.filter(|u| !u.trim().is_empty()), text) {
+            (Some(url), _) => {
+                engine_install::add_url(&self.catalog, url).await?;
+            }
+            (None, Some(text)) => {
+                self.catalog().add_text(text)?;
+            }
+            (None, None) => return Err(ApiError::illegal("give a manifest's address or file")),
+        }
+        Ok(self.engine_catalog())
+    }
+
+    /// Forgets an engine manifest; an engine installed from it stays.
+    pub fn remove_engine_manifest(&self, id: &str) -> Result<EngineCatalogView, ApiError> {
+        self.catalog().remove(id)?;
+        Ok(self.engine_catalog())
+    }
+
+    /// Fetches a manifest's newest release (nothing is installed).
+    pub async fn refresh_engine_manifest(&self, id: &str) -> Result<EngineCatalogView, ApiError> {
+        engine_install::refresh(&self.catalog, id).await?;
+        Ok(self.engine_catalog())
+    }
+
+    /// Downloads and installs a manifest's release for this computer, and
+    /// adds the engine (or updates the one installed from it before).
+    pub async fn install_engine(&self, id: &str) -> Result<EngineSpec, ApiError> {
+        engine_install::install(&self.catalog, &self.engines, id).await
+    }
+
     /// Starts the engine to check it speaks AEI, and reports its identity.
     pub async fn test_engine(spec: &EngineSpec) -> Result<EngineIdentity, ApiError> {
         engines::probe(spec).await
@@ -726,6 +782,18 @@ impl Backend {
             "save_engine" => ok(self.save_engine(arg(args, "spec")?)?),
             "delete_engine" => ok(self.delete_engine(&arg::<String>(args, "id")?)?),
             "test_engine" => ok(Backend::test_engine(&arg(args, "spec")?).await?),
+            "engine_catalog" => ok(self.engine_catalog()),
+            "add_engine_manifest" => ok(self
+                .add_engine_manifest(
+                    arg::<Option<String>>(args, "url")?.as_deref(),
+                    arg::<Option<String>>(args, "text")?.as_deref(),
+                )
+                .await?),
+            "remove_engine_manifest" => ok(self.remove_engine_manifest(&arg::<String>(args, "id")?)?),
+            "refresh_engine_manifest" => {
+                ok(self.refresh_engine_manifest(&arg::<String>(args, "id")?).await?)
+            }
+            "install_engine" => ok(self.install_engine(&arg::<String>(args, "id")?).await?),
             "gameroom_status" => ok(self.gameroom_status()),
             "gameroom_login" => ok(self
                 .gameroom_login(
@@ -836,7 +904,9 @@ mod tests {
     fn backend(events: Events) -> Backend {
         runtime();
         let path = std::env::temp_dir().join(format!("arimaa-backend-test-{}.json", std::process::id()));
-        Backend::new(EngineRegistry::load(path), SavedLogin::new(None), events)
+        let catalog =
+            EngineCatalog::load(path.with_extension("manifests.json"), path.with_extension("engines"));
+        Backend::new(EngineRegistry::load(path), catalog, SavedLogin::new(None), events)
     }
 
     #[test]
