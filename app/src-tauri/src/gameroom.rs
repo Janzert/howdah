@@ -199,10 +199,10 @@ impl Gameroom {
         GameroomStatus { username: lock(&self.username).clone(), saved_username: self.saved.username() }
     }
 
-    /// Logs in (the browser client's way), ending any earlier login. An
-    /// empty password uses the saved one for that username. With
-    /// `remember`, a successful login is saved; without, any saved login is
-    /// forgotten.
+    /// Logs in (the browser client's way), ending another user's earlier
+    /// login ([`ends_old_login`]). An empty password uses the saved one for
+    /// that username. With `remember`, a successful login is saved; without,
+    /// any saved login is forgotten.
     pub async fn login(
         &self,
         username: &str,
@@ -220,7 +220,10 @@ impl Gameroom {
         let mut lobby = new_lobby(&self.http);
         lobby.login(username, &password).await.map_err(net_error)?;
         let mut slot = self.lobby.lock().await;
-        if let Some(mut old) = slot.replace(lobby) {
+        let old_user = lock(&self.username).clone();
+        if let Some(mut old) = slot.replace(lobby)
+            && ends_old_login(old_user.as_deref(), username)
+        {
             let _ = old.logout().await;
         }
         *lock(&self.username) = Some(username.to_string());
@@ -355,6 +358,15 @@ fn recent_view(g: RecentGame) -> RecentGameView {
         moves: g.moves,
         ended_ms: g.ended.and_then(|t| u64::try_from(t).ok()).map(|t| t * 1000),
     }
+}
+
+/// Whether logging in as `new_user` should log the previous login
+/// (`old_user`'s) out. Not for the same user: an arimaa.com logout ends
+/// every lobby login of the account, so it would end the new one too. The
+/// old session is just dropped. Names are compared ignoring case, since a
+/// wrong "different user" logs the user out.
+fn ends_old_login(old_user: Option<&str>, new_user: &str) -> bool {
+    old_user.is_some_and(|old| !old.eq_ignore_ascii_case(new_user))
 }
 
 /// A lobby that logs in with the computer's time zone, so the gameroom's
@@ -1013,6 +1025,14 @@ mod tests {
         assert_eq!(saved.load(), Some(("alice".into(), "secret".into())));
         saved.forget();
         assert_eq!(saved.username(), None);
+    }
+
+    #[test]
+    fn a_new_login_logs_out_only_another_users_login() {
+        assert!(ends_old_login(Some("alice"), "bob"));
+        assert!(!ends_old_login(Some("alice"), "alice"));
+        assert!(!ends_old_login(Some("Alice"), "alice"));
+        assert!(!ends_old_login(None, "alice"));
     }
 
     #[test]
