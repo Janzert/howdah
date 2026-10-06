@@ -27,7 +27,8 @@ pub struct PastGame {
     /// The players' ratings now (the page doesn't give the game's).
     pub ratings: [Option<String>; 2],
     pub time_control: Option<String>,
-    /// Whether it was rated (an `R` before the time control).
+    /// Whether it was rated (an `R`, in bold on newer pages, before the
+    /// time control).
     pub rated: bool,
     pub winner: Option<Color>,
     /// The reason letter, as the server writes it.
@@ -246,7 +247,7 @@ mod tests {
 <br>1825 &nbsp; US
   </td>
   <td align=center>
-    <font size=1> R 15s/1/100/2/2</font><br>
+    <font size=1><b>R</b> 15s/1/100/2/2</font><br>
 <table background="/arimaa/graphics/BoardWithPiecesIcon2.jpg" width=50 height=50 border=0 cellspacing=0 cellpadding=0>
   <tr>
     <td >
