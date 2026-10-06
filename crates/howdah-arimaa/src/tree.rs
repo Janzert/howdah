@@ -9,7 +9,7 @@
 use crate::error::GameError;
 use crate::game::{Game, Move, build_turn};
 use crate::notation::{self, MoveBody};
-use crate::outcome::{GameResult, outcome_after_turn, outcome_with_history};
+use crate::outcome::{GameResult, only_repetitions, outcome_after_turn, outcome_with_history};
 use crate::position::Position;
 use crate::setup::{Placement, apply_setup};
 use crate::turn::{Turn, TurnBuilder};
@@ -412,6 +412,14 @@ impl GameTree {
             .map(|n| &n.position)
     }
 
+    /// Whether the side to move at `node` has legal moves but every one
+    /// would be a third repetition, whether or not the tree counts that as
+    /// a loss (a server's game may go on with the player unable to move).
+    pub fn only_repetitions(&self, node: NodeId) -> bool {
+        self.node(node)
+            .is_some_and(|n| n.ply >= 2 && only_repetitions(&n.position, self.repetition_history(node)))
+    }
+
     /// How the game ends after `turn` from `parent`, if it does: the
     /// position's results, and (unless turned off) the opponent left with
     /// only third repetitions.
@@ -651,6 +659,9 @@ mod tests {
         assert_eq!(server.outcome_after(at, &turn), None);
         let played = server.add_turn(at, turn.clone()).unwrap();
         assert_eq!(server[played].result(), None);
+        // The game goes on, with silver unable to move.
+        assert!(server.only_repetitions(played));
+        assert!(!server.only_repetitions(at), "gold can move");
         let played = t.add_turn(at, turn).unwrap();
         assert_eq!(t[played].result(), lost);
     }

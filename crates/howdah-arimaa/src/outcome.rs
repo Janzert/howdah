@@ -142,7 +142,7 @@ pub fn outcome_with_history<'a>(
 
 /// True if the side to move in `pos` has legal moves but every one would
 /// be a third repetition: its end is already in `history` twice.
-fn only_repetitions<'a>(pos: &Position, history: impl IntoIterator<Item = &'a Position>) -> bool {
+pub(crate) fn only_repetitions<'a>(pos: &Position, history: impl IntoIterator<Item = &'a Position>) -> bool {
     // Turn ends have the other side to move.
     let mut counts: HashMap<&Position, u32> = HashMap::new();
     for p in history.into_iter().filter(|p| p.side_to_move() != pos.side_to_move()) {

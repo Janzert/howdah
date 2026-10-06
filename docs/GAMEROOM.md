@@ -93,8 +93,12 @@ architecture. Decided and checked against the live server in October 2026.
   running, and Play under the user's games takes the seat again.
 - **Results** are the server's. A player left with only third
   repetitions loses in Howdah's own games, but arimaa.com probably
-  doesn't check that, so in its games Howdah doesn't apply it either (the
-  stuck player's clock runs out instead).
+  doesn't check that, so in its games Howdah doesn't apply it either.
+  The server does refuse a third repetition itself ("Bad Move: position
+  repeats for the 3rd time"), counting from the position after the
+  setups as Howdah does. So a player left with only repetitions can't
+  move, and the panel says so (`SessionView.stuck`): at the user's seat,
+  that they can only resign or let the clock run out.
 - **Time.** The server flags a player out of time itself (a second or so
   past the allowance) and tells both seats a few seconds later; no client
   claims a win on time. Until it does, the panel says the clock has run

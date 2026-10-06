@@ -50,7 +50,8 @@ Howdah plays and watches games on arimaa.com.
     child reuses it, repetition counts only the path to the node
     (`set_repetition_immobilization(false)` leaves the repetition loss
     out; the session does that for a server's game, whose results are the
-    server's), and
+    server's, and shows a side left with only repetitions there as
+    `SessionView.stuck`, from `only_repetitions`), and
     `from_game`/`to_game`/`main_game` convert to and from `Game`. Nodes
     carry an `Annotation` (comment, variation intro and PGN-numbered
     `Glyph`s). The session keeps its game as one. Comments can hold PGN

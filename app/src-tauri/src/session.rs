@@ -470,6 +470,14 @@ impl Session {
         self.matchup.as_ref().map_or_else(|| self.line_end(), |m| m.live)
     }
 
+    /// The side to move at the live node of a server's game, if every move
+    /// it has would be a third repetition.
+    fn stuck(&self) -> Option<Color> {
+        let live = self.live();
+        (self.server_game() && self.live_result().is_none() && self.tree.only_repetitions(live))
+            .then(|| self.tree[live].position().side_to_move())
+    }
+
     fn live_result(&self) -> Option<GameResult> {
         self.tree[self.live()].result()
     }
@@ -2050,6 +2058,7 @@ impl Session {
             live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
             analysis_engine: self.analysis.as_ref().map(|a| a.id.clone()),
             analysis_allowed: self.analysis_allowed(),
+            stuck: self.stuck(),
             stored_analysis: self.evals.get(&self.cursor_node()).cloned(),
         }
     }

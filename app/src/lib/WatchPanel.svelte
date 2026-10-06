@@ -68,6 +68,21 @@
       {sideName(flagged)}'s time is up; waiting for arimaa.com to end the game
     </div>
   {/if}
+  {#if view.stuck && watch.state !== 'ended'}
+    <!-- Every move would be a third repetition, which the rules (and
+         arimaa.com) refuse; the server may not end the game for it. -->
+    {#if view.stuck === watch.side}
+      <div class="note warn" role="alert">
+        Every move you have would repeat a position for the third time, so you can't move. That loses by the
+        rules, but arimaa.com may not end the game for it: resign, or your clock runs out.
+      </div>
+    {:else}
+      <div class="note" role="status">
+        {sideName(view.stuck)} can't move: every move would repeat a position for the third time. If arimaa.com
+        doesn't end the game, it ends when {sideName(view.stuck)}'s clock runs out.
+      </div>
+    {/if}
+  {/if}
   {#if watch.refused}<div class="note warn" role="alert">{watch.refused}</div>{/if}
   {#if playing && view.sent != null}<div class="note" role="status">Sending your move…</div>{/if}
   {#if watch.waiting && watch.state !== 'stopped'}

@@ -139,6 +139,12 @@ analysisEngine: string | null,
  */
 analysisAllowed: boolean, 
 /**
+ * In a server's game, the side to move when its every move would be a
+ * third repetition: it can't move, but the server may not end the
+ * game (Howdah doesn't, there; the side's clock runs out instead).
+ */
+stuck: Color | null, 
+/**
  * What analysis found at the shown node earlier, if anything, so the
  * eval shows at once while the new search starts.
  */
