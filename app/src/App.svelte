@@ -454,7 +454,14 @@
 <main>
   <section class="board-area">
     {#if view}
-      <PlayerBar {view} side={flipped ? 'gold' : 'silver'} {receivedAt} {now} {theme} />
+      <PlayerBar
+        {view}
+        side={flipped ? 'gold' : 'silver'}
+        {receivedAt}
+        {now}
+        {theme}
+        away={watch?.away[flipped ? 0 : 1] ?? false}
+      />
     {/if}
     <div class="board-wrap" class:with-bar={analysing}>
       {#if analysing}
@@ -490,7 +497,14 @@
       </div>
     </div>
     {#if view}
-      <PlayerBar {view} side={flipped ? 'silver' : 'gold'} {receivedAt} {now} {theme} />
+      <PlayerBar
+        {view}
+        side={flipped ? 'silver' : 'gold'}
+        {receivedAt}
+        {now}
+        {theme}
+        away={watch?.away[flipped ? 1 : 0] ?? false}
+      />
     {/if}
     <!-- The game's chat, below the board as in the arimaa.com web client. -->
     {#if view && watch && (watch.side != null || watch.chat.length > 0)}

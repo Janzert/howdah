@@ -32,6 +32,11 @@ side: Color | null,
  */
 postal: boolean, 
 /**
+ * Whether gold and silver have left the table (the server says so;
+ * their clocks keep running).
+ */
+away: [boolean, boolean], 
+/**
  * Whether the user's seat waits for an opponent to sit down. Their
  * first move is held until then.
  */

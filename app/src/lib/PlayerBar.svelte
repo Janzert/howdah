@@ -15,8 +15,10 @@
     /** Current `performance.now()`, updated by the parent's ticker. */
     now: number;
     theme: Theme;
+    /** The player has left the table (an arimaa.com game). */
+    away?: boolean;
   }
-  let { view, side, receivedAt, now, theme }: Props = $props();
+  let { view, side, receivedAt, now, theme, away = false }: Props = $props();
 
   const player = $derived(view.players?.[side]);
   const clock = $derived(view.clock);
@@ -63,6 +65,7 @@
     {player?.name ?? view.tagNames[side === 'gold' ? 0 : 1] ?? (side === 'gold' ? 'Gold' : 'Silver')}
     {#if rating}<span class="rating" title="Rating">{rating}</span>{/if}
     {#if player?.kind === 'engine'}<span class="tag">engine</span>{/if}
+    {#if away}<span class="tag away" title="Not at the table on arimaa.com; the clock keeps running">away</span>{/if}
   </span>
   {#if thinking}<span class="thinking">thinking…</span>{/if}
   {#if captured.length > 0}
@@ -115,6 +118,9 @@
   }
   .name {
     font-weight: 600;
+  }
+  .tag.away {
+    color: var(--warn);
   }
   .rating {
     font-size: 12px;

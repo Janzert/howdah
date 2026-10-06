@@ -123,6 +123,12 @@ pub struct GameState {
     pub role: Option<Role>,
     /// Gold's and silver's usernames, without the `* ` annotation.
     pub players: [Option<String>; 2],
+    /// Whether each player is at the table (`wpresent`/`bpresent`: when
+    /// they sat, `0` once they've left), where the state says. A seat is
+    /// present while it has a long poll open or makes requests: `leave`
+    /// or a closed poll connection clears it within seconds, and any
+    /// request from the seat brings it back.
+    pub present: [Option<bool>; 2],
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
@@ -169,6 +175,7 @@ impl GameState {
         GameState {
             role: raw.str("role").as_deref().and_then(Role::from_letter),
             players: [player("wplayer"), player("bplayer")],
+            present: ["wpresent", "bpresent"].map(|k| raw.int(k).map(|t| t > 0)),
             time_control,
             rated: raw.flag("rated") || rated_tc,
             postal: raw.flag("postal"),
@@ -261,6 +268,14 @@ mod tests {
         assert_eq!(split_moves(text), ["Ra1 Rb1", "ra8 rb8", "Ee2n Ee3n"]);
         assert_eq!(split_moves("1g Ra1\n1s ra8"), ["Ra1", "ra8"]);
         assert!(split_moves("").is_empty());
+    }
+
+    #[test]
+    fn presence() {
+        let s = GameState::from_record(Record::decode("wpresent=1791308328\nbpresent=0\n").unwrap());
+        assert_eq!(s.present, [Some(true), Some(false)]);
+        let none = GameState::from_record(Record::decode("turn=w\n").unwrap());
+        assert_eq!(none.present, [None, None]);
     }
 
     #[test]

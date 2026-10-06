@@ -374,7 +374,9 @@ Sharp, OpFor and other AEI engines behave.
     shows the followed game's state (spectators don't get the chat),
     "<Side>'s time is up; waiting for arimaa.com to end the game" while
     a clock shows zero and the server hasn't flagged it yet (it checks
-    every few seconds),
+    every few seconds), "Your opponent has left the table" while the
+    server says so (`WatchView.away`, from `GameState.present`; the
+    player bars show "away" too),
     "Waiting for an opponent" with Cancel game while the user's seat
     waits, and,
     at a player's seat, "Ask for takeback" or Accept/Decline for the

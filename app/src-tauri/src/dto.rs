@@ -762,6 +762,9 @@ pub struct WatchView {
     pub side: Option<Color>,
     /// Whether it's a postal game (moves days apart).
     pub postal: bool,
+    /// Whether gold and silver have left the table (the server says so;
+    /// their clocks keep running).
+    pub away: [bool; 2],
     /// Whether the user's seat waits for an opponent to sit down. Their
     /// first move is held until then.
     pub waiting: bool,

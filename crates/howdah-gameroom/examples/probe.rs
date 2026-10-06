@@ -35,6 +35,8 @@
 //!                            opengamewin.cgi way), asip1 or asip2 (reserveseat
 //!                            and sit over that version; the browser login gives
 //!                            no grid, so pass the room's, 3)
+//! stop NAME                  stop long-polling seat NAME without leaving
+//!                            (as a closed window or a lost network would)
 //! NAME ACTION [ARGS]         act at seat NAME: start (startgame), move TEXT,
 //!                            resign, takeback, reply yes|no, chat TEXT, leave,
 //!                            state (a gamestate), raw ACTION [k=v ...]
@@ -315,6 +317,13 @@ async fn play(lobby: &mut Lobby, http: Http, user: &str, password: &str) -> Resu
         let result: Result<(), Error> = async {
             match words.as_slice() {
                 ["quit"] => return Err(Error::Server("quit".into())),
+                ["stop", name] => match seats.get(*name) {
+                    Some((_, poller)) => {
+                        poller.abort();
+                        println!("  stopped polling {name}");
+                    }
+                    None => println!("  no seat {name}"),
+                },
                 ["sleep", secs] => {
                     tokio::time::sleep(Duration::from_secs_f64(secs.parse().unwrap_or(1.0))).await
                 }

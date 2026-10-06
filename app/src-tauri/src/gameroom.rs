@@ -609,6 +609,7 @@ async fn begin(
         event: state.raw.nonempty("event"),
         side: None,
         postal: state.postal,
+        away: [false; 2],
         waiting: false,
         refused: None,
         chat: Vec::new(),
@@ -775,6 +776,7 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
     let mut v = lock(view);
     let before = v.clone();
     v.waiting = waiting(v.side, state);
+    v.away = state.present.map(|p| p == Some(false));
     v.chat = parse_chat(&state.chat)
         .into_iter()
         .map(|l| ChatLineView { side: l.side, label: l.label, text: l.text })
