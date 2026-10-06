@@ -19,9 +19,12 @@
 //! side is remote, the server is. The played moves are exactly the
 //! server's, the clocks show the times it reports (`set_remote_clock`),
 //! and only it ends the game on time or the turn limit (`finish_remote`).
-//! Nothing played here goes into the game directly: a human's move stays
-//! a plan, and no engine is asked to move, until sending moves to the
-//! server is built (use case 2).
+//! Nothing played here goes into the game directly. A human's move at the
+//! live node is *sent* instead ([`Session::outgoing_move`]): it's added
+//! to the tree as the main continuation and shown, and played only when
+//! the server's list has it. If the server refuses it
+//! ([`Session::move_refused`]), it stays as a plan. No engine is asked to
+//! move in such a game yet.
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -107,6 +110,9 @@ struct Match {
     /// The clocks when each live node's turn began, so a takeback can
     /// restore them.
     turn_starts: HashMap<NodeId, TurnStart>,
+    /// In a game with a remote side, the human's move sent to the server
+    /// and not yet in its list: a child of the live node.
+    outgoing: Option<NodeId>,
 }
 
 /// The clocks at the start of a turn.
@@ -144,6 +150,18 @@ pub struct RemoteClock {
     pub turn_elapsed: Duration,
     /// Time since the game started, when the game has a time limit.
     pub game_elapsed: Option<Duration>,
+}
+
+/// A human's move waiting to be sent to (or confirmed by) the server, in a
+/// game with a remote side.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutgoingMove {
+    pub generation: u64,
+    pub node: NodeId,
+    /// The ply the move is played at (the live node's).
+    pub ply: usize,
+    /// The move in notation, captures included, as the server wants it.
+    pub text: String,
 }
 
 /// What the controller needs to ask an engine for a move.
@@ -392,10 +410,11 @@ impl Session {
     }
 
     /// Whether committing now plays a move in the match (a human's turn at
-    /// the live node), rather than adding a variation. Never in a game
-    /// with a remote side: its moves come only from the server.
+    /// the live node), rather than adding a variation. In a game with a
+    /// remote side the move is sent to the server instead, and only one
+    /// can be on its way.
     pub fn plays_live(&self) -> bool {
-        self.matchup.as_ref().is_some_and(|m| !m.server_clock())
+        self.matchup.as_ref().is_some_and(|m| m.outgoing.is_none())
             && self.cursor_node() == self.live()
             && self.live_result().is_none()
             && *self.player(self.live_side()) == Player::Human
@@ -528,6 +547,7 @@ impl Session {
             last_move_time: None,
             takebacks,
             turn_starts: HashMap::new(),
+            outgoing: None,
         };
         matchup.turn_starts.insert(GameTree::ROOT, matchup.turn_start(now));
         self.replace(GameTree::new(), Vec::new(), GameTree::ROOT, Some(matchup));
@@ -772,7 +792,9 @@ impl Session {
         }
         let old_live = m.live;
         let path = self.tree.path(old_live);
-        let following = self.cursor_node() == old_live;
+        // Showing the live position, or the user's move on its way there.
+        let shown = self.cursor_node();
+        let following = shown == old_live || m.outgoing == Some(shown);
         let refuse = |i: usize, e: GameError| ApiError::state(format!("server move {}: {e}", i + 1));
         // How many of the server's moves the played line already has.
         let mut agree = 0;
@@ -811,18 +833,67 @@ impl Session {
             self.after_move(mover, ply);
             added += 1;
         }
+        let live = self.live();
+        let finished = self.live_result().is_some();
+        if let Some(m) = &mut self.matchup
+            && m.outgoing.is_some_and(|o| finished || self.tree[o].parent() != Some(live))
+        {
+            m.outgoing = None;
+        }
         let mut anim = Vec::new();
-        if following {
+        if following && live == shown {
+            // The user's own move came back: the board already shows it.
+            self.refresh();
+        } else if following {
             self.turn = None;
-            let live = self.live();
             self.show(live);
-            if agree + 1 == path.len() && added == 1 && refused.is_none() {
+            if self.tree[live].parent() == Some(shown) && added > 0 && refused.is_none() {
                 anim = self.move_animation(self.tree[live].ply() - 1);
             }
         } else {
             self.refresh();
         }
         refused.map_or(Ok(anim), Err)
+    }
+
+    /// Whether the match has a remote side, so the server plays the moves.
+    fn server_game(&self) -> bool {
+        self.matchup.as_ref().is_some_and(Match::server_clock)
+    }
+
+    /// Marks `node`, the human's move after the live node, as sent to the
+    /// server, and makes it the main continuation.
+    fn send(&mut self, node: NodeId) {
+        self.tree.make_first(node).expect("the node exists");
+        if let Some(m) = &mut self.matchup {
+            m.outgoing = Some(node);
+        }
+    }
+
+    /// The human's move to send to the server, in a game with a remote
+    /// side, until the server's list has it.
+    pub fn outgoing_move(&self) -> Option<OutgoingMove> {
+        let node = self.matchup.as_ref()?.outgoing?;
+        Some(OutgoingMove {
+            generation: self.generation,
+            node,
+            ply: self.tree[node].ply() - 1,
+            text: self.tree[node].mv()?.notation(),
+        })
+    }
+
+    /// The server refused the outgoing move `node`: it's no longer on its
+    /// way, and stays in the tree as a plan (Enter sends it again).
+    pub fn move_refused(&mut self, generation: u64, node: NodeId) -> Result<(), ApiError> {
+        let Some(m) = self.matchup.as_mut().filter(|m| m.outgoing == Some(node)) else {
+            return Err(ApiError::state("no such move on its way to the server"));
+        };
+        if generation != self.generation {
+            return Err(ApiError::state("stale move"));
+        }
+        m.outgoing = None;
+        self.refresh();
+        Ok(())
     }
 
     /// Sets the clocks to what the server reports, in a game with a remote
@@ -856,6 +927,9 @@ impl Session {
     ) -> Result<(), ApiError> {
         if generation != self.generation || !self.matchup.as_ref().is_some_and(Match::server_clock) {
             return Err(ApiError::state("no game with a remote player"));
+        }
+        if let Some(m) = &mut self.matchup {
+            m.outgoing = None;
         }
         match self.live_result() {
             None => self.finish(result, detail),
@@ -1446,8 +1520,11 @@ impl Session {
             return Err(e);
         }
         let (mover, ply, parent) = (turn.start.side_to_move(), self.cursor, self.cursor_node());
-        if plan || !self.plays_live() {
+        if plan || !self.plays_live() || self.server_game() {
             let node = self.tree.add_turn(parent, turn).map_err(ApiError::illegal)?;
+            if !plan && self.plays_live() {
+                self.send(node);
+            }
             self.show(node);
             return Ok(());
         }
@@ -1466,7 +1543,7 @@ impl Session {
     fn plan_to_play(&self) -> Option<NodeId> {
         let live = self.live();
         let ply = self.tree[live].ply();
-        if self.matchup.is_none()
+        if self.matchup.as_ref().is_none_or(|m| m.outgoing.is_some())
             || self.cursor <= ply
             || Game::is_setup_ply(ply)
             || self.live_result().is_some()
@@ -1481,7 +1558,10 @@ impl Session {
     fn play_plan(&mut self) -> Result<(), ApiError> {
         let Some(node) = self.plan_to_play() else { return Err(ApiError::state("no turn in progress")) };
         let (mover, ply) = (self.live_side(), self.tree[self.live()].ply());
-        if self.clock_move(Instant::now()) {
+        if self.server_game() {
+            self.send(node);
+            self.refresh();
+        } else if self.clock_move(Instant::now()) {
             self.play_live(node);
             self.after_move(mover, ply);
             self.refresh();
@@ -1523,8 +1603,11 @@ impl Session {
             return Err(ApiError::state("no setup is being arranged"));
         };
         let parent = self.cursor_node();
-        if !self.plays_live() {
+        if !self.plays_live() || self.server_game() {
             let node = self.tree.add_setup(parent, draft).map_err(ApiError::illegal)?;
+            if self.plays_live() {
+                self.send(node);
+            }
             self.show(node);
         } else if self.clock_move(Instant::now()) {
             let node = self.tree.add_setup(parent, draft).map_err(ApiError::illegal)?;
@@ -1630,6 +1713,7 @@ impl Session {
             game_comment: self.tree[GameTree::ROOT].annotation().comment_text(),
             cursor: self.cursor_node(),
             live: self.matchup.as_ref().map(|m| m.live),
+            sent: self.matchup.as_ref().and_then(|m| m.outgoing),
             ply: self.cursor,
             phase: self.phase(),
             position: position_view(&position, &ids),
@@ -2421,18 +2505,119 @@ mod tests {
         assert!(s.sync_remote(g, &sample_moves(3)).is_err(), "no moves after the end");
     }
 
-    #[test]
-    fn nothing_played_here_enters_a_remote_game() {
+    /// A human (gold) against a remote opponent, with the sample game's
+    /// setups played.
+    fn human_vs_remote() -> (Session, u64) {
         let mut s = Session::new();
         s.start_match([Player::Human, remote("opponent")], [None, None], false);
         let g = s.generation();
-        assert!(!s.plays_live() && !s.can_input(), "no setup to send yet");
+        s.sync_remote(g, &sample_moves(2)).unwrap();
+        (s, g)
+    }
+
+    /// Enters the sample game's gold move 2 (`Ee2n Ee3n Ee4n Ee5e`).
+    fn enter_gold_move(s: &mut Session) {
+        for (from, to) in [("e2", "e3"), ("e3", "e4"), ("e4", "e5"), ("e5", "f5")] {
+            s.try_step(sq(from), sq(to)).unwrap();
+        }
+        s.commit_turn(false).unwrap();
+    }
+
+    #[test]
+    fn a_humans_setup_is_sent() {
+        let mut s = Session::new();
+        s.start_match([Player::Human, remote("opponent")], [None, None], false);
+        let g = s.generation();
+        assert!(s.plays_live() && s.can_input(), "gold's setup is the human's");
+        s.commit_setup().unwrap();
+        let out = s.outgoing_move().unwrap();
+        assert_eq!((out.generation, out.ply), (g, 0));
+        assert_eq!(out.text, setup_text(Color::Gold));
+        let v = s.view();
+        assert_eq!((v.sent, v.live_ply, v.ply), (Some(out.node), Some(0), 1));
+        assert!(!s.plays_live(), "one move on its way at a time");
+        // The server's list has it: played, and nothing to animate.
+        assert!(s.sync_remote(g, &[out.text]).unwrap().is_empty());
+        let v = s.view();
+        assert_eq!((v.sent, v.live_ply, v.ply), (None, Some(1), 1));
+        assert_eq!(s.outgoing_move(), None);
+    }
+
+    #[test]
+    fn a_humans_move_is_played_when_the_server_has_it() {
+        let (mut s, g) = human_vs_remote();
+        enter_gold_move(&mut s);
+        let out = s.outgoing_move().unwrap();
+        assert_eq!((out.ply, out.text.as_str()), (2, "Ee2n Ee3n Ee4n Ee5e"));
+        let v = s.view();
+        assert_eq!((v.live_ply, v.ply, v.sent), (Some(2), 3, Some(out.node)));
+        assert_eq!(v.moves.len(), 3, "the sent move shows on the main line");
+        assert!(s.sync_remote(g, &sample_moves(2)).unwrap().is_empty(), "not yet");
+        assert_eq!(s.view().sent, Some(out.node));
+        // It comes back together with the reply: only the reply animates.
+        let anim = s.sync_remote(g, &sample_moves(4)).unwrap();
+        assert_eq!(anim.len(), 3, "silver's three steps");
+        let v = s.view();
+        assert_eq!((v.live_ply, v.ply, v.sent), (Some(4), 4, None));
+    }
+
+    #[test]
+    fn captures_are_sent_in_full() {
+        let (mut s, g) = human_vs_remote();
+        let mut moves = sample_moves(2);
+        // Gold's cat steps onto the f3 trap with no friend beside it.
+        s.try_step(sq("f2"), sq("f3")).unwrap();
+        s.commit_turn(false).unwrap();
+        let text = s.outgoing_move().unwrap().text;
+        assert_eq!(text, "Cf2n Cf3x", "the server refuses a capture without its token");
+        moves.push(text);
+        s.sync_remote(g, &moves).unwrap();
+        assert_eq!(s.view().live_ply, Some(3));
+    }
+
+    #[test]
+    fn a_refused_move_becomes_a_plan() {
+        let (mut s, g) = human_vs_remote();
+        enter_gold_move(&mut s);
+        let out = s.outgoing_move().unwrap();
+        assert!(s.move_refused(g + 1, out.node).is_err(), "old game");
+        s.move_refused(g, out.node).unwrap();
+        let v = s.view();
+        assert_eq!((v.sent, v.live_ply, v.moves.len()), (None, Some(2), 3));
+        assert!(v.plan_move.is_some(), "Enter sends it again");
+        assert!(s.move_refused(g, out.node).is_err(), "no longer on its way");
+        s.commit_turn(false).unwrap();
+        assert_eq!(s.outgoing_move(), Some(out));
+    }
+
+    #[test]
+    fn the_server_playing_something_else_drops_the_sent_move() {
+        let (mut s, g) = human_vs_remote();
+        s.try_step(sq("e2"), sq("e3")).unwrap();
+        s.commit_turn(false).unwrap();
+        assert!(s.outgoing_move().is_some());
+        s.sync_remote(g, &sample_moves(3)).unwrap();
+        let v = s.view();
+        assert_eq!((v.sent, v.live_ply), (None, Some(3)));
+        assert_eq!(v.moves[2].notation, "Ee2n Ee3n Ee4n Ee5e", "the server's move");
+        // So does the game ending.
+        let (mut s, g) = human_vs_remote();
+        enter_gold_move(&mut s);
+        let result = GameResult { winner: Color::Silver, reason: WinReason::Timeout };
+        s.finish_remote(g, result, None).unwrap();
+        assert_eq!(s.outgoing_move(), None);
+    }
+
+    #[test]
+    fn nothing_played_here_enters_a_watched_game() {
+        let mut s = Session::new();
+        s.start_match([remote("a"), remote("b")], [None, None], false);
+        let g = s.generation();
         s.sync_remote(g, &sample_moves(2)).unwrap();
         s.try_step(sq("e2"), sq("e3")).unwrap();
         s.commit_turn(false).unwrap();
         let v = s.view();
-        assert_eq!(v.live_ply, Some(2), "the human's move is a plan");
-        assert_eq!(v.moves.len(), 3);
+        assert_eq!((v.live_ply, v.sent), (Some(2), None), "the move is a plan");
         let mut e = Session::new();
         e.start_match([engine("bot"), remote("opponent")], [None, None], false);
         assert_eq!(e.engine_turn(), None, "no engine moves without the server");

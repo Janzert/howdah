@@ -161,8 +161,14 @@ Sharp, OpFor and other AEI engines behave.
       back (a takeback on the server). With a remote side the server keeps
       the clock (`Match::server_clock`): `set_remote_clock` sets it,
       `finish_remote` ends the game, and the session never flags time or
-      the turn limit itself. Sending a human's move to the server is still
-      to come (use case 2).
+      the turn limit itself. A human's move at the live node in such a
+      game is *sent*, not played (`Match::outgoing`, `SessionView.sent`):
+      it becomes the main continuation and is shown, `outgoing_move()`
+      gives it (with capture tokens) to whoever talks to the server, and
+      `sync_remote` plays it once the server's list has it. Only one move
+      is on its way at a time; a different server move or the game's end
+      drops it, and `move_refused` turns it back into a plan (Enter
+      resends it).
   - `controller.rs`: a background coordinator task per session, plus one
     actor task per engine process. `Controller::shutdown` ends it when its
     session closes, which quits its engines.

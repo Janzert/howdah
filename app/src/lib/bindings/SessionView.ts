@@ -35,6 +35,11 @@ cursor: NodeId,
  */
 live: NodeId | null, 
 /**
+ * In a game with a remote side, the user's move sent to the server
+ * and not yet played there (a child of `live`).
+ */
+sent: NodeId | null, 
+/**
  * Ply being shown (0 = empty board, `moves.len()` = latest).
  */
 ply: number, phase: Phase, 

@@ -185,6 +185,9 @@ pub struct SessionView {
     pub cursor: NodeId,
     /// In a match, the live node: the end of the game being played.
     pub live: Option<NodeId>,
+    /// In a game with a remote side, the user's move sent to the server
+    /// and not yet played there (a child of `live`).
+    pub sent: Option<NodeId>,
     /// Ply being shown (0 = empty board, `moves.len()` = latest).
     pub ply: usize,
     pub phase: Phase,
