@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from './api';
+  import { turnTimeLeft } from './clock';
   import type { SessionView } from './bindings/SessionView';
   import type { WatchView } from './bindings/WatchView';
 
@@ -7,8 +8,20 @@
     watch: WatchView;
     view: SessionView;
     run: (p: Promise<unknown>) => Promise<boolean>;
+    /** When `view` arrived and the time now (`performance.now()`), for
+     * the running clock. */
+    receivedAt: number;
+    now: number;
   }
-  let { watch, view, run }: Props = $props();
+  let { watch, view, run, receivedAt, now }: Props = $props();
+
+  /** The side whose clock has run out, while the server hasn't ended the
+   * game yet: it flags time itself, but only checks every few seconds. */
+  const flagged = $derived.by(() => {
+    const clock = view.clock;
+    if (!clock?.running || view.result || watch.state === 'ended') return null;
+    return turnTimeLeft(clock, now - receivedAt) <= 0 ? clock.running : null;
+  });
 
   const sideName = (c: 'gold' | 'silver') => (c === 'gold' ? 'Gold' : 'Silver');
   let takeback = $derived(view.takeback);
@@ -45,6 +58,11 @@
   </div>
   {#if watch.event}<div class="note">{watch.event}</div>{/if}
   {#if watch.detail}<div class="note">{watch.detail}</div>{/if}
+  {#if flagged}
+    <div class="note" role="status">
+      {sideName(flagged)}'s time is up; waiting for arimaa.com to end the game
+    </div>
+  {/if}
   {#if watch.refused}<div class="note warn" role="alert">{watch.refused}</div>{/if}
   {#if playing && view.sent != null}<div class="note" role="status">Sending your move…</div>{/if}
   {#if watch.waiting && watch.state !== 'stopped'}
