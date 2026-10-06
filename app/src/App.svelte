@@ -38,6 +38,7 @@
   import type { WatchView } from './lib/bindings/WatchView';
   import WatchDialog from './lib/WatchDialog.svelte';
   import WatchPanel from './lib/WatchPanel.svelte';
+  import { myTurn, newOpponentChat } from './lib/gameroom';
 
   function pref(key: string): string | null {
     try {
@@ -74,6 +75,9 @@
    * already announced. */
   let invitationCount = $state(0);
   const seenInvitations = new Set<string>();
+  /** The user's postal games waiting on their move (from the lobby
+   * watcher), by gid. */
+  let postalTurns = $state<string[]>([]);
   // The game-end dialog waits for the final move's animation.
   let gameEndPending = $state(false);
   let showGameEnd = $state(false);
@@ -245,7 +249,11 @@
       }
     });
     const unlistenAnalysis = on('analysis://update', (u) => (analysis = u));
-    const unlistenWatch = on('gameroom://watch', (w) => (watch = w.state === 'stopped' ? null : w));
+    const unlistenWatch = on('gameroom://watch', (w) => {
+      const chat = newOpponentChat(watch, w);
+      watch = w.state === 'stopped' ? null : w;
+      if (chat.length > 0) requestAttention('New chat');
+    });
     const unlistenLobby = on('gameroom://lobby', lobbyGames);
     const unlistenInvitation = on('gameroom://invitation', (a) => {
       if (a.outcome.kind === 'accepted') {
@@ -279,8 +287,8 @@
     };
   });
 
-  /** Counts the invitations to the user in the lobby's lists, and
-   * announces new ones. */
+  /** Counts the invitations to the user and their postal games waiting on
+   * their move in the lobby's lists, and announces new ones. */
   function lobbyGames(g: GameroomGames) {
     const incoming = g.invitations.filter((i) => i.incoming);
     const fresh = incoming.filter((i) => !seenInvitations.has(i.created));
@@ -290,7 +298,34 @@
       flash(`${fresh[0].opponent ?? 'Someone'} invites you to a game (arimaa.com)`);
       requestAttention('Invitation');
     }
+    // The game this window plays doesn't count; its own alerts cover it.
+    const turns = g.mine.filter((m) => m.postal && myTurn(m, g.user) && m.gid !== watch?.gid).map((m) => m.gid);
+    const newTurns = turns.filter((gid) => !postalTurns.includes(gid));
+    postalTurns = turns;
+    if (newTurns.length > 0 && fresh.length === 0 && !showWatch) {
+      flash(
+        newTurns.length === 1
+          ? 'A postal game waits on your move (arimaa.com)'
+          : `${newTurns.length} postal games wait on your move (arimaa.com)`,
+      );
+      requestAttention('Your postal move');
+    }
   }
+
+  /** A new open game on arimaa.com with the time control and rating of
+   * the online game the user just played, as `side`. */
+  function newOnlineGame(side: Color, timeControl: string, rated: boolean): Promise<string | null> {
+    return openGameroomGame(() => api.createGameroomGame(side, timeControl, rated));
+  }
+
+  /** The user's finished online game, for a new game like it. */
+  const playedOnline = $derived(
+    watch?.side != null && watch.timeControl != null
+      ? { side: watch.side, timeControl: watch.timeControl, rated: watch.rated }
+      : null,
+  );
+  const sideName = (c: Color) => (c === 'gold' ? 'Gold' : 'Silver');
+  const otherSide = (c: Color): Color => (c === 'gold' ? 'silver' : 'gold');
 
   /** In a match, showing something other than the live position. */
   function awayFromLive(v: SessionView): boolean {
@@ -600,7 +635,10 @@
     <div class="tools">
       <button onclick={() => (showNewGame = true)}>New game</button>
       <button onclick={() => (showWatch = true)} title="Play or watch games on arimaa.com, or open finished ones">
-        arimaa.com{#if invitationCount > 0}<span class="badge" title="Invitations to you">{invitationCount}</span>{/if}
+        arimaa.com{#if invitationCount > 0}<span class="badge" title="Invitations to you">{invitationCount}</span>{/if}{#if postalTurns.length > 0}<span
+            class="badge"
+            title="Postal games waiting on your move">{postalTurns.length}</span
+          >{/if}
       </button>
       <button onclick={() => (showEngines = true)}>Engines</button>
       <button
@@ -644,10 +682,24 @@
   <EnginesDialog onChanged={reloadEngines} onClose={() => (showEngines = false)} />
 {/if}
 {#if showGameEnd && view?.result}
+  {@const online = playedOnline}
   <GameEndDialog
     {view}
-    onRematch={watch ? undefined : rematch}
-    onSwapSides={swappedSpec ? () => startGame(swappedSpec!) : undefined}
+    onRematch={online
+      ? () => newOnlineGame(online.side, online.timeControl, online.rated)
+      : watch
+        ? undefined
+        : rematch}
+    onSwapSides={online
+      ? () => newOnlineGame(otherSide(online.side), online.timeControl, online.rated)
+      : swappedSpec
+        ? () => startGame(swappedSpec!)
+        : undefined}
+    rematchLabel={online ? `New game as ${sideName(online.side)}` : undefined}
+    swapLabel={online ? `New game as ${sideName(otherSide(online.side))}` : undefined}
+    newGameTitle={online
+      ? `An open game on arimaa.com, ${online.timeControl}${online.rated ? ', rated' : ''}, for anyone to join`
+      : undefined}
     onAnalyse={engines.length && !analysing ? toggleAnalysis : undefined}
     onClose={() => (showGameEnd = false)}
   />

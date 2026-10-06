@@ -10,6 +10,7 @@
   import type { PostalGameView } from './bindings/PostalGameView';
   import type { RecentGameView } from './bindings/RecentGameView';
   import type { WinReason } from './bindings/WinReason';
+  import { mySide as sideIn, myTurn as turnIn } from './gameroom';
 
   interface Props {
     /** Runs a request that makes a gameroom game the session's (opening,
@@ -212,21 +213,8 @@
     open(gameId);
   }
 
-  const same = (a: string | null, b: string | null | undefined) =>
-    a != null && b != null && a.toLowerCase() === b.toLowerCase();
-
-  /** The user's side in one of their games. */
-  function mySide(g: LiveGameView): Color | null {
-    if (same(g.gold, user)) return 'gold';
-    if (same(g.silver, user)) return 'silver';
-    return null;
-  }
-
-  /** Whether one of the user's games waits on their move. */
-  function myTurn(g: LiveGameView): boolean {
-    const side = mySide(g);
-    return side != null && g.turn === side && g.gold != null && g.silver != null;
-  }
+  const mySide = (g: LiveGameView) => sideIn(g, user);
+  const myTurn = (g: LiveGameView) => turnIn(g, user);
 
   /** The free seat of an open game. */
   const freeSide = (g: LiveGameView): Color => (g.gold == null ? 'gold' : 'silver');

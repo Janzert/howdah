@@ -385,9 +385,11 @@ Howdah plays and watches games on arimaa.com.
     window plays another), and an Invitations section lists them with
     Accept (`accept_gameroom_invitation`, which also takes the seat),
     Decline and Cancel. While logged in, `Gameroom::watch_lobby` polls
-    `state` every minute and sends `gameroom://lobby`: App counts
-    invitations to the user on the toolbar's arimaa.com button and
-    announces new ones. It refreshes the lists every 20 s while
+    `state` every minute and sends `gameroom://lobby` (with the `user`
+    the lists are for): App counts invitations to the user and their
+    postal games waiting on their move (`lib/gameroom.ts`'s `myTurn`,
+    leaving out the game the window plays) on the toolbar's arimaa.com
+    button, and announces new ones. It refreshes the lists every 20 s while
     open, and after an error checks the login, showing the login form if
     it has expired. `WatchPanel.svelte` under the comment box
     shows the followed game's state (spectators don't get the chat),
@@ -480,7 +482,10 @@ Howdah plays and watches games on arimaa.com.
       schedule (`lib/clock.ts`).
   - Game end: `GameEndDialog.svelte` shows the result in words
     (`lib/result.ts`) after the final move's animation, with rematch and
-    swap sides (repeating the last New game spec). `justEnded` keeps it to
+    swap sides (repeating the last New game spec). After an arimaa.com
+    game the user played, the two buttons are "New game as Gold/Silver":
+    an open game with its time control and rating (`WatchView`'s
+    `timeControl` and `rated`). `justEnded` keeps it to
     games ending as they're played, not loaded records or going to the end.
   - Away from the live position in a match, an engine's or remote
     player's move shows an alert over the board (`missedMove` in `App.svelte`, from
@@ -490,7 +495,8 @@ Howdah plays and watches games on arimaa.com.
     (`replayShownMove`), unless the return already animated it.
   - The turn's main button is Play (Enter, `commit_turn`); while planning
     away from the live game it's End turn.
-  - `lib/attention.ts`: when a human's opponent has moved and the window
+  - `lib/attention.ts`: when a human's opponent has moved (or, at a
+    gameroom seat, written in the chat: `newOpponentChat`) and the window
     isn't focused, the OS attention request (Tauri permission
     `core:window:allow-request-user-attention`), or a title prefix in a
     browser.

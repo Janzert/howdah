@@ -278,7 +278,8 @@ The current engine panel shows depth, eval, PV and log per side.
   "Commented Games" list): a discussion thread for each finished game.
   Showing it for gameroom games is read-only and easy.
 - **[P2] Sound events** (arimaa.com): step, trap, win, lose, clock, start,
-  setup, chat, and spectators entering and leaving.
+  setup, chat, and the opponent entering and leaving (the server doesn't
+  tell players about spectators).
 - **[P2] Chat** under the board (arimaa.com and 4steps).
 - **[P2] Several games at once:** tabs or windows, already planned. lichess's "move on" (`moveOn.ts`) jumps to the next game where
   it's your turn. This is essential for postal play.

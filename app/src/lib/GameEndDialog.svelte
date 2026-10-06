@@ -5,7 +5,8 @@
   interface Props {
     view: SessionView;
     /** Starts the same game again; resolves with an error message, if any.
-     * Absent for a game watched on arimaa.com. */
+     * Absent for a game watched on arimaa.com; after one the user played
+     * there, a new open game with its settings. */
     onRematch?: () => Promise<string | null>;
     /** Starts the same game with the players' colors swapped; absent when
      * swapping would change nothing. */
@@ -13,8 +14,22 @@
     /** Turns analysis on at the final position; absent without an engine. */
     onAnalyse?: () => void;
     onClose: () => void;
+    /** The buttons' labels ("Rematch" and "Swap sides" by default), and a
+     * tooltip for both: an online game's new game is an open one. */
+    rematchLabel?: string;
+    swapLabel?: string;
+    newGameTitle?: string;
   }
-  let { view, onRematch, onSwapSides, onAnalyse, onClose }: Props = $props();
+  let {
+    view,
+    onRematch,
+    onSwapSides,
+    onAnalyse,
+    onClose,
+    rematchLabel = 'Rematch',
+    swapLabel = 'Swap sides',
+    newGameTitle,
+  }: Props = $props();
 
   const text = $derived(view.result ? describeResult(view.result) : null);
   // The winner's name, when it tells the players apart (not "Human" vs "Human").
@@ -48,10 +63,10 @@
   {#if error}<p class="error">{error}</p>{/if}
   <div class="buttons">
     {#if onRematch}
-      <button onclick={() => start(onRematch)}>Rematch</button>
+      <button onclick={() => start(onRematch)} title={newGameTitle}>{rematchLabel}</button>
     {/if}
     {#if onSwapSides}
-      <button onclick={() => start(onSwapSides)}>Swap sides</button>
+      <button onclick={() => start(onSwapSides)} title={newGameTitle}>{swapLabel}</button>
     {/if}
     <span class="spacer"></span>
     {#if onAnalyse}

@@ -32,6 +32,11 @@ side: Color | null,
  */
 postal: boolean, 
 /**
+ * The game's time control in the gameroom's format, and whether it's
+ * rated (for a new game with the same settings).
+ */
+timeControl: string | null, rated: boolean, 
+/**
  * Whether gold and silver have left the table (the server says so;
  * their clocks keep running).
  */

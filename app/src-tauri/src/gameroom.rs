@@ -324,6 +324,7 @@ impl Gameroom {
             .chain(games.i_invited.into_iter().map(|i| invitation_view(i, false)))
             .collect();
         Ok(GameroomGames {
+            user: lock(&self.username).clone(),
             live: views(games.live),
             recent: games.recent.into_iter().map(recent_view).collect(),
             mine: views(games.mine),
@@ -802,6 +803,8 @@ async fn begin(
         event: state.raw.nonempty("event"),
         side: None,
         postal: state.postal,
+        time_control: state.time_control.clone(),
+        rated: state.rated,
         away: [false; 2],
         waiting: false,
         refused: None,

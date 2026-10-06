@@ -66,7 +66,8 @@ architecture. Decided and checked against the live server in October 2026.
 - A finished game opens by its permanent id, whole, at the start of play,
   with each move's time kept as `%emt`. A watched game's record gets its
   permanent id as `GameId` once it ends.
-- Spectators don't get a game's chat.
+- Spectators don't get a game's chat, and players aren't told about
+  spectators: the server has no viewer count or list.
 
 ## Playing
 
@@ -99,7 +100,9 @@ architecture. Decided and checked against the live server in October 2026.
   a game who never sat counts as away too. The player bars mark them, and
   the panel notes when the user's opponent isn't at the table.
 - **Chat.** Players' chat shows below the board, as in the web client,
-  with a message box at the user's seat. Lines are shown as plain text
+  with a message box at the user's seat. An opponent's line while the
+  window isn't focused asks for attention, as their move does. Lines are
+  shown as plain text
   (the server stores them as sent), and empty messages aren't sent (the
   server would add an empty line).
 - **Invitations.** ASIP has none, so they use the browser lobby's pages:
@@ -111,7 +114,12 @@ architecture. Decided and checked against the live server in October 2026.
   move, or the gameroom's "No time limit", `0/0/0/0/0`, which is played
   untimed). The New game form offers the gameroom's postal time controls,
   clocks of a day or more read `Nd h:mm`, and the user's games show which
-  wait on the user's move.
+  wait on the user's move. While logged in, the lobby check every minute
+  counts those on the arimaa.com button and announces new ones (the
+  window's own game aside). The lobby's list has no turn before the first
+  move, which is taken as gold's setup.
+- **After a game**, the game-end dialog offers a new open game with the
+  same time control and rating, as either side.
 - **No analysis while playing** (see `ANALYSIS.md`), postal games included,
   and not after leaving a game mid-play until another game is loaded.
 

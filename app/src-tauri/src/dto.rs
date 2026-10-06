@@ -713,6 +713,8 @@ pub struct PlayerGamesView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct GameroomGames {
+    /// Who the lists are for: the logged-in user.
+    pub user: Option<String>,
     pub live: Vec<LiveGameView>,
     /// The last few games finished, newest first.
     pub recent: Vec<RecentGameView>,
@@ -807,6 +809,10 @@ pub struct WatchView {
     pub side: Option<Color>,
     /// Whether it's a postal game (moves days apart).
     pub postal: bool,
+    /// The game's time control in the gameroom's format, and whether it's
+    /// rated (for a new game with the same settings).
+    pub time_control: Option<String>,
+    pub rated: bool,
     /// Whether gold and silver have left the table (the server says so;
     /// their clocks keep running).
     pub away: [bool; 2],

@@ -6,7 +6,11 @@ import type { RecentGameView } from "./RecentGameView";
 /**
  * The gameroom's game lists.
  */
-export type GameroomGames = { live: Array<LiveGameView>, 
+export type GameroomGames = { 
+/**
+ * Who the lists are for: the logged-in user.
+ */
+user: string | null, live: Array<LiveGameView>, 
 /**
  * The last few games finished, newest first.
  */
