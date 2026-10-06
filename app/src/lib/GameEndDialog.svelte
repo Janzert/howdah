@@ -5,8 +5,7 @@
   interface Props {
     view: SessionView;
     /** Starts the same game again; resolves with an error message, if any.
-     * Absent for a game watched on arimaa.com; after one the user played
-     * there, a new open game with its settings. */
+     * Absent for an arimaa.com game. */
     onRematch?: () => Promise<string | null>;
     /** Starts the same game with the players' colors swapped; absent when
      * swapping would change nothing. */
@@ -14,22 +13,10 @@
     /** Turns analysis on at the final position; absent without an engine. */
     onAnalyse?: () => void;
     onClose: () => void;
-    /** The buttons' labels ("Rematch" and "Swap sides" by default), and a
-     * tooltip for both: an online game's new game is an open one. */
-    rematchLabel?: string;
-    swapLabel?: string;
-    newGameTitle?: string;
+    /** A line under the result (an arimaa.com game's chat staying open). */
+    note?: string;
   }
-  let {
-    view,
-    onRematch,
-    onSwapSides,
-    onAnalyse,
-    onClose,
-    rematchLabel = 'Rematch',
-    swapLabel = 'Swap sides',
-    newGameTitle,
-  }: Props = $props();
+  let { view, onRematch, onSwapSides, onAnalyse, onClose, note }: Props = $props();
 
   const text = $derived(view.result ? describeResult(view.result) : null);
   // The winner's name, when it tells the players apart (not "Human" vs "Human").
@@ -60,13 +47,14 @@
     <p class="reason">{text.reason}</p>
     {#if view.endDetail}<p class="detail">{view.endDetail}</p>{/if}
   {/if}
+  {#if note}<p class="detail">{note}</p>{/if}
   {#if error}<p class="error">{error}</p>{/if}
   <div class="buttons">
     {#if onRematch}
-      <button onclick={() => start(onRematch)} title={newGameTitle}>{rematchLabel}</button>
+      <button onclick={() => start(onRematch)}>Rematch</button>
     {/if}
     {#if onSwapSides}
-      <button onclick={() => start(onSwapSides)} title={newGameTitle}>{swapLabel}</button>
+      <button onclick={() => start(onSwapSides)}>Swap sides</button>
     {/if}
     <span class="spacer"></span>
     {#if onAnalyse}

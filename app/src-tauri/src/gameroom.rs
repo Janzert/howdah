@@ -657,6 +657,9 @@ impl Watch {
     /// empty line).
     pub fn chat(&self, text: &str) -> Result<impl Future<Output = Result<(), ApiError>> + use<>, ApiError> {
         let actions = self.actions.as_ref().ok_or_else(|| ApiError::state("only players can chat"))?;
+        if !lock(&self.view).chat_open {
+            return Err(ApiError::state("the game's chat has closed"));
+        }
         let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
         if text.is_empty() {
             return Err(ApiError::illegal("type a message first"));
@@ -678,6 +681,7 @@ impl Watch {
         let mut view = lock(&self.view);
         view.state = WatchState::Stopped;
         view.detail = None;
+        view.chat_open = false;
         view.clone()
     }
 }
@@ -809,6 +813,7 @@ async fn begin(
         waiting: false,
         refused: None,
         chat: Vec::new(),
+        chat_open: false,
     }));
     set_seat(&mut lock(&view), &seat);
     let next = update(&target, generation, &state, &view);
@@ -826,7 +831,7 @@ async fn begin(
             let run = follow(gameroom, server, seat, sender, target, generation, view2);
             tauri::async_runtime::spawn(run)
         }
-        Next::Stop => tauri::async_runtime::spawn(find_id(gameroom, target, generation, view2)),
+        Next::Stop => tauri::async_runtime::spawn(after_end(gameroom, server, target, generation, view2)),
     };
     // A move entered before the seat was ready goes out now.
     wake.notify_one();
@@ -973,10 +978,7 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
     let before = v.clone();
     v.waiting = waiting(v.side, state);
     v.away = away(state);
-    v.chat = parse_chat(&state.chat)
-        .into_iter()
-        .map(|l| ChatLineView { side: l.side, label: l.label, text: l.text })
-        .collect();
+    v.chat = chat_view(&state.chat);
     let next = match outcome {
         Outcome::Playing => {
             if v.state == WatchState::Reconnecting {
@@ -997,6 +999,7 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
         Outcome::Failed(e) => {
             v.state = WatchState::Failed;
             v.detail = Some(e);
+            v.chat_open = false;
             Next::Stop
         }
     };
@@ -1032,6 +1035,7 @@ fn set_seat(view: &mut WatchView, seat: &Seat) {
         Seat::Player(side) => Some(*side),
         Seat::Viewer(_) => None,
     };
+    view.chat_open = view.side.is_some();
     view.delayed = matches!(seat, Seat::Viewer(ViewerSeat::Asip { .. }));
     view.detail = match seat {
         Seat::Viewer(ViewerSeat::Asip { why }) => Some(format!("moves arrive about every 10 s ({why})")),
@@ -1156,7 +1160,7 @@ async fn follow(
                 backoff = Duration::from_secs(1);
                 reseats = 0;
                 if let Next::Stop = update(&state) {
-                    find_id(gameroom, target, generation, view).await;
+                    after_end(gameroom, server, target, generation, view).await;
                     return;
                 }
                 continue;
@@ -1186,14 +1190,16 @@ async fn follow(
                                 *lock(&sender.actions) = new;
                             }
                             if let Next::Stop = update(&state) {
-                                find_id(gameroom, target, generation, view).await;
+                                after_end(gameroom, server, target, generation, view).await;
                                 return;
                             }
                             continue;
                         }
                     }
                     Ok(Reseat::Finished(state)) => {
+                        // The table is gone, and its chat with it.
                         update(&state);
+                        close_chat(&target, &view);
                         return;
                     }
                     Err(e) => {
@@ -1212,6 +1218,78 @@ async fn follow(
         }
         tokio::time::sleep(backoff.min(cap)).await;
         backoff = (backoff.min(cap) * 2).min(cap);
+    }
+}
+
+/// The game's chat lines in a state's `chat` field.
+fn chat_view(chat: &str) -> Vec<ChatLineView> {
+    parse_chat(chat)
+        .into_iter()
+        .map(|l| ChatLineView { side: l.side, label: l.label, text: l.text })
+        .collect()
+}
+
+/// Marks the chat closed to the user.
+fn close_chat(target: &Target, view: &Mutex<WatchView>) {
+    let mut v = lock(view);
+    if v.chat_open {
+        v.chat_open = false;
+        emit(&target.events, WATCH_UPDATE, v.clone());
+    }
+}
+
+/// Once the game has ended: its permanent id, and, at the user's seat,
+/// the chat (players often stay at the table to talk).
+async fn after_end(
+    gameroom: Arc<Gameroom>,
+    server: GameServer,
+    target: Target,
+    generation: u64,
+    view: Arc<Mutex<WatchView>>,
+) {
+    let chat = {
+        let v = lock(&view);
+        v.state == WatchState::Ended && v.chat_open
+    };
+    if !chat {
+        close_chat(&target, &view);
+        return find_id(gameroom, target, generation, view).await;
+    }
+    let id = find_id(gameroom, target.clone(), generation, view.clone());
+    tokio::join!(id, follow_chat(server, target, generation, view));
+}
+
+/// Long-polls a finished game's table for chat, until the session moves
+/// on or the server stops answering for it. The server clears finished
+/// tables away (sooner, perhaps, for event games), so an error there
+/// closes the chat rather than taking a new seat.
+async fn follow_chat(mut server: GameServer, target: Target, generation: u64, view: Arc<Mutex<WatchView>>) {
+    let mut backoff = Duration::from_secs(1);
+    loop {
+        if lock(&target.session).generation() != generation {
+            return;
+        }
+        match server.update(MAXWAIT).await {
+            Ok(state) => {
+                backoff = Duration::from_secs(1);
+                let mut v = lock(&view);
+                let (chat, away) = (chat_view(&state.chat), away(&state));
+                if (&v.chat, v.away) != (&chat, away) {
+                    v.chat = chat;
+                    v.away = away;
+                    emit(&target.events, WATCH_UPDATE, v.clone());
+                }
+                continue;
+            }
+            // A dropped connection: try again.
+            Err(Error::Empty | Error::Network(_)) => {}
+            Err(_) => {
+                close_chat(&target, &view);
+                return;
+            }
+        }
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(NETWORK_BACKOFF);
     }
 }
 

@@ -313,19 +313,12 @@
   }
 
   /** A new open game on arimaa.com with the time control and rating of
-   * the online game the user just played, as `side`. */
-  function newOnlineGame(side: Color, timeControl: string, rated: boolean): Promise<string | null> {
-    return openGameroomGame(() => api.createGameroomGame(side, timeControl, rated));
+   * the online game the user just played, as `side`. It leaves that
+   * game's table (and its chat). */
+  async function newOnlineGame(side: Color, timeControl: string, rated: boolean) {
+    const error = await openGameroomGame(() => api.createGameroomGame(side, timeControl, rated));
+    if (error) flash(error);
   }
-
-  /** The user's finished online game, for a new game like it. */
-  const playedOnline = $derived(
-    watch?.side != null && watch.timeControl != null
-      ? { side: watch.side, timeControl: watch.timeControl, rated: watch.rated }
-      : null,
-  );
-  const sideName = (c: Color) => (c === 'gold' ? 'Gold' : 'Silver');
-  const otherSide = (c: Color): Color => (c === 'gold' ? 'silver' : 'gold');
 
   /** In a match, showing something other than the live position. */
   function awayFromLive(v: SessionView): boolean {
@@ -601,7 +594,7 @@
       <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
       <CommentBox {view} {run} />
       {#if watch}
-        <WatchPanel {watch} {view} {run} {receivedAt} {now} />
+        <WatchPanel {watch} {view} {run} {receivedAt} {now} onNewGame={newOnlineGame} />
       {/if}
       {#if hasEngine && view.players}
         <EnginePanel players={view.players} resetKey={matchKey} />
@@ -682,24 +675,13 @@
   <EnginesDialog onChanged={reloadEngines} onClose={() => (showEngines = false)} />
 {/if}
 {#if showGameEnd && view?.result}
-  {@const online = playedOnline}
+  <!-- An arimaa.com game's players often stay at the table to chat, so
+       nothing here leaves it; a new game is in the game's panel. -->
   <GameEndDialog
     {view}
-    onRematch={online
-      ? () => newOnlineGame(online.side, online.timeControl, online.rated)
-      : watch
-        ? undefined
-        : rematch}
-    onSwapSides={online
-      ? () => newOnlineGame(otherSide(online.side), online.timeControl, online.rated)
-      : swappedSpec
-        ? () => startGame(swappedSpec!)
-        : undefined}
-    rematchLabel={online ? `New game as ${sideName(online.side)}` : undefined}
-    swapLabel={online ? `New game as ${sideName(otherSide(online.side))}` : undefined}
-    newGameTitle={online
-      ? `An open game on arimaa.com, ${online.timeControl}${online.rated ? ', rated' : ''}, for anyone to join`
-      : undefined}
+    onRematch={watch ? undefined : rematch}
+    onSwapSides={swappedSpec && !watch ? () => startGame(swappedSpec!) : undefined}
+    note={watch?.chatOpen ? 'The chat stays open below the board.' : undefined}
     onAnalyse={engines.length && !analysing ? toggleAnalysis : undefined}
     onClose={() => (showGameEnd = false)}
   />

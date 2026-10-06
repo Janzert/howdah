@@ -118,8 +118,14 @@ architecture. Decided and checked against the live server in October 2026.
   counts those on the arimaa.com button and announces new ones (the
   window's own game aside). The lobby's list has no turn before the first
   move, which is taken as gold's setup.
-- **After a game**, the game-end dialog offers a new open game with the
-  same time control and rating, as either side.
+- **After a game** players often stay at the table to chat, so the
+  game-end dialog offers only analysis and review, and the seat keeps
+  following the table's chat (the server keeps it open after the end and
+  wakes the long poll for each line). When the server stops answering
+  for the table (it clears finished tables away, perhaps sooner for
+  event games), the chat closes with a note instead of the message box.
+  The game's panel offers a new open game with the same time control and
+  rating, as either side, which leaves the table.
 - **No analysis while playing** (see `ANALYSIS.md`), postal games included,
   and not after leaving a game mid-play until another game is loaded.
 

@@ -79,7 +79,7 @@ fn clock_report(server: &GameServer, s: &GameState) -> String {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: probe live | probe watch GID [--seat browser|1|2] [--server 1|2] [--polls N] [--maxwait SECS] | probe findgameid TID | probe play [--log FILE]"
+        "usage: probe live | probe watch GID [--seat browser|1|2] [--server 1|2] [--polls N] [--maxwait SECS] | probe findgameid TID | probe play [--log FILE] [--after-end N]"
     );
     std::process::exit(2)
 }
@@ -122,6 +122,7 @@ async fn main() {
     let mut positional = Vec::new();
     let (mut seat_asip, mut server_asip, mut polls, mut maxwait, mut log_file) =
         (None, Asip::V1, 3, 30, None);
+    let mut after_end = 0;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let mut value = || it.next().cloned().unwrap_or_else(|| usage());
@@ -136,6 +137,7 @@ async fn main() {
             "--polls" => polls = value().parse().unwrap_or_else(|_| usage()),
             "--maxwait" => maxwait = value().parse().unwrap_or_else(|_| usage()),
             "--log" => log_file = Some(value()),
+            "--after-end" => after_end = value().parse().unwrap_or_else(|_| usage()),
             _ => positional.push(a.clone()),
         }
     }
@@ -172,7 +174,7 @@ async fn main() {
             let tid = positional.get(1).cloned().unwrap_or_else(|| usage());
             find_game_id(&mut lobby, &user, &password, &tid).await
         }
-        Some("play") => play(&mut lobby, http, &user, &password).await,
+        Some("play") => play(&mut lobby, http, &user, &password, after_end).await,
         Some("watch") => {
             let gid = positional.get(1).cloned().unwrap_or_else(|| usage());
             let opts = (seat_asip, server_asip, polls, Duration::from_secs(maxwait));
@@ -293,7 +295,15 @@ fn brief(t0: Instant, name: &str, state: &GameState) -> String {
     )
 }
 
-async fn play(lobby: &mut Lobby, http: Http, user: &str, password: &str) -> Result<(), Error> {
+/// `after_end`: how many more polls each seat makes once the game has
+/// ended (to see what the server sends then, e.g. chat).
+async fn play(
+    lobby: &mut Lobby,
+    http: Http,
+    user: &str,
+    password: &str,
+    after_end: u32,
+) -> Result<(), Error> {
     lobby.login(user, password).await?;
     let t0 = Instant::now();
     println!("logged in");
@@ -371,14 +381,29 @@ async fn play(lobby: &mut Lobby, http: Http, user: &str, password: &str) -> Resu
                         .ok_or_else(|| Error::BadReply("no auth in the game state".into()))?;
                     let name2 = name.to_string();
                     let poller = tokio::spawn(async move {
-                        let mut done = state.result.is_some();
-                        while !done {
-                            match server.update(Duration::from_secs(300)).await {
+                        let mut ended = state.result.is_some();
+                        let mut extra = 0;
+                        while !ended || extra < after_end {
+                            if ended {
+                                extra += 1;
+                            }
+                            let asked = Instant::now();
+                            match server.update(Duration::from_secs(if ended { 60 } else { 300 })).await {
                                 Ok(s) => {
                                     println!("{}", brief(t0, &name2, &s));
                                     println!("  {}", clock_report(&server, &s));
-                                    done = s.result.is_some();
-                                    if done {
+                                    if ended {
+                                        println!(
+                                            "  {name2} after the end: answered in {:.1}s, chat {:?}",
+                                            asked.elapsed().as_secs_f64(),
+                                            s.chat
+                                        );
+                                        // Don't loop fast if the server answers at once.
+                                        if asked.elapsed() < Duration::from_secs(5) {
+                                            tokio::time::sleep(Duration::from_secs(10)).await;
+                                        }
+                                    } else if s.result.is_some() {
+                                        ended = true;
                                         println!("  {name2} final: {}", public(&s.raw));
                                     }
                                 }

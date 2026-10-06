@@ -14,8 +14,9 @@
   let error = $state<string | null>(null);
   let log: HTMLOListElement | undefined = $state();
 
-  /** Only players can write; the table goes away once the game is over. */
-  const canSend = $derived(watch.side != null && watch.state !== 'ended' && watch.state !== 'failed');
+  /** Only players can write, also after the game, until the server
+   * clears the table away or the user leaves. */
+  const canSend = $derived(watch.chatOpen);
 
   const name = (side: 'gold' | 'silver' | null) =>
     side == null ? '' : (view.players?.[side].name ?? (side === 'gold' ? 'Gold' : 'Silver'));
@@ -59,6 +60,9 @@
       <input bind:value={text} placeholder="Message" aria-label="Chat message" autocomplete="off" />
       <button type="submit" disabled={sending || !text.trim()}>Send</button>
     </form>
+  {:else if watch.side != null}
+    <!-- In place of the message box once the server closes the table. -->
+    <div class="closed" role="status">arimaa.com has closed this game's chat.</div>
   {/if}
   {#if error}<div class="error" role="alert">{error}</div>{/if}
 </section>
@@ -124,6 +128,11 @@
   input {
     flex: 1;
     min-width: 0;
+  }
+  .closed {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 4px 0;
   }
   .error {
     color: var(--warn);

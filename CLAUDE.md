@@ -412,7 +412,10 @@ Howdah plays and watches games on arimaa.com.
   - `ChatPanel.svelte`, below the bottom player bar as in the
     arimaa.com web client, shows a gameroom game's chat (names from the
     player bars, the move label, text as plain text) with a message box
-    when the user plays; App shows it at a player's seat, or when a
+    while `WatchView.chatOpen` (at the user's seat, also after the game:
+    `after_end` keeps long-polling the table for chat, `follow_chat`,
+    until the user leaves or the server stops answering for it, which
+    closes the chat and puts a note in place of the box); App shows it at a player's seat, or when a
     watched game has chat.
   - `RecordDialog.svelte` exports the full record or, with "Main line
     only", a plain record (`export_game(mainLineOnly)`).
@@ -483,9 +486,10 @@ Howdah plays and watches games on arimaa.com.
   - Game end: `GameEndDialog.svelte` shows the result in words
     (`lib/result.ts`) after the final move's animation, with rematch and
     swap sides (repeating the last New game spec). After an arimaa.com
-    game the user played, the two buttons are "New game as Gold/Silver":
-    an open game with its time control and rating (`WatchView`'s
-    `timeControl` and `rated`). `justEnded` keeps it to
+    game it offers nothing that leaves the table (players stay to chat),
+    only Analyse and Review; WatchPanel has "New game as Gold/Silver"
+    instead, an open game with its time control and rating
+    (`WatchView`'s `timeControl` and `rated`). `justEnded` keeps it to
     games ending as they're played, not loaded records or going to the end.
   - Away from the live position in a match, an engine's or remote
     player's move shows an alert over the board (`missedMove` in `App.svelte`, from

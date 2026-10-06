@@ -12,8 +12,10 @@
      * the running clock. */
     receivedAt: number;
     now: number;
+    /** Leaves the finished game for a new open one like it, as `side`. */
+    onNewGame?: (side: 'gold' | 'silver', timeControl: string, rated: boolean) => void;
   }
-  let { watch, view, run, receivedAt, now }: Props = $props();
+  let { watch, view, run, receivedAt, now, onNewGame }: Props = $props();
 
   /** The side whose clock has run out, while the server hasn't ended the
    * game yet: it flags time itself, but only checks every few seconds. */
@@ -117,6 +119,17 @@
           <button title="Give up the game" onclick={() => (confirmResign = true)}>Resign</button>
         </span>
       {/if}
+    </div>
+  {/if}
+  {#if onNewGame && watch.state === 'ended' && watch.side && watch.timeControl}
+    {@const tc = watch.timeControl}
+    {@const title = `An open game on arimaa.com, ${tc}${watch.rated ? ', rated' : ''}, for anyone to join (leaves this table)`}
+    <div class="takeback">
+      <span>New game</span>
+      <span class="actions">
+        <button {title} onclick={() => onNewGame('gold', tc, watch.rated)}>as Gold</button>
+        <button {title} onclick={() => onNewGame('silver', tc, watch.rated)}>as Silver</button>
+      </span>
     </div>
   {/if}
 </section>

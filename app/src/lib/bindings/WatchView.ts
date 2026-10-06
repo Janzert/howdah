@@ -54,4 +54,10 @@ refused: string | null,
 /**
  * The game's chat, oldest first (players get it; spectators don't).
  */
-chat: Array<ChatLineView>, };
+chat: Array<ChatLineView>, 
+/**
+ * Whether the user can write in the chat: at their seat, also after
+ * the game ends (players often stay to talk), until the server clears
+ * the table away or the user leaves.
+ */
+chatOpen: boolean, };
