@@ -105,7 +105,9 @@ Sharp, OpFor and other AEI engines behave.
     and each move's time as `%emt`) and `state()` a final `GameState`.
   - `players`: the player search (`searchPlayers.cgi`, `PlayerMatch`) and
     a player's past games (`pastgames.cgi?id=`, `PastGames`, 50 a page),
-    read leniently from their HTML. `Lobby::search_players` and
+    read leniently from their HTML. The page writes times in the
+    session's zone (the login's `timezone`, `Lobby::set_timezone`; the
+    app sets the computer's), labelled "YLT", which is dropped. `Lobby::search_players` and
     `Lobby::player_games` fetch them. `Error::Expired` is a lobby session
     that's gone (an ASIP error or the "Session Expired" page).
   - `examples/probe.rs` runs it against the live server by hand (see the

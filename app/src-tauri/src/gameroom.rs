@@ -217,7 +217,7 @@ impl Gameroom {
         if username.is_empty() || password.is_empty() {
             return Err(ApiError::illegal("enter a username and password"));
         }
-        let mut lobby = Lobby::new(self.http.clone(), DEFAULT_GAMEROOM, Asip::V2);
+        let mut lobby = new_lobby(&self.http);
         lobby.login(username, &password).await.map_err(net_error)?;
         let mut slot = self.lobby.lock().await;
         if let Some(mut old) = slot.replace(lobby) {
@@ -253,7 +253,7 @@ impl Gameroom {
             *lock(&self.username) = None;
             return Err(ApiError::state("the arimaa.com login has expired: log in again"));
         };
-        let mut lobby = Lobby::new(self.http.clone(), DEFAULT_GAMEROOM, Asip::V2);
+        let mut lobby = new_lobby(&self.http);
         lobby.login(&username, &password).await.map_err(net_error)?;
         Ok(slot.insert(lobby))
     }
@@ -355,6 +355,14 @@ fn recent_view(g: RecentGame) -> RecentGameView {
         moves: g.moves,
         ended_ms: g.ended.and_then(|t| u64::try_from(t).ok()).map(|t| t * 1000),
     }
+}
+
+/// A lobby that logs in with the computer's time zone, so the gameroom's
+/// pages show times as local ("YLT" there).
+fn new_lobby(http: &Http) -> Lobby {
+    let mut lobby = Lobby::new(http.clone(), DEFAULT_GAMEROOM, Asip::V2);
+    lobby.set_timezone(-chrono::Local::now().offset().local_minus_utc());
+    lobby
 }
 
 /// A game opened by id.

@@ -444,12 +444,23 @@ pub struct Lobby {
     grid: Option<String>,
     /// The browser login's cookies (`sid` among them), as a `Cookie` header.
     cookies: Option<String>,
+    /// The user's time zone, in seconds west of UTC as the browser sends
+    /// it (`14400` for UTC-4).
+    timezone: i32,
 }
 
 impl Lobby {
     pub fn new(http: Http, base: &str, asip: Asip) -> Lobby {
         let base = if base.ends_with('/') { base.to_string() } else { format!("{base}/") };
-        Lobby { http, base, asip, sid: None, grid: None, cookies: None }
+        Lobby { http, base, asip, sid: None, grid: None, cookies: None, timezone: 0 }
+    }
+
+    /// Sets the time zone the next [`Lobby::login`] gives the server, in
+    /// seconds west of UTC (JavaScript's `getTimezoneOffset()` times 60,
+    /// as the browser sends it). The session's pages show times in it
+    /// (the gameroom's "YLT", Your Local Time); without one they're UTC.
+    pub fn set_timezone(&mut self, seconds_west: i32) {
+        self.timezone = seconds_west;
     }
 
     /// Switches the ASIP version for later requests, keeping the session.
@@ -474,7 +485,11 @@ impl Lobby {
     /// works for the ASIP lobby too, and [`Lobby::watch`] needs it.
     pub async fn login(&mut self, username: &str, password: &str) -> Result<(), Error> {
         let url = format!("{}login.cgi", self.base);
-        let params = [("email", username.into()), ("password", password.into()), ("timezone", "0".into())];
+        let params = [
+            ("email", username.into()),
+            ("password", password.into()),
+            ("timezone", self.timezone.to_string()),
+        ];
         let cookies = self.http.login_form(&url, &params).await?;
         self.sid = cookies.iter().find(|(k, _)| k == "sid").map(|(_, v)| v.clone());
         self.cookies = Some(cookies.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; "));
@@ -717,7 +732,8 @@ impl Lobby {
         if offset > 0 {
             url.push_str(&format!("&off={offset}"));
         }
-        let page = self.http.get_page(&url, None).await?;
+        // The session's cookie makes the times local (in the login's time zone).
+        let page = self.http.get_page(&url, self.cookies.as_deref()).await?;
         Ok(parse_past_games(&page, offset))
     }
 

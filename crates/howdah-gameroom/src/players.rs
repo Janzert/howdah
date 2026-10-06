@@ -35,7 +35,9 @@ pub struct PastGame {
     pub reason: Option<String>,
     /// The last move's number.
     pub moves: Option<u32>,
-    /// When it finished, as the page writes it ("Jan 4, 2014 10:38 am YLT").
+    /// When it finished, as the page writes it but without its "YLT"
+    /// label ("Jan 4, 2014 10:38 am"; "Sun 4:23 pm" in the past week): in
+    /// the login's time zone, or UTC without a session.
     pub finished: Option<String>,
 }
 
@@ -122,7 +124,7 @@ fn past_game(before: &str, row: &str) -> Option<PastGame> {
     let mut info = cells[1..].iter().map(|c| text_of(c)).filter(|t| !t.is_empty());
     let reason = info.next().filter(|r| r.chars().all(|c| c.is_ascii_alphabetic()));
     let moves = info.next().and_then(|m| m.parse().ok());
-    let finished = info.next();
+    let finished = info.next().map(|f| f.strip_suffix("YLT").unwrap_or(&f).trim_end().to_string());
     let winner = match (gold_won, silver_won) {
         (true, false) => Some(Color::Gold),
         (false, true) => Some(Color::Silver),
@@ -319,7 +321,7 @@ mod tests {
                     winner: Some(Color::Silver),
                     reason: Some("t".into()),
                     moves: Some(4),
-                    finished: Some("Jan 4, 2014 10:38 am YLT".into()),
+                    finished: Some("Jan 4, 2014 10:38 am".into()),
                 },
                 PastGame {
                     id: "120092".into(),
@@ -330,7 +332,7 @@ mod tests {
                     winner: Some(Color::Gold),
                     reason: Some("e".into()),
                     moves: Some(10),
-                    finished: Some("Oct 8, 2009 3:56 am YLT".into()),
+                    finished: Some("Oct 8, 2009 3:56 am".into()),
                 },
             ]
         );
