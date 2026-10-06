@@ -359,6 +359,10 @@ pub struct Session {
     generation: u64,
     /// The engine analysing the shown position, while analysis is on.
     analysis: Option<AnalysisEngine>,
+    /// The user left an online game they were playing (the match ended
+    /// while the game went on at the server): analysis stays refused
+    /// until another game is loaded, which resets the session.
+    left_online: bool,
     /// The deepest line analysis found at each node.
     evals: HashMap<NodeId, AnalysisLine>,
     /// Whether a step after a full turn finishes it and starts the next
@@ -397,6 +401,7 @@ impl Session {
             end_detail: None,
             generation: 0,
             analysis: None,
+            left_online: false,
             evals: HashMap::new(),
             continue_turns: true,
         };
@@ -621,6 +626,9 @@ impl Session {
     /// Stops the match: the game stays as it is, and both sides become free
     /// play again.
     pub fn end_match(&mut self) {
+        if self.plays_online() {
+            self.left_online = true;
+        }
         if self.matchup.take().is_some() {
             self.generation += 1;
             self.refresh();
@@ -1302,11 +1310,22 @@ impl Session {
     /// Turns analysis on with `engine`, or off with `None`. Turning it on
     /// is refused while the user plays an online game ([`Session::plays_online`]).
     pub fn set_analysis(&mut self, engine: Option<AnalysisEngine>) -> Result<(), ApiError> {
-        if engine.is_some() && self.plays_online() {
-            return Err(ApiError::state("analysis is off while you play a game on arimaa.com"));
+        if engine.is_some() && !self.analysis_allowed() {
+            return Err(ApiError::state(if self.left_online {
+                "analysis is off for a game you left while it was being played; load another game"
+            } else {
+                "analysis is off while you play a game on arimaa.com"
+            }));
         }
         self.analysis = engine;
         Ok(())
+    }
+
+    /// Whether analysis may be turned on: not while the user plays an
+    /// online game, nor after they left one mid-game, until another game
+    /// is loaded.
+    pub fn analysis_allowed(&self) -> bool {
+        !self.plays_online() && !self.left_online
     }
 
     /// Whether the user plays a game on a server that hasn't ended: no
@@ -2021,7 +2040,7 @@ impl Session {
             }),
             live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
             analysis_engine: self.analysis.as_ref().map(|a| a.id.clone()),
-            analysis_allowed: !self.plays_online(),
+            analysis_allowed: self.analysis_allowed(),
             stored_analysis: self.evals.get(&self.cursor_node()).cloned(),
         }
     }
@@ -3407,12 +3426,23 @@ mod tests {
         let engine = AnalysisEngine { id: "e".into(), name: "E".into() };
         assert!(s.set_analysis(Some(engine.clone())).is_err());
         assert!(s.set_analysis(None).is_ok());
+        // Leaving it mid-game keeps analysis off until another game.
+        let mut left = Session::new();
+        left.start_match([Player::Human, remote("opponent")], [None, None], false);
+        left.end_match();
+        assert!(!left.view().analysis_allowed);
+        assert!(left.set_analysis(Some(engine.clone())).is_err());
+        left.new_game();
+        assert!(left.view().analysis_allowed);
         // Once the game is over, it's allowed again.
         let g = s.generation();
         s.finish_remote(g, GameResult { winner: Color::Silver, reason: WinReason::Resignation }, None)
             .unwrap();
         assert!(s.view().analysis_allowed);
         s.set_analysis(Some(engine)).unwrap();
+        // Ending the match after the game has ended blocks nothing.
+        s.end_match();
+        assert!(s.view().analysis_allowed);
         // A local match never stops it.
         s.start_match([Player::Human, Player::Human], [None, None], false);
         assert!(s.view().analysis_engine.is_some());

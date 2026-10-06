@@ -120,8 +120,10 @@ game**:
   remote side and a human one, without a result) makes `set_analysis`
   refuse an engine, `start_match` turns analysis off for such a game,
   and `SessionView.analysisAllowed` disables the Analysis button.
-  Leaving the game ("Leave game") ends the match while the game goes
-  on at arimaa.com, so analysis is allowed again then.
+  Leaving the game mid-play ("Leave game") ends the match while the
+  game goes on at arimaa.com; analysis stays refused then until another
+  game is loaded (decided with Brian, 2026-10-06). Howdah doesn't check
+  the server for live games before allowing it.
 
 In a match the target is still the shown node, so with the board
 following the live position, analysis follows the game move by move.

@@ -208,7 +208,9 @@ Sharp, OpFor and other AEI engines behave.
       No analysis while the user plays an online game
       (`Session::plays_online`): `set_analysis` refuses an engine,
       `start_match` turns it off, and `SessionView.analysisAllowed`
-      disables the button. Watching is fine.
+      disables the button. Ending the match mid-game ("Leave game")
+      sets `left_online`, which keeps it refused until another game
+      replaces the session. Watching is fine.
   - `gameroom.rs`: spectating arimaa.com games (use case 3). `Gameroom`
     holds the login and lists live and recently finished games
     (`gameroom_games`). `open` (command `open_gameroom_game`) opens a game

@@ -136,7 +136,7 @@
         <button
           class="subtle"
           onclick={onEndMatch}
-          title="Stop playing here. The game goes on at arimaa.com with your clock running; take your seat again from Your games in the arimaa.com dialog."
+          title="Stop playing here. The game goes on at arimaa.com with your clock running; take your seat again from Your games in the arimaa.com dialog. Analysis stays off until you load another game."
           >Leave game</button
         >
       {:else}

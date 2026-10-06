@@ -309,7 +309,7 @@
       return;
     }
     if (view && !view.analysisAllowed) {
-      flash('No analysis while you play a game on arimaa.com');
+      flash('No analysis during your arimaa.com game (after leaving one mid-game, load another game first)');
       return;
     }
     const engine = analysisEngine(engines, settings.analysisEngine);
@@ -556,7 +556,7 @@
         aria-pressed={analysing}
         disabled={!analysing && view != null && !view.analysisAllowed}
         title={view && !view.analysisAllowed
-          ? 'No analysis while you play a game on arimaa.com'
+          ? 'No analysis during your arimaa.com game (after leaving one mid-game, load another game first)'
           : 'Analyse the shown position with an engine (l)'}
       >
         Analysis
