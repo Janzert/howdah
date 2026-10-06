@@ -742,4 +742,7 @@ pub struct WatchView {
     /// Whether the user's seat waits for an opponent to sit down. Their
     /// first move is held until then.
     pub waiting: bool,
+    /// Why the server refused the user's last move, until a move goes
+    /// through.
+    pub refused: Option<String>,
 }

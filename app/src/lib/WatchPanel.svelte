@@ -13,6 +13,16 @@
   const sideName = (c: 'gold' | 'silver') => (c === 'gold' ? 'Gold' : 'Silver');
   let takeback = $derived(view.takeback);
   let playing = $derived(watch.side != null && watch.state !== 'ended' && !watch.waiting);
+  /** Resign was clicked once; the second click resigns. */
+  let confirmResign = $state(false);
+  $effect(() => {
+    if (!playing) confirmResign = false;
+  });
+
+  async function resign() {
+    confirmResign = false;
+    await run(api.resignGameroomGame());
+  }
 
   const STATES: Record<WatchView['state'], string> = {
     following: 'Live',
@@ -35,6 +45,8 @@
   </div>
   {#if watch.event}<div class="note">{watch.event}</div>{/if}
   {#if watch.detail}<div class="note">{watch.detail}</div>{/if}
+  {#if watch.refused}<div class="note warn" role="alert">{watch.refused}</div>{/if}
+  {#if playing && view.sent != null}<div class="note" role="status">Sending your move…</div>{/if}
   {#if watch.waiting && watch.state !== 'stopped'}
     <div class="takeback" role="status">
       <span>Waiting for an opponent to sit</span>
@@ -63,13 +75,27 @@
         {/if}
       {/if}
     </div>
-  {:else if playing}
+  {/if}
+  {#if playing}
     <div class="takeback">
-      <button
-        disabled={!view.canAskTakeback}
-        title="Ask your opponent to take back your last move"
-        onclick={() => run(api.requestTakeback())}>Ask for takeback</button
-      >
+      {#if confirmResign}
+        <span>Resign this game?</span>
+        <span class="actions">
+          <button class="danger" onclick={resign}>Resign</button>
+          <button onclick={() => (confirmResign = false)}>Keep playing</button>
+        </span>
+      {:else}
+        {#if !takeback}
+          <button
+            disabled={!view.canAskTakeback}
+            title="Ask your opponent to take back your last move"
+            onclick={() => run(api.requestTakeback())}>Ask for takeback</button
+          >
+        {/if}
+        <span class="actions">
+          <button title="Give up the game" onclick={() => (confirmResign = true)}>Resign</button>
+        </span>
+      {/if}
     </div>
   {/if}
 </section>
@@ -120,5 +146,11 @@
   .note {
     font-size: 12px;
     color: var(--muted);
+  }
+  .note.warn {
+    color: var(--warn);
+  }
+  .danger {
+    color: var(--warn);
   }
 </style>

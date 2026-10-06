@@ -17,6 +17,10 @@
   const inMatch = $derived(view.players != null);
   /** Both sides play elsewhere: a game watched on arimaa.com. */
   const watching = $derived(view.players?.gold.kind === 'remote' && view.players.silver.kind === 'remote');
+  /** The user plays a game on a server (arimaa.com) against a remote side. */
+  const online = $derived(
+    !watching && (view.players?.gold.kind === 'remote' || view.players?.silver.kind === 'remote'),
+  );
   const browsing = $derived(inMatch && view.livePly !== view.ply && view.result == null);
   // In a match, a move that isn't the human's live move is a plan.
   const planning = $derived(inMatch && !view.playsLive && view.result == null);
@@ -128,6 +132,13 @@
         <button class="subtle" onclick={onEndMatch} title="Stop following the game; it stays for analysis">
           Stop watching
         </button>
+      {:else if online}
+        <button
+          class="subtle"
+          onclick={onEndMatch}
+          title="Stop playing here. The game goes on at arimaa.com with your clock running; take your seat again from Your games in the arimaa.com dialog."
+          >Leave game</button
+        >
       {:else}
         <button class="subtle" onclick={onEndMatch} title="Stop the match; the game stays for analysis">Stop match</button>
       {/if}

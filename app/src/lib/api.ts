@@ -129,6 +129,9 @@ export const api = {
   /** Cancels a game the user created that nobody has joined; if this
    * session plays it, the session starts a new game. */
   cancelGameroomGame: (gid: string) => invoke<void>('cancel_gameroom_game', { session, gid }),
+  /** Resigns the arimaa.com game this session plays; the result arrives
+   * with the server's next update. */
+  resignGameroomGame: () => invoke<void>('resign_gameroom_game', { session }),
   /** Stops following the game; it stays on the board. */
   stopWatching: () => invoke<void>('stop_watching', { session }),
   /** The game this session follows, if any. */

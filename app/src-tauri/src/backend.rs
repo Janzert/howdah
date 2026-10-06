@@ -571,6 +571,15 @@ impl Backend {
         Ok(())
     }
 
+    /// Resigns the arimaa.com game session `id` plays.
+    pub async fn resign_gameroom_game(&self, id: SessionId) -> Result<(), ApiError> {
+        let request = match self.handle(id)?.watch().as_ref() {
+            Some(watch) => watch.resign()?,
+            None => return Err(ApiError::state("no arimaa.com game here")),
+        };
+        request.await
+    }
+
     /// Stops following the session's gameroom game; the game stays.
     pub fn stop_watching(&self, id: SessionId) -> Result<(), ApiError> {
         self.handle(id)?.stop_watching();
@@ -684,6 +693,7 @@ impl Backend {
             "cancel_gameroom_game" => {
                 ok(self.cancel_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?)
             }
+            "resign_gameroom_game" => ok(self.resign_gameroom_game(sid()?).await?),
             "stop_watching" => ok(self.stop_watching(sid()?)?),
             "watch_status" => ok(self.watch_status(sid()?)?),
             _ => Err(ApiError::state(format!("unknown command {cmd:?}"))),

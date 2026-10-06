@@ -402,11 +402,25 @@ pub struct Watch {
     /// Sends the user's moves, when playing.
     sender: Option<tauri::async_runtime::JoinHandle<()>>,
     wake: Arc<Notify>,
+    /// The seat's actions, when playing (shared with the tasks, which
+    /// replace them when the seat is).
+    actions: Option<Arc<Mutex<Actions>>>,
 }
 
 impl Watch {
     pub fn view(&self) -> WatchView {
         lock(&self.view).clone()
+    }
+
+    /// Resigns the game the user plays: the request to await, which
+    /// holds no lock. The result comes back with the server's next update.
+    pub fn resign(&self) -> Result<impl Future<Output = Result<(), ApiError>> + use<>, ApiError> {
+        let actions = self.actions.as_ref().ok_or_else(|| ApiError::state("you're not playing this game"))?;
+        if lock(&self.view).state == WatchState::Ended {
+            return Err(ApiError::state("the game is over"));
+        }
+        let act = lock(actions).clone();
+        Ok(async move { act.act("resign", &[]).await.map(drop).map_err(net_error) })
     }
 
     /// Tells the game's tasks the session changed (a move to send, say).
@@ -535,6 +549,7 @@ async fn begin(
         event: state.raw.nonempty("event"),
         side: None,
         waiting: false,
+        refused: None,
     }));
     set_seat(&mut lock(&view), &seat);
     let next = update(&target, generation, &state, &view);
@@ -548,7 +563,7 @@ async fn begin(
     let view2 = view.clone();
     let task = match next {
         Next::Follow => {
-            let sender = actions.map(|actions| Sender { actions, wake: wake.clone() });
+            let sender = actions.clone().map(|actions| Sender { actions, wake: wake.clone() });
             let run = follow(gameroom, server, seat, sender, target, generation, view2);
             tauri::async_runtime::spawn(run)
         }
@@ -556,7 +571,7 @@ async fn begin(
     };
     // A move entered before the seat was ready goes out now.
     wake.notify_one();
-    Ok(Watch { view, task: Some(task), sender, wake })
+    Ok(Watch { view, task: Some(task), sender, wake, actions })
 }
 
 /// Starts a match between the game's players, as the server reports them.
@@ -733,6 +748,15 @@ fn set_seat(view: &mut WatchView, seat: &Seat) {
         Seat::Viewer(ViewerSeat::Asip { why }) => Some(format!("moves arrive about every 10 s ({why})")),
         _ => None,
     };
+}
+
+/// Shows (or clears) why the server refused the user's move.
+fn set_refused(target: &Target, view: &Mutex<WatchView>, refused: Option<String>) {
+    let mut v = lock(view);
+    if v.refused != refused {
+        v.refused = refused;
+        emit(&target.events, WATCH_UPDATE, v.clone());
+    }
 }
 
 fn set_state(target: &Target, view: &Mutex<WatchView>, state: WatchState, detail: Option<String>) {
@@ -943,6 +967,7 @@ async fn send_moves(
             Ok(_) => {
                 sent = Some((out, tries + 1, Instant::now()));
                 set_state(&target, &view, WatchState::Following, None);
+                set_refused(&target, &view, None);
             }
             Err(Error::Server(message)) => {
                 {
@@ -953,8 +978,12 @@ async fn send_moves(
                 }
                 target.controller.poke();
                 let label = notation::move_label(out.ply);
-                let detail = format!("arimaa.com refused {label} {}: {message}", out.text);
-                set_state(&target, &view, WatchState::Following, Some(detail));
+                set_state(&target, &view, WatchState::Following, None);
+                set_refused(
+                    &target,
+                    &view,
+                    Some(format!("arimaa.com refused {label} {}: {message}", out.text)),
+                );
                 sent = None;
             }
             Err(e) => {
@@ -1149,6 +1178,7 @@ mod tests {
         apply(&mut s, g, &seated);
         let players = s.view().players.unwrap();
         assert_eq!((players.gold.kind, players.silver.kind), (PlayerKind::Human, PlayerKind::Remote));
+        assert_eq!(players.gold.name, "bot_a", "the user plays under their username");
         assert!(s.plays_live(), "gold's move is the user's");
         assert!(s.export(false).contains("bot_a"), "the record keeps the server's names");
     }

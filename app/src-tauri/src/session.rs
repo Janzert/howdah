@@ -1971,10 +1971,21 @@ impl Session {
             result: self.tree[self.cursor_node()].result(),
             end_marker: self.tree[self.line_end()].end_marker().map(str::to_string),
             end_detail: self.end_detail.clone(),
-            players: self
-                .matchup
-                .as_ref()
-                .map(|m| PlayersView { gold: m.players[0].view(), silver: m.players[1].view() }),
+            players: self.matchup.as_ref().map(|m| {
+                // On a server, the user plays under their username (the
+                // record's tag), not as "Human".
+                let view = |i: usize, tag: &str| {
+                    let mut v = m.players[i].view();
+                    if m.server_clock()
+                        && m.players[i] == Player::Human
+                        && let Some(name) = self.tag(tag)
+                    {
+                        v.name = name;
+                    }
+                    v
+                };
+                PlayersView { gold: view(0, "Gold"), silver: view(1, "Silver") }
+            }),
             tag_names: ["Gold", "Silver"].map(|name| self.tag(name)),
             tag_ratings: ["GoldRating", "SilverRating"].map(|name| self.tag(name)),
             clock: self.clock_view(),

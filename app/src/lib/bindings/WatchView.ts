@@ -30,4 +30,9 @@ side: Color | null,
  * Whether the user's seat waits for an opponent to sit down. Their
  * first move is held until then.
  */
-waiting: boolean, };
+waiting: boolean, 
+/**
+ * Why the server refused the user's last move, until a move goes
+ * through.
+ */
+refused: string | null, };

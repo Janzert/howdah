@@ -236,7 +236,11 @@ Sharp, OpFor and other AEI engines behave.
     after `CONFIRM_WAIT` (growing with each try) is checked against a
     `gamestate` and sent again, since the server answers `ok` to moves it
     drops; an error reply calls `move_refused` and shows the message in
-    `WatchView.detail`. The same task sends takeback requests and answers
+    `WatchView.refused` until a move goes through. `Watch::resign`
+    (command `resign_gameroom_game`) posts `resign` with the seat's
+    `Actions`, which the `Watch` keeps; the result arrives with the next
+    update. In a server game the user's player shows their username (the
+    record's tag) rather than "Human". The same task sends takeback requests and answers
     (`send_takeback`); a request the server hasn't shown after
     `CONFIRM_WAIT` is checked with a `gamestate` and dropped if missing. A player's reseat takes the same side again.
     `create` (command `create_gameroom_game`) makes a game with `newgame`
@@ -327,9 +331,12 @@ Sharp, OpFor and other AEI engines behave.
     "Waiting for an opponent" with Cancel game while the user's seat
     waits, and,
     at a player's seat, "Ask for takeback" or Accept/Decline for the
-    opponent's request. TurnBar shows the player to
-    move and "Stop watching" (`end_match`), and its turn buttons only once
-    the user starts planning a move. Following the live game is the
+    opponent's request, Resign (a second click confirms), "Sending your
+    move…" while `SessionView.sent` is set, and a refusal as a warning.
+    TurnBar shows the player to
+    move and "Stop watching" (`end_match`; "Leave game" when the user
+    plays, since the game goes on at arimaa.com), and, when watching,
+    its turn buttons only once the user starts planning a move. Following the live game is the
     match's usual behaviour (the board follows at the live node, otherwise
     the missed-move alert).
   - `RecordDialog.svelte` exports the full record or, with "Main line
