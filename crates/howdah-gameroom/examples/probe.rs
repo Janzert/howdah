@@ -26,7 +26,8 @@
 //!
 //! `play` commands:
 //! ```text
-//! new w|b TC                 create an unrated game (newgame over ASIP 2.0)
+//! new w|b TC [rated]         create a game (newgame over ASIP 2.0), unrated
+//!                            unless `rated` is given
 //! cancel GID                 cancel an open game (cancelopengame)
 //! mygames                    the user's games and the open games
 //! seat NAME GID w|b HOW [GRID]
@@ -296,9 +297,10 @@ async fn play(lobby: &mut Lobby, http: Http, user: &str, password: &str) -> Resu
                 ["sleep", secs] => {
                     tokio::time::sleep(Duration::from_secs_f64(secs.parse().unwrap_or(1.0))).await
                 }
-                // Probes never create rated games.
-                ["new", s, tc] => {
-                    let (gid, seat) = lobby.new_game(side(s), tc, false).await?;
+                // Rated only when asked for by name: a rated game leaves a
+                // record and changes both players' ratings.
+                ["new", s, tc, rest @ ..] if rest.is_empty() || rest == ["rated"] => {
+                    let (gid, seat) = lobby.new_game(side(s), tc, rest == ["rated"]).await?;
                     println!("  created: gid={gid:?} gsurl={} (reply {:?})", seat.gsurl, seat.reply_format);
                 }
                 ["cancel", gid] => {

@@ -98,11 +98,15 @@ impl GameState {
             _ => r,
         });
         let result = result_code.as_deref().and_then(parse_result);
+        // A rated game's time control starts with `R ` (`R 2m/5m/100/0/30m`).
+        let tc = raw.nonempty("timecontrol");
+        let rated_tc = tc.as_deref().is_some_and(|t| t.starts_with("R "));
+        let time_control = tc.map(|t| t.strip_prefix("R ").unwrap_or(&t).trim().to_string());
         GameState {
             role: raw.str("role").as_deref().and_then(Role::from_letter),
             players: [player("wplayer"), player("bplayer")],
-            time_control: raw.nonempty("timecontrol"),
-            rated: raw.flag("rated"),
+            time_control,
+            rated: raw.flag("rated") || rated_tc,
             postal: raw.flag("postal"),
             started: raw.int("starttime").is_some_and(|t| t > 0),
             turn: raw.str("turn").as_deref().and_then(side_from_letter),
@@ -229,6 +233,19 @@ mod tests {
         assert_eq!(clock.turn_elapsed, Duration::from_secs(10));
         assert_eq!(clock.game_elapsed, Some(Duration::from_secs(300)));
         assert_eq!(s.takeback, None);
+    }
+
+    #[test]
+    fn rated_time_controls_lose_their_mark() {
+        // As game 539472's state had it.
+        let s = GameState::from_record(Record::decode(r#"{"timecontrol":"R 2m/5m/100/0/30m"}"#).unwrap());
+        assert_eq!(s.time_control.as_deref(), Some("2m/5m/100/0/30m"));
+        assert!(s.rated);
+        let s = GameState::from_record(
+            Record::decode(r#"{"timecontrol":"2m/5m/100/0/30m","rated":"0"}"#).unwrap(),
+        );
+        assert_eq!(s.time_control.as_deref(), Some("2m/5m/100/0/30m"));
+        assert!(!s.rated);
     }
 
     #[test]

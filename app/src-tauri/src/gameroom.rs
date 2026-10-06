@@ -517,8 +517,8 @@ fn start(s: &mut Session, state: &GameState) {
     }
     let tc: Option<TimeControl> = state.time_control.as_deref().and_then(|t| t.parse().ok());
     s.start_match(players, [tc; 2], false);
-    // Whether the server takes takeback requests in rated games isn't
-    // known; don't ask.
+    // In rated games the server answers `ok` to takeback requests and
+    // ignores them (seen in game 539472); don't ask.
     if state.rated {
         s.forbid_takeback_requests();
     }
