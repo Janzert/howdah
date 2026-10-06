@@ -242,7 +242,15 @@ Sharp, OpFor and other AEI engines behave.
     client does). Each reply goes through `apply`: `sync_remote`,
     `set_remote_clock`, `finish_remote`. The task stops when the game ends,
     on `stop_watching`, or when the session's generation changes; failed
-    polls are retried with a pause growing to 30 s. When the game server
+    polls are retried with a pause growing to 30 s, or to 5 s after a
+    network error (`NETWORK_BACKOFF`), so play resumes soon after the
+    network does. `SleepWatch` notices the computer having slept (the
+    wall clock ran ahead of the monotonic one) and drops the old poll
+    for a full `gamestate`. `Http` sets TCP keepalive (15 s idle, 5 s
+    probes, 3 tries), so a long poll on a connection that died silently
+    fails in about half a minute. The sender checks the state before
+    sending a move again and doesn't resend while that check fails
+    (the server would refuse a move it already has). When the game server
     drops the seat (a server error), `reseat` takes a new one, up to three
     times in a row; if the game ended meanwhile it asks `findgameid` and
     applies the finished game's final state (a gameroom id alone could

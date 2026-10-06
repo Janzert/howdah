@@ -27,6 +27,19 @@ const MIN_INTERVAL: Duration = Duration::from_millis(1000);
 /// How long an ordinary request may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// TCP keepalive on every connection: probes after this long idle, then
+/// every [`KEEPALIVE_INTERVAL`], giving up after [`KEEPALIVE_RETRIES`]
+/// unanswered. A long poll sits idle for minutes; without them a
+/// connection that died silently (a network change, a NAT dropping it)
+/// would go unnoticed until the request timed out. The server's kernel
+/// answers the probes, so they cost the gameroom nothing.
+const KEEPALIVE_IDLE: Duration = Duration::from_secs(15);
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
+const KEEPALIVE_RETRIES: u32 = 3;
+
+/// How long connecting may take.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Fields never logged as they are.
 const SECRETS: [&str; 4] = ["password", "sid", "auth", "tid"];
 
@@ -169,6 +182,10 @@ impl Http {
             .user_agent(user_agent)
             // The browser login answers with a redirect that sets the cookie.
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(CONNECT_TIMEOUT)
+            .tcp_keepalive(KEEPALIVE_IDLE)
+            .tcp_keepalive_interval(KEEPALIVE_INTERVAL)
+            .tcp_keepalive_retries(KEEPALIVE_RETRIES)
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
         Ok(Http { client, last: Arc::new(Mutex::new(None)), log })

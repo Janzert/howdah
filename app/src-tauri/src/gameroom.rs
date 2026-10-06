@@ -71,6 +71,23 @@ const MAXWAIT: Duration = Duration::from_secs(300);
 /// Longest wait between retries after failed polls.
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
+/// Longest wait between retries after a network error (no connection,
+/// a dropped one), so play resumes soon after the network does. Such
+/// requests mostly never reach the server; errors from the server itself
+/// back off to [`MAX_BACKOFF`].
+const NETWORK_BACKOFF: Duration = Duration::from_secs(5);
+
+/// The watch's note while the network is down. A move entered meanwhile
+/// shows as being sent ("Sending your move…") until it goes through.
+const CONNECTION_LOST: &str = "Connection to arimaa.com lost; retrying";
+
+/// How often the follow task checks whether the computer slept.
+const SLEEP_CHECK: Duration = Duration::from_secs(5);
+
+/// How far the wall clock may run ahead of the monotonic clock between
+/// checks before it counts as a sleep.
+const SLEEP_GAP: Duration = Duration::from_secs(5);
+
 /// How many new seats a watch takes in a row, after the game server drops
 /// one, before it gives up.
 const MAX_RESEATS: u32 = 3;
@@ -803,6 +820,42 @@ struct Sender {
     wake: Arc<Notify>,
 }
 
+/// Notices the computer sleeping. On Linux and macOS the monotonic clock
+/// stops during sleep, so a long poll started before it would wait out
+/// its whole timeout afterwards on a connection that's likely dead; the
+/// wall clock doesn't stop, so a gap between them shows a sleep. (On
+/// Windows the monotonic clock runs on, and the poll's timeout already
+/// fires in time.)
+struct SleepWatch {
+    mono: Instant,
+    wall: std::time::SystemTime,
+}
+
+impl SleepWatch {
+    fn new() -> SleepWatch {
+        SleepWatch { mono: Instant::now(), wall: std::time::SystemTime::now() }
+    }
+
+    /// Whether the wall clock ran ahead of the monotonic one since the last
+    /// check (a sleep). A wall clock set back isn't one.
+    fn slept(&mut self, mono: Instant, wall: std::time::SystemTime) -> bool {
+        let mono_gap = mono.saturating_duration_since(self.mono);
+        let wall_gap = wall.duration_since(self.wall).unwrap_or_default();
+        (self.mono, self.wall) = (mono, wall);
+        wall_gap > mono_gap + SLEEP_GAP
+    }
+
+    /// Resolves once a check finds that the computer slept.
+    async fn woke(&mut self) {
+        loop {
+            tokio::time::sleep(SLEEP_CHECK).await;
+            if self.slept(Instant::now(), std::time::SystemTime::now()) {
+                return;
+            }
+        }
+    }
+}
+
 /// Long-polls the game server until the game ends or the session moves on.
 /// Failed polls are retried with a growing pause; the server may also
 /// close a waiting poll with no reply at all.
@@ -830,8 +883,29 @@ async fn follow(
     };
     let mut backoff = Duration::from_secs(1);
     let mut reseats = 0;
+    let mut sleep_watch = SleepWatch::new();
+    // After a sleep, the full state instead of waiting on the old poll.
+    let mut resync = false;
     loop {
-        match server.update(MAXWAIT).await {
+        let polled = if std::mem::take(&mut resync) {
+            server.game_state().await
+        } else {
+            tokio::select! {
+                polled = server.update(MAXWAIT) => polled,
+                () = sleep_watch.woke() => {
+                    set_state(&target, &view, WatchState::Reconnecting, Some("the computer slept; catching up".into()));
+                    resync = true;
+                    // The sender checks its move too.
+                    if let Some(sender) = &sender {
+                        sender.wake.notify_one();
+                    }
+                    continue;
+                }
+            }
+        };
+        // Network errors retry sooner than the server's own.
+        let mut cap = MAX_BACKOFF;
+        match polled {
             Ok(state) => {
                 backoff = Duration::from_secs(1);
                 reseats = 0;
@@ -842,7 +916,11 @@ async fn follow(
                 continue;
             }
             Err(Error::Empty) => {}
-            Err(e @ (Error::Network(_) | Error::Status(_) | Error::BadReply(_))) => {
+            Err(Error::Network(_)) => {
+                cap = NETWORK_BACKOFF;
+                set_state(&target, &view, WatchState::Reconnecting, Some(CONNECTION_LOST.into()));
+            }
+            Err(e @ (Error::Status(_) | Error::BadReply(_))) => {
                 set_state(&target, &view, WatchState::Reconnecting, Some(e.to_string()));
             }
             Err(e @ (Error::Server(_) | Error::Refused | Error::Expired)) if reseats < MAX_RESEATS => {
@@ -886,8 +964,8 @@ async fn follow(
             set_state(&target, &view, WatchState::Stopped, None);
             return;
         }
-        tokio::time::sleep(backoff).await;
-        backoff = (backoff * 2).min(MAX_BACKOFF);
+        tokio::time::sleep(backoff.min(cap)).await;
+        backoff = (backoff.min(cap) * 2).min(cap);
     }
 }
 
@@ -939,12 +1017,12 @@ async fn send_moves(
     actions: Arc<Mutex<Actions>>,
     wake: Arc<Notify>,
 ) {
-    // The move last sent, how many times, and when.
+    // The move last sent, how many times, and when to check on it.
     let mut sent: Option<(OutgoingMove, u32, Instant)> = None;
     // When the user's takeback request was sent, until the server shows it.
     let mut asked: Option<Instant> = None;
     loop {
-        let move_due = sent.as_ref().map(|(_, tries, at)| *at + (CONFIRM_WAIT * *tries).min(MAX_BACKOFF));
+        let move_due = sent.as_ref().map(|(_, _, due)| *due);
         match move_due.into_iter().chain(asked.map(|at| at + CONFIRM_WAIT)).min() {
             None => wake.notified().await,
             Some(due) => {
@@ -970,28 +1048,39 @@ async fn send_moves(
             continue;
         }
         let tries = match &sent {
-            Some((last, tries, at)) if *last == out => {
-                if at.elapsed() < (CONFIRM_WAIT * *tries).min(MAX_BACKOFF) {
+            Some((last, tries, due)) if *last == out => {
+                if Instant::now() < *due {
                     continue;
                 }
                 // Not back yet: dropped, or the update hasn't come. The
-                // full state settles which.
+                // full state settles which. Without it (the network is
+                // down), sending again could post a move the server already
+                // has, which it would refuse; check again soon instead.
+                let tries = *tries;
                 let act = lock(&actions).clone();
-                if let Ok(state) = act.game_state().await {
-                    update(&target, generation, &state, &view);
-                    if lock(&target.session).outgoing_move().as_ref() != Some(&out) {
-                        sent = None;
+                match act.game_state().await {
+                    Ok(state) => {
+                        update(&target, generation, &state, &view);
+                        if lock(&target.session).outgoing_move().as_ref() != Some(&out) {
+                            sent = None;
+                            continue;
+                        }
+                    }
+                    Err(_) => {
+                        set_state(&target, &view, WatchState::Reconnecting, Some(CONNECTION_LOST.into()));
+                        sent = Some((out, tries, Instant::now() + NETWORK_BACKOFF));
                         continue;
                     }
                 }
-                *tries
+                tries
             }
             _ => 0,
         };
         let act = lock(&actions).clone();
         match act.act("move", &[("move", out.text.clone())]).await {
             Ok(_) => {
-                sent = Some((out, tries + 1, Instant::now()));
+                let wait = (CONFIRM_WAIT * (tries + 1)).min(MAX_BACKOFF);
+                sent = Some((out, tries + 1, Instant::now() + wait));
                 set_state(&target, &view, WatchState::Following, None);
                 set_refused(&target, &view, None);
             }
@@ -1012,11 +1101,11 @@ async fn send_moves(
                 );
                 sent = None;
             }
-            Err(e) => {
-                // It may have arrived; checked when due.
-                let detail = format!("sending the move failed ({e}); trying again");
-                set_state(&target, &view, WatchState::Reconnecting, Some(detail));
-                sent = Some((out, tries + 1, Instant::now()));
+            Err(_) => {
+                // It may have arrived; the state is checked before sending
+                // it again, soon.
+                set_state(&target, &view, WatchState::Reconnecting, Some(CONNECTION_LOST.into()));
+                sent = Some((out, tries + 1, Instant::now() + Duration::from_secs(2)));
             }
         }
     }
@@ -1136,6 +1225,19 @@ mod tests {
              tcwreserve=0\ntcbreserve=0\ntimeonserver=1000\nwstartmove=990\n{extra}"
         );
         GameState::from_record(Record::decode(&text).unwrap())
+    }
+
+    #[test]
+    fn a_sleep_shows_as_the_wall_clock_running_ahead() {
+        let mut w = SleepWatch::new();
+        let (mono, wall) = (w.mono, w.wall);
+        let secs = Duration::from_secs;
+        // Awake: both clocks advance together (a little jitter is fine).
+        assert!(!w.slept(mono + secs(5), wall + secs(5) + Duration::from_millis(300)));
+        // Asleep for a minute: the monotonic clock stood still.
+        assert!(w.slept(mono + secs(10), wall + secs(70)));
+        // The wall clock set back an hour isn't a sleep.
+        assert!(!w.slept(mono + secs(15), wall - secs(3600)));
     }
 
     #[test]
