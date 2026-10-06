@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 use howdah_arimaa::Color;
 
 use crate::finished::{FinishedGame, RecentGame};
+use crate::players::{PastGames, PlayerMatch, parse_past_games, parse_search};
 use crate::state::{GameState, Role};
 use crate::wire::{Format, Record, encode_request};
 
@@ -47,6 +48,16 @@ pub enum Error {
     Server(String),
     #[error("not logged in")]
     NotLoggedIn,
+    /// The lobby session has expired (or was ended elsewhere): log in
+    /// again.
+    #[error("the gameroom login has expired")]
+    Expired,
+}
+
+/// Whether a server error message means the lobby session is gone
+/// ("Gameroom: Session id is invalid or expired [<sid>]").
+fn is_expired(message: &str) -> bool {
+    message.contains("invalid or expired") || message.starts_with("Session Expired")
 }
 
 /// The ASIP version, which picks the lobby and the request encoding.
@@ -225,6 +236,21 @@ impl Http {
     /// given. The log shows the URL with secrets redacted and only the
     /// page's size, since pages carry session ids.
     pub async fn get_page(&self, url: &str, cookies: Option<&str>) -> Result<String, Error> {
+        self.page(url, cookies, None).await
+    }
+
+    /// Posts a form and gets the page that answers it, as
+    /// [`Http::get_page`] does. The form's values aren't logged.
+    pub async fn post_page(
+        &self,
+        url: &str,
+        cookies: Option<&str>,
+        params: &[(&str, String)],
+    ) -> Result<String, Error> {
+        self.page(url, cookies, Some(encode_request(Format::KeyValue, params))).await
+    }
+
+    async fn page(&self, url: &str, cookies: Option<&str>, form: Option<String>) -> Result<String, Error> {
         {
             let mut last = self.last.lock().await;
             if let Some(t) = *last {
@@ -233,7 +259,13 @@ impl Http {
             *last = Some(Instant::now());
         }
         let started = Instant::now();
-        let mut request = self.client.get(url).header("Referer", url).timeout(REQUEST_TIMEOUT);
+        let mut request = match form {
+            Some(body) => {
+                self.client.post(url).header("Content-Type", "application/x-www-form-urlencoded").body(body)
+            }
+            None => self.client.get(url),
+        };
+        request = request.header("Referer", url).timeout(REQUEST_TIMEOUT);
         if let Some(cookies) = cookies {
             request = request.header("Cookie", cookies);
         }
@@ -324,7 +356,7 @@ impl Http {
                 .iter()
                 .filter(|(k, v)| SECRETS.contains(k) && !v.is_empty())
                 .fold(e, |e, (_, v)| e.replace(v.as_str(), "<redacted>"));
-            return Err(Error::Server(e));
+            return Err(if is_expired(&e) { Error::Expired } else { Error::Server(e) });
         }
         Ok(record)
     }
@@ -547,7 +579,7 @@ impl Lobby {
     pub async fn open(&self, gid: &str, side: Color) -> Result<Opened, Error> {
         match self.browser_open(gid, side).await {
             Ok(opened) => Ok(opened),
-            Err(e @ (Error::NotLoggedIn | Error::Server(_))) => Err(e),
+            Err(e @ (Error::NotLoggedIn | Error::Expired | Error::Server(_))) => Err(e),
             Err(e) if self.grid.is_some() => {
                 let seat = self.reserve_seat_over(Asip::V1, gid, Role::Viewer).await?;
                 let server = GameServer::sit(self.http.clone(), &seat, Asip::V1).await?;
@@ -583,7 +615,8 @@ impl Lobby {
             .find(|u| u.contains("js_sit.cgi"));
         let Some(game_page) = game_page else {
             if let Some(e) = error_page(&page) {
-                return Err(Error::Server(page_text(&e, &sid)));
+                let e = page_text(&e, &sid);
+                return Err(if is_expired(&e) { Error::Expired } else { Error::Server(e) });
             }
             return Err(Error::BadReply(format!(
                 "opengamewin.cgi gave no game page: {}",
@@ -598,6 +631,35 @@ impl Lobby {
             .map_or_else(|| format!("{}gameserver/client3gs.cgi", self.root()), str::to_string);
         let server = GameServer::join(self.http.clone(), &url, Format::Json, gs_sid);
         Ok(Opened::Live(server, ViewerSeat::Browser))
+    }
+
+    /// Searches the players by username or real name (any part of
+    /// either), as the gameroom's "Search Players" page does.
+    pub async fn search_players(&self, text: &str) -> Result<Vec<PlayerMatch>, Error> {
+        let sid = self.sid()?;
+        let url = format!("{}searchPlayers.cgi", self.base);
+        let cookies = self.cookies.clone().unwrap_or_else(|| format!("sid={sid}"));
+        let page = self.http.post_page(&url, Some(&cookies), &[("any", text.trim().to_string())]).await?;
+        // The results page looks like an error page too, headed "Results".
+        if let Some(e) = error_page(&page).filter(|e| !e.starts_with("Results")) {
+            let e = page_text(&e, &sid);
+            return Err(if is_expired(&e) { Error::Expired } else { Error::Server(e) });
+        }
+        Ok(parse_search(&page))
+    }
+
+    /// Player `player_id`'s finished games, newest first, 50 from
+    /// `offset` on (`pastgames.cgi`, which needs no session).
+    pub async fn player_games(&self, player_id: &str, offset: u32) -> Result<PastGames, Error> {
+        if player_id.is_empty() || !player_id.chars().all(|c| c.is_ascii_digit()) {
+            return Err(Error::Server(format!("not a player id: {player_id:?}")));
+        }
+        let mut url = format!("{}pastgames.cgi?id={player_id}", self.base);
+        if offset > 0 {
+            url.push_str(&format!("&off={offset}"));
+        }
+        let page = self.http.get_page(&url, None).await?;
+        Ok(parse_past_games(&page, offset))
     }
 
     /// Makes a game server URL absolute. ASIP 2.0 can return one relative
@@ -819,6 +881,14 @@ mod tests {
         let e = error_page(expired).unwrap();
         assert_eq!(page_text(&e, ""), "Expired Game: Cannot find the game id for this game.");
         assert_eq!(error_page("<html>a login page</html>"), None);
+        let session = "<h2 align=center>Session Expired</h2>\n<p align=center><i>Use the back button of your \
+            browser to return to the previous page.</i></p>\n<p><b>Your session has expired, please login again.</b>";
+        assert!(is_expired(&page_text(&error_page(session).unwrap(), "")));
+        assert!(is_expired("Gameroom: Session id is invalid or expired [<redacted>]"));
+        let results = "<h2 align=center>Results</h2>\n<p align=center><i>Use the back button of your browser \
+            to return to the previous page.</i></p>";
+        assert!(error_page(results).unwrap().starts_with("Results"), "search results look like errors");
+        assert!(!is_expired("Expired Game: Cannot find the game id for this game."));
     }
 
     #[test]

@@ -10,6 +10,7 @@
 
 use howdah_arimaa::{GameRecord, RecordError};
 
+use crate::state::GameState;
 use crate::wire::{Format, Record};
 
 /// A game from the lobby's `recentgames` list (ASIP 2.0 `state`), the last
@@ -96,6 +97,18 @@ impl FinishedGame {
         let day: u32 = day.parse().ok()?;
         let year: u32 = year.parse().ok()?;
         Some(format!("{year:04}.{month:02}.{day:02}"))
+    }
+
+    /// The game as a final game server state: players, time control,
+    /// moves, result and the permanent id, for a watch that missed the
+    /// end.
+    pub fn state(&self) -> GameState {
+        let mut vars = self.vars.clone();
+        if let Some(moves) = vars.str("movelist") {
+            vars.fields.insert("moves".into(), moves.into());
+        }
+        vars.fields.insert("finishedId".into(), self.id.clone().into());
+        GameState::from_record(vars)
     }
 
     /// The game as a record: its moves and result, with the players,
@@ -221,6 +234,11 @@ arimaa.window();
         let game = FinishedGame::from_page("671438", PAGE).unwrap();
         assert_eq!(game.time_used(), [1, 1, 20, 20]);
         assert_eq!(game.date().as_deref(), Some("2026.10.04"));
+        let state = game.state();
+        assert_eq!(state.moves.len(), 4);
+        assert_eq!(state.moves[2], "Hd2n Ee2n Ce1n Ee3n");
+        assert_eq!(state.result, Some(GameResult { winner: Color::Silver, reason: WinReason::Score }));
+        assert_eq!(state.finished_id.as_deref(), Some("671438"));
         let record = game.record().unwrap();
         assert_eq!(record.tag("Gold"), Some("bot_testbot"));
         assert_eq!(record.tag("SilverRating"), Some("1848"));

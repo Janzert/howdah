@@ -17,6 +17,8 @@
 //!   [`Lobby::open`] opens a game by id the same way, live or finished
 //!   ([`FinishedGame`], read from the viewer page), and [`Lobby::games`]
 //!   lists the live and recently finished games.
+//!   [`Lobby::search_players`] and [`Lobby::player_games`] find a
+//!   player's past games ([`PastGames`]).
 //! - [`GameServer`]: sit, `gamestate`, and the `updategamestate` long poll
 //!   (keeping the moves and chat received so far).
 //! - Requests carry a Referer (the server refuses requests under the
@@ -28,6 +30,7 @@
 
 pub mod client;
 pub mod finished;
+pub mod players;
 pub mod state;
 pub mod wire;
 
@@ -36,6 +39,7 @@ pub use client::{
     Seat, ViewerSeat,
 };
 pub use finished::{FinishedGame, RecentGame};
+pub use players::{PastGame, PastGames, PlayerMatch};
 pub use state::{GameState, Role, ServerClock, parse_result, split_moves};
 pub use wire::{Format, Record};
 
