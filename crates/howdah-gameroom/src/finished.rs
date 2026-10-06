@@ -112,7 +112,8 @@ impl FinishedGame {
     }
 
     /// The game as a record: its moves and result, with the players,
-    /// ratings, time control, date and id as tags.
+    /// ratings, time control, date and id as tags, and each move's time
+    /// as a `%emt` command in its comment.
     pub fn record(&self) -> Result<GameRecord, RecordError> {
         let v = &self.vars;
         // The result goes in with the moves, so the reader puts it on the
@@ -148,6 +149,13 @@ impl FinishedGame {
         for (name, value) in tags {
             if let Some(value) = value {
                 record.set_tag(name, value);
+            }
+        }
+        let main = record.tree.main_line();
+        for (&node, secs) in main[1..].iter().zip(self.time_used()) {
+            if let Ok(annotation) = record.tree.annotation_mut(node) {
+                annotation
+                    .set_command("emt", &format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60));
             }
         }
         Ok(record)
@@ -245,6 +253,14 @@ arimaa.window();
         assert_eq!(record.tag("GameId"), Some("671438"));
         assert_eq!(record.tag("Date"), Some("2026.10.04"));
         let end = record.tree.line_end(GameTree::ROOT);
+        let main = record.tree.main_line();
+        let emt: Vec<_> = main[1..].iter().map(|&n| record.tree[n].annotation().command("emt")).collect();
+        assert_eq!(emt, ["0:00:01", "0:00:01", "0:00:20", "0:00:20"].map(|t| Some(t.to_string())));
+        assert!(
+            record.to_record().contains("2s hg7s ed7s ed6s ed5s {[%emt 0:00:20]}"),
+            "{}",
+            record.to_record()
+        );
         assert_eq!(record.tree.main_game().moves().len(), 4);
         assert_eq!(
             record.tree[end].result(),

@@ -948,7 +948,7 @@ impl Session {
     pub fn set_comment(&mut self, node: NodeId, text: &str) -> Result<Vec<AnimStep>, ApiError> {
         let text = text.trim_end();
         let annotation = self.tree.annotation_mut(node).map_err(ApiError::illegal)?;
-        annotation.comment = (!text.is_empty()).then(|| text.to_string());
+        annotation.set_comment_text(text);
         Ok(Vec::new())
     }
 
@@ -1623,7 +1623,7 @@ impl Session {
         SessionView {
             moves,
             tree: self.tree_view(),
-            game_comment: self.tree[GameTree::ROOT].annotation().comment.clone(),
+            game_comment: self.tree[GameTree::ROOT].annotation().comment_text(),
             cursor: self.cursor_node(),
             live: self.matchup.as_ref().map(|m| m.live),
             ply: self.cursor,
@@ -1720,7 +1720,7 @@ impl Session {
             label: notation::move_label(node.ply() - 1),
             notation: node.mv().map(Move::notation).unwrap_or_default(),
             glyphs: annotation.glyphs.iter().map(ToString::to_string).collect(),
-            comment: annotation.comment.clone(),
+            comment: annotation.comment_text(),
             intro: annotation.intro.clone(),
             on_line: self.line.contains(&id),
             result: node.result(),
@@ -2082,6 +2082,13 @@ mod tests {
         assert!(row(&s).glyphs.is_empty());
         assert!(s.toggle_glyph(GameTree::ROOT, Glyph::GOOD).is_err());
         assert!(s.set_comment(NodeId(999), "x").is_err());
+
+        // Commands in a comment are kept, but not shown or edited.
+        s.tree.annotation_mut(alt).unwrap().set_command("emt", "0:00:12");
+        assert_eq!(row(&s).comment, None);
+        s.set_comment(alt, "Timed.").unwrap();
+        assert_eq!(row(&s).comment.as_deref(), Some("Timed."));
+        assert!(s.export(false).contains("{Timed. [%emt 0:00:12]}"), "{}", s.export(false));
         assert!(s.export(false).contains("{A game}"));
         assert_eq!(s.export(true), s.tree.main_game().to_record());
     }
