@@ -38,6 +38,13 @@ describe('BoardModel', () => {
     await vi.advanceTimersByTimeAsync(3 * STEP_MS);
     expect(onSlide).not.toHaveBeenCalled();
     expect(onCapture.mock.calls).toEqual([[true]]);
+
+    // Undoing it brings the rabbit back.
+    const onRestore = vi.fn();
+    m.apply(rabbit(16), [{ id: 1, from: 18, to: 16, captured: null, restored: trapped, mover: 'gold' }], { onRestore });
+    await vi.advanceTimersByTimeAsync(3 * STEP_MS);
+    expect(onRestore).toHaveBeenCalledTimes(1);
+    expect(m.pieces.map((p) => p.square)).toEqual([16]);
   });
 
   it('animates a move and settles on the final position', async () => {

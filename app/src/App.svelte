@@ -341,6 +341,7 @@
   const animHooks = (entering: boolean): AnimHooks => ({
     onSlide: (last) => play(last && !entering ? 'lastStep' : 'step'),
     onCapture: (own) => play(own ? 'ownLoss' : 'capture'),
+    onRestore: () => play('restore'),
   });
 
   function goto(ply: number) {

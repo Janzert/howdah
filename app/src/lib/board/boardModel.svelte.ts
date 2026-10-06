@@ -22,6 +22,8 @@ export interface AnimHooks {
   onSlide?: (last: boolean) => void;
   /** A piece is captured; `own` if it's the mover's own piece. */
   onCapture?: (own: boolean) => void;
+  /** A captured piece comes back (an undone capture). */
+  onRestore?: () => void;
 }
 
 /** Default slide duration per step; see `BoardModel.setBaseSpeed`. */
@@ -215,6 +217,7 @@ export class BoardModel {
       if (route.length > 1) this.stepMs = Math.min(this.stepMs, ROUTE_STEP_MS);
       if (a.restored) {
         this.pieces.push({ ...a.restored, frozen: false, fading: 'in', instant: true });
+        hooks.onRestore?.();
         await sleep(this.fadeMs);
         const r = this.find(a.restored.id);
         if (r) {

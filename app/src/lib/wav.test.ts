@@ -1,22 +1,40 @@
 import { describe, expect, it } from 'vitest';
+import dogStep from '../sounds/classic/dogStep.wav?inline';
+import drop2 from '../sounds/classic/Drop2.wav?inline';
+import elephantStep from '../sounds/classic/elephantStep.wav?inline';
+import metal2 from '../sounds/classic/Metal2_3.wav?inline';
 import place from '../sounds/classic/place.wav?inline';
-import slide from '../sounds/classic/slide.wav?inline';
+import slide2 from '../sounds/classic/slide2.wav?inline';
 import trapped from '../sounds/classic/trapped.wav?inline';
 import win from '../sounds/classic/win.wav?inline';
 import { dataUrlBytes, decodeWav } from './wav';
 
 // Loaded the same way the app loads them.
-const files: Record<string, string> = { 'place.wav': place, 'slide.wav': slide, 'trapped.wav': trapped, 'win.wav': win };
+const files: Record<string, string> = {
+  'place.wav': place,
+  'trapped.wav': trapped,
+  'win.wav': win,
+  'slide2.wav': slide2,
+  'dogStep.wav': dogStep,
+  'Drop2.wav': drop2,
+  'elephantStep.wav': elephantStep,
+  'Metal2_3.wav': metal2,
+};
 const sound = (name: string) => dataUrlBytes(files[name]);
 
 describe('decodeWav', () => {
   it('decodes the classic sounds', () => {
     const expected: Record<string, [number, number]> = {
       'place.wav': [11025, 504],
-      'slide.wav': [11000, 998],
       // 18-byte fmt chunk plus a fact chunk before the data.
       'trapped.wav': [22050, 24282],
       'win.wav': [11025, 38369],
+      // 16-bit, converted from the archive's .au files.
+      'slide2.wav': [8000, 1231],
+      'dogStep.wav': [8000, 1375],
+      'Drop2.wav': [8000, 8448],
+      'elephantStep.wav': [8012, 1854],
+      'Metal2_3.wav': [11000, 517],
     };
     for (const [name, [rate, frames]] of Object.entries(expected)) {
       const w = decodeWav(sound(name));

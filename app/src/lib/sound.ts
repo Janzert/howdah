@@ -27,6 +27,7 @@ export type SoundName =
   | 'lastStep' // a move's last step, a committed move or setup, a missed move
   | 'capture' // an opponent's piece trapped
   | 'ownLoss' // the mover's own piece trapped
+  | 'restore' // a trapped piece back, as a step is undone
   | 'gameStart'
   | 'win' // a game ending, unless the lone human player lost
   | 'loss'
@@ -38,6 +39,7 @@ const sources: Record<SoundName, string> = {
   lastStep: place,
   capture: trapped,
   ownLoss: dogStep,
+  restore: place,
   gameStart: win,
   win: drop2,
   loss: elephantStep,
