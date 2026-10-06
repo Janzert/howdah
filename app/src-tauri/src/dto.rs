@@ -721,6 +721,51 @@ pub struct GameroomGames {
     pub mine: Vec<LiveGameView>,
     /// Games others created, with a seat to take.
     pub open: Vec<LiveGameView>,
+    /// Open invitations, to the user and from them.
+    pub invitations: Vec<InvitationView>,
+}
+
+/// An open invitation to play, to the user (`incoming`) or from them.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InvitationView {
+    pub incoming: bool,
+    /// The other player's username and rating.
+    pub opponent: Option<String>,
+    pub opponent_rating: Option<String>,
+    /// The side the user would play.
+    pub side: Color,
+    pub time_control: Option<String>,
+    pub rated: bool,
+    /// The inviter's message.
+    pub message: Option<String>,
+    /// The other player's id and when it was sent, which name the
+    /// invitation in the accept, decline and cancel commands.
+    pub other_id: String,
+    pub created: String,
+}
+
+/// How an invitation the user sent was answered, sent as
+/// `gameroom://invitation`.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InvitationAnswer {
+    pub opponent: String,
+    pub outcome: InvitationOutcome,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export)]
+pub enum InvitationOutcome {
+    /// Accepted: the new game, and the user's side in it.
+    Accepted { gid: String, side: Color },
+    /// Declined, in the server's words with the reason.
+    Declined { message: String },
+    /// Gone without an answer (cancelled elsewhere, or expired).
+    Gone,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]

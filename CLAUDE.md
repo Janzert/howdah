@@ -119,6 +119,14 @@ Sharp, OpFor and other AEI engines behave.
     (`opengamewin.cgi`, the `arimaa.vars` lines), with `record()` making a
     `GameRecord` (players, ratings, time control, date, `GameId`, result,
     and each move's time as `%emt`) and `state()` a final `GameState`.
+  - `invitations`: `Invitation` (the lobby's `invitedmegames` and
+    `iinvitedgames`, in `LobbyGames`) and the waiting page's answers
+    (`parse_wait`). ASIP has no invitation actions, so `Lobby::invite`,
+    `wait_invite` (the inviter's ~110 s long poll), `accept_invite`,
+    `decline_invite` and `cancel_invite` use the browser lobby's pages;
+    `invite` takes the ids from the redirect, or from the lobby's list
+    when the server answers with an "Invitation Sent" page instead.
+    `Lobby` is `Clone` so a long wait can run on a copy of the session.
   - `players`: the player search (`searchPlayers.cgi`, `PlayerMatch`),
     a player's past games (`pastgames.cgi?id=`, `PastGames`, 50 a page),
     and the postal games being played (`postalgames.cgi`, `PostalGame`,
@@ -368,7 +376,16 @@ Sharp, OpFor and other AEI engines behave.
     asked), to watch. Postal is the server's call from the time control
     (days per move, or `0/0/0/0/0`, its "No time limit", which `start`
     makes untimed); `WatchView.postal` labels the panel, and clocks of a
-    day or more read `Nd h:mm` (`formatClock`). It refreshes the lists every 20 s while
+    day or more read `Nd h:mm` (`formatClock`). Invitations: the New
+    game form's Opponent field invites that player instead
+    (`invite_gameroom_player`; a task waits for the answer and sends it
+    as `gameroom://invitation`; accepted, App plays the game unless the
+    window plays another), and an Invitations section lists them with
+    Accept (`accept_gameroom_invitation`, which also takes the seat),
+    Decline and Cancel. While logged in, `Gameroom::watch_lobby` polls
+    `state` every minute and sends `gameroom://lobby`: App counts
+    invitations to the user on the toolbar's arimaa.com button and
+    announces new ones. It refreshes the lists every 20 s while
     open, and after an error checks the login, showing the login form if
     it has expired. `WatchPanel.svelte` under the comment box
     shows the followed game's state (spectators don't get the chat),

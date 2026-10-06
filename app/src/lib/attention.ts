@@ -1,15 +1,19 @@
-// Drawing the user's attention when it's their move and the window isn't
-// focused: the OS's attention request (a flashing taskbar entry or a
-// bouncing dock icon) in the app, a title prefix in a plain browser.
+// Drawing the user's attention when it's their move (or something else
+// waits on them) and the window isn't focused: the OS's attention request
+// (a flashing taskbar entry or a bouncing dock icon) in the app, a title
+// prefix in a plain browser.
 import { isTauri } from '@tauri-apps/api/core';
 
-const PREFIX = '● Your move · ';
+/** The title as it was before a prefix was added. */
+let plainTitle: string | null = null;
 
 function clearTitle() {
-  if (document.title.startsWith(PREFIX)) document.title = document.title.slice(PREFIX.length);
+  if (plainTitle != null) document.title = plainTitle;
+  plainTitle = null;
 }
 
-export async function requestAttention() {
+/** `what` says why, in the browser's title ("Your move" by default). */
+export async function requestAttention(what = 'Your move') {
   if (document.hasFocus()) return;
   if (isTauri()) {
     try {
@@ -21,8 +25,11 @@ export async function requestAttention() {
     } catch (e) {
       console.warn('attention request failed:', e);
     }
-  } else if (!document.title.startsWith(PREFIX)) {
-    document.title = PREFIX + document.title;
-    window.addEventListener('focus', clearTitle, { once: true });
+  } else {
+    if (plainTitle == null) {
+      plainTitle = document.title;
+      window.addEventListener('focus', clearTitle, { once: true });
+    }
+    document.title = `● ${what} · ${plainTitle}`;
   }
 }

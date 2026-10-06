@@ -4,6 +4,7 @@
   import type { GameResult } from './bindings/GameResult';
   import type { LiveGameView } from './bindings/LiveGameView';
   import type { GameroomGames } from './bindings/GameroomGames';
+  import type { InvitationView } from './bindings/InvitationView';
   import type { PastGameView } from './bindings/PastGameView';
   import type { PlayerMatchView } from './bindings/PlayerMatchView';
   import type { PostalGameView } from './bindings/PostalGameView';
@@ -16,8 +17,11 @@
      * success. */
     onOpen: (start: () => Promise<void>) => Promise<string | null>;
     onClose: () => void;
+    /** The lists, whenever they're fetched (for the toolbar's count of
+     * invitations). */
+    onGames?: (games: GameroomGames) => void;
   }
-  let { onOpen, onClose }: Props = $props();
+  let { onOpen, onClose, onGames }: Props = $props();
 
   function pref(key: string): string {
     try {
@@ -43,6 +47,9 @@
   let savedUser = $state<string | null>(null);
   const usesSaved = $derived(savedUser != null && username.trim() === savedUser && password === '');
   let games = $state<GameroomGames | null>(null);
+  $effect(() => {
+    if (games) onGames?.(games);
+  });
   /** The id typed into "Open game". */
   let gameId = $state('');
   let busy = $state(false);
@@ -60,6 +67,9 @@
   let newSide = $state<Color | 'random'>((pref('gameroom.newSide') as Color | 'random') || 'random');
   let newTc = $state(pref('gameroom.newTc') || '2m/5m/100/0/30m');
   let newRated = $state(pref('gameroom.newRated') === '1');
+  /** A player to invite, instead of opening the game to anyone. */
+  let newOpponent = $state('');
+  let newMessage = $state('');
   /** Time controls offered in the form; any other can be typed. The
    * postal ones are the gameroom's own ("No time limit" is its
    * `0/0/0/0/0`). */
@@ -227,7 +237,40 @@
     savePref('gameroom.newTc', newTc.trim());
     savePref('gameroom.newRated', newRated ? '1' : '0');
     const side: Color = newSide === 'random' ? (Math.random() < 0.5 ? 'gold' : 'silver') : newSide;
+    if (newOpponent.trim()) {
+      // An invitation: it waits for the answer; accepted, the game opens.
+      attempt(async () => {
+        await api.inviteGameroomPlayer(newOpponent.trim(), side, newTc.trim(), newRated, newMessage);
+        newOpponent = '';
+        newMessage = '';
+        games = await api.gameroomGames();
+      });
+      return;
+    }
     enter(() => api.createGameroomGame(side, newTc.trim(), newRated));
+  }
+
+  const incoming = $derived(games?.invitations.filter((i) => i.incoming) ?? []);
+  const outgoing = $derived(games?.invitations.filter((i) => !i.incoming) ?? []);
+
+  function invitationMeta(i: InvitationView): string {
+    return [`as ${i.side === 'gold' ? 'Gold' : 'Silver'}`, i.timeControl ?? '', i.rated ? 'rated' : 'unrated']
+      .filter((s) => s)
+      .join(' · ');
+  }
+
+  function decline(i: InvitationView) {
+    attempt(async () => {
+      await api.declineGameroomInvitation(i.otherId, i.created, '');
+      games = await api.gameroomGames();
+    });
+  }
+
+  function cancelInvitation(i: InvitationView) {
+    attempt(async () => {
+      await api.cancelGameroomInvitation(i.otherId, i.created);
+      games = await api.gameroomGames();
+    });
   }
 
   function cancelGame(gid: string) {
@@ -329,6 +372,39 @@
       Logged in as <strong>{user}</strong>
       <button class="subtle" onclick={logout} disabled={busy}>Log out</button>
     </div>
+    {#if incoming.length > 0 || outgoing.length > 0}
+      <h3>Invitations</h3>
+      <ul class="games" aria-label="Invitations">
+        {#each incoming as i (i.created + i.otherId)}
+          <li>
+            <span class="game">
+              <span class="players">
+                <span class="badge">Invites you</span>{i.opponent ?? '?'}
+                {#if i.opponentRating}<span class="rating">{i.opponentRating}</span>{/if}
+              </span>
+              <span class="meta">{invitationMeta(i)}{i.message ? ` · “${i.message}”` : ''}</span>
+            </span>
+            <button onclick={() => enter(() => api.acceptGameroomInvitation(i.otherId, i.created))} disabled={busy}
+              aria-label="Accept the invitation from {i.opponent}">Accept</button
+            >
+            <button onclick={() => decline(i)} disabled={busy} aria-label="Decline the invitation from {i.opponent}"
+              >Decline</button
+            >
+          </li>
+        {/each}
+        {#each outgoing as i (i.created + i.otherId)}
+          <li>
+            <span class="game">
+              <span class="players">Waiting for {i.opponent ?? '?'} to answer</span>
+              <span class="meta">{invitationMeta(i)}</span>
+            </span>
+            <button onclick={() => cancelInvitation(i)} disabled={busy}
+              aria-label="Cancel the invitation to {i.opponent}">Cancel</button
+            >
+          </li>
+        {/each}
+      </ul>
+    {/if}
     {#if games && games.mine.length > 0}
       <h3>Your games</h3>
       <ul class="games" aria-label="Your games">
@@ -400,9 +476,20 @@
         {#each TIME_CONTROLS as [tc, label] (tc)}<option value={tc} {label}></option>{/each}
       </datalist>
       <label class="check"><input type="checkbox" bind:checked={newRated} /> Rated</label>
-      <button type="submit" disabled={busy || !newTc.trim()}>Create</button>
+      <label for="gr-new-opponent">Opponent</label>
+      <input id="gr-new-opponent" bind:value={newOpponent} placeholder="Anyone" autocomplete="off" />
+      {#if newOpponent.trim()}
+        <input bind:value={newMessage} placeholder="Message (optional)" aria-label="Message" autocomplete="off" />
+      {/if}
+      <button type="submit" disabled={busy || !newTc.trim()}>{newOpponent.trim() ? 'Invite' : 'Create'}</button>
     </form>
-    <p class="hint">The game waits in the gameroom's open games until someone sits; your first move goes once they do.</p>
+    <p class="hint">
+      {#if newOpponent.trim()}
+        Invites {newOpponent.trim()}; if they accept, the game opens here.
+      {:else}
+        The game waits in the gameroom's open games until someone sits; your first move goes once they do.
+      {/if}
+    </p>
     <h3>Live</h3>
     {#if games && games.live.length === 0}
       <p class="hint">No games are being played right now.</p>

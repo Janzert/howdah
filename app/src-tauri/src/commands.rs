@@ -301,6 +301,47 @@ pub async fn gameroom_postal_games(state: State<'_, Backend>) -> Result<Vec<Post
 }
 
 #[tauri::command]
+pub async fn invite_gameroom_player(
+    state: State<'_, Backend>,
+    who: String,
+    side: Color,
+    time_control: String,
+    rated: bool,
+    message: String,
+) -> Result<(), ApiError> {
+    state.invite_gameroom_player(&who, side, &time_control, rated, &message).await
+}
+
+#[tauri::command]
+pub async fn accept_gameroom_invitation(
+    state: State<'_, Backend>,
+    session: SessionId,
+    other_id: String,
+    created: String,
+) -> Result<(), ApiError> {
+    state.accept_gameroom_invitation(session, &other_id, &created).await
+}
+
+#[tauri::command]
+pub async fn decline_gameroom_invitation(
+    state: State<'_, Backend>,
+    other_id: String,
+    created: String,
+    reason: String,
+) -> Result<(), ApiError> {
+    state.decline_gameroom_invitation(&other_id, &created, &reason).await
+}
+
+#[tauri::command]
+pub async fn cancel_gameroom_invitation(
+    state: State<'_, Backend>,
+    other_id: String,
+    created: String,
+) -> Result<(), ApiError> {
+    state.cancel_gameroom_invitation(&other_id, &created).await
+}
+
+#[tauri::command]
 pub async fn search_gameroom_players(
     state: State<'_, Backend>,
     text: String,

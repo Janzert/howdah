@@ -109,6 +109,20 @@ export const api = {
   /** The postal games being played on arimaa.com (the live list leaves
    * them out); one page fetch, so only when asked. */
   gameroomPostalGames: () => invoke<PostalGameView[]>('gameroom_postal_games'),
+  /** Invites `who` to an arimaa.com game with the user as `side`; the
+   * answer comes as `gameroom://invitation`. */
+  inviteGameroomPlayer: (who: string, side: Color, timeControl: string, rated: boolean, message: string) =>
+    invoke<void>('invite_gameroom_player', { who, side, timeControl, rated, message }),
+  /** Accepts an invitation (`InvitationView.otherId` and `created`) and
+   * plays the game it makes in this session. */
+  acceptGameroomInvitation: (otherId: string, created: string) =>
+    invoke<void>('accept_gameroom_invitation', { session, otherId, created }),
+  /** Declines an invitation; the inviter sees `reason`. */
+  declineGameroomInvitation: (otherId: string, created: string, reason: string) =>
+    invoke<void>('decline_gameroom_invitation', { otherId, created, reason }),
+  /** Cancels the user's own invitation. */
+  cancelGameroomInvitation: (otherId: string, created: string) =>
+    invoke<void>('cancel_gameroom_invitation', { otherId, created }),
   /** The arimaa.com players whose username or real name contains `text`. */
   searchGameroomPlayers: (text: string) => invoke<PlayerMatchView[]>('search_gameroom_players', { text }),
   /** A player's finished games, newest first, 50 from `offset`. */

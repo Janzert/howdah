@@ -14,6 +14,7 @@ use howdah_arimaa::Color;
 
 use crate::clock_sync::ClockSync;
 use crate::finished::{FinishedGame, RecentGame};
+use crate::invitations::{Invitation, InviteOutcome, parse_wait};
 use crate::players::{
     PastGames, PlayerMatch, PostalGame, parse_past_games, parse_postal_games, parse_search,
 };
@@ -25,6 +26,10 @@ pub const DEFAULT_GAMEROOM: &str = "http://arimaa.com/arimaa/gameroom/";
 
 /// Shortest gap between requests, except the long poll.
 const MIN_INTERVAL: Duration = Duration::from_millis(1000);
+
+/// How long the inviter's waiting page may be held (the server answers
+/// "No Response" after ~110 s).
+const INVITE_WAIT: Duration = Duration::from_secs(150);
 
 /// How long an ordinary request may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
@@ -170,6 +175,15 @@ fn between<'a>(text: &'a str, start: &str, end: char) -> Option<&'a str> {
     Some(&rest[..rest.find(end)?])
 }
 
+/// A page as it came back: its status, where a redirect points, and the
+/// text.
+#[derive(Clone, Debug)]
+pub struct PageReply {
+    pub status: u16,
+    pub location: Option<String>,
+    pub body: String,
+}
+
 /// The HTTP side shared by the lobby and game servers.
 #[derive(Clone)]
 pub struct Http {
@@ -271,6 +285,24 @@ impl Http {
     }
 
     async fn page(&self, url: &str, cookies: Option<&str>, form: Option<String>) -> Result<String, Error> {
+        let reply = self.page_reply(url, cookies, form, REQUEST_TIMEOUT).await?;
+        match reply.status {
+            404 => Err(Error::Refused),
+            s if !(200..300).contains(&s) => Err(Error::Status(s)),
+            _ => Ok(reply.body),
+        }
+    }
+
+    /// Gets a page (or posts a form) as [`Http::get_page`] does, but returns
+    /// a redirect rather than failing on it, and waits up to `timeout` (a
+    /// page the server holds, like `inviteWait.cgi`).
+    pub async fn page_reply(
+        &self,
+        url: &str,
+        cookies: Option<&str>,
+        form: Option<String>,
+        timeout: Duration,
+    ) -> Result<PageReply, Error> {
         {
             let mut last = self.last.lock().await;
             if let Some(t) = *last {
@@ -285,13 +317,20 @@ impl Http {
             }
             None => self.client.get(url),
         };
-        request = request.header("Referer", url).timeout(REQUEST_TIMEOUT);
+        request = request.header("Referer", url).timeout(timeout);
         if let Some(cookies) = cookies {
             request = request.header("Cookie", cookies);
         }
-        let (status, reply) = match request.send().await {
-            Ok(r) => (Some(r.status().as_u16()), r.text().await.map_err(|e| Error::Network(e.to_string()))),
-            Err(e) => (None, Err(Error::Network(e.to_string()))),
+        let (status, location, reply) = match request.send().await {
+            Ok(r) => {
+                let location = r.headers().get("location").and_then(|l| l.to_str().ok()).map(str::to_string);
+                (
+                    Some(r.status().as_u16()),
+                    location,
+                    r.text().await.map_err(|e| Error::Network(e.to_string())),
+                )
+            }
+            Err(e) => (None, None, Err(Error::Network(e.to_string()))),
         };
         if let Some(log) = &self.log {
             let text = match &reply {
@@ -301,12 +340,7 @@ impl Http {
             let url = redact_query(url);
             log(&Exchange { url, request: Vec::new(), status, reply: text, elapsed: started.elapsed() });
         }
-        let reply = reply?;
-        match status {
-            Some(404) => Err(Error::Refused),
-            Some(s) if !(200..300).contains(&s) => Err(Error::Status(s)),
-            _ => Ok(reply),
-        }
+        Ok(PageReply { status: status.unwrap_or(0), location, body: reply? })
     }
 
     /// Posts `params` in `format` and decodes the reply. `wait` is how long
@@ -466,6 +500,10 @@ pub struct LobbyGames {
     /// Games others created, with a seat free (`opengames`), apart from
     /// scheduled ones that haven't started and the user's own.
     pub open: Vec<GameInfo>,
+    /// Open invitations to the user (`invitedmegames`) and from them
+    /// (`iinvitedgames`).
+    pub invited_me: Vec<Invitation>,
+    pub i_invited: Vec<Invitation>,
 }
 
 impl LobbyGames {
@@ -483,11 +521,14 @@ impl LobbyGames {
             .filter_map(GameInfo::from_record)
             .filter(|g| !mine.iter().any(|m| m.gid == g.gid))
             .collect();
+        let invitations = |key: &str| r.list(key).iter().filter_map(Invitation::from_record).collect();
         LobbyGames {
             live: games("livegames"),
             recent: r.list("recentgames").iter().filter_map(RecentGame::from_record).collect(),
             mine,
             open,
+            invited_me: invitations("invitedmegames"),
+            i_invited: invitations("iinvitedgames"),
         }
     }
 }
@@ -499,7 +540,10 @@ pub enum Opened {
     Finished(FinishedGame),
 }
 
-/// A gameroom (lobby) session.
+/// A gameroom (lobby) session. A clone shares the login, for a request
+/// that waits a long time (an invitation's answer) without holding the
+/// original.
+#[derive(Clone)]
 pub struct Lobby {
     http: Http,
     /// The gameroom directory, ending in `/`.
@@ -797,6 +841,113 @@ impl Lobby {
             return Err(if is_expired(&e) { Error::Expired } else { Error::Server(e) });
         }
         Ok(parse_postal_games(&page))
+    }
+
+    /// The lobby session as a `Cookie` header.
+    fn cookie_header(&self) -> Result<String, Error> {
+        let sid = self.sid()?;
+        Ok(self.cookies.clone().unwrap_or_else(|| format!("sid={sid}")))
+    }
+
+    /// A page's error, as an [`Error`]: expired logins apart.
+    fn page_error(&self, page: &str) -> Error {
+        let sid = self.sid.clone().unwrap_or_default();
+        let e = error_page(page).unwrap_or_else(|| page.to_string());
+        let e = page_text(&e, &sid);
+        if is_expired(&e) { Error::Expired } else { Error::Server(e) }
+    }
+
+    /// Invites player `who` to a game with the user as `side`. Returns
+    /// the invitation's invited id and time, which [`Lobby::wait_invite`]
+    /// and [`Lobby::cancel_invite`] take. The server answers either with a
+    /// redirect to the waiting page, which names them, or with an
+    /// "Invitation Sent" page, which doesn't: then they're looked up in
+    /// the lobby's list.
+    pub async fn invite(
+        &self,
+        who: &str,
+        side: Color,
+        time_control: &str,
+        rated: bool,
+        message: &str,
+    ) -> Result<(String, String), Error> {
+        let mut form = vec![
+            ("who", who.to_string()),
+            ("tct", "timecontrolc".to_string()),
+            ("timecontrol", String::new()),
+            ("timecontrolp", String::new()),
+            ("timecontrolc", time_control.to_string()),
+            ("side", Role::Player(side).letter().to_string()),
+            ("message", message.to_string()),
+            ("invite", "Invite".to_string()),
+        ];
+        if rated {
+            form.push(("rated", "on".to_string()));
+        }
+        let url = format!("{}invite.cgi", self.base);
+        let body = encode_request(Format::KeyValue, &form);
+        let reply =
+            self.http.page_reply(&url, Some(&self.cookie_header()?), Some(body), REQUEST_TIMEOUT).await?;
+        // Sent: a redirect to the waiting page, `inviteWaitWindow.cgi?iid=…&ts=…`.
+        let query = |key: &str| {
+            let location = reply.location.as_deref()?;
+            let rest = &location[location.find(&format!("{key}="))? + key.len() + 1..];
+            Some(rest.chars().take_while(char::is_ascii_digit).collect::<String>()).filter(|v| !v.is_empty())
+        };
+        if let (Some(iid), Some(ts)) = (query("iid"), query("ts")) {
+            return Ok((iid, ts));
+        }
+        if !reply.body.contains("has been invited") {
+            return Err(self.page_error(&reply.body));
+        }
+        let newest = self
+            .games()
+            .await?
+            .i_invited
+            .into_iter()
+            .filter(|i| i.opponent.as_deref().is_some_and(|o| o.eq_ignore_ascii_case(who)))
+            .max_by_key(|i| i.created.parse::<u64>().unwrap_or(0));
+        newest
+            .map(|i| (i.invited_id, i.created))
+            .ok_or_else(|| Error::BadReply(format!("invited {who}, but the invitation isn't listed")))
+    }
+
+    /// Waits (up to ~2 minutes, as the server holds the page) for an
+    /// answer to the user's invitation.
+    pub async fn wait_invite(&self, invited_id: &str, created: &str) -> Result<InviteOutcome, Error> {
+        let url = format!("{}inviteWait.cgi?iid={invited_id}&ts={created}", self.base);
+        let reply = self.http.page_reply(&url, Some(&self.cookie_header()?), None, INVITE_WAIT).await?;
+        match reply.status {
+            200 => Ok(parse_wait(&reply.body)),
+            404 => Err(Error::Refused),
+            s => Err(Error::Status(s)),
+        }
+    }
+
+    /// Accepts an invitation to the user. The game it makes is in the
+    /// user's games (`mygames`); the user isn't seated yet.
+    pub async fn accept_invite(&self, inviter_id: &str, created: &str) -> Result<(), Error> {
+        let url = format!("{}acceptInvite.cgi?id={inviter_id}&ts={created}", self.base);
+        let page = self.http.get_page(&url, Some(&self.cookie_header()?)).await?;
+        if page.contains("Accepted") { Ok(()) } else { Err(self.page_error(&page)) }
+    }
+
+    /// Declines an invitation to the user, with `reason`.
+    pub async fn decline_invite(&self, inviter_id: &str, created: &str, reason: &str) -> Result<(), Error> {
+        let url = format!("{}declineInvite.cgi", self.base);
+        let form =
+            [("reason", reason.to_string()), ("id", inviter_id.to_string()), ("ts", created.to_string())];
+        let page = self.http.post_page(&url, Some(&self.cookie_header()?), &form).await?;
+        if page.contains("Declined") { Ok(()) } else { Err(self.page_error(&page)) }
+    }
+
+    /// Cancels the user's invitation to player `invited_id`.
+    pub async fn cancel_invite(&self, invited_id: &str, created: &str, reason: &str) -> Result<(), Error> {
+        let url = format!("{}cancelInvite.cgi", self.base);
+        let form =
+            [("reason", reason.to_string()), ("id", invited_id.to_string()), ("ts", created.to_string())];
+        let page = self.http.post_page(&url, Some(&self.cookie_header()?), &form).await?;
+        if page.contains("Canceled") { Ok(()) } else { Err(self.page_error(&page)) }
     }
 
     /// Player `player_id`'s finished games, newest first, 50 from

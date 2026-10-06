@@ -48,21 +48,35 @@ use std::time::{Duration, Instant};
 
 use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
-    Actions, Asip, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http, Lobby, Opened, PastGame,
-    RecentGame, Role, ViewerSeat, parse_chat, parse_result,
+    Actions, Asip, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http, Invitation, InviteOutcome,
+    Lobby, Opened, PastGame, RecentGame, Role, ViewerSeat, parse_chat, parse_result,
 };
 use tokio::sync::Notify;
 
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, ChatLineView, GameroomGames, GameroomStatus, LiveGameView, PastGameView,
-    PlayerGamesView, PlayerMatchView, PostalGameView, RecentGameView, WatchState, WatchView,
+    AnimStep, ApiError, ChatLineView, GameroomGames, GameroomStatus, InvitationAnswer, InvitationOutcome,
+    InvitationView, LiveGameView, PastGameView, PlayerGamesView, PlayerMatchView, PostalGameView,
+    RecentGameView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
 /// Event carrying a [`WatchView`].
 pub const WATCH_UPDATE: &str = "gameroom://watch";
+
+/// Event carrying an [`InvitationAnswer`]: how an invitation the user sent
+/// was answered.
+pub const INVITATION_ANSWER: &str = "gameroom://invitation";
+
+/// Event carrying [`GameroomGames`] from the lobby watcher, while logged
+/// in: new invitations, and the user's games waiting on their move.
+pub const LOBBY_UPDATE: &str = "gameroom://lobby";
+
+/// How often the lobby watcher asks for the lobby's state (the browser
+/// lobby asks every 20 s while it's open). It also keeps the login from
+/// expiring while idle.
+const LOBBY_POLL: Duration = Duration::from_secs(60);
 
 /// How long the server may hold a long poll; the browser client asks for
 /// the same.
@@ -204,12 +218,26 @@ pub struct Gameroom {
     lobby: tokio::sync::Mutex<Option<Lobby>>,
     username: Mutex<Option<String>>,
     saved: SavedLogin,
+    /// Lobby-wide events (not a session's).
+    events: Events,
+    /// Waits for answers to the user's invitations, by their time.
+    waiters: Mutex<std::collections::HashMap<String, tauri::async_runtime::JoinHandle<()>>>,
+    /// The lobby watcher, while logged in.
+    watcher: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
 
 impl Gameroom {
-    pub fn new(saved: SavedLogin) -> Gameroom {
+    pub fn new(saved: SavedLogin, events: Events) -> Gameroom {
         let http = Http::new(&howdah_gameroom::user_agent(), None).expect("an HTTP client");
-        Gameroom { http, lobby: tokio::sync::Mutex::new(None), username: Mutex::new(None), saved }
+        Gameroom {
+            http,
+            lobby: tokio::sync::Mutex::new(None),
+            username: Mutex::new(None),
+            saved,
+            events,
+            waiters: Mutex::new(Default::default()),
+            watcher: Mutex::new(None),
+        }
     }
 
     pub fn status(&self) -> GameroomStatus {
@@ -255,6 +283,12 @@ impl Gameroom {
     }
 
     pub async fn logout(&self) -> Result<(), ApiError> {
+        if let Some(w) = lock(&self.watcher).take() {
+            w.abort();
+        }
+        for (_, w) in lock(&self.waiters).drain() {
+            w.abort();
+        }
         let old = self.lobby.lock().await.take();
         *lock(&self.username) = None;
         match old {
@@ -282,12 +316,144 @@ impl Gameroom {
     pub async fn games(&self) -> Result<GameroomGames, ApiError> {
         let games = with_lobby!(self, |l| l.games())?;
         let views = |list: Vec<GameInfo>| list.into_iter().map(game_view).collect();
+        let invitations = games
+            .invited_me
+            .into_iter()
+            .map(|i| invitation_view(i, true))
+            .chain(games.i_invited.into_iter().map(|i| invitation_view(i, false)))
+            .collect();
         Ok(GameroomGames {
             live: views(games.live),
             recent: games.recent.into_iter().map(recent_view).collect(),
             mine: views(games.mine),
             open: views(games.open),
+            invitations,
         })
+    }
+
+    /// Starts the lobby watcher: every [`LOBBY_POLL`] while logged in, the
+    /// lobby's lists go out as [`LOBBY_UPDATE`].
+    pub fn watch_lobby(self: &Arc<Self>) {
+        let gameroom = self.clone();
+        let task = tauri::async_runtime::spawn(async move {
+            loop {
+                if lock(&gameroom.username).is_none() {
+                    return;
+                }
+                if let Ok(games) = gameroom.games().await {
+                    emit(&gameroom.events, LOBBY_UPDATE, games);
+                }
+                tokio::time::sleep(LOBBY_POLL).await;
+            }
+        });
+        if let Some(old) = lock(&self.watcher).replace(task) {
+            old.abort();
+        }
+    }
+
+    /// Invites player `who` to a game with the user as `side`. A task
+    /// waits for the answer and sends it as [`INVITATION_ANSWER`].
+    pub async fn invite(
+        self: &Arc<Self>,
+        who: &str,
+        side: Color,
+        time_control: &str,
+        rated: bool,
+        message: &str,
+    ) -> Result<(), ApiError> {
+        let (who, time_control) = (who.trim(), time_control.trim());
+        if who.is_empty() {
+            return Err(ApiError::illegal("enter the username to invite"));
+        }
+        time_control.parse::<TimeControl>().map_err(|e| ApiError::illegal(e.to_string()))?;
+        let (iid, ts) = with_lobby!(self, |l| l.invite(who, side, time_control, rated, message.trim()))?;
+        let gameroom = self.clone();
+        let who = who.to_string();
+        let key = ts.clone();
+        let task = tauri::async_runtime::spawn(async move {
+            let outcome = gameroom.await_answer(&iid, &ts, side).await;
+            if let Some(outcome) = outcome {
+                emit(&gameroom.events, INVITATION_ANSWER, InvitationAnswer { opponent: who, outcome });
+            }
+            lock(&gameroom.waiters).remove(&ts);
+        });
+        lock(&self.waiters).insert(key, task);
+        Ok(())
+    }
+
+    /// Long-polls the inviter's waiting page until the invitation is
+    /// answered or gone. `None` once logged out. The wait runs on a copy
+    /// of the lobby session, so other lobby calls go on meanwhile.
+    async fn await_answer(&self, iid: &str, ts: &str, side: Color) -> Option<InvitationOutcome> {
+        loop {
+            let lobby = self.lobby.lock().await.clone()?;
+            match lobby.wait_invite(iid, ts).await {
+                Ok(InviteOutcome::Accepted { gid }) => {
+                    return Some(InvitationOutcome::Accepted { gid, side });
+                }
+                Ok(InviteOutcome::Declined { message }) => {
+                    return Some(InvitationOutcome::Declined { message });
+                }
+                Ok(_) => {
+                    // No answer yet: still open?
+                    let games: Result<_, ApiError> = async { with_lobby!(self, |l| l.games()) }.await;
+                    match games {
+                        Ok(g) if g.i_invited.iter().any(|i| i.invited_id == iid && i.created == ts) => {}
+                        Ok(_) => return Some(InvitationOutcome::Gone),
+                        Err(_) => tokio::time::sleep(Duration::from_secs(10)).await,
+                    }
+                }
+                Err(_) => tokio::time::sleep(Duration::from_secs(10)).await,
+            }
+        }
+    }
+
+    /// Accepts the invitation from `inviter_id` sent at `created`, and
+    /// returns the game it made and the user's side in it.
+    async fn accept_invite(&self, inviter_id: &str, created: &str) -> Result<(String, Color), ApiError> {
+        let open = with_lobby!(self, |l| l.games())?;
+        let inv = open
+            .invited_me
+            .into_iter()
+            .find(|i| i.inviter_id == inviter_id && i.created == created)
+            .ok_or_else(|| ApiError::state("that invitation is no longer open"))?;
+        with_lobby!(self, |l| l.accept_invite(inviter_id, created))?;
+        // The game it made: the newest of the user's games against the
+        // inviter.
+        let games = with_lobby!(self, |l| l.games())?;
+        let inviter = inv.inviter_side.index();
+        let gid = games
+            .mine
+            .iter()
+            .filter(|g| {
+                g.players[inviter]
+                    .as_deref()
+                    .zip(inv.opponent.as_deref())
+                    .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
+            })
+            .filter_map(|g| g.gid.parse::<u64>().ok())
+            .max()
+            .ok_or_else(|| ApiError::state("accepted, but the game isn't among your games yet"))?;
+        Ok((gid.to_string(), inv.inviter_side.opponent()))
+    }
+
+    /// Declines the invitation from `inviter_id` sent at `created`.
+    pub async fn decline_invite(
+        &self,
+        inviter_id: &str,
+        created: &str,
+        reason: &str,
+    ) -> Result<(), ApiError> {
+        let reason = Some(reason.trim()).filter(|r| !r.is_empty()).unwrap_or("Declined.");
+        with_lobby!(self, |l| l.decline_invite(inviter_id, created, reason))
+    }
+
+    /// Cancels the user's invitation to `invited_id` sent at `created`.
+    pub async fn cancel_invite(&self, invited_id: &str, created: &str) -> Result<(), ApiError> {
+        if let Some(w) = lock(&self.waiters).remove(created) {
+            w.abort();
+        }
+        with_lobby!(self, |l| l.cancel_invite(invited_id, created, "Canceled."))
     }
 
     /// Creates a game with the user as `side`, and returns its gameroom
@@ -357,6 +523,20 @@ impl Gameroom {
     pub async fn player_games(&self, player_id: &str, offset: u32) -> Result<PlayerGamesView, ApiError> {
         let page = with_lobby!(self, |l| l.player_games(player_id, offset))?;
         Ok(PlayerGamesView { games: page.games.into_iter().map(past_view).collect(), next: page.next })
+    }
+}
+
+fn invitation_view(i: Invitation, incoming: bool) -> InvitationView {
+    InvitationView {
+        incoming,
+        opponent: i.opponent,
+        opponent_rating: i.opponent_rating,
+        side: if incoming { i.inviter_side.opponent() } else { i.inviter_side },
+        time_control: i.time_control,
+        rated: i.rated,
+        message: i.message,
+        other_id: if incoming { i.inviter_id } else { i.invited_id },
+        created: i.created,
     }
 }
 
@@ -530,6 +710,18 @@ pub async fn open(gameroom: &Arc<Gameroom>, gid: &str, target: Target) -> Result
         }
     };
     begin(gameroom, gid, server, Seat::Viewer(how), target).await.map(Open::Watching)
+}
+
+/// Accepts an invitation (see [`Gameroom::accept_invite`]) and plays the
+/// game it makes in `target`'s session.
+pub async fn accept(
+    gameroom: &Arc<Gameroom>,
+    inviter_id: &str,
+    created: &str,
+    target: Target,
+) -> Result<Watch, ApiError> {
+    let (gid, side) = gameroom.accept_invite(inviter_id, created).await?;
+    play(gameroom, &gid, side, target).await
 }
 
 /// Takes the user's seat as `side` at live game `gid`, and plays it in
@@ -776,7 +968,7 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
     let mut v = lock(view);
     let before = v.clone();
     v.waiting = waiting(v.side, state);
-    v.away = state.present.map(|p| p == Some(false));
+    v.away = away(state);
     v.chat = parse_chat(&state.chat)
         .into_iter()
         .map(|l| ChatLineView { side: l.side, label: l.label, text: l.text })
@@ -808,6 +1000,18 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
         emit(&target.events, WATCH_UPDATE, v.clone());
     }
     next
+}
+
+/// Whether each player is away from the table: they've left (`0`), or,
+/// when the state reports the other's presence, theirs is missing although
+/// the seat is theirs (a player who accepted an invitation and hasn't sat
+/// down: game 539507).
+fn away(state: &GameState) -> [bool; 2] {
+    let reported = state.present.iter().any(Option::is_some);
+    [0, 1].map(|i| match state.present[i] {
+        Some(present) => !present,
+        None => reported && state.players[i].is_some(),
+    })
 }
 
 /// Whether the user's seat (at `side`) waits for an opponent: the game
@@ -1374,6 +1578,17 @@ mod tests {
             record.contains("[Silver \"them\"]") && record.contains("[SilverRating \"1600\"]"),
             "{record}"
         );
+    }
+
+    #[test]
+    fn players_away_from_the_table() {
+        let st = |extra: &str| {
+            let text = format!("wplayer=a\nbplayer=b\nturn=w\nmoves=1w\n{extra}");
+            GameState::from_record(Record::decode(&text).unwrap())
+        };
+        assert_eq!(away(&st("wpresent=10\nbpresent=0\n")), [false, true], "left");
+        assert_eq!(away(&st("wpresent=10\n")), [false, true], "never sat");
+        assert_eq!(away(&st("")), [false, false], "not reported");
     }
 
     #[test]

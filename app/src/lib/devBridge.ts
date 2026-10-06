@@ -44,7 +44,7 @@ async function invoke(cmd: string, args: unknown): Promise<unknown> {
 export function installDevBridge(): void {
   mockIPC((cmd, args) => invoke(cmd, args), { shouldMockEvents: true });
   const source = new EventSource(`${BASE}/events`);
-  for (const name of ['game://changed', 'engine://output', 'analysis://update', 'gameroom://watch']) {
+  for (const name of ['game://changed', 'engine://output', 'analysis://update', 'gameroom://watch', 'gameroom://lobby', 'gameroom://invitation']) {
     source.addEventListener(name, (e) => {
       void emit(name, JSON.parse((e as MessageEvent<string>).data));
     });

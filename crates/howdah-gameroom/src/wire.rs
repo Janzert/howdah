@@ -55,6 +55,14 @@ impl Record {
         self.str(key).filter(|s| !s.is_empty())
     }
 
+    /// A field holding an object (JSON), as a record.
+    pub fn object(&self, key: &str) -> Option<Record> {
+        match self.fields.get(key)? {
+            Value::Object(fields) => Some(Record { fields: fields.clone(), format: Some(Format::Json) }),
+            _ => None,
+        }
+    }
+
     /// A field as a whole number.
     pub fn int(&self, key: &str) -> Option<i64> {
         self.str(key)?.trim().parse().ok()

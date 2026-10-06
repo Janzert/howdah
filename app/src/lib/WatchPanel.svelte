@@ -59,7 +59,7 @@
   {#if watch.event}<div class="note">{watch.event}</div>{/if}
   {#if watch.detail}<div class="note">{watch.detail}</div>{/if}
   {#if playing && watch.side && watch.away[watch.side === 'gold' ? 1 : 0]}
-    <div class="note" role="status">Your opponent has left the table; their clock keeps running.</div>
+    <div class="note" role="status">Your opponent isn't at the table; their clock keeps running.</div>
   {/if}
   {#if flagged}
     <div class="note" role="status">

@@ -137,7 +137,7 @@ impl Backend {
             sessions: Mutex::new(BTreeMap::new()),
             next_session: AtomicU32::new(MAIN_SESSION.0),
             engines: Arc::new(Mutex::new(registry)),
-            gameroom: Arc::new(Gameroom::new(saved_login)),
+            gameroom: Arc::new(Gameroom::new(saved_login, events.clone())),
             events,
         };
         let main = backend.open_session();
@@ -462,7 +462,57 @@ impl Backend {
         password: &str,
         remember: bool,
     ) -> Result<GameroomStatus, ApiError> {
-        self.gameroom.login(username, password, remember).await
+        let status = self.gameroom.login(username, password, remember).await?;
+        self.gameroom.watch_lobby();
+        Ok(status)
+    }
+
+    /// Invites `who` to a game with the user as `side`; the answer comes as
+    /// `gameroom://invitation`.
+    pub async fn invite_gameroom_player(
+        &self,
+        who: &str,
+        side: Color,
+        time_control: &str,
+        rated: bool,
+        message: &str,
+    ) -> Result<(), ApiError> {
+        self.gameroom.invite(who, side, time_control, rated, message).await
+    }
+
+    /// Accepts an invitation (the inviter's id and its time) and plays the
+    /// game it makes in session `id`.
+    pub async fn accept_gameroom_invitation(
+        &self,
+        id: SessionId,
+        other_id: &str,
+        created: &str,
+    ) -> Result<(), ApiError> {
+        let handle = self.handle(id)?;
+        let target = gameroom::Target {
+            session: handle.session.clone(),
+            controller: handle.controller.clone(),
+            events: handle.events.clone(),
+        };
+        let watch = gameroom::accept(&self.gameroom, other_id, created, target).await?;
+        let old = handle.watch().replace(watch);
+        drop(old);
+        Ok(())
+    }
+
+    /// Declines an invitation (the inviter's id and its time).
+    pub async fn decline_gameroom_invitation(
+        &self,
+        other_id: &str,
+        created: &str,
+        reason: &str,
+    ) -> Result<(), ApiError> {
+        self.gameroom.decline_invite(other_id, created, reason).await
+    }
+
+    /// Cancels the user's invitation (the invited player's id and its time).
+    pub async fn cancel_gameroom_invitation(&self, other_id: &str, created: &str) -> Result<(), ApiError> {
+        self.gameroom.cancel_invite(other_id, created).await
     }
 
     pub async fn gameroom_logout(&self) -> Result<(), ApiError> {
@@ -687,6 +737,35 @@ impl Backend {
             "gameroom_logout" => ok(self.gameroom_logout().await?),
             "gameroom_games" => ok(self.gameroom_games().await?),
             "gameroom_postal_games" => ok(self.gameroom_postal_games().await?),
+            "invite_gameroom_player" => ok(self
+                .invite_gameroom_player(
+                    &arg::<String>(args, "who")?,
+                    arg(args, "side")?,
+                    &arg::<String>(args, "timeControl")?,
+                    arg(args, "rated")?,
+                    &arg::<String>(args, "message")?,
+                )
+                .await?),
+            "accept_gameroom_invitation" => ok(self
+                .accept_gameroom_invitation(
+                    sid()?,
+                    &arg::<String>(args, "otherId")?,
+                    &arg::<String>(args, "created")?,
+                )
+                .await?),
+            "decline_gameroom_invitation" => ok(self
+                .decline_gameroom_invitation(
+                    &arg::<String>(args, "otherId")?,
+                    &arg::<String>(args, "created")?,
+                    &arg::<String>(args, "reason")?,
+                )
+                .await?),
+            "cancel_gameroom_invitation" => ok(self
+                .cancel_gameroom_invitation(
+                    &arg::<String>(args, "otherId")?,
+                    &arg::<String>(args, "created")?,
+                )
+                .await?),
             "search_gameroom_players" => {
                 ok(self.search_gameroom_players(&arg::<String>(args, "text")?).await?)
             }

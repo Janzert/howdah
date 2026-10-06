@@ -34,6 +34,7 @@
   import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
   import { findTheme } from './lib/theme';
   import TurnBar from './lib/TurnBar.svelte';
+  import type { GameroomGames } from './lib/bindings/GameroomGames';
   import type { WatchView } from './lib/bindings/WatchView';
   import WatchDialog from './lib/WatchDialog.svelte';
   import WatchPanel from './lib/WatchPanel.svelte';
@@ -69,6 +70,10 @@
   let showWatch = $state(false);
   /** The arimaa.com game this session follows, if any. */
   let watch = $state<WatchView | null>(null);
+  /** Open invitations to the user (from the lobby watcher), and those
+   * already announced. */
+  let invitationCount = $state(0);
+  const seenInvitations = new Set<string>();
   // The game-end dialog waits for the final move's animation.
   let gameEndPending = $state(false);
   let showGameEnd = $state(false);
@@ -241,6 +246,24 @@
     });
     const unlistenAnalysis = on('analysis://update', (u) => (analysis = u));
     const unlistenWatch = on('gameroom://watch', (w) => (watch = w.state === 'stopped' ? null : w));
+    const unlistenLobby = on('gameroom://lobby', lobbyGames);
+    const unlistenInvitation = on('gameroom://invitation', (a) => {
+      if (a.outcome.kind === 'accepted') {
+        const { gid, side } = a.outcome;
+        // Into the game, unless this window plays another one.
+        if (watch?.side != null && watch.state !== 'ended') {
+          flash(`${a.opponent} accepted your invitation: play it from Your games (arimaa.com)`);
+        } else {
+          flash(`${a.opponent} accepted your invitation`);
+          run(api.playGameroomGame(gid, side));
+        }
+        requestAttention('Invitation accepted');
+      } else if (a.outcome.kind === 'declined') {
+        flash(a.outcome.message);
+      } else {
+        flash(`Your invitation to ${a.opponent} is gone`);
+      }
+    });
     api.watchStatus().then((w) => (watch = w));
     api.getState().then((v) => {
       setView(v);
@@ -251,8 +274,23 @@
       unlisten.then((f) => f());
       unlistenAnalysis.then((f) => f());
       unlistenWatch.then((f) => f());
+      unlistenLobby.then((f) => f());
+      unlistenInvitation.then((f) => f());
     };
   });
+
+  /** Counts the invitations to the user in the lobby's lists, and
+   * announces new ones. */
+  function lobbyGames(g: GameroomGames) {
+    const incoming = g.invitations.filter((i) => i.incoming);
+    const fresh = incoming.filter((i) => !seenInvitations.has(i.created));
+    invitationCount = incoming.length;
+    for (const i of incoming) seenInvitations.add(i.created);
+    if (fresh.length > 0 && !showWatch) {
+      flash(`${fresh[0].opponent ?? 'Someone'} invites you to a game (arimaa.com)`);
+      requestAttention('Invitation');
+    }
+  }
 
   /** In a match, showing something other than the live position. */
   function awayFromLive(v: SessionView): boolean {
@@ -562,7 +600,7 @@
     <div class="tools">
       <button onclick={() => (showNewGame = true)}>New game</button>
       <button onclick={() => (showWatch = true)} title="Play or watch games on arimaa.com, or open finished ones">
-        arimaa.com
+        arimaa.com{#if invitationCount > 0}<span class="badge" title="Invitations to you">{invitationCount}</span>{/if}
       </button>
       <button onclick={() => (showEngines = true)}>Engines</button>
       <button
@@ -615,7 +653,7 @@
   />
 {/if}
 {#if showWatch}
-  <WatchDialog onOpen={openGameroomGame} onClose={() => (showWatch = false)} />
+  <WatchDialog onOpen={openGameroomGame} onClose={() => (showWatch = false)} onGames={lobbyGames} />
 {/if}
 {#if showSettings}
   <SettingsDialog onClose={() => (showSettings = false)} />
@@ -683,6 +721,14 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 4px;
+  }
+  .badge {
+    margin-left: 4px;
+    font-size: 11px;
+    padding: 0 5px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-text);
   }
   .tools {
     display: flex;

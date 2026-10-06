@@ -31,6 +31,7 @@
 pub mod client;
 pub mod clock_sync;
 pub mod finished;
+pub mod invitations;
 pub mod players;
 pub mod state;
 pub mod wire;
@@ -41,6 +42,7 @@ pub use client::{
 };
 pub use clock_sync::ClockSync;
 pub use finished::{FinishedGame, RecentGame};
+pub use invitations::{Invitation, InviteOutcome};
 pub use players::{PastGame, PastGames, PlayerMatch, PostalGame};
 pub use state::{ChatLine, GameState, Role, ServerClock, parse_chat, parse_result, split_moves};
 pub use wire::{Format, Record};
