@@ -5,8 +5,9 @@ way the real project will be. Long term it covers gameroom play, AEI bots,
 analysis, tournaments, postal games and bot tooling.
 
 Design notes live in `docs/`. `docs/UI-SURVEY.md` collects UI and feature
-ideas from other Arimaa and chess clients, and `docs/ENGINES.md` records how
-Sharp, OpFor and other AEI engines behave.
+ideas from other Arimaa and chess clients, `docs/ENGINES.md` records how
+Sharp, OpFor and other AEI engines behave, and `docs/GAMEROOM.md` how
+Howdah plays and watches games on arimaa.com.
 
 ## Architecture
 
@@ -233,7 +234,8 @@ Sharp, OpFor and other AEI engines behave.
       disables the button. Ending the match mid-game ("Leave game")
       sets `left_online`, which keeps it refused until another game
       replaces the session. Watching is fine.
-  - `gameroom.rs`: spectating arimaa.com games (use case 3). `Gameroom`
+  - `gameroom.rs`: playing and watching arimaa.com games (use cases 2
+    and 3; how and why in `docs/GAMEROOM.md`). `Gameroom`
     holds the login and lists live and recently finished games
     (`gameroom_games`). `open` (command `open_gameroom_game`) opens a game
     by id: a finished one is loaded whole as a record, shown from the

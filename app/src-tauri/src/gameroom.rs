@@ -1,5 +1,6 @@
-//! Spectating arimaa.com games: the gameroom login, the live-games list,
-//! and a task per followed game.
+//! Playing and watching arimaa.com games: the gameroom login, the lobby's
+//! lists and invitations, and a task per followed game (`docs/GAMEROOM.md`
+//! has the design).
 //!
 //! Watching a game seats the session as a viewer the browser client's way
 //! (`Lobby::watch`), turns it into a match between two remote players, and
