@@ -33,14 +33,15 @@ use std::time::Duration;
 
 use howdah_arimaa::{Color, GameRecord, TimeControl};
 use howdah_gameroom::{
-    Asip, DEFAULT_GAMEROOM, Error, GameServer, GameState, Http, Lobby, Opened, RecentGame, ViewerSeat,
-    parse_result,
+    Asip, DEFAULT_GAMEROOM, Error, GameServer, GameState, Http, Lobby, Opened, PastGame, RecentGame,
+    ViewerSeat, parse_result,
 };
 
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, GameroomGames, GameroomStatus, LiveGameView, RecentGameView, WatchState, WatchView,
+    AnimStep, ApiError, GameroomGames, GameroomStatus, LiveGameView, PastGameView, PlayerGamesView,
+    PlayerMatchView, RecentGameView, WatchState, WatchView,
 };
 use crate::session::{Player, RemoteClock, Session};
 
@@ -53,6 +54,10 @@ const MAXWAIT: Duration = Duration::from_secs(300);
 
 /// Longest wait between retries after failed polls.
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
+
+/// How many new seats a watch takes in a row, after the game server drops
+/// one, before it gives up.
+const MAX_RESEATS: u32 = 3;
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -135,6 +140,26 @@ impl SavedLogin {
     }
 }
 
+/// Runs a lobby call (`|lobby| call`, a future). If the login has expired,
+/// it logs in again with the saved login and tries once more
+/// ([`Gameroom::relogin`]).
+macro_rules! with_lobby {
+    ($gameroom:expr, |$l:ident| $call:expr) => {{
+        let mut slot = $gameroom.lobby.lock().await;
+        let first = {
+            let $l = slot.as_ref().ok_or_else(|| ApiError::state("log in to arimaa.com first"))?;
+            $call.await
+        };
+        match first {
+            Err(Error::Expired) => {
+                let $l = $gameroom.relogin(&mut slot).await?;
+                $call.await.map_err(net_error)
+            }
+            result => result.map_err(net_error),
+        }
+    }};
+}
+
 /// The gameroom session: who is logged in, and the lobby to ask.
 pub struct Gameroom {
     http: Http,
@@ -197,11 +222,24 @@ impl Gameroom {
         }
     }
 
+    /// Logs in again with the saved login after the lobby session
+    /// expired. Without one (or if it's another user's), it's logged out,
+    /// and the user has to log in again.
+    async fn relogin<'a>(&self, slot: &'a mut Option<Lobby>) -> Result<&'a Lobby, ApiError> {
+        let user = lock(&self.username).clone();
+        let Some((username, password)) = self.saved.load().filter(|(u, _)| Some(u) == user.as_ref()) else {
+            *slot = None;
+            *lock(&self.username) = None;
+            return Err(ApiError::state("the arimaa.com login has expired: log in again"));
+        };
+        let mut lobby = Lobby::new(self.http.clone(), DEFAULT_GAMEROOM, Asip::V2);
+        lobby.login(&username, &password).await.map_err(net_error)?;
+        Ok(slot.insert(lobby))
+    }
+
     /// The live games and the last few finished ones.
     pub async fn games(&self) -> Result<GameroomGames, ApiError> {
-        let lobby = self.lobby.lock().await;
-        let lobby = lobby.as_ref().ok_or_else(|| ApiError::state("log in to arimaa.com first"))?;
-        let games = lobby.games().await.map_err(net_error)?;
+        let games = with_lobby!(self, |l| l.games())?;
         let live = games
             .live
             .into_iter()
@@ -222,17 +260,52 @@ impl Gameroom {
 
     /// The permanent id of finished game `gid`.
     async fn find_game_id(&self, gid: &str) -> Result<String, ApiError> {
-        let lobby = self.lobby.lock().await;
-        let lobby = lobby.as_ref().ok_or_else(|| ApiError::state("log in to arimaa.com first"))?;
-        lobby.find_game_id(gid).await.map_err(net_error)
+        with_lobby!(self, |l| l.find_game_id(gid))
     }
 
     /// Opens game `gid`: a viewer seat at a live game, or a finished game
     /// whole.
     async fn open(&self, gid: &str) -> Result<Opened, ApiError> {
-        let lobby = self.lobby.lock().await;
-        let lobby = lobby.as_ref().ok_or_else(|| ApiError::state("log in to arimaa.com first"))?;
-        lobby.open(gid, Color::Gold).await.map_err(net_error)
+        with_lobby!(self, |l| l.open(gid, Color::Gold))
+    }
+
+    /// The players whose username or real name contains `text`.
+    pub async fn search_players(&self, text: &str) -> Result<Vec<PlayerMatchView>, ApiError> {
+        if text.trim().is_empty() {
+            return Err(ApiError::illegal("enter part of a username or name"));
+        }
+        let found = with_lobby!(self, |l| l.search_players(text))?;
+        Ok(found
+            .into_iter()
+            .map(|p| PlayerMatchView { id: p.id, username: p.username, name: p.name })
+            .collect())
+    }
+
+    /// A player's finished games, newest first, 50 from `offset` on.
+    pub async fn player_games(&self, player_id: &str, offset: u32) -> Result<PlayerGamesView, ApiError> {
+        let page = with_lobby!(self, |l| l.player_games(player_id, offset))?;
+        Ok(PlayerGamesView { games: page.games.into_iter().map(past_view).collect(), next: page.next })
+    }
+}
+
+fn past_view(g: PastGame) -> PastGameView {
+    let [gold, silver] = g.players;
+    let [gold_rating, silver_rating] = g.ratings;
+    let result = match (g.winner, &g.reason) {
+        (Some(w), Some(r)) => parse_result(&format!("{}{r}", if w == Color::Gold { 'w' } else { 'b' })),
+        _ => None,
+    };
+    PastGameView {
+        gid: g.id,
+        gold,
+        silver,
+        gold_rating,
+        silver_rating,
+        time_control: g.time_control,
+        rated: g.rated,
+        result,
+        moves: g.moves,
+        finished: g.finished,
     }
 }
 
@@ -323,18 +396,15 @@ pub async fn open(gameroom: &Arc<Gameroom>, gid: &str, target: Target) -> Result
         start(&mut s, &state);
         s.generation()
     };
-    let delayed = matches!(how, ViewerSeat::Asip { .. });
     let view = Arc::new(Mutex::new(WatchView {
         gid: gid.to_string(),
         state: WatchState::Following,
-        detail: match how {
-            ViewerSeat::Asip { why } => Some(format!("moves arrive about every 10 s ({why})")),
-            ViewerSeat::Browser => None,
-        },
-        delayed,
+        detail: None,
+        delayed: false,
         finished_id: None,
         event: state.raw.nonempty("event"),
     }));
+    set_seat(&mut lock(&view), &how);
     let next = update(&target, generation, &state, &view);
     emit(&target.events, WATCH_UPDATE, lock(&view).clone());
     let gameroom = gameroom.clone();
@@ -463,6 +533,15 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
     next
 }
 
+/// Shows how the seat gets its moves.
+fn set_seat(view: &mut WatchView, how: &ViewerSeat) {
+    view.delayed = matches!(how, ViewerSeat::Asip { .. });
+    view.detail = match how {
+        ViewerSeat::Asip { why } => Some(format!("moves arrive about every 10 s ({why})")),
+        ViewerSeat::Browser => None,
+    };
+}
+
 fn set_state(target: &Target, view: &Mutex<WatchView>, state: WatchState, detail: Option<String>) {
     let mut v = lock(view);
     if (v.state, &v.detail) == (state, &detail) {
@@ -483,11 +562,14 @@ async fn follow(
     generation: u64,
     view: Arc<Mutex<WatchView>>,
 ) {
+    let gid = lock(&view).gid.clone();
     let mut backoff = Duration::from_secs(1);
+    let mut reseats = 0;
     loop {
         match server.update(MAXWAIT).await {
             Ok(state) => {
                 backoff = Duration::from_secs(1);
+                reseats = 0;
                 if let Next::Stop = update(&target, generation, &state, &view) {
                     find_id(gameroom, target, generation, view).await;
                     return;
@@ -498,9 +580,35 @@ async fn follow(
             Err(e @ (Error::Network(_) | Error::Status(_) | Error::BadReply(_))) => {
                 set_state(&target, &view, WatchState::Reconnecting, Some(e.to_string()));
             }
+            Err(e @ (Error::Server(_) | Error::Refused | Error::Expired)) if reseats < MAX_RESEATS => {
+                // The server dropped the seat (an expired game server
+                // session, say), or the table is gone (`No Game Data` once
+                // a finished game is cleared away): take a new seat, or
+                // get the game whole if it has ended.
+                reseats += 1;
+                set_state(&target, &view, WatchState::Reconnecting, Some(format!("{e}; taking a new seat")));
+                match reseat(&gameroom, &gid).await {
+                    Ok(Reseat::Live(new, how)) => {
+                        server = new;
+                        set_seat(&mut lock(&view), &how);
+                        if let Ok(state) = server.game_state().await {
+                            if let Next::Stop = update(&target, generation, &state, &view) {
+                                find_id(gameroom, target, generation, view).await;
+                                return;
+                            }
+                            continue;
+                        }
+                    }
+                    Ok(Reseat::Finished(state)) => {
+                        update(&target, generation, &state, &view);
+                        return;
+                    }
+                    Err(e) => {
+                        set_state(&target, &view, WatchState::Reconnecting, Some(e.message));
+                    }
+                }
+            }
             Err(e) => {
-                // The server refused the seat, or the table is gone (`No Game
-                // Data` once a finished game is cleared away).
                 set_state(&target, &view, WatchState::Failed, Some(e.to_string()));
                 return;
             }
@@ -511,6 +619,32 @@ async fn follow(
         }
         tokio::time::sleep(backoff).await;
         backoff = (backoff * 2).min(MAX_BACKOFF);
+    }
+}
+
+/// A followed game, opened again.
+enum Reseat {
+    Live(GameServer, ViewerSeat),
+    /// It ended: the final state.
+    Finished(GameState),
+}
+
+/// Opens followed game `gid` again after its seat was dropped. If it has
+/// ended, its final state comes from the finished game. The gameroom id
+/// alone can't open that: ids of live games and permanent ids are
+/// separate, so the same number may be an older finished game.
+async fn reseat(gameroom: &Gameroom, gid: &str) -> Result<Reseat, ApiError> {
+    if let Ok(id) = gameroom.find_game_id(gid).await {
+        return match gameroom.open(&id).await? {
+            Opened::Finished(game) => Ok(Reseat::Finished(game.state())),
+            Opened::Live(..) => {
+                Err(ApiError::state(format!("game {gid} ended as {id}, which isn't finished")))
+            }
+        };
+    }
+    match gameroom.open(gid).await? {
+        Opened::Live(server, how) => Ok(Reseat::Live(server, how)),
+        Opened::Finished(_) => Err(ApiError::state(format!("game {gid} is no longer being played"))),
     }
 }
 

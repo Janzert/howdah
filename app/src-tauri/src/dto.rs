@@ -619,6 +619,49 @@ pub struct RecentGameView {
     pub ended_ms: Option<u64>,
 }
 
+/// A player found by the gameroom's player search.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlayerMatchView {
+    /// The player id, which the player's games are asked for by.
+    pub id: String,
+    pub username: String,
+    /// The real name the player gave.
+    pub name: Option<String>,
+}
+
+/// A game from a player's past games.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PastGameView {
+    /// The permanent id.
+    pub gid: String,
+    pub gold: String,
+    pub silver: String,
+    /// The players' ratings now, not at the time of the game.
+    pub gold_rating: Option<String>,
+    pub silver_rating: Option<String>,
+    pub time_control: Option<String>,
+    pub rated: bool,
+    pub result: Option<GameResult>,
+    /// The last move's number.
+    pub moves: Option<u32>,
+    /// When it finished, as the server writes it.
+    pub finished: Option<String>,
+}
+
+/// A page of a player's past games, newest first.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlayerGamesView {
+    pub games: Vec<PastGameView>,
+    /// The offset of the next (older) page, if there is one.
+    pub next: Option<u32>,
+}
+
 /// The gameroom's game lists.
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

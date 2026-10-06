@@ -6,8 +6,8 @@ use tauri::State;
 
 use crate::backend::Backend;
 use crate::dto::{
-    ApiError, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, PositionView,
-    SessionId, SessionView, StepTarget, WatchView,
+    ApiError, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay,
+    PlayerGamesView, PlayerMatchView, PositionView, SessionId, SessionView, StepTarget, WatchView,
 };
 
 #[tauri::command]
@@ -282,6 +282,23 @@ pub async fn gameroom_logout(state: State<'_, Backend>) -> Result<(), ApiError> 
 #[tauri::command]
 pub async fn gameroom_games(state: State<'_, Backend>) -> Result<GameroomGames, ApiError> {
     state.gameroom_games().await
+}
+
+#[tauri::command]
+pub async fn search_gameroom_players(
+    state: State<'_, Backend>,
+    text: String,
+) -> Result<Vec<PlayerMatchView>, ApiError> {
+    state.search_gameroom_players(&text).await
+}
+
+#[tauri::command]
+pub async fn gameroom_player_games(
+    state: State<'_, Backend>,
+    player_id: String,
+    offset: u32,
+) -> Result<PlayerGamesView, ApiError> {
+    state.gameroom_player_games(&player_id, offset).await
 }
 
 #[tauri::command]

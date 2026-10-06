@@ -10,6 +10,8 @@ import type { GameroomStatus } from './bindings/GameroomStatus';
 import type { MatchSpec } from './bindings/MatchSpec';
 import type { MoveReplay } from './bindings/MoveReplay';
 import type { NodeId } from './bindings/NodeId';
+import type { PlayerGamesView } from './bindings/PlayerGamesView';
+import type { PlayerMatchView } from './bindings/PlayerMatchView';
 import type { PositionView } from './bindings/PositionView';
 import type { SessionId } from './bindings/SessionId';
 import type { SessionView } from './bindings/SessionView';
@@ -98,6 +100,11 @@ export const api = {
   gameroomLogout: () => invoke<void>('gameroom_logout'),
   /** The games being played on arimaa.com now, and the last few finished. */
   gameroomGames: () => invoke<GameroomGames>('gameroom_games'),
+  /** The arimaa.com players whose username or real name contains `text`. */
+  searchGameroomPlayers: (text: string) => invoke<PlayerMatchView[]>('search_gameroom_players', { text }),
+  /** A player's finished games, newest first, 50 from `offset`. */
+  gameroomPlayerGames: (playerId: string, offset: number) =>
+    invoke<PlayerGamesView>('gameroom_player_games', { playerId, offset }),
   /** Opens an arimaa.com game in this session. A live game (its gameroom
    * id) is followed as a viewer, with changes arriving as `game://changed`
    * and `gameroom://watch` events; a finished game (its permanent id) is

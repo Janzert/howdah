@@ -1,6 +1,9 @@
 <script lang="ts">
   import { api, errorMessage } from './api';
+  import type { GameResult } from './bindings/GameResult';
   import type { GameroomGames } from './bindings/GameroomGames';
+  import type { PastGameView } from './bindings/PastGameView';
+  import type { PlayerMatchView } from './bindings/PlayerMatchView';
   import type { RecentGameView } from './bindings/RecentGameView';
   import type { WinReason } from './bindings/WinReason';
 
@@ -42,6 +45,17 @@
   let error = $state<string | null>(null);
   let dialog: HTMLDialogElement;
 
+  /** The text typed into the player search. */
+  let playerQuery = $state('');
+  /** The players the last search found. */
+  let players = $state<PlayerMatchView[] | null>(null);
+  /** The player whose games are shown, with the pages loaded so far. */
+  let picked = $state<{ player: PlayerMatchView; games: PastGameView[]; next: number | null } | null>(null);
+
+  /** How often the open dialog refreshes the lists, as the browser lobby
+   * does. */
+  const REFRESH_MS = 20_000;
+
   $effect(() => {
     dialog.showModal();
   });
@@ -58,22 +72,63 @@
     });
   });
 
-  /** Runs a request, showing its error. */
-  async function attempt(f: () => Promise<void>) {
-    busy = true;
-    error = null;
+  /** Runs a request, showing its error. A `quiet` one (the timed
+   * refresh) leaves the buttons alone. After an error the login is
+   * checked again, since an expired one logs out. */
+  async function attempt(f: () => Promise<void>, quiet = false) {
+    if (!quiet) {
+      busy = true;
+      error = null;
+    }
     try {
       await f();
+      if (quiet) error = null;
     } catch (e) {
       error = errorMessage(e);
+      user = (await api.gameroomStatus()).username;
     } finally {
-      busy = false;
+      if (!quiet) busy = false;
     }
   }
 
-  function refresh() {
+  function refresh(quiet = false) {
     return attempt(async () => {
       games = await api.gameroomGames();
+    }, quiet);
+  }
+
+  $effect(() => {
+    if (!user) return;
+    const timer = setInterval(() => {
+      if (!busy && !document.hidden) refresh(true);
+    }, REFRESH_MS);
+    return () => clearInterval(timer);
+  });
+
+  function searchPlayers(e: SubmitEvent) {
+    e.preventDefault();
+    const text = playerQuery.trim();
+    attempt(async () => {
+      const found = await api.searchGameroomPlayers(text);
+      players = found;
+      picked = null;
+      // An exact username goes straight to that player's games.
+      const exact = found.filter((p) => p.username.toLowerCase() === text.toLowerCase());
+      if (exact.length === 1) await pick(exact[0]);
+    });
+  }
+
+  async function pick(player: PlayerMatchView) {
+    const page = await api.gameroomPlayerGames(player.id, 0);
+    picked = { player, games: page.games, next: page.next };
+  }
+
+  function olderGames() {
+    const p = picked;
+    if (!p || p.next == null) return;
+    attempt(async () => {
+      const page = await api.gameroomPlayerGames(p.player.id, p.next!);
+      picked = { player: p.player, games: [...p.games, ...page.games], next: page.next };
     });
   }
 
@@ -120,10 +175,23 @@
     forfeit: 'forfeit',
   };
 
+  function resultText(result: GameResult | null): string[] {
+    return result ? [`${result.winner === 'gold' ? 'Gold' : 'Silver'} won by ${reasons[result.reason]}`] : [];
+  }
+
+  /** "Gold won by goal · 33 moves · Jan 4, 2014 10:38 am" */
+  function pastMeta(g: PastGameView): string {
+    const parts = resultText(g.result);
+    if (g.moves != null) parts.push(`${g.moves} moves`);
+    if (g.finished) parts.push(g.finished);
+    if (g.timeControl) parts.push(g.timeControl);
+    if (g.rated) parts.push('rated');
+    return parts.join(' · ');
+  }
+
   /** "Gold won by goal · 33 moves · Oct 4, 10:23 · rated" */
   function recentMeta(g: RecentGameView): string {
-    const parts = [];
-    if (g.result) parts.push(`${g.result.winner === 'gold' ? 'Gold' : 'Silver'} won by ${reasons[g.result.reason]}`);
+    const parts = resultText(g.result);
     if (g.moves != null) parts.push(`${g.moves} moves`);
     if (g.endedMs != null) {
       parts.push(
@@ -226,6 +294,59 @@
         {/each}
       </ul>
     {/if}
+    <h3>A player's games</h3>
+    <form class="by-id" onsubmit={searchPlayers}>
+      <label for="gr-player">Player</label>
+      <input id="gr-player" bind:value={playerQuery} placeholder="Part of a username or name" autocomplete="off" />
+      <button type="submit" disabled={busy || !playerQuery.trim()}>Search</button>
+    </form>
+    {#if picked}
+      <div class="picked">
+        Games of <strong>{picked.player.username}</strong>
+        {#if players && players.length > 1}
+          <button class="subtle" onclick={() => (picked = null)}>Back to the players</button>
+        {/if}
+      </div>
+      {#if picked.games.length === 0}
+        <p class="hint">No finished games.</p>
+      {:else}
+        <ul class="games" aria-label="Games of {picked.player.username}">
+          {#each picked.games as g (g.gid)}
+            <li>
+              <span class="game">
+                <span class="players">
+                  <span class="dot gold"></span>{g.gold}
+                  <span class="vs">vs</span>
+                  <span class="dot silver"></span>{g.silver}
+                </span>
+                <span class="meta">{pastMeta(g)}</span>
+              </span>
+              <button onclick={() => open(g.gid)} disabled={busy} aria-label="Open game {g.gid}">Open</button>
+            </li>
+          {/each}
+          {#if picked.next != null}
+            <li class="more"><button class="subtle" onclick={olderGames} disabled={busy}>Older games</button></li>
+          {/if}
+        </ul>
+      {/if}
+    {:else if players && players.length === 0}
+      <p class="hint">No players match.</p>
+    {:else if players}
+      <ul class="games" aria-label="Players found">
+        {#each players as p (p.id)}
+          <li>
+            <span class="game">
+              <span class="players">{p.username}</span>
+              {#if p.name}<span class="meta">{p.name}</span>{/if}
+            </span>
+            <button onclick={() => attempt(() => pick(p))} disabled={busy} aria-label="Games of {p.username}"
+              >Games</button
+            >
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <h3>By id</h3>
     <form class="by-id" onsubmit={openById}>
       <label for="gr-game-id">Game id</label>
       <input id="gr-game-id" bind:value={gameId} inputmode="numeric" placeholder="e.g. 671438" autocomplete="off" />
@@ -237,7 +358,7 @@
     </p>
     {#if error}<p class="error">{error}</p>{/if}
     <div class="buttons">
-      <button onclick={refresh} disabled={busy}>Refresh</button>
+      <button onclick={() => refresh()} disabled={busy}>Refresh</button>
       <span class="spacer"></span>
       <button onclick={onClose}>Close</button>
     </div>
@@ -335,8 +456,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 12px;
     font-size: 13px;
+  }
+  .picked {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    margin: 8px 0 6px;
+  }
+  .games li.more {
+    justify-content: center;
   }
   .by-id input {
     flex: 1;

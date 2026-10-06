@@ -30,7 +30,8 @@ use serde_json::Value;
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay,
-    PlayerSpec, PositionView, SessionId, SessionUpdate, SessionView, StepTarget, WatchView,
+    PlayerGamesView, PlayerMatchView, PlayerSpec, PositionView, SessionId, SessionUpdate, SessionView,
+    StepTarget, WatchView,
 };
 use crate::engines::{self, EngineRegistry};
 use crate::gameroom::{self, Gameroom, SavedLogin, WATCH_UPDATE, Watch};
@@ -460,6 +461,20 @@ impl Backend {
         self.gameroom.games().await
     }
 
+    /// The gameroom's players whose username or real name contains `text`.
+    pub async fn search_gameroom_players(&self, text: &str) -> Result<Vec<PlayerMatchView>, ApiError> {
+        self.gameroom.search_players(text).await
+    }
+
+    /// A gameroom player's finished games, newest first, 50 from `offset`.
+    pub async fn gameroom_player_games(
+        &self,
+        player_id: &str,
+        offset: u32,
+    ) -> Result<PlayerGamesView, ApiError> {
+        self.gameroom.player_games(player_id, offset).await
+    }
+
     /// Opens arimaa.com game `gid` in session `id`. A live game (its
     /// gameroom id) is followed as a viewer: the session becomes that game,
     /// and moves, clocks and the result arrive as the server reports them
@@ -580,6 +595,12 @@ impl Backend {
                 .await?),
             "gameroom_logout" => ok(self.gameroom_logout().await?),
             "gameroom_games" => ok(self.gameroom_games().await?),
+            "search_gameroom_players" => {
+                ok(self.search_gameroom_players(&arg::<String>(args, "text")?).await?)
+            }
+            "gameroom_player_games" => ok(self
+                .gameroom_player_games(&arg::<String>(args, "playerId")?, arg(args, "offset")?)
+                .await?),
             "open_gameroom_game" => ok(self.open_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?),
             "stop_watching" => ok(self.stop_watching(sid()?)?),
             "watch_status" => ok(self.watch_status(sid()?)?),
