@@ -18,21 +18,44 @@
 //! probe findgameid TID
 //!     log in the browser's way, look up the permanent id of finished game
 //!     TID (ASIP 1.0 `findgameid`), log out
+//! probe play
+//!     log in the browser's way, then read commands from stdin, one per
+//!     line (for playing self-play games; see below). Each seat is long-polled
+//!     in the background and its updates printed as they come.
+//! ```
+//!
+//! `play` commands:
+//! ```text
+//! new w|b TC                 create an unrated game (newgame over ASIP 2.0)
+//! cancel GID                 cancel an open game (cancelopengame)
+//! mygames                    the user's games and the open games
+//! seat NAME GID w|b HOW [GRID]
+//!                            take a player's seat, HOW being browser (the
+//!                            opengamewin.cgi way), asip1 or asip2 (reserveseat
+//!                            and sit over that version; the browser login gives
+//!                            no grid, so pass the room's, 3)
+//! NAME ACTION [ARGS]         act at seat NAME: start (startgame), move TEXT,
+//!                            resign, takeback, reply yes|no, chat TEXT, leave,
+//!                            state (a gamestate), raw ACTION [k=v ...]
+//! sleep SECS
+//! quit
 //! ```
 //! `--log FILE` also appends the exchanges to FILE.
 
-use std::io::Write;
+use std::collections::HashMap;
+use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use howdah_arimaa::Color;
 use howdah_gameroom::{
-    Asip, DEFAULT_GAMEROOM, Error, Exchange, GameServer, GameState, Http, Lobby, Role, user_agent,
+    Actions, Asip, DEFAULT_GAMEROOM, Error, Exchange, GameServer, GameState, Http, Lobby, Record, Role,
+    user_agent,
 };
 
 fn usage() -> ! {
     eprintln!(
-        "usage: probe live | probe watch GID [--seat browser|1|2] [--server 1|2] [--polls N] [--maxwait SECS] | probe findgameid TID [--log FILE]"
+        "usage: probe live | probe watch GID [--seat browser|1|2] [--server 1|2] [--polls N] [--maxwait SECS] | probe findgameid TID | probe play [--log FILE]"
     );
     std::process::exit(2)
 }
@@ -125,6 +148,7 @@ async fn main() {
             let tid = positional.get(1).cloned().unwrap_or_else(|| usage());
             find_game_id(&mut lobby, &user, &password, &tid).await
         }
+        Some("play") => play(&mut lobby, http, &user, &password).await,
         Some("watch") => {
             let gid = positional.get(1).cloned().unwrap_or_else(|| usage());
             let opts = (seat_asip, server_asip, polls, Duration::from_secs(maxwait));
@@ -210,6 +234,182 @@ async fn watch(
             }
             Err(e) => return Err(e),
         }
+    }
+    Ok(())
+}
+
+/// A record's fields with secrets redacted, for printing.
+fn public(r: &Record) -> String {
+    howdah_gameroom::client::redact(&serde_json::Value::Object(r.fields.clone()).to_string())
+}
+
+/// What a poll update says, in one line: the time since the probe started,
+/// the seat, and the state's main fields.
+fn brief(t0: Instant, name: &str, state: &GameState) -> String {
+    let r = &state.raw;
+    let start = if state.turn == Some(Color::Gold) { "wstartmove" } else { "bstartmove" };
+    let held = match (r.int("timeonserver"), r.int(start)) {
+        (Some(now), Some(start)) => format!("{}s", now - start),
+        _ => "-".into(),
+    };
+    format!(
+        "[{:7.1}] {name}: plies={} turn={:?} last={:?} started={} canstart={:?} takeback={:?} result={:?} \
+         present={:?}/{:?} lastchange={:?} turn-started-before-reply={held}",
+        t0.elapsed().as_secs_f64(),
+        state.moves.len(),
+        state.turn,
+        state.moves.last(),
+        state.started,
+        r.str("canstart"),
+        r.str("takeback"),
+        state.result_code,
+        r.str("wpresent"),
+        r.str("bpresent"),
+        r.str("lastchange"),
+    )
+}
+
+async fn play(lobby: &mut Lobby, http: Http, user: &str, password: &str) -> Result<(), Error> {
+    lobby.login(user, password).await?;
+    let t0 = Instant::now();
+    println!("logged in");
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lock().lines() {
+            let Ok(line) = line else { break };
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let mut seats: HashMap<String, (Actions, tokio::task::JoinHandle<()>)> = HashMap::new();
+    while let Some(line) = rx.recv().await {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.is_empty() || words[0].starts_with('#') {
+            continue;
+        }
+        println!("[{:7.1}] > {line}", t0.elapsed().as_secs_f64());
+        let side = |w: &str| if w == "w" { Color::Gold } else { Color::Silver };
+        let result: Result<(), Error> = async {
+            match words.as_slice() {
+                ["quit"] => return Err(Error::Server("quit".into())),
+                ["sleep", secs] => {
+                    tokio::time::sleep(Duration::from_secs_f64(secs.parse().unwrap_or(1.0))).await
+                }
+                // Probes never create rated games.
+                ["new", s, tc] => {
+                    let (gid, seat) = lobby.new_game(side(s), tc, false).await?;
+                    println!("  created: gid={gid:?} gsurl={} (reply {:?})", seat.gsurl, seat.reply_format);
+                }
+                ["cancel", gid] => {
+                    lobby.cancel_open_game(gid).await?;
+                    println!("  cancelled");
+                }
+                ["mygames"] => {
+                    let (mine, open) = lobby.my_games().await?;
+                    for g in mine {
+                        println!("  mine: {}", public(&g));
+                    }
+                    for g in open {
+                        println!("  open: {}", public(&g));
+                    }
+                }
+                ["seat", name, gid, s, how, grid @ ..] => {
+                    let mut server = match *how {
+                        "browser" => lobby.play(gid, side(s)).await?,
+                        "asip1" | "asip2" => {
+                            let v = if *how == "asip1" { Asip::V1 } else { Asip::V2 };
+                            lobby.set_asip(v);
+                            let seat = lobby.reserve_seat(gid, Role::Player(side(s))).await;
+                            lobby.set_asip(Asip::V2);
+                            let mut seat = seat?;
+                            if let Some(g) = grid.first() {
+                                seat.grid = g.to_string();
+                            }
+                            println!("  seat: gsurl {} (reply {:?})", seat.gsurl, seat.reply_format);
+                            GameServer::sit(http.clone(), &seat, v).await?
+                        }
+                        _ => return Err(Error::Server(format!("unknown seat kind {how}"))),
+                    };
+                    println!("  following on {}", server.url());
+                    let state = server.game_state().await?;
+                    show(&state);
+                    let actions = server
+                        .actions()
+                        .ok_or_else(|| Error::BadReply("no auth in the game state".into()))?;
+                    let name2 = name.to_string();
+                    let poller = tokio::spawn(async move {
+                        let mut done = state.result.is_some();
+                        while !done {
+                            match server.update(Duration::from_secs(300)).await {
+                                Ok(s) => {
+                                    println!("{}", brief(t0, &name2, &s));
+                                    done = s.result.is_some();
+                                    if done {
+                                        println!("  {name2} final: {}", public(&s.raw));
+                                    }
+                                }
+                                Err(Error::Empty) => {
+                                    println!("[{:7.1}] {name2}: empty reply", t0.elapsed().as_secs_f64());
+                                    tokio::time::sleep(Duration::from_secs(2)).await;
+                                }
+                                Err(e) => {
+                                    println!(
+                                        "[{:7.1}] {name2}: poll failed: {e}",
+                                        t0.elapsed().as_secs_f64()
+                                    );
+                                    tokio::time::sleep(Duration::from_secs(5)).await;
+                                }
+                            }
+                        }
+                    });
+                    if let Some((_, old)) = seats.insert(name.to_string(), (actions, poller)) {
+                        old.abort();
+                    }
+                }
+                [name, action, args @ ..] if seats.contains_key(*name) => {
+                    let actions = &seats[*name].0;
+                    let text = args.join(" ");
+                    let (act, extra): (&str, Vec<(&str, String)>) = match *action {
+                        "start" => ("startgame", vec![]),
+                        "move" => ("move", vec![("move", text)]),
+                        "resign" => ("resign", vec![]),
+                        "takeback" => ("takeback", vec![("takeback", "req".into())]),
+                        "reply" => ("takebackreply", vec![("takebackreply", text)]),
+                        "chat" => ("chat", vec![("chat", text)]),
+                        "leave" => ("leave", vec![]),
+                        "state" => ("gamestate", vec![("wait", "0".into())]),
+                        "raw" => {
+                            let act = args.first().copied().unwrap_or("");
+                            let extra = args[1.min(args.len())..]
+                                .iter()
+                                .filter_map(|kv| kv.split_once('='))
+                                .map(|(k, v)| (k, v.to_string()))
+                                .collect();
+                            (act, extra)
+                        }
+                        _ => return Err(Error::Server(format!("unknown action {action}"))),
+                    };
+                    let r = actions.act(act, &extra).await?;
+                    if act == "gamestate" {
+                        show(&GameState::from_record(r));
+                    } else {
+                        println!("  reply: {}", public(&r));
+                    }
+                }
+                _ => println!("  ?"),
+            }
+            Ok(())
+        }
+        .await;
+        match result {
+            Err(Error::Server(q)) if q == "quit" => break,
+            Err(e) => println!("[{:7.1}]   failed: {e}", t0.elapsed().as_secs_f64()),
+            Ok(()) => {}
+        }
+    }
+    for (_, (_, poller)) in seats {
+        poller.abort();
     }
     Ok(())
 }

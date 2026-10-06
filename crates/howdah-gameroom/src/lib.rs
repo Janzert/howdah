@@ -35,8 +35,8 @@ pub mod state;
 pub mod wire;
 
 pub use client::{
-    Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog, Opened,
-    Seat, ViewerSeat,
+    Actions, Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog,
+    Opened, Seat, ViewerSeat,
 };
 pub use finished::{FinishedGame, RecentGame};
 pub use players::{PastGame, PastGames, PlayerMatch};

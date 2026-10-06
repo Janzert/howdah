@@ -536,6 +536,10 @@ impl Lobby {
                 ],
             )
             .await?;
+        self.seat_from(&r)
+    }
+
+    fn seat_from(&self, r: &Record) -> Result<Seat, Error> {
         let field =
             |k: &str| r.nonempty(k).ok_or_else(|| Error::BadReply(format!("no {k} in the seat reply")));
         Ok(Seat {
@@ -544,6 +548,56 @@ impl Lobby {
             grid: r.nonempty("grid").or_else(|| self.grid.clone()).unwrap_or_default(),
             reply_format: r.format,
         })
+    }
+
+    /// Creates a game with the user as `side` (`newgame`). The reply is
+    /// the user's seat at it, as from [`Lobby::reserve_seat`]; the game's
+    /// gameroom id comes too, when the reply has it.
+    pub async fn new_game(
+        &self,
+        side: Color,
+        time_control: &str,
+        rated: bool,
+    ) -> Result<(Option<String>, Seat), Error> {
+        let r = self
+            .post(
+                self.asip,
+                &[
+                    ("action", "newgame".into()),
+                    ("sid", self.sid()?),
+                    ("role", Role::Player(side).letter().to_string()),
+                    ("timecontrol", time_control.into()),
+                    ("rated", if rated { "1" } else { "0" }.into()),
+                ],
+            )
+            .await?;
+        Ok((r.nonempty("gid").or_else(|| r.nonempty("id")), self.seat_from(&r)?))
+    }
+
+    /// Cancels an open game the user created that nobody has joined
+    /// (`cancelopengame`). Over ASIP 2.0 the server answers with an error
+    /// even when it worked (a 4steps workaround), so this uses 1.0.
+    pub async fn cancel_open_game(&self, gid: &str) -> Result<(), Error> {
+        self.post(Asip::V1, &[("action", "cancelopengame".into()), ("sid", self.sid()?), ("gid", gid.into())])
+            .await
+            .map(drop)
+    }
+
+    /// The user's own games (ASIP 2.0 `state`'s `mygames`), and the
+    /// open games others created.
+    pub async fn my_games(&self) -> Result<(Vec<Record>, Vec<Record>), Error> {
+        let r = self.post(Asip::V2, &[("action", "state".into()), ("sid", self.sid()?)]).await?;
+        Ok((r.list("mygames"), r.list("opengames")))
+    }
+
+    /// Takes the user's seat as `side` at game `gid` the browser client's
+    /// way (`opengamewin.cgi` with that role), followed on the browser
+    /// client's game server.
+    pub async fn play(&self, gid: &str, side: Color) -> Result<GameServer, Error> {
+        match self.browser_open_as(gid, Role::Player(side), side).await? {
+            Opened::Live(server, _) => Ok(server),
+            Opened::Finished(_) => Err(Error::Server(format!("game {gid} has ended"))),
+        }
     }
 
     /// The permanent id of a finished game from its gameroom (temporary) id,
@@ -596,12 +650,17 @@ impl Lobby {
     /// An id the server doesn't know gets an error page (a
     /// [`Error::Server`] with its message).
     async fn browser_open(&self, gid: &str, side: Color) -> Result<Opened, Error> {
+        self.browser_open_as(gid, Role::Viewer, side).await
+    }
+
+    async fn browser_open_as(&self, gid: &str, role: Role, side: Color) -> Result<Opened, Error> {
         if gid.is_empty() || !gid.chars().all(|c| c.is_ascii_digit()) {
             return Err(Error::Server(format!("not a game id: {gid:?}")));
         }
         let sid = self.sid()?;
         let side = if side == Color::Gold { 'w' } else { 'b' };
-        let url = format!("{}opengamewin.cgi?client=1&gameid={gid}&role=v&side={side}", self.base);
+        let role = role.letter();
+        let url = format!("{}opengamewin.cgi?client=1&gameid={gid}&role={role}&side={side}", self.base);
         let cookies = self.cookies.clone().unwrap_or_else(|| format!("sid={sid}"));
         let page = self.http.get_page(&url, Some(&cookies)).await?;
         if let Some(game) = FinishedGame::from_page(gid, &page) {
@@ -735,6 +794,18 @@ impl GameServer {
         &self.url
     }
 
+    /// A handle for acting at this seat while another task long-polls it.
+    /// It needs the `auth` from a [`GameServer::game_state`] first.
+    pub fn actions(&self) -> Option<Actions> {
+        Some(Actions {
+            http: self.http.clone(),
+            url: self.url.clone(),
+            format: self.format,
+            sid: self.sid.clone(),
+            auth: self.auth.clone()?,
+        })
+    }
+
     /// The full game state.
     pub async fn game_state(&mut self) -> Result<GameState, Error> {
         let r = self
@@ -751,8 +822,8 @@ impl GameServer {
 
     /// Waits up to `maxwait` for a change (the long poll) and returns the
     /// state with it. If the server's move or chat lengths don't match
-    /// what's been received (a takeback shortens them), it fetches the
-    /// full state instead.
+    /// what's been received, it fetches the full state instead. (A
+    /// takeback doesn't shorten them: the server appends `takeback` lines.)
     pub async fn update(&mut self, maxwait: Duration) -> Result<GameState, Error> {
         let r = self
             .http
@@ -806,6 +877,26 @@ impl GameServer {
         r.fields.insert("moves".into(), self.moves.clone().into());
         r.fields.insert("chat".into(), self.chat.clone().into());
         GameState::from_record(r)
+    }
+}
+
+/// Acting at a seat: the requests that need its `auth`.
+#[derive(Clone)]
+pub struct Actions {
+    http: Http,
+    url: String,
+    format: Format,
+    sid: String,
+    auth: String,
+}
+
+impl Actions {
+    /// Sends `action` with `extra` parameters and returns the reply.
+    pub async fn act(&self, action: &str, extra: &[(&str, String)]) -> Result<Record, Error> {
+        let mut params =
+            vec![("action", action.to_string()), ("sid", self.sid.clone()), ("auth", self.auth.clone())];
+        params.extend(extra.iter().cloned());
+        self.http.post(&self.url, self.format, &params, None).await
     }
 }
 

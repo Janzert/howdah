@@ -84,10 +84,14 @@ Sharp, OpFor and other AEI engines behave.
     `find_game_id`, a finished game's permanent id over ASIP 1.0;
     `watch`, which gets a viewer seat the browser client's way and follows
     it on `client3gs.cgi`, since ASIP viewer seats get moves only in ~10 s
-    steps; `open`, the same by id for a live or a finished game) and
+    steps; `open`, the same by id for a live or a finished game; for playing,
+    `new_game`, `cancel_open_game`, `my_games` and `play`, a player's
+    seat the browser's way) and
     `GameServer` (`sit`, `game_state`, the `update`
     long poll, which adds each reply's new moves and chat to what came
-    before and refetches the full state if the lengths don't match). `Http`
+    before and refetches the full state if the lengths don't match;
+    `actions()` gives an `Actions` handle for `move`, `takeback`, `chat`
+    and the like while another task polls). `Http`
     sends a Referer, spaces requests a second apart (except long polls),
     and logs exchanges through a `NetLog` with `password`, `sid`, `auth`
     and `tid` redacted.
@@ -105,7 +109,8 @@ Sharp, OpFor and other AEI engines behave.
     `Lobby::player_games` fetch them. `Error::Expired` is a lobby session
     that's gone (an ASIP error or the "Session Expired" page).
   - `examples/probe.rs` runs it against the live server by hand (see the
-    parent repo's notes on probing first). Never in tests or CI.
+    parent repo's notes on probing first; `probe play` takes seats and
+    plays from commands on stdin). Never in tests or CI.
 - `app/src-tauri`: thin shell.
   - `session.rs` has the pure state logic: a `GameTree`, the line being
     shown (`line`, root to a leaf) with a cursor ply on it, the in-progress
