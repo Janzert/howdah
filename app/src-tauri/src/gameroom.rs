@@ -1260,10 +1260,32 @@ async fn after_end(
     };
     if !chat {
         close_chat(&target, &view);
-        return find_id(gameroom, target, generation, view).await;
+        return complete_record(gameroom, target, generation, view).await;
     }
-    let id = find_id(gameroom, target.clone(), generation, view.clone());
-    tokio::join!(id, follow_chat(server, target, generation, view));
+    let record = complete_record(gameroom, target.clone(), generation, view.clone());
+    tokio::join!(record, follow_chat(server, target, generation, view));
+}
+
+/// Completes an ended game's record from the finished game: its
+/// permanent id, and the times of moves made before we sat down (a live
+/// game's state only has the last move's). The finished game is fetched
+/// only if some move has no time.
+async fn complete_record(
+    gameroom: Arc<Gameroom>,
+    target: Target,
+    generation: u64,
+    view: Arc<Mutex<WatchView>>,
+) {
+    let Some(id) = find_id(&gameroom, &target, generation, &view).await else { return };
+    if !lock(&target.session).missing_move_times(generation) {
+        return;
+    }
+    let Ok(Opened::Finished(game)) = gameroom.open(&id).await else { return };
+    let times: Vec<_> = game.time_used().into_iter().map(|t| Duration::from_secs(t.into())).collect();
+    let mut s = lock(&target.session);
+    if s.fill_move_times(generation, &times) {
+        emit_session(&target.events, &s, Vec::new(), None);
+    }
 }
 
 /// Long-polls a finished game's table for chat, until the session moves
@@ -1509,14 +1531,22 @@ async fn send_takeback(
     true
 }
 
-/// Looks up an ended game's permanent id if its final state had none,
-/// and adds it to the record and the view. Right after the end the server
+/// An ended game's permanent id: from its final state, or else looked up
+/// and added to the record and the view. Right after the end the server
 /// may not know it yet, so it tries a few times, waiting longer each time.
-async fn find_id(gameroom: Arc<Gameroom>, target: Target, generation: u64, view: Arc<Mutex<WatchView>>) {
+async fn find_id(
+    gameroom: &Gameroom,
+    target: &Target,
+    generation: u64,
+    view: &Mutex<WatchView>,
+) -> Option<String> {
     let gid = {
-        let v = lock(&view);
-        if v.state != WatchState::Ended || v.finished_id.is_some() {
-            return;
+        let v = lock(view);
+        if v.state != WatchState::Ended {
+            return None;
+        }
+        if v.finished_id.is_some() {
+            return v.finished_id.clone();
         }
         v.gid.clone()
     };
@@ -1526,15 +1556,16 @@ async fn find_id(gameroom: Arc<Gameroom>, target: Target, generation: u64, view:
         {
             let mut s = lock(&target.session);
             if s.generation() != generation {
-                return;
+                return None;
             }
             s.set_tag("GameId", &id);
         }
-        let mut v = lock(&view);
-        v.finished_id = Some(id);
+        let mut v = lock(view);
+        v.finished_id = Some(id.clone());
         emit(&target.events, WATCH_UPDATE, v.clone());
-        return;
+        return Some(id);
     }
+    None
 }
 
 #[cfg(test)]

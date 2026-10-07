@@ -1285,6 +1285,33 @@ impl Session {
         }
     }
 
+    /// Whether a move of the match's played line has no time (`%emt`).
+    pub fn missing_move_times(&self, generation: u64) -> bool {
+        generation == self.generation
+            && self.matchup.is_some()
+            && self.tree.path(self.live())[1..].iter().any(|&n| self.tree[n].annotation().elapsed().is_none())
+    }
+
+    /// Sets the times of the match's played line, one per move from the
+    /// first setup, as a finished game's record gives them. Does nothing
+    /// (and returns false) if the count doesn't match the moves played.
+    pub fn fill_move_times(&mut self, generation: u64, times: &[Duration]) -> bool {
+        if generation != self.generation || self.matchup.is_none() {
+            return false;
+        }
+        let path = self.tree.path(self.live());
+        if path.len() != times.len() + 1 {
+            return false;
+        }
+        for (&node, &time) in path[1..].iter().zip(times) {
+            if let Ok(annotation) = self.tree.annotation_mut(node) {
+                annotation.set_elapsed(time);
+            }
+        }
+        self.refresh();
+        true
+    }
+
     /// The game as a record: a plain record when it's one line without
     /// comments or tags (or `main_line_only` is set), otherwise the full
     /// record with variations.
@@ -3512,6 +3539,22 @@ mod tests {
             [(Some(12_000), Some(12_000)), (Some(5_000), Some(17_000)), (Some(75_000), Some(92_000))]
         );
         assert!(s.export(false).contains("2g Ee2n Ee3n {[%emt 0:01:15]}"), "{}", s.export(false));
+    }
+
+    #[test]
+    fn a_finished_games_times_fill_in_the_line() {
+        let mut s = Session::new();
+        s.start_match([remote("a"), remote("b")], [None, None], false);
+        let g = s.generation();
+        s.sync_remote(g, &sample_moves(3), Some(Duration::from_secs(9))).unwrap();
+        assert!(s.missing_move_times(g));
+        let secs = |v: &[u64]| v.iter().map(|&t| Duration::from_secs(t)).collect::<Vec<_>>();
+        assert!(!s.fill_move_times(g, &secs(&[1, 2])), "a count that doesn't match");
+        assert!(!s.fill_move_times(g + 1, &secs(&[1, 2, 3])), "old game");
+        assert!(s.fill_move_times(g, &secs(&[4, 5, 6])));
+        assert!(!s.missing_move_times(g));
+        let times: Vec<_> = s.view().tree.iter().map(|m| m.elapsed_ms).collect();
+        assert_eq!(times, [Some(4000), Some(5000), Some(6000)]);
     }
 
     #[test]
