@@ -633,4 +633,8 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
 
 Create `app/src/themes/<dir>/<name>.theme.json` (see `lib/theme.ts` for the
 schema) next to its images. For image boards, `grid` is the 8×8 playing area
-in image pixels. It's picked up automatically.
+in image pixels. It's picked up automatically. `ui.frozen` (optional) tunes
+the frozen-piece marker, an SVG filter drawn from each piece's alpha
+(`board/FrozenFilter.svelte`): how far colors cool, the rim and speck
+strength, and the glow and outline colors; anything left out takes
+`FROZEN_DEFAULTS`.

@@ -27,7 +27,32 @@ export interface ThemeUi {
   lastMove?: string;
   /** Last-move paths of pushed or pulled enemy pieces. */
   lastMoveDisplaced?: string;
+  /** The frozen-piece marker; any field left out takes its default. */
+  frozen?: FrozenSpec;
 }
+
+/** The frozen-piece marker: the piece frosted over, inside an icy outline
+ * (`board/FrozenFilter.svelte`). */
+export interface FrozenSpec {
+  /** How far the piece's colors shift toward ice, 0 to 1. */
+  cool?: number;
+  /** Opacity of the light rim just inside the piece's edge, 0 to 1. */
+  rim?: number;
+  /** Opacity of the frost specks, 0 to 1. */
+  specks?: number;
+  /** The soft glow around the piece (any CSS color). */
+  glow?: string;
+  /** The line around the piece. */
+  outline?: string;
+}
+
+export const FROZEN_DEFAULTS: Required<FrozenSpec> = {
+  cool: 0.18,
+  rim: 0.9,
+  specks: 0.4,
+  glow: 'rgba(228, 242, 251, 0.9)',
+  outline: '#9db7cb',
+};
 
 export const LAST_MOVE_COLORS = { lastMove: 'rgba(255, 205, 40, 0.6)', lastMoveDisplaced: 'rgba(235, 90, 40, 0.75)' };
 

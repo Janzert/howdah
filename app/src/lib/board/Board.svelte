@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { fade } from 'svelte/transition';
   import { SvelteMap } from 'svelte/reactivity';
   import type { Square } from '../bindings/Square';
   import type { StepTarget } from '../bindings/StepTarget';
@@ -11,6 +12,7 @@
   import AnnotationLayer from './AnnotationLayer.svelte';
   import { Annotations, colorFor, type AnnotationColor } from './annotations.svelte';
   import BoardSurface from './BoardSurface.svelte';
+  import FrozenFilter from './FrozenFilter.svelte';
   import LastMoveLayer from './LastMoveLayer.svelte';
   import type { BoardModel, DisplayPiece } from './boardModel.svelte';
   import { DragPath } from './dragPath';
@@ -62,6 +64,8 @@
   }: Props = $props();
 
   const annotations = new Annotations();
+  const uid = $props.id();
+  const frozenFilter = `frozen-${uid}`;
   let svg: SVGSVGElement;
 
   interface Drag {
@@ -365,6 +369,10 @@
     class:over-arrow={overStep}
     oncontextmenu={(e) => e.preventDefault()}
   >
+    <defs>
+      <FrozenFilter id={frozenFilter} spec={theme.ui.frozen} />
+    </defs>
+
     <BoardSurface {theme} {flipped} {coordinates} />
 
     {#if lastMove && !model.animating}
@@ -413,7 +421,10 @@
           <g class="glyph" class:fade-out={p.fading === 'out'} class:fade-in={p.fading === 'in'}>
             <PieceGlyph piece={p.piece} {theme} />
             {#if p.frozen && !model.animating}
-              <circle class="frozen" cx={SQ - 14} cy="14" r="7" />
+              <!-- A frosted copy over the piece. -->
+              <g class="frozen" filter="url(#{frozenFilter})" transition:fade={{ duration: model.fadeMs }}>
+                <PieceGlyph piece={p.piece} {theme} />
+              </g>
             {/if}
           </g>
         </g>
@@ -513,9 +524,7 @@
     }
   }
   .frozen {
-    fill: rgba(70, 140, 255, 0.9);
-    stroke: white;
-    stroke-width: 2;
+    pointer-events: none;
   }
   .ghost {
     pointer-events: none;
