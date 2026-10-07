@@ -116,7 +116,11 @@ pub async fn play_match(
         let mut allowance = None;
         if let (Some(tc), Some(res)) = (tc, reserves) {
             engine.set_clock(res).await.ok();
-            let a = tc.turn_allowance(res[me]);
+            let a = if Game::is_setup_ply(ply) {
+                tc.setup_allowance(res[me])
+            } else {
+                tc.turn_allowance(res[me])
+            };
             allowance = Some(a);
             let d = Instant::now() + a;
             deadline = Some(game_deadline.map_or(d, |g| d.min(g)));
@@ -163,10 +167,12 @@ pub async fn play_match(
             game.end_game(GameResult { winner: opponent, reason: WinReason::IllegalMove }).ok();
             break;
         }
-        if let (Some(tc), Some(res)) = (tc, reserves.as_mut())
-            && !Game::is_setup_ply(ply)
-        {
-            res[me] = tc.reserve_after(res[me], used);
+        if let (Some(tc), Some(res)) = (tc, reserves.as_mut()) {
+            res[me] = if Game::is_setup_ply(ply) {
+                tc.reserve_after_setup(res[me], used)
+            } else {
+                tc.reserve_after(res[me], used)
+            };
         }
 
         let notation = game.moves().last().expect("a move was just played").notation();

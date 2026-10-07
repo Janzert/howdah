@@ -499,6 +499,20 @@ impl Session {
         self.tree[self.live()].position().side_to_move()
     }
 
+    /// Whether `side` still has its setup to make in the match.
+    fn setup_pending(&self, side: Color) -> bool {
+        self.tree[self.live()].ply() <= side.index()
+    }
+
+    /// Longest the side to move may take for its turn at the live node.
+    fn live_allowance(&self, tc: TimeControl, reserve: Duration) -> Duration {
+        if self.setup_pending(self.live_side()) {
+            tc.setup_allowance(reserve)
+        } else {
+            tc.turn_allowance(reserve)
+        }
+    }
+
     /// Whether committing now plays a move in the match (a human's turn at
     /// the live node), rather than adding a variation. In a game with a
     /// remote side the move is sent to the server instead, and only one
@@ -711,7 +725,8 @@ impl Session {
             return None;
         }
         let side = self.live_side();
-        let turn = clock.tc(side).map(|tc| m.turn_started + tc.turn_allowance(clock.reserves[side.index()]));
+        let turn =
+            clock.tc(side).map(|tc| m.turn_started + self.live_allowance(tc, clock.reserves[side.index()]));
         match (turn, clock.game_deadline()) {
             (Some(t), Some(g)) => Some(t.min(g)),
             (t, g) => t.or(g),
@@ -797,13 +812,13 @@ impl Session {
         let Some(clock) = m.clock.as_mut() else { return true };
         let Some(tc) = clock.tc(side) else { return true };
         let reserve = clock.reserves[side.index()];
-        if used > tc.turn_allowance(reserve) {
+        let allowance = if setup { tc.setup_allowance(reserve) } else { tc.turn_allowance(reserve) };
+        if used > allowance {
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
             return false;
         }
-        if !setup {
-            clock.reserves[side.index()] = tc.reserve_after(reserve, used);
-        }
+        clock.reserves[side.index()] =
+            if setup { tc.reserve_after_setup(reserve, used) } else { tc.reserve_after(reserve, used) };
         true
     }
 
@@ -2189,14 +2204,18 @@ impl Session {
         let (elapsed, allowance) = match running {
             Some(side) => {
                 let tc = clock.tc(side).expect("running side is timed");
-                (m.turn_started.elapsed(), tc.turn_allowance(clock.reserves[side.index()]))
+                (m.turn_started.elapsed(), self.live_allowance(tc, clock.reserves[side.index()]))
             }
             None => (Duration::ZERO, Duration::ZERO),
         };
         let side_view = |side: Color| {
             clock.tc(side).map(|tc| SideClockView {
                 time_control: tc.to_string(),
-                move_time_ms: ms(tc.move_time()),
+                move_time_ms: ms(if self.setup_pending(side) {
+                    tc.setup_move_time()
+                } else {
+                    tc.move_time()
+                }),
                 reserve_ms: ms(clock.reserves[side.index()]),
             })
         };
@@ -3395,9 +3414,10 @@ mod tests {
         s.start_match([Player::Human, engine("b")], [Some("1s/0".parse().unwrap()); 2], false);
         let v = s.view();
         let clock = v.clock.unwrap();
-        assert_eq!((clock.running, clock.turn_allowance_ms), (Some(Color::Gold), 1000));
-        assert!(!s.check_timeout(Instant::now()));
-        assert!(s.check_timeout(Instant::now() + Duration::from_secs(2)));
+        // Under a minute per move, the setup gets a minute.
+        assert_eq!((clock.running, clock.turn_allowance_ms), (Some(Color::Gold), 60_000));
+        assert!(!s.check_timeout(Instant::now() + Duration::from_secs(59)));
+        assert!(s.check_timeout(Instant::now() + Duration::from_secs(61)));
         assert_eq!(
             s.view().result.unwrap(),
             GameResult { winner: Color::Silver, reason: WinReason::Timeout }
@@ -3417,10 +3437,11 @@ mod tests {
         let gold: TimeControl = "1s/0".parse().unwrap();
         s.start_match([engine("a"), engine("b")], [Some(gold), None], false);
         let clock = s.view().clock.unwrap();
-        assert_eq!(clock.gold.unwrap().move_time_ms, 1000);
+        assert_eq!(clock.gold.unwrap().move_time_ms, 60_000, "the setup's minute");
         assert!(clock.silver.is_none());
         assert_eq!(s.engine_turn().unwrap().time_control, Some(gold));
         s.apply_engine_move(s.generation(), Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
+        assert_eq!(s.view().clock.unwrap().gold.unwrap().move_time_ms, 1000);
         // Silver is untimed: no deadline, no running clock.
         assert_eq!(s.turn_deadline(), None);
         assert_eq!(s.engine_turn().unwrap().time_control, None);

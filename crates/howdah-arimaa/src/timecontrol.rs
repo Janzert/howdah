@@ -12,6 +12,11 @@
 //! colon-separated numbers whose first unit is minutes (hours for `G`), so
 //! `1:30` is 90 s but `G` = `1:30` is 90 minutes. This follows AEI's
 //! `pyrimaa/util.py`.
+//!
+//! The setup follows arimaa.com's match rules (`matchRules.html`): with
+//! under a minute per move it gets a minute, past which the reserve is
+//! used, and unused setup time is never added to the reserve. (pyrimaa
+//! gives the setup the plain move time and never charges the reserve.)
 
 use std::fmt;
 use std::str::FromStr;
@@ -36,6 +41,9 @@ data_type! {
         pub max_turn_time: u32,
     }
 }
+
+/// The least move time a setup gets.
+const SETUP_MINIMUM: Duration = Duration::from_secs(60);
 
 const UNITS: [(char, u32); 4] = [('d', 86_400), ('h', 3_600), ('m', 60), ('s', 1)];
 
@@ -170,9 +178,32 @@ impl TimeControl {
         }
     }
 
+    /// Move time for the setup. With under a minute per move, each player
+    /// gets a minute for the setup (arimaa.com's match rules).
+    pub fn setup_move_time(&self) -> Duration {
+        self.move_time().max(SETUP_MINIMUM)
+    }
+
+    /// Longest a player may take for the setup, given its reserve. A turn
+    /// time limit doesn't cut the setup's minute short.
+    pub fn setup_allowance(&self, reserve: Duration) -> Duration {
+        let allowance = self.setup_move_time() + reserve;
+        if self.max_turn_time > 0 {
+            allowance.min(Duration::from_secs(self.max_turn_time.into()).max(self.setup_move_time()))
+        } else {
+            allowance
+        }
+    }
+
+    /// Reserve after a setup that took `used`: time past the setup's move
+    /// time comes out of the reserve, and unused time isn't added to it.
+    pub fn reserve_after_setup(&self, reserve: Duration, used: Duration) -> Duration {
+        reserve.saturating_sub(used.saturating_sub(self.setup_move_time()))
+    }
+
     /// Reserve after a turn that took `used`. Unused move time is added at
     /// `percent`; overtime comes out of the reserve; the result is capped at
-    /// `max_reserve`. Setup moves don't change the reserve.
+    /// `max_reserve`. Setups use `reserve_after_setup` instead.
     pub fn reserve_after(&self, reserve: Duration, used: Duration) -> Duration {
         let move_time = self.move_time();
         let updated = if used <= move_time {
@@ -277,5 +308,26 @@ mod tests {
         // Capped at 90 s.
         assert_eq!(t.reserve_after(s(88), s(0)), s(90));
         assert_eq!(t.reserve_after(s(3), s(60)), s(0));
+    }
+
+    #[test]
+    fn setup_clock() {
+        let s = Duration::from_secs;
+        // Under a minute per move: the setup gets a minute.
+        let blitz = tc("15s/1m");
+        assert_eq!(blitz.setup_move_time(), s(60));
+        assert_eq!(blitz.setup_allowance(s(60)), s(120));
+        assert_eq!(blitz.reserve_after_setup(s(60), s(20)), s(60), "unused time isn't added");
+        assert_eq!(blitz.reserve_after_setup(s(60), s(75)), s(45), "overtime uses the reserve");
+        assert_eq!(blitz.reserve_after_setup(s(10), s(90)), s(0));
+        // A minute or more per move: the setup gets the move time.
+        let slow = tc("2m/5m/50");
+        assert_eq!(slow.setup_move_time(), s(120));
+        assert_eq!(slow.setup_allowance(s(300)), s(420));
+        assert_eq!(slow.reserve_after_setup(s(300), s(30)), s(300));
+        assert_eq!(slow.reserve_after_setup(s(300), s(150)), s(270));
+        // A turn time limit caps the reserve's share, not the minute.
+        assert_eq!(tc("15s/1m/100/0/0/30s").setup_allowance(s(60)), s(60));
+        assert_eq!(tc("15s/1m/100/0/0/90s").setup_allowance(s(60)), s(90));
     }
 }

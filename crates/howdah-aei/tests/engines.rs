@@ -146,7 +146,9 @@ async fn hanging_engine_times_out() {
             _ => None,
         })
         .collect();
-    assert!(starts.iter().all(|a| *a == Duration::from_secs(1)));
+    // The two setups get a minute each; then 1 s per turn.
+    assert_eq!(starts[..2], [Duration::from_secs(60); 2]);
+    assert!(starts[2..].iter().all(|a| *a == Duration::from_secs(1)));
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -229,6 +229,12 @@ test('a game ending in play shows the result once', async ({ page }) => {
       silverTimeControl: null,
     }),
   );
+  // The setups get a minute each (under a minute per move), so make them
+  // and let gold's first real turn run out.
+  await page.evaluate(async () => {
+    await window.__arimaa!.api.commitSetup();
+    await window.__arimaa!.api.commitSetup();
+  });
   const dialog = page.getByRole('dialog', { name: 'Silver wins' });
   await expect(dialog).toBeVisible({ timeout: 5000 });
   await expect(dialog.getByText('Gold ran out of time.')).toBeVisible();
