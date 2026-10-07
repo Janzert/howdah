@@ -132,7 +132,8 @@ cover it.
 - **[have]** Move time and reserve, per-side time controls, and presets.
 - **[P1] Low-time cues.** arimaa.com colors the clock by the time left
   for the turn (move time plus reserve): green, then yellow under 30 s,
-  then red under 10 s. We have a single `low` state. Play a tick sound in
+  then red under 10 s. (Done: both clocks, the idle one by its next
+  turn's time and only once it's under 30 s.) Play a tick sound in
   the last seconds (arimaa.com `clock.mp3`, 4steps `clock-tick.wav`).
   arimaa.com also shows the steps left in the turn and the total game time,
   and clicking a clock explains the time control. Add a game-start
@@ -361,8 +362,8 @@ Sharp pleasant, which is the next planned milestone:
    and replaying the last move.)
 2. (Done: step mode. Wheel step scrubbing moved to P2.)
 3. (Done: the game-end dialog with rematch, swap sides and analyse, the
-   low-time tick, and the unfocused-window alert. Still open: the clock
-   colors and a game-start sound.)
+   low-time tick, the unfocused-window alert, and the clock colors.
+   Still open: a game-start sound.)
 4. (Done: the keyboard map, from one table in `lib/shortcuts.ts`, and the
    `?` help overlay, with the variation keys and `l`. `x` waits on threat
    mode.)

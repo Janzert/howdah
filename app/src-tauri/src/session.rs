@@ -506,11 +506,12 @@ impl Session {
 
     /// Longest the side to move may take for its turn at the live node.
     fn live_allowance(&self, tc: TimeControl, reserve: Duration) -> Duration {
-        if self.setup_pending(self.live_side()) {
-            tc.setup_allowance(reserve)
-        } else {
-            tc.turn_allowance(reserve)
-        }
+        self.allowance(self.live_side(), tc, reserve)
+    }
+
+    /// Longest `side` may take for its next turn, given its reserve.
+    fn allowance(&self, side: Color, tc: TimeControl, reserve: Duration) -> Duration {
+        if self.setup_pending(side) { tc.setup_allowance(reserve) } else { tc.turn_allowance(reserve) }
     }
 
     /// Whether committing now plays a move in the match (a human's turn at
@@ -2217,6 +2218,7 @@ impl Session {
                     tc.move_time()
                 }),
                 reserve_ms: ms(clock.reserves[side.index()]),
+                turn_allowance_ms: ms(self.allowance(side, tc, clock.reserves[side.index()])),
             })
         };
         Some(ClockView {

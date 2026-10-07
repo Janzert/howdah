@@ -3,7 +3,7 @@
   import type { Color } from './bindings/Color';
   import type { PieceKind } from './bindings/PieceKind';
   import type { SessionView } from './bindings/SessionView';
-  import { formatClock } from './clock';
+  import { clockLevel, formatClock } from './clock';
   import { SQ } from './geometry';
   import type { Theme } from './theme';
 
@@ -46,16 +46,20 @@
 
   const fmt = formatClock;
 
+  // Colored by the time left for the turn, reserve included: counting
+  // down while running, otherwise what the side's next turn will have.
   const times = $derived.by(() => {
     const mine = clock?.[side];
     if (!clock || !mine) return null;
-    const { moveTimeMs, reserveMs } = mine;
-    if (clock.running !== side) return { move: moveTimeMs, reserve: reserveMs, running: false, low: false };
+    const { moveTimeMs, reserveMs, turnAllowanceMs } = mine;
+    if (clock.running !== side) {
+      return { move: moveTimeMs, reserve: reserveMs, running: false, level: clockLevel(turnAllowanceMs) };
+    }
     const elapsed = clock.turnElapsedMs + (now - receivedAt);
     const left = Math.max(0, clock.turnAllowanceMs - elapsed);
     const move = Math.min(left, Math.max(0, moveTimeMs - elapsed));
     const reserveLeft = Math.min(left, Math.max(0, reserveMs - Math.max(0, elapsed - moveTimeMs)));
-    return { move, reserve: reserveLeft, running: true, low: left < 10_000 };
+    return { move, reserve: reserveLeft, running: true, level: clockLevel(left) };
   });
 </script>
 
@@ -82,7 +86,7 @@
   {/if}
   <span class="spacer"></span>
   {#if times}
-    <span class="clock" class:running={times.running} class:low={times.low} title="move time · reserve">
+    <span class="clock {times.level}" class:running={times.running} title="move time · reserve">
       <span class="move">{fmt(times.move)}</span>
       <span class="sep">·</span>
       <span class="reserve">{fmt(times.reserve)}</span>
@@ -180,6 +184,13 @@
     color: var(--text);
     background: var(--panel);
     border: 1px solid var(--border);
+  }
+  /* An idle clock stays muted until it's short of time. */
+  .clock.running.ok {
+    color: var(--clock-ok);
+  }
+  .clock.warn {
+    color: var(--clock-warn);
   }
   .clock.low {
     color: var(--warn);

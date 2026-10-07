@@ -7,6 +7,15 @@ export function turnTimeLeft(clock: ClockView, sinceViewMs: number): number {
   return Math.max(0, clock.turnAllowanceMs - clock.turnElapsedMs - sinceViewMs);
 }
 
+/** How urgent a clock looks, by the time left for the turn (move time plus
+ * reserve): `ok`, `warn` under 30 s, `low` under 10 s, as arimaa.com
+ * colors its clocks green, yellow and red. */
+export type ClockLevel = 'ok' | 'warn' | 'low';
+
+export function clockLevel(leftMs: number): ClockLevel {
+  return leftMs < 10_000 ? 'low' : leftMs < 30_000 ? 'warn' : 'ok';
+}
+
 /** Time left (ms) at which the low-time tick plays, largest first: at 30, 20
  * and 10 s, then each second, half second and quarter second as time runs
  * out (4steps' schedule). */

@@ -389,6 +389,11 @@ pub struct SideClockView {
     pub move_time_ms: u64,
     #[ts(type = "number")]
     pub reserve_ms: u64,
+    /// The time this side has for a turn from its start: move time plus
+    /// reserve, within the time control's turn limit (the setup's minute
+    /// included). The UI colors the clock by it.
+    #[ts(type = "number")]
+    pub turn_allowance_ms: u64,
 }
 
 /// Clock snapshot. The UI counts down locally from `turnElapsedMs` for the

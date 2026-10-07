@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClockView } from './bindings/ClockView';
-import { formatClock, nextTick, TICK_TIMES_MS, turnTimeLeft } from './clock';
+import { clockLevel, formatClock, nextTick, TICK_TIMES_MS, turnTimeLeft } from './clock';
 
 describe('turnTimeLeft', () => {
   const clock: ClockView = {
@@ -58,5 +58,16 @@ describe('formatClock', () => {
     expect(formatClock(60 * 86_400_000)).toBe('60d 0:00');
     expect(formatClock(86_400_000 + 3 * 3_600_000 + 7 * 60_000 + 30_000)).toBe('1d 3:08');
     expect(formatClock(-5)).toBe('0:00');
+  });
+});
+
+describe('clockLevel', () => {
+  it('turns yellow under 30 s and red under 10 s', () => {
+    expect(clockLevel(60_000)).toBe('ok');
+    expect(clockLevel(30_000)).toBe('ok');
+    expect(clockLevel(29_999)).toBe('warn');
+    expect(clockLevel(10_000)).toBe('warn');
+    expect(clockLevel(9999)).toBe('low');
+    expect(clockLevel(0)).toBe('low');
   });
 });

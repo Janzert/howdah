@@ -8,6 +8,8 @@
   --accent: #3c6e8f;
   --accent-text: #ffffff;
   --warn: #b3412c;
+  --clock-ok: #2e7d32;
+  --clock-warn: #9a6a00;
   color-scheme: light dark;
 }
 
@@ -22,6 +24,8 @@
     --accent: #4f86aa;
     --accent-text: #ffffff;
     --warn: #e0775f;
+    --clock-ok: #7cc47f;
+    --clock-warn: #e3b341;
   }
 }
 
