@@ -278,7 +278,11 @@ Howdah plays and watches games on arimaa.com.
     wall clock ran ahead of the monotonic one) and drops the old poll
     for a full `gamestate`. `Http` sets TCP keepalive (15 s idle, 5 s
     probes, 3 tries), so a long poll on a connection that died silently
-    fails in about half a minute. The sender checks the state before
+    fails in about half a minute, and drops pooled connections after 4 s
+    idle (`POOL_IDLE`; the server closes them at 5 s). The server can
+    close a long poll's connection right after a reply without saying
+    so, so the first network error after a good reply is retried at once
+    (`retry_at_once`) before the watch shows the connection lost. The sender checks the state before
     sending a move again and doesn't resend while that check fails
     (the server would refuse a move it already has). When the game server
     drops the seat (a server error), `reseat` takes a new one, up to three

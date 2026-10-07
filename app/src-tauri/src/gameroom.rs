@@ -1133,6 +1133,8 @@ async fn follow(
     };
     let mut backoff = Duration::from_secs(1);
     let mut reseats = 0;
+    // Whether a failed poll may be sent again at once (see below).
+    let mut retry_at_once = true;
     let mut sleep_watch = SleepWatch::new();
     // After a sleep, the full state instead of waiting on the old poll.
     let mut resync = false;
@@ -1159,6 +1161,7 @@ async fn follow(
             Ok(state) => {
                 backoff = Duration::from_secs(1);
                 reseats = 0;
+                retry_at_once = true;
                 if let Next::Stop = update(&state) {
                     after_end(gameroom, server, target, generation, view).await;
                     return;
@@ -1166,6 +1169,12 @@ async fn follow(
                 continue;
             }
             Err(Error::Empty) => {}
+            // The server sometimes closes a long poll's connection right
+            // after a reply without saying so, and the next poll, sent at
+            // once, can go out on it as it closes. Asking again on a new
+            // connection is safe, so once after a good reply that's done
+            // before calling the connection lost.
+            Err(Error::Network(_)) if std::mem::take(&mut retry_at_once) => continue,
             Err(Error::Network(_)) => {
                 cap = NETWORK_BACKOFF;
                 set_state(&target, &view, WatchState::Reconnecting, Some(CONNECTION_LOST.into()));

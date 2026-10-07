@@ -47,6 +47,11 @@ const KEEPALIVE_RETRIES: u32 = 3;
 /// How long connecting may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long an idle connection is kept for another request. The server
+/// closes idle connections after 5 s; a request sent on one just as it
+/// closes fails, so the client lets them go first.
+const POOL_IDLE: Duration = Duration::from_secs(4);
+
 /// Fields never logged as they are.
 const SECRETS: [&str; 4] = ["password", "sid", "auth", "tid"];
 
@@ -73,6 +78,29 @@ pub enum Error {
     /// again.
     #[error("the gameroom login has expired")]
     Expired,
+}
+
+/// A network error with its causes: reqwest's own message ("error sending
+/// request") doesn't say what went wrong. The URL is left out, since it
+/// may carry a session id.
+fn network(e: reqwest::Error) -> Error {
+    Error::Network(with_causes(&e.without_url()))
+}
+
+/// An error's message followed by its sources', skipping any already in
+/// the text.
+fn with_causes(e: &dyn std::error::Error) -> String {
+    let mut text = e.to_string();
+    let mut source = e.source();
+    while let Some(s) = source {
+        let cause = s.to_string();
+        if !text.contains(&cause) {
+            text.push_str(": ");
+            text.push_str(&cause);
+        }
+        source = s.source();
+    }
+    text
 }
 
 /// Whether a server error message means the lobby session is gone
@@ -199,11 +227,12 @@ impl Http {
             // The browser login answers with a redirect that sets the cookie.
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(CONNECT_TIMEOUT)
+            .pool_idle_timeout(POOL_IDLE)
             .tcp_keepalive(KEEPALIVE_IDLE)
             .tcp_keepalive_interval(KEEPALIVE_INTERVAL)
             .tcp_keepalive_retries(KEEPALIVE_RETRIES)
             .build()
-            .map_err(|e| Error::Network(e.to_string()))?;
+            .map_err(network)?;
         Ok(Http { client, last: Arc::new(Mutex::new(None)), log })
     }
 
@@ -232,7 +261,7 @@ impl Http {
             .timeout(REQUEST_TIMEOUT)
             .send()
             .await
-            .map_err(|e| Error::Network(e.to_string()));
+            .map_err(network);
         let status = sent.as_ref().ok().map(|r| r.status().as_u16());
         let mut cookies = Vec::new();
         if let Ok(r) = &sent {
@@ -324,13 +353,9 @@ impl Http {
         let (status, location, reply) = match request.send().await {
             Ok(r) => {
                 let location = r.headers().get("location").and_then(|l| l.to_str().ok()).map(str::to_string);
-                (
-                    Some(r.status().as_u16()),
-                    location,
-                    r.text().await.map_err(|e| Error::Network(e.to_string())),
-                )
+                (Some(r.status().as_u16()), location, r.text().await.map_err(network))
             }
-            Err(e) => (None, None, Err(Error::Network(e.to_string()))),
+            Err(e) => (None, None, Err(network(e))),
         };
         if let Some(log) = &self.log {
             let text = match &reply {
@@ -388,9 +413,9 @@ impl Http {
         let (status, reply) = match sent {
             Ok(r) => {
                 let status = r.status().as_u16();
-                (Some(status), r.text().await.map_err(|e| Error::Network(e.to_string())))
+                (Some(status), r.text().await.map_err(network))
             }
-            Err(e) => (None, Err(Error::Network(e.to_string()))),
+            Err(e) => (None, Err(network(e))),
         };
         if let Some(log) = &self.log {
             let request = params
@@ -1271,6 +1296,33 @@ mod tests {
             to return to the previous page.</i></p>";
         assert!(error_page(results).unwrap().starts_with("Results"), "search results look like errors");
         assert!(!is_expired("Expired Game: Cannot find the game id for this game."));
+    }
+
+    #[test]
+    fn network_errors_name_their_causes() {
+        #[derive(Debug)]
+        struct E(&'static str, Option<Box<E>>);
+        impl std::fmt::Display for E {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.0)
+            }
+        }
+        impl std::error::Error for E {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                self.1.as_deref().map(|e| e as _)
+            }
+        }
+        let reset = E("connection reset by peer", None);
+        let e = E(
+            "error sending request",
+            Some(Box::new(E("client error (SendRequest)", Some(Box::new(reset))))),
+        );
+        assert_eq!(
+            with_causes(&e),
+            "error sending request: client error (SendRequest): connection reset by peer"
+        );
+        let repeated = E("timed out: operation timed out", Some(Box::new(E("operation timed out", None))));
+        assert_eq!(with_causes(&repeated), "timed out: operation timed out");
     }
 
     #[test]

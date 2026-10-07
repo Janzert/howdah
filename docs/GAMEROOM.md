@@ -163,6 +163,15 @@ architecture. Decided and checked against the live server in October 2026.
   30 s after the server's own errors.
 - TCP keepalive makes a long poll on a silently dead connection fail in
   about half a minute.
+- The server closes idle connections after 5 s, so the client lets go of
+  them after 4 s rather than send a request on one as it closes. It also
+  closes a long poll's connection right after some replies without saying
+  so; the next poll, sent at once, can go out on it as it closes. So after
+  a good reply, a poll that fails with a network error is sent again at
+  once on a new connection, and only a second failure shows the
+  connection as lost.
+- Network errors keep their causes ("error sending request: … connection
+  reset"), without the URL, which may carry a session id.
 - After the computer sleeps (the wall clock runs ahead of the monotonic
   one), the old poll is dropped for a full state.
 - A move that failed to send is checked against the state before it's sent
