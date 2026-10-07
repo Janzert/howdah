@@ -5,7 +5,7 @@
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { InstalledFrom } from './bindings/InstalledFrom';
   import type { ManifestView } from './bindings/ManifestView';
-  import { fieldOptions, optionError, rangeText, settingOptions, splitOptions } from './engineOptions';
+  import { fieldOptions, detailText, optionError, settingOptions, splitOptions } from './engineOptions';
 
   interface Props {
     /** Called after any change so the parent can reload the list. */
@@ -280,7 +280,7 @@
             />
           {/if}
           <span class="desc">
-            {[o.description, rangeText(o) && `(${rangeText(o)})`].filter(Boolean).join(' ')}
+            {[o.description, detailText(o) && `(${detailText(o)})`].filter(Boolean).join(' ')}
           </span>
         </div>
       {/each}

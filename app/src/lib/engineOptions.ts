@@ -68,10 +68,16 @@ function boundsError(o: ManifestOptionView, n: number): string | null {
   return null;
 }
 
-/** "default 10", "1 to 32", ... for a field's placeholder and hint. */
-export function rangeText(o: ManifestOptionView): string {
-  if (o.min != null && o.max != null) return `${o.min} to ${o.max}`;
-  if (o.min != null) return `at least ${o.min}`;
-  if (o.max != null) return `at most ${o.max}`;
-  return '';
+/** The range and default for an option's hint: "1 to 32, default 1",
+ * "default off", ... */
+export function detailText(o: ManifestOptionView): string {
+  const parts: string[] = [];
+  if (o.min != null && o.max != null) parts.push(`${o.min} to ${o.max}`);
+  else if (o.min != null) parts.push(`at least ${o.min}`);
+  else if (o.max != null) parts.push(`at most ${o.max}`);
+  if (o.default != null && o.default !== '') {
+    const shown = o.kind === 'check' ? (o.default === 'true' ? 'on' : 'off') : o.default;
+    parts.push(`default ${shown}`);
+  }
+  return parts.join(', ');
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ManifestOptionView } from './bindings/ManifestOptionView';
-import { fieldOptions, optionError, rangeText, settingOptions, splitOptions } from './engineOptions';
+import { detailText, fieldOptions, optionError, settingOptions, splitOptions } from './engineOptions';
 
 const option = (over: Partial<ManifestOptionView>): ManifestOptionView => ({
   name: 'hash',
@@ -58,9 +58,11 @@ describe('engine options from a manifest', () => {
     expect(optionError(option({ kind: 'string' }), 'any text')).toBeNull();
   });
 
-  it('describes a range', () => {
-    expect(rangeText(threads)).toBe('1 to 32');
-    expect(rangeText(hash)).toBe('at least 1');
-    expect(rangeText(verbose)).toBe('');
+  it('describes the range and default', () => {
+    expect(detailText(threads)).toBe('1 to 32, default 1');
+    expect(detailText(hash)).toBe('at least 1');
+    expect(detailText(verbose)).toBe('default off');
+    expect(detailText(option({ kind: 'check', default: 'true' }))).toBe('default on');
+    expect(detailText(style)).toBe('default normal');
   });
 });
