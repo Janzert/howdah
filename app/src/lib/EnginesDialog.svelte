@@ -5,6 +5,7 @@
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { InstalledFrom } from './bindings/InstalledFrom';
   import type { ManifestView } from './bindings/ManifestView';
+  import { fieldOptions, optionError, rangeText, settingOptions, splitOptions } from './engineOptions';
 
   interface Props {
     /** Called after any change so the parent can reload the list. */
@@ -20,6 +21,10 @@
     program: string;
     args: string;
     workingDir: string;
+    /** Values for the options the engine's manifest describes, by name;
+     * empty leaves the engine's default. */
+    values: Record<string, string>;
+    /** The other options, as `name = value` lines. */
     options: string;
     /** Kept as it was, so an installed engine stays tied to its manifest. */
     installed?: InstalledFrom;
@@ -34,6 +39,10 @@
   let manifestUrl = $state('');
   let status = $state<{ ok: boolean; text: string } | null>(null);
   let busy = $state(false);
+  /** The options the edited engine's manifest describes, for fields. */
+  let described = $derived(
+    settingOptions(catalog?.manifests.find((m) => m.id === editing?.installed?.manifest)?.options ?? []),
+  );
   let dialog: HTMLDialogElement;
 
   $effect(() => {
@@ -114,17 +123,36 @@
 
   function edit(e: EngineSpec | null) {
     status = null;
-    editing = e
-      ? {
-          id: e.id,
-          name: e.name,
-          program: e.program,
-          args: e.args.join(' '),
-          workingDir: e.workingDir ?? '',
-          options: e.options.map((o) => `${o.name} = ${o.value}`).join('\n'),
-          installed: e.installed,
-        }
-      : { id: '', name: '', program: '', args: '', workingDir: '', options: '' };
+    if (!e) {
+      editing = { id: '', name: '', program: '', args: '', workingDir: '', values: {}, options: '' };
+      return;
+    }
+    const manifest = catalog?.manifests.find((m) => m.id === e.installed?.manifest);
+    const { values, other } = splitOptions(e.options, settingOptions(manifest?.options ?? []));
+    editing = {
+      id: e.id,
+      name: e.name,
+      program: e.program,
+      args: e.args.join(' '),
+      workingDir: e.workingDir ?? '',
+      values,
+      options: other.map((o) => `${o.name} = ${o.value}`).join('\n'),
+      installed: e.installed,
+    };
+  }
+
+  /** The first field whose value doesn't suit its option, as a message. */
+  function fieldsError(): string | null {
+    for (const o of described) {
+      const error = optionError(o, editing!.values[o.name] ?? '');
+      if (error) return `${o.name} ${error}`;
+    }
+    return null;
+  }
+
+  /** A check option's box: ticked by its value, or else its default. */
+  function isTicked(name: string, fallback: string | null): boolean {
+    return (editing!.values[name] || fallback) === 'true';
   }
 
   function spec(): EngineSpec {
@@ -135,7 +163,7 @@
       program: e.program.trim(),
       args: e.args.split(/\s+/).filter((a) => a.length > 0),
       workingDir: e.workingDir.trim() || null,
-      options: parseOptions(e.options),
+      options: [...fieldOptions(described, e.values), ...parseOptions(e.options)],
       installed: e.installed,
     };
   }
@@ -154,6 +182,11 @@
   }
 
   async function test() {
+    const error = fieldsError();
+    if (error) {
+      status = { ok: false, text: error };
+      return;
+    }
     busy = true;
     status = null;
     try {
@@ -168,6 +201,11 @@
   }
 
   async function save() {
+    const error = fieldsError();
+    if (error) {
+      status = { ok: false, text: error };
+      return;
+    }
     try {
       await api.saveEngine(spec());
       editing = null;
@@ -197,13 +235,67 @@
       <input id="en-args" bind:value={editing.args} placeholder="e.g. aei" />
       <label for="en-dir">Working dir</label>
       <input id="en-dir" bind:value={editing.workingDir} placeholder="optional" />
-      <label for="en-options">Options</label>
+      {#each described as o (o.name)}
+        {@const id = `en-opt-${o.name}`}
+        {@const error = optionError(o, editing.values[o.name] ?? '')}
+        <label for={id}>{o.name}</label>
+        <div class="field">
+          {#if o.kind === 'check' && o.default != null}
+            <input
+              {id}
+              type="checkbox"
+              checked={isTicked(o.name, o.default)}
+              onchange={(e) => (editing!.values[o.name] = String(e.currentTarget.checked))}
+            />
+          {:else if o.kind === 'check'}
+            <select {id} bind:value={editing.values[o.name]}>
+              <option value={undefined}>Engine default</option>
+              <option value="true">On</option>
+              <option value="false">Off</option>
+            </select>
+          {:else if o.kind === 'combo'}
+            <select {id} bind:value={editing.values[o.name]}>
+              <option value={undefined}>Default{o.default != null ? ` (${o.default})` : ''}</option>
+              {#each o.choices as c (c)}<option value={c}>{c}</option>{/each}
+            </select>
+          {:else if o.kind === 'spin' || o.kind === 'float'}
+            <input
+              {id}
+              class="number"
+              class:invalid={error}
+              type="number"
+              min={o.min}
+              max={o.max}
+              step={o.kind === 'spin' ? 1 : 'any'}
+              value={editing.values[o.name] ?? ''}
+              oninput={(e) => (editing!.values[o.name] = e.currentTarget.value)}
+              placeholder={o.default ?? 'default'}
+            />
+          {:else}
+            <input
+              {id}
+              class:invalid={error}
+              bind:value={editing.values[o.name]}
+              placeholder={o.default ?? (o.kind === 'file' ? 'a file' : o.kind === 'path' ? 'a directory' : 'default')}
+            />
+          {/if}
+          <span class="desc">
+            {[o.description, rangeText(o) && `(${rangeText(o)})`].filter(Boolean).join(' ')}
+          </span>
+        </div>
+      {/each}
+      <label for="en-options">{described.length ? 'Other options' : 'Options'}</label>
       <textarea id="en-options" rows="3" bind:value={editing.options} placeholder="e.g. threads = 2"></textarea>
     </div>
     <p class="hint">
-      The program is run directly, not through a shell. Arguments are split on spaces. Options are one per line,
-      as <code>name = value</code>, sent with <code>setoption</code> for games and analysis. Sharp and OpFor get
-      what analysis needs without any.
+      The program is run directly, not through a shell. Arguments are split on spaces.
+      {#if described.length}
+        The options above come from the engine's manifest; a blank one keeps the engine's default. Other options
+      {:else}
+        Options
+      {/if}
+      are one per line, as <code>name = value</code>, sent with <code>setoption</code> for games and analysis. Sharp
+      and OpFor get what analysis needs without any.
     </p>
     {#if status}<p class:ok={status.ok} class="status">{status.text}</p>{/if}
     <div class="buttons">
@@ -363,6 +455,7 @@
     align-items: center;
   }
   input,
+  select,
   textarea {
     font: inherit;
     padding: 4px 8px;
@@ -382,6 +475,22 @@
     resize: vertical;
     font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
     font-size: 12px;
+  }
+  .field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .field .desc {
+    flex: 1;
+    min-width: 0;
+  }
+  .number {
+    width: 7em;
+  }
+  .invalid {
+    border-color: var(--warn);
   }
   label[for='en-options'] {
     align-self: start;

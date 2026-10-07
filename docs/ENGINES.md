@@ -106,9 +106,10 @@ Howdah doesn't bundle engines. Each engine release publishes a manifest
 arguments, options), and Howdah installs from it. `howdah-aei`'s
 `manifest` module reads and checks manifests, and the app's
 `engine_install.rs` does the rest. Built: adding (URL or file),
-suggesting, installing, updating and removing. Not yet: the manifest's
-options in the Engines dialog's settings, and using a download-less
-manifest with a program the user picks. The design:
+suggesting, installing, updating and removing, and the manifest's
+options as fields in the engine's settings. Not yet: file and directory
+pickers, buttons, and using a download-less manifest with a program the
+user picks. The design:
 
 - **Adding:** the Engines dialog adds a manifest from a URL or a file.
   Howdah keeps the manifest's contents and where it came from in its own
@@ -128,7 +129,13 @@ manifest with a program the user picks. The design:
   never install it unasked.
 - **Options:** the manifest's options give the Engines dialog names,
   types, bounds and descriptions (`check`, `spin`, `float`, `combo`,
-  `string`, `file` and `path` with pickers, `button` for actions). When AEI gains a way for an engine to
+  `string`, `file` and `path` with pickers, `button` for actions). The
+  edit form shows a field for each (`lib/engineOptions.ts`): a checkbox,
+  a number box with the bounds, a list of choices or a text box. A blank
+  field keeps the engine's default, and only values that differ from the
+  default are saved, so the options Howdah sets for a known engine (Sharp's
+  `ignoretc` for analysis) stay unless the user changes them. Options the
+  manifest doesn't list stay as `name = value` lines. When AEI gains a way for an engine to
   list its options (a `protocol-version 2` engine answering an
   `options` request), the engine's own list wins and the manifest's
   descriptions fill in.

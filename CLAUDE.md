@@ -320,7 +320,9 @@ Howdah plays and watches games on arimaa.com.
     It defaults to the bundled `aei-test-engine` when that sits next to the
     app binary (`cargo build -p howdah-aei --bin aei-test-engine`). An
     engine installed from a manifest carries `EngineSpec.installed` (the
-    manifest's id and version); the Engines dialog's edit form keeps it.
+    manifest's id and version); the Engines dialog's edit form keeps it,
+    and shows a field for each option that manifest describes
+    (`lib/engineOptions.ts`).
   - `engine_install.rs`: engine manifests (`howdah_aei::manifest`; plan
     in `docs/ENGINES.md`). `EngineCatalog` keeps the added manifests and
     where each came from in `engine-manifests.json` (config dir) and
