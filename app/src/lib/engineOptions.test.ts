@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { ManifestOptionView } from './bindings/ManifestOptionView';
-import { detailText, fieldOptions, optionError, settingOptions, splitOptions } from './engineOptions';
+import {
+  detailText,
+  fieldOptions,
+  formatOptions,
+  gameOptions,
+  optionError,
+  parseOptions,
+  settingOptions,
+  splitOptions,
+} from './engineOptions';
 
 const option = (over: Partial<ManifestOptionView>): ManifestOptionView => ({
   name: 'hash',
@@ -43,6 +52,38 @@ describe('engine options from a manifest', () => {
       { name: 'hash', value: '256' },
       { name: 'style', value: 'wild' },
     ]);
+  });
+
+  it('makes a game’s options from the fields', () => {
+    const described = [threads, verbose, hash];
+    const saved = [{ name: 'hash', value: '64' }];
+    // The saved hash and the defaults change nothing.
+    expect(gameOptions(described, { threads: '1', hash: '64' }, saved, [])).toEqual([]);
+    expect(gameOptions(described, { threads: '2', verbose: 'true', hash: '' }, saved, [])).toEqual([
+      { name: 'threads', value: '2' },
+      { name: 'verbose', value: 'true' },
+    ]);
+    // Going back to the saved value or the default during a game sends it.
+    const previous = [
+      { name: 'threads', value: '2' },
+      { name: 'hash', value: '256' },
+    ];
+    expect(gameOptions(described, { threads: '', hash: '' }, saved, previous)).toEqual([
+      { name: 'threads', value: '1' },
+      { name: 'hash', value: '64' },
+    ]);
+    // Without a saved value or a default there's nothing to go back to.
+    expect(gameOptions([option({ name: 'x' })], {}, [], [{ name: 'x', value: '3' }])).toEqual([]);
+  });
+
+  it('reads and writes option lines', () => {
+    const options = parseOptions(' threads = 2 \n\nponder\nbook=a = b');
+    expect(options).toEqual([
+      { name: 'threads', value: '2' },
+      { name: 'ponder', value: '' },
+      { name: 'book', value: 'a = b' },
+    ]);
+    expect(formatOptions(options.slice(0, 1))).toBe('threads = 2');
   });
 
   it('checks values against the type and bounds', () => {

@@ -38,9 +38,10 @@ use howdah_arimaa::{
 };
 
 use crate::dto::{
-    AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, LastMoveView, LastStepView,
-    MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView,
-    PlayersView, PositionView, SessionView, SideClockView, StepTarget, TakebackView, TurnStepView, TurnView,
+    AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, LastMoveView,
+    LastStepView, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind,
+    PlayerView, PlayersView, PositionView, SessionView, SideClockView, StepTarget, TakebackView,
+    TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,6 +50,8 @@ pub enum Player {
     Engine {
         id: String,
         name: String,
+        /// Options for this game only, over the engine's saved ones.
+        options: Vec<EngineOption>,
     },
     /// Plays elsewhere, such as an arimaa.com player; the name is theirs.
     Remote {
@@ -59,9 +62,18 @@ pub enum Player {
 impl Player {
     fn view(&self) -> PlayerView {
         match self {
-            Player::Human => PlayerView { kind: PlayerKind::Human, name: "Human".into() },
-            Player::Engine { name, .. } => PlayerView { kind: PlayerKind::Engine, name: name.clone() },
-            Player::Remote { name } => PlayerView { kind: PlayerKind::Remote, name: name.clone() },
+            Player::Human => {
+                PlayerView { kind: PlayerKind::Human, name: "Human".into(), engine_id: None, options: vec![] }
+            }
+            Player::Engine { id, name, options } => PlayerView {
+                kind: PlayerKind::Engine,
+                name: name.clone(),
+                engine_id: Some(id.clone()),
+                options: options.clone(),
+            },
+            Player::Remote { name } => {
+                PlayerView { kind: PlayerKind::Remote, name: name.clone(), engine_id: None, options: vec![] }
+            }
         }
     }
 }
@@ -657,6 +669,18 @@ impl Session {
         }
     }
 
+    /// Replaces the options for this game of the engine playing `side`.
+    /// They reach the engine before its next search.
+    pub fn set_engine_options(&mut self, side: Color, options: Vec<EngineOption>) -> Result<(), ApiError> {
+        let player = self.matchup.as_mut().map(|m| &mut m.players[side.index()]);
+        let Some(Player::Engine { options: current, .. }) = player else {
+            return Err(ApiError::state(format!("{side:?} isn't an engine in this game")));
+        };
+        *current = options;
+        self.refresh();
+        Ok(())
+    }
+
     /// The engine turn to request now, if an engine is to move.
     pub fn engine_turn(&self) -> Option<EngineTurn> {
         let m = self.matchup.as_ref().filter(|m| !m.server_clock())?;
@@ -736,10 +760,11 @@ impl Session {
         self.refresh();
     }
 
-    /// Engine ids playing (gold, silver) in the current match.
-    pub fn engine_players(&self) -> [Option<String>; 2] {
+    /// The engines playing (gold, silver) in the current match: their ids
+    /// and options for this game.
+    pub fn engine_players(&self) -> [Option<(String, Vec<EngineOption>)>; 2] {
         let id = |p: &Player| match p {
-            Player::Engine { id, .. } => Some(id.clone()),
+            Player::Engine { id, options, .. } => Some((id.clone(), options.clone())),
             Player::Human | Player::Remote { .. } => None,
         };
         match &self.matchup {
@@ -2654,7 +2679,7 @@ mod tests {
     }
 
     fn engine(name: &str) -> Player {
-        Player::Engine { id: name.into(), name: name.into() }
+        Player::Engine { id: name.into(), name: name.into(), options: vec![] }
     }
 
     fn setup_text(color: Color) -> String {
@@ -2694,6 +2719,19 @@ mod tests {
         assert!(!s.can_input());
         let t = s.engine_turn().unwrap();
         assert_eq!((t.side, t.engine_id.as_str()), (Color::Gold, "a"));
+    }
+
+    #[test]
+    fn an_engines_options_for_the_game_can_change_mid_game() {
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("b")], [None, None], false);
+        let g = s.generation();
+        let hash = vec![EngineOption { name: "hash".into(), value: "64".into() }];
+        s.set_engine_options(Color::Silver, hash.clone()).unwrap();
+        assert_eq!(s.generation(), g, "the engine keeps running");
+        assert_eq!(s.engine_players(), [None, Some(("b".into(), hash.clone()))]);
+        assert_eq!(s.view().players.unwrap().silver.options, hash);
+        assert!(s.set_engine_options(Color::Gold, hash).is_err(), "gold is human");
     }
 
     #[test]

@@ -6,9 +6,9 @@ use tauri::State;
 
 use crate::backend::Backend;
 use crate::dto::{
-    ApiError, EngineCatalogView, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus, MatchSpec,
-    MoveReplay, PlayerGamesView, PlayerMatchView, PositionView, PostalGameView, SessionId, SessionView,
-    StepTarget, WatchView,
+    ApiError, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames, GameroomStatus,
+    MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PositionView, PostalGameView, SessionId,
+    SessionView, StepTarget, WatchView,
 };
 
 #[tauri::command]
@@ -214,6 +214,16 @@ pub fn start_match(state: State<Backend>, session: SessionId, spec: MatchSpec) -
 #[tauri::command]
 pub fn end_match(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
     state.end_match(session)
+}
+
+#[tauri::command]
+pub fn set_engine_options(
+    state: State<Backend>,
+    session: SessionId,
+    side: Color,
+    options: Vec<EngineOption>,
+) -> Result<(), ApiError> {
+    state.set_engine_options(session, side, options)
 }
 
 #[tauri::command]

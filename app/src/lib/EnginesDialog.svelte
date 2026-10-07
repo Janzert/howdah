@@ -1,11 +1,18 @@
 <script lang="ts">
   import { api, errorMessage } from './api';
   import type { EngineCatalogView } from './bindings/EngineCatalogView';
-  import type { EngineOption } from './bindings/EngineOption';
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { InstalledFrom } from './bindings/InstalledFrom';
   import type { ManifestView } from './bindings/ManifestView';
-  import { fieldOptions, detailText, optionError, settingOptions, splitOptions } from './engineOptions';
+  import {
+    fieldOptions,
+    formatOptions,
+    optionError,
+    parseOptions,
+    settingOptions,
+    splitOptions,
+  } from './engineOptions';
+  import OptionFields from './OptionFields.svelte';
 
   interface Props {
     /** Called after any change so the parent can reload the list. */
@@ -136,7 +143,7 @@
       args: e.args.join(' '),
       workingDir: e.workingDir ?? '',
       values,
-      options: other.map((o) => `${o.name} = ${o.value}`).join('\n'),
+      options: formatOptions(other),
       installed: e.installed,
     };
   }
@@ -150,11 +157,6 @@
     return null;
   }
 
-  /** A check option's box: ticked by its value, or else its default. */
-  function isTicked(name: string, fallback: string | null): boolean {
-    return (editing!.values[name] || fallback) === 'true';
-  }
-
   function spec(): EngineSpec {
     const e = editing!;
     return {
@@ -166,19 +168,6 @@
       options: [...fieldOptions(described, e.values), ...parseOptions(e.options)],
       installed: e.installed,
     };
-  }
-
-  /** `name = value` lines; blank lines are skipped, and a line without `=`
-   * is a name with an empty value. */
-  function parseOptions(text: string): EngineOption[] {
-    return text
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => {
-        const i = line.indexOf('=');
-        return i < 0 ? { name: line, value: '' } : { name: line.slice(0, i).trim(), value: line.slice(i + 1).trim() };
-      });
   }
 
   async function test() {
@@ -235,55 +224,7 @@
       <input id="en-args" bind:value={editing.args} placeholder="e.g. aei" />
       <label for="en-dir">Working dir</label>
       <input id="en-dir" bind:value={editing.workingDir} placeholder="optional" />
-      {#each described as o (o.name)}
-        {@const id = `en-opt-${o.name}`}
-        {@const error = optionError(o, editing.values[o.name] ?? '')}
-        <label for={id}>{o.name}</label>
-        <div class="field">
-          {#if o.kind === 'check' && o.default != null}
-            <input
-              {id}
-              type="checkbox"
-              checked={isTicked(o.name, o.default)}
-              onchange={(e) => (editing!.values[o.name] = String(e.currentTarget.checked))}
-            />
-          {:else if o.kind === 'check'}
-            <select {id} bind:value={editing.values[o.name]}>
-              <option value={undefined}>Engine default</option>
-              <option value="true">On</option>
-              <option value="false">Off</option>
-            </select>
-          {:else if o.kind === 'combo'}
-            <select {id} bind:value={editing.values[o.name]}>
-              <option value={undefined}>Default{o.default != null ? ` (${o.default})` : ''}</option>
-              {#each o.choices as c (c)}<option value={c}>{c}</option>{/each}
-            </select>
-          {:else if o.kind === 'spin' || o.kind === 'float'}
-            <input
-              {id}
-              class="number"
-              class:invalid={error}
-              type="number"
-              min={o.min}
-              max={o.max}
-              step={o.kind === 'spin' ? 1 : 'any'}
-              value={editing.values[o.name] ?? ''}
-              oninput={(e) => (editing!.values[o.name] = e.currentTarget.value)}
-              placeholder={o.default ?? 'default'}
-            />
-          {:else}
-            <input
-              {id}
-              class:invalid={error}
-              bind:value={editing.values[o.name]}
-              placeholder={o.default ?? (o.kind === 'file' ? 'a file' : o.kind === 'path' ? 'a directory' : 'default')}
-            />
-          {/if}
-          <span class="desc">
-            {[o.description, detailText(o) && `(${detailText(o)})`].filter(Boolean).join(' ')}
-          </span>
-        </div>
-      {/each}
+      <OptionFields {described} bind:values={editing.values} idPrefix="en-opt" />
       <label for="en-options">{described.length ? 'Other options' : 'Options'}</label>
       <textarea id="en-options" rows="3" bind:value={editing.options} placeholder="e.g. threads = 2"></textarea>
     </div>
@@ -455,7 +396,6 @@
     align-items: center;
   }
   input,
-  select,
   textarea {
     font: inherit;
     padding: 4px 8px;
@@ -475,22 +415,6 @@
     resize: vertical;
     font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
     font-size: 12px;
-  }
-  .field {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-  .field .desc {
-    flex: 1;
-    min-width: 0;
-  }
-  .number {
-    width: 7em;
-  }
-  .invalid {
-    border-color: var(--warn);
   }
   label[for='en-options'] {
     align-self: start;

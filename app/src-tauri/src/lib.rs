@@ -80,6 +80,7 @@ pub fn run() {
             commands::start_match,
             commands::end_match,
             commands::engine_move_now,
+            commands::set_engine_options,
             commands::set_analysis,
             commands::add_line,
             commands::preview_line,

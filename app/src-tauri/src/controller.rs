@@ -23,7 +23,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::backend::{Events, emit, emit_session};
 use crate::dto::{
-    AnalysisLine, AnalysisState, AnalysisView, EngineOutput, EngineOutputKind, EngineSpec, Eval, PvTurn,
+    AnalysisLine, AnalysisState, AnalysisView, EngineOption, EngineOutput, EngineOutputKind, EngineSpec,
+    Eval, PvTurn,
 };
 use crate::engines::{EngineRegistry, engine_config};
 use crate::session::{AnalysisEngine, AnalysisTarget, Session, depth_key, steps_view};
@@ -109,12 +110,22 @@ enum ActorEvent {
 }
 
 enum ActorCmd {
-    Think { request: u64, moves: Vec<String>, tc: Option<TimeControl>, reserves: Option<[Duration; 2]> },
+    Think {
+        request: u64,
+        moves: Vec<String>,
+        tc: Option<TimeControl>,
+        reserves: Option<[Duration; 2]>,
+    },
     Stop,
+    /// New options for this game, sent before the next search (right away
+    /// if the engine is idle).
+    SetOptions(Vec<EngineOption>),
 }
 
 struct ActorHandle {
     engine_id: String,
+    /// The options for this game it was last given.
+    options: Vec<EngineOption>,
     cmd: UnboundedSender<ActorCmd>,
     profile: Profile,
 }
@@ -251,9 +262,14 @@ impl Coordinator {
         for side in Color::ALL {
             let wanted = &engines[side.index()];
             let current = self.actors[side.index()].as_ref().map(|a| &a.engine_id);
-            if wanted.as_ref() != current && !self.failed[side.index()] {
+            if wanted.as_ref().map(|(id, _)| id) != current && !self.failed[side.index()] {
                 self.actors[side.index()] =
-                    wanted.as_ref().and_then(|id| self.start_actor(generation, side, id));
+                    wanted.as_ref().and_then(|(id, options)| self.start_actor(generation, side, id, options));
+            } else if let (Some((_, options)), Some(actor)) = (wanted, &mut self.actors[side.index()])
+                && actor.options != *options
+            {
+                actor.options = options.clone();
+                let _ = actor.cmd.send(ActorCmd::SetOptions(options.clone()));
             }
         }
         if let Some(turn) = turn
@@ -282,7 +298,13 @@ impl Coordinator {
         }
     }
 
-    fn start_actor(&mut self, generation: u64, side: Color, engine_id: &str) -> Option<ActorHandle> {
+    fn start_actor(
+        &mut self,
+        generation: u64,
+        side: Color,
+        engine_id: &str,
+        options: &[EngineOption],
+    ) -> Option<ActorHandle> {
         let spec = lock(&self.registry).get(engine_id);
         let Some(spec) = spec else {
             self.failed[side.index()] = true;
@@ -293,8 +315,13 @@ impl Coordinator {
         };
         let (cmd_tx, cmd_rx) = unbounded_channel();
         let origin = Origin::Player { generation, side };
-        tokio::spawn(run_actor(spec, Purpose::Play, origin, cmd_rx, self.tx.clone()));
-        Some(ActorHandle { engine_id: engine_id.to_string(), cmd: cmd_tx, profile: Profile::Generic })
+        tokio::spawn(run_actor(spec, options.to_vec(), Purpose::Play, origin, cmd_rx, self.tx.clone()));
+        Some(ActorHandle {
+            engine_id: engine_id.to_string(),
+            options: options.to_vec(),
+            cmd: cmd_tx,
+            profile: Profile::Generic,
+        })
     }
 
     /// Starts, stops or switches the analysis engine as the session asks,
@@ -367,7 +394,7 @@ impl Coordinator {
         self.next_run += 1;
         let (cmd_tx, cmd_rx) = unbounded_channel();
         let origin = Origin::Analysis { run };
-        tokio::spawn(run_actor(spec, Purpose::Analysis, origin, cmd_rx, self.tx.clone()));
+        tokio::spawn(run_actor(spec, Vec::new(), Purpose::Analysis, origin, cmd_rx, self.tx.clone()));
         Some(Analysis {
             run,
             engine_id: engine.id.clone(),
@@ -711,8 +738,13 @@ async fn sleep_until(t: Option<Instant>) {
 /// for its `bestmove`, so moves never reach an engine mid-search (analysis
 /// does this; a match never does). Of several `Think`s waiting, only the
 /// newest is searched.
+///
+/// `game` holds options for this game over the engine's saved ones. New ones
+/// (`SetOptions`) are sent when the engine isn't searching, only those that
+/// changed.
 async fn run_actor(
     spec: EngineSpec,
+    game: Vec<EngineOption>,
     purpose: Purpose,
     origin: Origin,
     mut cmds: UnboundedReceiver<ActorCmd>,
@@ -730,7 +762,8 @@ async fn run_actor(
     };
     let profile = Profile::detect(engine.id());
     // What the engine says about its options (errors, mostly) is passed on.
-    let options = send_options(&mut engine, &spec, profile, purpose).await;
+    let mut applied = merge_options(&spec.options, &game);
+    let options = send_options(&mut engine, &applied, profile, purpose).await;
     match options.and(engine.is_ready(Duration::from_secs(10)).await) {
         Ok(said) => said.into_iter().for_each(|m| report(0, ActorEvent::Line(m))),
         Err(e) => {
@@ -743,6 +776,8 @@ async fn run_actor(
     let mut told: Option<Vec<String>> = None;
     let mut thinking: Option<u64> = None;
     let mut stop_sent = false;
+    // Options for this game waiting for the search to end.
+    let mut waiting: Option<Vec<EngineOption>> = None;
     loop {
         let first = tokio::select! {
             cmd = cmds.recv() => match cmd {
@@ -758,6 +793,12 @@ async fn run_actor(
                     Ok(EngineMessage::BestMove(text)) => {
                         thinking = None;
                         report(request, ActorEvent::BestMove(text));
+                        if let Some(options) = waiting.take()
+                            && let Err(e) = apply_options(&mut engine, &mut applied, options, &report).await
+                        {
+                            report(0, ActorEvent::Failed(format!("{} failed: {e}", spec.name)));
+                            return;
+                        }
                     }
                     Ok(other) => report(request, ActorEvent::Line(other)),
                     Err(e) => {
@@ -781,6 +822,11 @@ async fn run_actor(
                     if let Some(old) = thinking.take() {
                         ready = finish_search(&mut engine, profile, old, stop_sent, &report).await;
                     }
+                    if ready.is_ok()
+                        && let Some(options) = waiting.take()
+                    {
+                        ready = apply_options(&mut engine, &mut applied, options, &report).await;
+                    }
                     if ready.is_ok() {
                         ready = prepare(&mut engine, &mut told, moves, tc, reserves).await;
                     }
@@ -793,6 +839,15 @@ async fn run_actor(
                     }
                     thinking = Some(request);
                     stop_sent = false;
+                }
+                ActorCmd::SetOptions(options) => {
+                    let options = merge_options(&spec.options, &options);
+                    if thinking.is_some() {
+                        waiting = Some(options);
+                    } else if let Err(e) = apply_options(&mut engine, &mut applied, options, &report).await {
+                        report(0, ActorEvent::Failed(format!("{} failed: {e}", spec.name)));
+                        return;
+                    }
                 }
                 ActorCmd::Stop => {
                     if thinking.is_some() && !stop_sent {
@@ -809,20 +864,50 @@ async fn run_actor(
 /// user set the same option), then the user's own.
 async fn send_options(
     engine: &mut Engine,
-    spec: &EngineSpec,
+    options: &[EngineOption],
     profile: Profile,
     purpose: Purpose,
 ) -> Result<(), AeiError> {
     if purpose == Purpose::Analysis {
         for &(name, value) in profile.analysis_options() {
-            if !spec.options.iter().any(|o| o.name.eq_ignore_ascii_case(name)) {
+            if !options.iter().any(|o| o.name.eq_ignore_ascii_case(name)) {
                 engine.set_option(name, value).await?;
             }
         }
     }
-    for o in &spec.options {
+    for o in options {
         engine.set_option(&o.name, &o.value).await?;
     }
+    Ok(())
+}
+
+/// The options to send: `saved` without those `game` sets, then `game`'s.
+fn merge_options(saved: &[EngineOption], game: &[EngineOption]) -> Vec<EngineOption> {
+    let mut merged: Vec<EngineOption> =
+        saved.iter().filter(|s| !game.iter().any(|g| g.name == s.name)).cloned().collect();
+    merged.extend(game.iter().cloned());
+    merged
+}
+
+/// Sends the options in `options` that differ from those `applied` (an
+/// option no longer listed keeps its value), records them, and passes on
+/// what the engine says about them (`report`).
+async fn apply_options(
+    engine: &mut Engine,
+    applied: &mut Vec<EngineOption>,
+    options: Vec<EngineOption>,
+    report: &impl Fn(u64, ActorEvent),
+) -> Result<(), AeiError> {
+    let changed: Vec<_> = options.iter().filter(|o| !applied.contains(o)).cloned().collect();
+    *applied = options;
+    if changed.is_empty() {
+        return Ok(());
+    }
+    for o in &changed {
+        engine.set_option(&o.name, &o.value).await?;
+    }
+    let said = engine.is_ready(Duration::from_secs(10)).await?;
+    said.into_iter().for_each(|m| report(0, ActorEvent::Line(m)));
     Ok(())
 }
 
@@ -1117,11 +1202,49 @@ mod tests {
     }
 
     fn start(purpose: Purpose) -> (UnboundedSender<ActorCmd>, UnboundedReceiver<ControlMsg>) {
+        start_with(purpose, Vec::new())
+    }
+
+    fn start_with(
+        purpose: Purpose,
+        game: Vec<EngineOption>,
+    ) -> (UnboundedSender<ActorCmd>, UnboundedReceiver<ControlMsg>) {
         let (cmd_tx, cmd_rx) = unbounded_channel();
         let (tx, rx) = unbounded_channel();
         let spec = test_engine(&["--until-stop"]);
-        tokio::spawn(run_actor(spec, purpose, Origin::Analysis { run: 1 }, cmd_rx, tx));
+        tokio::spawn(run_actor(spec, game, purpose, Origin::Analysis { run: 1 }, cmd_rx, tx));
         (cmd_tx, rx)
+    }
+
+    fn option(name: &str, value: &str) -> EngineOption {
+        EngineOption { name: name.into(), value: value.into() }
+    }
+
+    #[tokio::test]
+    async fn game_options_go_over_the_saved_ones_and_wait_for_a_search_to_end() {
+        let (cmds, mut rx) = start_with(Purpose::Play, vec![option("threads", "4"), option("hash", "64")]);
+        let seen = collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
+        assert_eq!(logs(&seen), ["option threads=4", "option hash=64"]);
+        let think = |request| ActorCmd::Think { request, moves: vec![], tc: None, reserves: None };
+        let is_pv = |e: &ActorEvent| matches!(e, ActorEvent::Line(EngineMessage::Info(Info::Pv(_))));
+        let is_best = |e: &ActorEvent| matches!(e, ActorEvent::BestMove(_));
+        // Idle: sent at once, only what changed.
+        cmds.send(ActorCmd::SetOptions(vec![option("threads", "4"), option("hash", "128")])).unwrap();
+        cmds.send(think(1)).unwrap();
+        let seen = collect(&mut rx, |_, e| is_pv(e)).await;
+        assert_eq!(logs(&seen)[0], "option hash=128");
+        // Mid-search (the test engine logs anything but `stop` as an error):
+        // after the bestmove. Dropping `threads` from the game's options
+        // goes back to the saved value.
+        cmds.send(ActorCmd::SetOptions(vec![option("hash", "256")])).unwrap();
+        cmds.send(ActorCmd::Stop).unwrap();
+        let mut seen = collect(&mut rx, |_, e| is_best(e)).await;
+        cmds.send(think(2)).unwrap();
+        seen.extend(collect(&mut rx, |_, e| is_pv(e)).await);
+        let logs = logs(&seen);
+        assert!(logs.iter().all(|l| !l.contains("Error")), "{logs:?}");
+        assert!(logs.contains(&"option threads=2".to_string()), "{logs:?}");
+        assert!(logs.contains(&"option hash=256".to_string()), "{logs:?}");
     }
 
     #[tokio::test]

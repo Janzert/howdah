@@ -227,6 +227,15 @@ Howdah plays and watches games on arimaa.com.
       engine failures into forfeits.
     - Commands call `Controller::poke()` after every change.
     - Engine output goes out as `engine://output`.
+    - A game's engine player carries options for that game
+      (`Player::Engine.options`, from `PlayerSpec`), sent over the
+      engine's saved ones when its process starts. `set_engine_options`
+      replaces them mid-game without a restart: the actor sends the ones
+      that changed (`ActorCmd::SetOptions`) at once if the engine is idle,
+      otherwise after its `bestmove`, and passes on what the engine says.
+      An option dropped from the list keeps its value, so the frontend
+      sends the value to go back to (`gameOptions` in
+      `lib/engineOptions.ts`).
     - Analysis (design in `docs/ANALYSIS.md`): a separate actor searches
       `Session::analysis_target()` (the shown node; a turn being entered
       is ignored) until it changes. A `Think` mid-search stops the search
@@ -383,6 +392,12 @@ Howdah plays and watches games on arimaa.com.
     moves. The session refuses edits that would move a running match's
     line off the main line (`Session::edit_lines`). Variations with more
     than one move have a fold toggle (`MoveNodeView.collapsible`/`folded`).
+  - `GameOptionsDialog.svelte`: an engine's options for one game, with
+    the manifest's fields (`OptionFields.svelte`, shared with the Engines
+    dialog's edit form) filled from the game's values or the saved ones.
+    New game opens it from each engine side's "Options…" button, and
+    `EnginePanel.svelte` from each engine's header during a game
+    (`set_engine_options`).
   - `AnalysisPanel.svelte` (engine picker, eval/depth/speed, PV chips with
     a `MiniBoard` hover preview, engine log), `EvalBar.svelte` beside the
     board, and the PV's first turn drawn by `LastMoveLayer` with `pv`.

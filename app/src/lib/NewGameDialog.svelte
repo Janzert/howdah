@@ -1,7 +1,10 @@
 <script lang="ts">
+  import type { Color } from './bindings/Color';
+  import type { EngineOption } from './bindings/EngineOption';
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { MatchSpec } from './bindings/MatchSpec';
   import type { PlayerSpec } from './bindings/PlayerSpec';
+  import GameOptionsDialog from './GameOptionsDialog.svelte';
   import TimeControlInput from './TimeControlInput.svelte';
 
   interface Props {
@@ -35,6 +38,9 @@
   let goldTc = $state(pref('newgame.tc.gold', ''));
   let silverTc = $state(pref('newgame.tc.silver', ''));
   let takebacks = $state(pref('newgame.takebacks', '0') === '1');
+  /** Each side's engine options for this game, cleared when its engine changes. */
+  let gameOptions = $state<Record<Color, EngineOption[]>>({ gold: [], silver: [] });
+  let optionsFor = $state<Color | null>(null);
   let error = $state<string | null>(null);
   let dialog: HTMLDialogElement;
 
@@ -52,9 +58,11 @@
     }
   }
 
-  function player(value: string): PlayerSpec {
-    return value === 'human' ? { kind: 'human' } : { kind: 'engine', engineId: value };
+  function player(value: string, options: EngineOption[]): PlayerSpec {
+    return value === 'human' ? { kind: 'human' } : { kind: 'engine', engineId: value, options };
   }
+
+  const engineFor = (side: Color) => engines.find((e) => e.id === (side === 'gold' ? gold : silver));
 
   async function start() {
     savePref('newgame.gold', gold);
@@ -66,8 +74,8 @@
     savePref('newgame.takebacks', takebacks ? '1' : '0');
     const [g, s] = separate ? [goldTc, silverTc] : [timeControl, timeControl];
     error = await onStart({
-      gold: player(gold),
-      silver: player(silver),
+      gold: player(gold, gameOptions.gold),
+      silver: player(silver, gameOptions.silver),
       goldTimeControl: g.trim() || null,
       silverTimeControl: s.trim() || null,
       takebacks,
@@ -76,19 +84,35 @@
   }
 </script>
 
+{#snippet side(color: Color, id: string)}
+  {@const n = gameOptions[color].length}
+  <div class="player">
+    {#if color === 'gold'}
+      <select {id} bind:value={gold} onchange={() => (gameOptions.gold = [])}>
+        <option value="human">Human</option>
+        {#each engines as e (e.id)}<option value={e.id}>{e.name}</option>{/each}
+      </select>
+    {:else}
+      <select {id} bind:value={silver} onchange={() => (gameOptions.silver = [])}>
+        <option value="human">Human</option>
+        {#each engines as e (e.id)}<option value={e.id}>{e.name}</option>{/each}
+      </select>
+    {/if}
+    <button
+      disabled={!engineFor(color)}
+      title="This engine's options for this game"
+      onclick={() => (optionsFor = color)}>Options{n ? ` (${n})` : ''}…</button
+    >
+  </div>
+{/snippet}
+
 <dialog bind:this={dialog} onclose={onClose}>
   <h2>New game</h2>
   <div class="grid">
     <label for="ng-gold"><span class="dot gold"></span> Gold</label>
-    <select id="ng-gold" bind:value={gold}>
-      <option value="human">Human</option>
-      {#each engines as e (e.id)}<option value={e.id}>{e.name}</option>{/each}
-    </select>
+    {@render side('gold', 'ng-gold')}
     <label for="ng-silver"><span class="dot silver"></span> Silver</label>
-    <select id="ng-silver" bind:value={silver}>
-      <option value="human">Human</option>
-      {#each engines as e (e.id)}<option value={e.id}>{e.name}</option>{/each}
-    </select>
+    {@render side('silver', 'ng-silver')}
     {#if separate}
       <label for="ng-tc-gold"><span class="dot gold"></span> Gold clock</label>
       <TimeControlInput id="ng-tc-gold" bind:value={goldTc} />
@@ -126,6 +150,22 @@
     <button class="primary" onclick={start}>Start</button>
   </div>
 </dialog>
+{#if optionsFor}
+  {@const color = optionsFor}
+  {@const engine = engineFor(color)}
+  {#if engine}
+    <GameOptionsDialog
+      {engine}
+      current={gameOptions[color]}
+      running={false}
+      onApply={async (options) => {
+        gameOptions[color] = options;
+        return null;
+      }}
+      onClose={() => (optionsFor = null)}
+    />
+  {/if}
+{/if}
 
 <style>
   dialog {
@@ -142,6 +182,14 @@
   h2 {
     margin: 0 0 12px;
     font-size: 16px;
+  }
+  .player {
+    display: flex;
+    gap: 6px;
+  }
+  .player select {
+    flex: 1;
+    min-width: 0;
   }
   .grid {
     display: grid;

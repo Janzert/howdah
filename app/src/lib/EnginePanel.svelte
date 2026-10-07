@@ -1,17 +1,35 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { formatRabbits } from './analysis';
+  import { api, errorMessage } from './api';
   import type { Color } from './bindings/Color';
+  import type { EngineOption } from './bindings/EngineOption';
   import type { EngineOutput } from './bindings/EngineOutput';
+  import type { EngineSpec } from './bindings/EngineSpec';
   import type { PlayersView } from './bindings/PlayersView';
   import { on } from './events';
+  import GameOptionsDialog from './GameOptionsDialog.svelte';
 
   interface Props {
     players: PlayersView;
     /** Changes whenever a new match starts, clearing the output. */
     resetKey: number;
+    engines: EngineSpec[];
   }
-  let { players, resetKey }: Props = $props();
+  let { players, resetKey, engines }: Props = $props();
+
+  /** The side whose engine options are being changed. */
+  let optionsFor = $state<Color | null>(null);
+  const engineOf = (side: Color) => engines.find((e) => e.id === players[side].engineId);
+
+  async function setOptions(side: Color, options: EngineOption[]): Promise<string | null> {
+    try {
+      await api.setEngineOptions(side, options);
+      return null;
+    } catch (e) {
+      return errorMessage(e);
+    }
+  }
 
   interface SideState {
     depth: string | null;
@@ -20,17 +38,17 @@
     lines: { kind: string; text: string }[];
   }
   const empty = (): SideState => ({ depth: null, score: null, pv: [], lines: [] });
-  let state = $state<Record<Color, SideState>>({ gold: empty(), silver: empty() });
+  let output = $state<Record<Color, SideState>>({ gold: empty(), silver: empty() });
   const MAX_LINES = 150;
 
   $effect(() => {
     resetKey;
-    untrack(() => (state = { gold: empty(), silver: empty() }));
+    untrack(() => (output = { gold: empty(), silver: empty() }));
   });
 
   onMount(() => {
     const unlisten = on('engine://output', (o: EngineOutput) => {
-      const s = state[o.side];
+      const s = output[o.side];
       if (o.depth != null) s.depth = o.depth;
       if (o.score != null) s.score = o.score;
       if (o.pv != null) s.pv = o.pv;
@@ -53,13 +71,22 @@
 
 <div class="panel">
   {#each sides as side (side)}
-    {@const s = state[side]}
+    {@const s = output[side]}
     <section>
       <header>
         <span class="dot {side}"></span>
         <strong>{players[side].name}</strong>
         {#if s.depth}<span class="stat">depth {s.depth}</span>{/if}
         {#if s.score != null}<span class="stat" title="in rabbits, from this engine's side">eval {formatRabbits(s.score)}</span>{/if}
+        <span class="spacer"></span>
+        {#if engineOf(side)}
+          {@const n = players[side].options.length}
+          <button
+            class="options"
+            title="Change this engine's options for this game"
+            onclick={() => (optionsFor = side)}>Options{n ? ` (${n})` : ''}</button
+          >
+        {/if}
       </header>
       {#if s.pv.length}
         <div class="pv" title="principal variation">{s.pv.join('  |  ')}</div>
@@ -72,6 +99,19 @@
     </section>
   {/each}
 </div>
+{#if optionsFor}
+  {@const side = optionsFor}
+  {@const engine = engineOf(side)}
+  {#if engine}
+    <GameOptionsDialog
+      {engine}
+      current={players[side].options}
+      running
+      onApply={(options) => setOptions(side, options)}
+      onClose={() => (optionsFor = null)}
+    />
+  {/if}
+{/if}
 
 <style>
   .panel {
@@ -106,6 +146,13 @@
   }
   .dot.silver {
     background: #c9ced6;
+  }
+  .spacer {
+    flex: 1;
+  }
+  .options {
+    font-size: 12px;
+    padding: 1px 8px;
   }
   .stat {
     font-family: ui-monospace, 'DejaVu Sans Mono', monospace;

@@ -135,7 +135,11 @@ user picks. The design:
   field keeps the engine's default, and only values that differ from the
   default are saved, so the options Howdah sets for a known engine (Sharp's
   `ignoretc` for analysis) stay unless the user changes them. Options the
-  manifest doesn't list stay as `name = value` lines. When AEI gains a way for an engine to
+  manifest doesn't list stay as `name = value` lines. The same fields set
+  options for one game, from New game or during the game (the engine
+  panel's Options): they go over the saved settings, and a change during
+  the game reaches the engine before its next move, without restarting
+  it. When AEI gains a way for an engine to
   list its options (a `protocol-version 2` engine answering an
   `options` request), the engine's own list wins and the manifest's
   descriptions fill in.

@@ -29,9 +29,9 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, EngineCatalogView, EngineIdentity, EngineSpec, GameroomGames, GameroomStatus,
-    MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec, PositionView, PostalGameView,
-    SessionId, SessionUpdate, SessionView, StepTarget, WatchView,
+    AnimStep, ApiError, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames,
+    GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec, PositionView,
+    PostalGameView, SessionId, SessionUpdate, SessionView, StepTarget, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -367,12 +367,16 @@ impl Backend {
         let player = |p: &PlayerSpec| -> Result<Player, ApiError> {
             match p {
                 PlayerSpec::Human => Ok(Player::Human),
-                PlayerSpec::Engine { engine_id } => {
+                PlayerSpec::Engine { engine_id, options } => {
                     let e = self
                         .engines()
                         .get(engine_id)
                         .ok_or_else(|| ApiError::illegal(format!("unknown engine {engine_id:?}")))?;
-                    Ok(Player::Engine { id: e.id, name: e.name })
+                    Ok(Player::Engine {
+                        id: e.id,
+                        name: e.name,
+                        options: options.clone().unwrap_or_default(),
+                    })
                 }
             }
         };
@@ -434,6 +438,19 @@ impl Backend {
         moves: &[String],
     ) -> Result<PositionView, ApiError> {
         self.read(id, |s| s.preview_line(from, moves))?
+    }
+
+    /// Sets the options for this game of the engine playing `side`.
+    pub fn set_engine_options(
+        &self,
+        id: SessionId,
+        side: Color,
+        options: Vec<EngineOption>,
+    ) -> Result<(), ApiError> {
+        self.mutate(id, |s| {
+            s.set_engine_options(side, options)?;
+            Ok(Vec::new())
+        })
     }
 
     pub fn engine_move_now(&self, id: SessionId) -> Result<(), ApiError> {
@@ -769,6 +786,9 @@ impl Backend {
             "start_match" => ok(self.start_match(sid()?, &arg(args, "spec")?)?),
             "end_match" => ok(self.end_match(sid()?)?),
             "engine_move_now" => ok(self.engine_move_now(sid()?)?),
+            "set_engine_options" => {
+                ok(self.set_engine_options(sid()?, arg(args, "side")?, arg(args, "options")?)?)
+            }
             "set_analysis" => {
                 ok(self.set_analysis(sid()?, arg::<Option<String>>(args, "engineId")?.as_deref())?)
             }

@@ -597,7 +597,7 @@
         <WatchPanel {watch} {view} {run} {receivedAt} {now} onNewGame={newOnlineGame} />
       {/if}
       {#if hasEngine && view.players}
-        <EnginePanel players={view.players} resetKey={matchKey} />
+        <EnginePanel players={view.players} resetKey={matchKey} {engines} />
       {/if}
       {#if analysing || analysis?.state === 'failed'}
         <AnalysisPanel

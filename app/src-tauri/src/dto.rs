@@ -365,6 +365,10 @@ pub enum PlayerKind {
 pub struct PlayerView {
     pub kind: PlayerKind,
     pub name: String,
+    /// An engine's id in the engine list.
+    pub engine_id: Option<String>,
+    /// An engine's options for this game only, over its saved ones.
+    pub options: Vec<EngineOption>,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]
@@ -418,6 +422,10 @@ pub enum PlayerSpec {
     #[serde(rename_all = "camelCase")]
     Engine {
         engine_id: String,
+        /// Options for this game only, sent over the engine's saved ones.
+        #[serde(default)]
+        #[ts(optional)]
+        options: Option<Vec<EngineOption>>,
     },
 }
 

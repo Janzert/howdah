@@ -33,6 +33,43 @@ export function fieldOptions(described: ManifestOptionView[], values: Record<str
   });
 }
 
+/** The options for one game from the fields: each that differs from what
+ * the engine would otherwise get (its `saved` value, else the default),
+ * and each the game set before (`previous`) with the value it goes back
+ * to, so a running engine changes back too. A blank field with neither a
+ * saved value nor a default is left out. */
+export function gameOptions(
+  described: ManifestOptionView[],
+  values: Record<string, string>,
+  saved: EngineOption[],
+  previous: EngineOption[],
+): EngineOption[] {
+  return described.flatMap((o) => {
+    const base = saved.find((s) => s.name === o.name)?.value ?? o.default;
+    const value = (values[o.name] ?? '').trim() || base;
+    if (value == null || value === '') return [];
+    const changed = !sameValue(o, value, base);
+    return changed || previous.some((p) => p.name === o.name) ? [{ name: o.name, value }] : [];
+  });
+}
+
+/** `name = value` lines; blank lines are skipped, and a line without `=`
+ * is a name with an empty value. */
+export function parseOptions(text: string): EngineOption[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const i = line.indexOf('=');
+      return i < 0 ? { name: line, value: '' } : { name: line.slice(0, i).trim(), value: line.slice(i + 1).trim() };
+    });
+}
+
+export function formatOptions(options: EngineOption[]): string {
+  return options.map((o) => `${o.name} = ${o.value}`).join('\n');
+}
+
 function sameValue(o: ManifestOptionView, value: string, other: string | null): boolean {
   if (other == null) return false;
   if (o.kind === 'spin' || o.kind === 'float') return Number(value) === Number(other);

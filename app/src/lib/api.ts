@@ -6,6 +6,7 @@ import type { ApiError } from './bindings/ApiError';
 import type { Color } from './bindings/Color';
 import type { EngineCatalogView } from './bindings/EngineCatalogView';
 import type { EngineIdentity } from './bindings/EngineIdentity';
+import type { EngineOption } from './bindings/EngineOption';
 import type { EngineSpec } from './bindings/EngineSpec';
 import type { GameroomGames } from './bindings/GameroomGames';
 import type { GameroomStatus } from './bindings/GameroomStatus';
@@ -85,6 +86,9 @@ export const api = {
   startMatch: (spec: MatchSpec) => invoke<void>('start_match', { session, spec }),
   endMatch: () => invoke<void>('end_match', { session }),
   engineMoveNow: () => invoke<void>('engine_move_now', { session }),
+  /** Replaces the options for this game of the engine playing `side`. */
+  setEngineOptions: (side: Color, options: EngineOption[]) =>
+    invoke<void>('set_engine_options', { session, side, options }),
   /** Turns analysis on with an engine, or off with null. Updates arrive as
    * `analysis://update` events. */
   setAnalysis: (engineId: string | null) => invoke<void>('set_analysis', { session, engineId }),
