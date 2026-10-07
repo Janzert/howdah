@@ -227,6 +227,25 @@ pub fn set_engine_options(
 }
 
 #[tauri::command]
+pub fn set_analysis_options(
+    state: State<Backend>,
+    session: SessionId,
+    options: Vec<EngineOption>,
+) -> Result<(), ApiError> {
+    state.set_analysis_options(session, options)
+}
+
+#[tauri::command]
+pub fn press_engine_button(
+    state: State<Backend>,
+    session: SessionId,
+    side: Option<Color>,
+    name: String,
+) -> Result<(), ApiError> {
+    state.press_engine_button(session, side, name)
+}
+
+#[tauri::command]
 pub fn engine_move_now(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
     state.engine_move_now(session)
 }

@@ -60,6 +60,15 @@
     };
   });
 
+  async function press(side: Color, name: string): Promise<string | null> {
+    try {
+      await api.pressEngineButton(side, name);
+      return null;
+    } catch (e) {
+      return errorMessage(e);
+    }
+  }
+
   const sides = $derived((['gold', 'silver'] as Color[]).filter((c) => players[c].kind === 'engine'));
 
   function scrollToEnd(node: HTMLElement, _lines: unknown) {
@@ -108,6 +117,7 @@
       current={players[side].options}
       running
       onApply={(options) => setOptions(side, options)}
+      onPress={(name) => press(side, name)}
       onClose={() => (optionsFor = null)}
     />
   {/if}

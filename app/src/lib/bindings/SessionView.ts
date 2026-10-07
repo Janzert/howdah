@@ -3,6 +3,7 @@ import type { AnalysisLine } from "./AnalysisLine";
 import type { CapturedView } from "./CapturedView";
 import type { ClockView } from "./ClockView";
 import type { Color } from "./Color";
+import type { EngineOption } from "./EngineOption";
 import type { GameResult } from "./GameResult";
 import type { LastMoveView } from "./LastMoveView";
 import type { MoveNodeView } from "./MoveNodeView";
@@ -133,6 +134,10 @@ livePly: number | null,
  * The engine analysing the shown position, while analysis is on.
  */
 analysisEngine: string | null, 
+/**
+ * The analysis engine's options for this session (over its saved ones).
+ */
+analysisOptions: Array<EngineOption>, 
 /**
  * Whether analysis may be turned on (not while the user plays an
  * online game).

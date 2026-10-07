@@ -212,6 +212,11 @@ impl Engine {
         self.send(&format!("setoption name {name} value {value}")).await
     }
 
+    /// Presses a button option: `setoption name <name>` with no value.
+    pub async fn press(&mut self, name: &str) -> Result<(), AeiError> {
+        self.send(&format!("setoption name {name}")).await
+    }
+
     /// Sends the time-control options (`tcmove`, `tcreserve`, ...).
     pub async fn set_time_control(&mut self, tc: &TimeControl) -> Result<(), AeiError> {
         self.set_option("tcmove", tc.move_time).await?;

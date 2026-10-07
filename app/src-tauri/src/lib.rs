@@ -81,6 +81,8 @@ pub fn run() {
             commands::end_match,
             commands::engine_move_now,
             commands::set_engine_options,
+            commands::set_analysis_options,
+            commands::press_engine_button,
             commands::set_analysis,
             commands::add_line,
             commands::preview_line,

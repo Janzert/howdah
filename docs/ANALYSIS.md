@@ -15,7 +15,8 @@ it builds on the variation tree (`VARIATIONS.md`).
 
 - `l` (or a button) turns analysis on and off. While it's on, an engine
   searches the shown position until you move away, then starts on the new
-  one.
+  one. The panel's Options sets the engine's options for analysis in
+  that window and has its button options (`docs/ENGINES.md`).
 - The panel shows depth, eval and the principal variation (PV), with an
   eval bar beside the board and the PV's first turn drawn on the board.
 - Hovering a PV turn previews the position after it; clicking it adds the

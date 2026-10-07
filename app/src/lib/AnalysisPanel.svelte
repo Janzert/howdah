@@ -4,13 +4,16 @@
   // position after it, click adds the PV up to it), and the engine's output.
   import { onMount } from 'svelte';
   import { formatEval, nodesPerSecond, pvMoves } from './analysis';
+  import { api, errorMessage } from './api';
   import type { AnalysisLine } from './bindings/AnalysisLine';
   import type { AnalysisView } from './bindings/AnalysisView';
+  import type { EngineOption } from './bindings/EngineOption';
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { PositionView } from './bindings/PositionView';
   import type { SessionView } from './bindings/SessionView';
   import MiniBoard from './board/MiniBoard.svelte';
   import { on } from './events';
+  import GameOptionsDialog from './GameOptionsDialog.svelte';
   import type { Theme } from './theme';
 
   interface Props {
@@ -26,13 +29,25 @@
     /** Match engines are thinking too, on the same CPU. */
     sharesCpu: boolean;
     onEngine: (id: string) => void;
-    onClose: () => void;
     /** Adds the PV up to turn `index` as a line. */
     onAdd: (line: AnalysisLine, index: number) => void;
     preview: (line: AnalysisLine, index: number) => Promise<PositionView>;
   }
-  let { view, analysis, line, stored, engines, theme, flipped, sharesCpu, onEngine, onClose, onAdd, preview }: Props =
+  let { view, analysis, line, stored, engines, theme, flipped, sharesCpu, onEngine, onAdd, preview }: Props =
     $props();
+
+  const engine = $derived(engines.find((e) => e.id === view.analysisEngine));
+  let showOptions = $state(false);
+
+  /** Runs an API call for the options dialog: an error message, or null. */
+  async function attempt(call: Promise<void>): Promise<string | null> {
+    try {
+      await call;
+      return null;
+    } catch (e) {
+      return errorMessage(e);
+    }
+  }
 
   const MAX_LINES = 200;
   let log = $state<string[]>([]);
@@ -118,7 +133,14 @@
       {/each}
     </select>
     <span class="spacer"></span>
-    <button class="close" onclick={onClose} aria-label="Turn analysis off" title="Turn analysis off (l)">×</button>
+    {#if engine}
+      {@const n = view.analysisOptions.length}
+      <button
+        class="options"
+        title="Change the analysis engine's options, or use its buttons"
+        onclick={() => (showOptions = true)}>Options{n ? ` (${n})` : ''}</button
+      >
+    {/if}
   </header>
   {#if line && phase !== 'failed'}
     <div class="stats">
@@ -164,6 +186,17 @@
     </details>
   {/if}
 </section>
+{#if showOptions && engine}
+  <GameOptionsDialog
+    {engine}
+    scope="analysis"
+    current={view.analysisOptions}
+    running
+    onApply={(options: EngineOption[]) => attempt(api.setAnalysisOptions(options))}
+    onPress={(name) => attempt(api.pressEngineButton(null, name))}
+    onClose={() => (showOptions = false)}
+  />
+{/if}
 
 <style>
   .analysis {
@@ -194,9 +227,9 @@
   .spacer {
     flex: 1;
   }
-  .close {
-    padding: 0 6px;
-    line-height: 1.3;
+  .options {
+    font-size: 12px;
+    padding: 1px 8px;
   }
   .stats {
     display: flex;

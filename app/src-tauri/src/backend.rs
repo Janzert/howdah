@@ -415,7 +415,7 @@ impl Backend {
                     .engines()
                     .get(e)
                     .ok_or_else(|| ApiError::illegal(format!("unknown engine {e:?}")))?;
-                Some(AnalysisEngine { id: spec.id, name: spec.name })
+                Some(AnalysisEngine { id: spec.id, name: spec.name, options: Vec::new() })
             }
             None => None,
         };
@@ -451,6 +451,29 @@ impl Backend {
             s.set_engine_options(side, options)?;
             Ok(Vec::new())
         })
+    }
+
+    /// Sets the analysis engine's options for this session.
+    pub fn set_analysis_options(&self, id: SessionId, options: Vec<EngineOption>) -> Result<(), ApiError> {
+        self.mutate(id, |s| {
+            s.set_analysis_options(options)?;
+            Ok(Vec::new())
+        })
+    }
+
+    /// Presses the button option `name` of the engine playing `side`, or of
+    /// the analysis engine with `None`.
+    pub fn press_engine_button(
+        &self,
+        id: SessionId,
+        side: Option<Color>,
+        name: String,
+    ) -> Result<(), ApiError> {
+        if name.is_empty() || name.contains(char::is_whitespace) {
+            return Err(ApiError::illegal(format!("not an option name: {name:?}")));
+        }
+        self.handle(id)?.controller.press(side, name);
+        Ok(())
     }
 
     pub fn engine_move_now(&self, id: SessionId) -> Result<(), ApiError> {
@@ -788,6 +811,10 @@ impl Backend {
             "engine_move_now" => ok(self.engine_move_now(sid()?)?),
             "set_engine_options" => {
                 ok(self.set_engine_options(sid()?, arg(args, "side")?, arg(args, "options")?)?)
+            }
+            "set_analysis_options" => ok(self.set_analysis_options(sid()?, arg(args, "options")?)?),
+            "press_engine_button" => {
+                ok(self.press_engine_button(sid()?, arg(args, "side")?, arg(args, "name")?)?)
             }
             "set_analysis" => {
                 ok(self.set_analysis(sid()?, arg::<Option<String>>(args, "engineId")?.as_deref())?)

@@ -263,6 +263,8 @@ pub struct SessionView {
     pub live_ply: Option<usize>,
     /// The engine analysing the shown position, while analysis is on.
     pub analysis_engine: Option<String>,
+    /// The analysis engine's options for this session (over its saved ones).
+    pub analysis_options: Vec<EngineOption>,
     /// Whether analysis may be turned on (not while the user plays an
     /// online game).
     pub analysis_allowed: bool,

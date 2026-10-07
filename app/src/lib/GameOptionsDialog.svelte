@@ -1,4 +1,6 @@
 <script lang="ts">
+  // An engine's options for one game, or for analysis in this window, over
+  // its saved settings; and its button options, pressed from here.
   import { api, errorMessage } from './api';
   import type { EngineOption } from './bindings/EngineOption';
   import type { EngineSpec } from './bindings/EngineSpec';
@@ -15,17 +17,26 @@
 
   interface Props {
     engine: EngineSpec;
-    /** The game's options so far. */
+    /** Options for a game, or for analysis. */
+    scope?: 'game' | 'analysis';
+    /** The game's (or analysis's) options so far. */
     current: EngineOption[];
-    /** Whether the game is being played, so changes reach a running engine. */
+    /** Whether the engine is running, so changes reach it. */
     running: boolean;
-    /** Takes the game's new options; resolves to an error message, or null. */
+    /** Takes the new options; resolves to an error message, or null. */
     onApply: (options: EngineOption[]) => Promise<string | null>;
+    /** Presses a button option of the running engine; resolves to an error
+     * message, or null. */
+    onPress?: (name: string) => Promise<string | null>;
     onClose: () => void;
   }
-  let { engine, current, running, onApply, onClose }: Props = $props();
+  let { engine, scope = 'game', current, running, onApply, onPress, onClose }: Props = $props();
 
   let described = $state<ManifestOptionView[] | null>(null);
+  /** The manifest's button options. */
+  let buttons = $state<ManifestOptionView[]>([]);
+  /** The button pressed last, for the note under the buttons. */
+  let pressed = $state<string | null>(null);
   let values = $state<Record<string, string>>({});
   let other = $state('');
   let error = $state<string | null>(null);
@@ -48,6 +59,7 @@
         /* no fields, only lines */
       }
     }
+    buttons = options.filter((o) => o.kind === 'button');
     const shown = settingOptions(options);
     const saved = splitOptions(engine.options, shown).values;
     const game = splitOptions(current, shown);
@@ -61,6 +73,16 @@
   function reset() {
     values = splitOptions(engine.options, described ?? []).values;
     other = '';
+  }
+
+  async function press(name: string) {
+    if (!onPress) return;
+    try {
+      error = await onPress(name);
+    } catch (e) {
+      error = errorMessage(e);
+    }
+    pressed = error ? null : name;
   }
 
   async function apply() {
@@ -83,22 +105,37 @@
 </script>
 
 <dialog bind:this={dialog} onclose={onClose}>
-  <h2>{engine.name}: options for this game</h2>
+  <h2>{engine.name}: options for {scope === 'game' ? 'this game' : 'analysis'}</h2>
   {#if described}
+    {#if buttons.length && onPress && running}
+      <div class="actions" role="group" aria-label="Engine actions">
+        {#each buttons as b (b.name)}
+          <button onclick={() => press(b.name)} title={b.description ?? `Send ${b.name} to the engine now`}
+            >{b.name}</button
+          >
+        {/each}
+      </div>
+      <p class="hint">
+        {#if pressed}Sent {pressed}.{/if}
+        Buttons go to the engine at once, even while it's thinking.
+      </p>
+    {/if}
     <div class="form">
       <OptionFields {described} bind:values idPrefix="go-opt" />
       <label for="go-other">{described.length ? 'Other options' : 'Options'}</label>
       <textarea id="go-other" rows="3" bind:value={other} placeholder="e.g. threads = 2"></textarea>
     </div>
     <p class="hint">
-      These apply to this game only, over the engine's saved settings (Engines).
+      These apply to {scope === 'game' ? 'this game' : 'analysis in this window'} only, over the engine's saved
+      settings (Engines).
       {#if described.length}
         Fields show what the engine plays with; a blank one keeps the saved value or the default. Other options
       {:else}
         Options
       {/if}
       are one per line, as <code>name = value</code>.
-      {#if running}Changes reach the engine before its next move.{/if}
+      {#if scope === 'analysis'}The search starts again with changes.
+      {:else if running}Changes reach the engine before its next move.{/if}
     </p>
   {:else}
     <p class="hint">Loading…</p>
@@ -148,6 +185,11 @@
     resize: vertical;
     font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
     font-size: 12px;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
   .hint {
     font-size: 12px;

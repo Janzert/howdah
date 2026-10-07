@@ -258,6 +258,8 @@ pub struct EngineTurn {
 pub struct AnalysisEngine {
     pub id: String,
     pub name: String,
+    /// Options for analysis in this session, over the engine's saved ones.
+    pub options: Vec<EngineOption>,
 }
 
 /// What analysis should search now: the shown node.
@@ -1430,7 +1432,22 @@ impl Session {
                 "analysis is off while you play a game on arimaa.com"
             }));
         }
-        self.analysis = engine;
+        // Choosing the same engine again keeps its options.
+        let options = match (&self.analysis, &engine) {
+            (Some(old), Some(new)) if old.id == new.id => old.options.clone(),
+            _ => Vec::new(),
+        };
+        self.analysis = engine.map(|e| AnalysisEngine { options, ..e });
+        Ok(())
+    }
+
+    /// Replaces the analysis engine's options for this session. The search
+    /// starts again with them.
+    pub fn set_analysis_options(&mut self, options: Vec<EngineOption>) -> Result<(), ApiError> {
+        let Some(a) = &mut self.analysis else {
+            return Err(ApiError::state("analysis is off"));
+        };
+        a.options = options;
         Ok(())
     }
 
@@ -2153,6 +2170,7 @@ impl Session {
             }),
             live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
             analysis_engine: self.analysis.as_ref().map(|a| a.id.clone()),
+            analysis_options: self.analysis.as_ref().map(|a| a.options.clone()).unwrap_or_default(),
             analysis_allowed: self.analysis_allowed(),
             stuck: self.stuck(),
             stored_analysis: self.evals.get(&self.cursor_node()).cloned(),
@@ -3601,7 +3619,20 @@ mod tests {
     }
 
     fn analysing(s: &mut Session) {
-        s.set_analysis(Some(AnalysisEngine { id: "e".into(), name: "E".into() })).unwrap();
+        s.set_analysis(Some(AnalysisEngine { id: "e".into(), name: "E".into(), options: vec![] })).unwrap();
+    }
+
+    #[test]
+    fn analysis_options_stay_with_the_engine_chosen() {
+        let mut s = Session::new();
+        let hash = vec![EngineOption { name: "hash".into(), value: "64".into() }];
+        assert!(s.set_analysis_options(hash.clone()).is_err(), "analysis is off");
+        analysing(&mut s);
+        s.set_analysis_options(hash.clone()).unwrap();
+        analysing(&mut s);
+        assert_eq!(s.view().analysis_options, hash, "the same engine keeps them");
+        s.set_analysis(Some(AnalysisEngine { id: "f".into(), name: "F".into(), options: vec![] })).unwrap();
+        assert!(s.view().analysis_options.is_empty(), "another engine starts without");
     }
 
     #[test]
@@ -3615,7 +3646,7 @@ mod tests {
         s.start_match([Player::Human, remote("opponent")], [None, None], false);
         let v = s.view();
         assert!(v.analysis_engine.is_none() && !v.analysis_allowed);
-        let engine = AnalysisEngine { id: "e".into(), name: "E".into() };
+        let engine = AnalysisEngine { id: "e".into(), name: "E".into(), options: vec![] };
         assert!(s.set_analysis(Some(engine.clone())).is_err());
         assert!(s.set_analysis(None).is_ok());
         // Leaving it mid-game keeps analysis off until another game.

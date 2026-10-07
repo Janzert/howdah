@@ -68,6 +68,12 @@ impl Controller {
         let _ = self.tx.send(ControlMsg::MoveNow);
     }
 
+    /// Presses the button option `name` of the engine playing `side`, or of
+    /// the analysis engine with `None`, at once, even mid-search.
+    pub fn press(&self, side: Option<Color>, name: String) {
+        let _ = self.tx.send(ControlMsg::Press { side, name });
+    }
+
     /// Ends the coordinator, which quits its engines (the session closed).
     pub fn shutdown(&self) {
         let _ = self.tx.send(ControlMsg::Shutdown);
@@ -98,6 +104,7 @@ enum Purpose {
 enum ControlMsg {
     Poke,
     MoveNow,
+    Press { side: Option<Color>, name: String },
     Shutdown,
     FromActor { origin: Origin, request: u64, event: ActorEvent },
 }
@@ -120,6 +127,9 @@ enum ActorCmd {
     /// New options for this game, sent before the next search (right away
     /// if the engine is idle).
     SetOptions(Vec<EngineOption>),
+    /// A button option to press, at once even if the engine is searching
+    /// (the user wants it to act now).
+    Press(String),
 }
 
 struct ActorHandle {
@@ -143,6 +153,8 @@ struct Analysis {
     run: u64,
     engine_id: String,
     name: String,
+    /// The options for this session it was last given.
+    options: Vec<EngineOption>,
     cmd: UnboundedSender<ActorCmd>,
     profile: Profile,
     started: bool,
@@ -347,25 +359,21 @@ impl Coordinator {
             }
         }
         let Some(a) = &mut self.analysis else { return };
+        // New options stop the search; it starts again with them.
+        let restart = wanted.as_ref().is_some_and(|w| w.options != a.options);
+        if let Some(w) = wanted.filter(|_| restart) {
+            a.options = w.options;
+            let _ = a.cmd.send(ActorCmd::SetOptions(a.options.clone()));
+        }
         let same = match (&a.target, &target) {
             (Some(old), Some(new)) => old.same(new),
             (old, new) => old.is_none() && new.is_none(),
         };
-        if !same {
+        if !same || (restart && target.is_some()) {
             match target {
                 Some(t) => {
-                    a.request = self.next_request;
+                    a.search(t, self.next_request);
                     self.next_request += 1;
-                    let cmd = ActorCmd::Think {
-                        request: a.request,
-                        moves: t.moves.clone(),
-                        tc: None,
-                        reserves: None,
-                    };
-                    // If the actor is gone, its failure report is on the way.
-                    let _ = a.cmd.send(cmd);
-                    a.state = if a.started { AnalysisState::Searching } else { AnalysisState::Starting };
-                    a.target = Some(t);
                 }
                 None => {
                     let _ = a.cmd.send(ActorCmd::Stop);
@@ -373,10 +381,10 @@ impl Coordinator {
                     if a.started {
                         a.state = AnalysisState::Idle;
                     }
+                    a.line = None;
+                    a.pv_cut = false;
                 }
             }
-            a.line = None;
-            a.pv_cut = false;
             changed = true;
         }
         if changed {
@@ -394,11 +402,19 @@ impl Coordinator {
         self.next_run += 1;
         let (cmd_tx, cmd_rx) = unbounded_channel();
         let origin = Origin::Analysis { run };
-        tokio::spawn(run_actor(spec, Vec::new(), Purpose::Analysis, origin, cmd_rx, self.tx.clone()));
+        tokio::spawn(run_actor(
+            spec,
+            engine.options.clone(),
+            Purpose::Analysis,
+            origin,
+            cmd_rx,
+            self.tx.clone(),
+        ));
         Some(Analysis {
             run,
             engine_id: engine.id.clone(),
             name: engine.name.clone(),
+            options: engine.options.clone(),
             cmd: cmd_tx,
             profile: Profile::Generic,
             started: false,
@@ -525,6 +541,18 @@ impl Coordinator {
                     let _ = actor.cmd.send(ActorCmd::Stop);
                 }
             }
+            ControlMsg::Press { side: Some(side), name } => {
+                let Some(actor) = &self.actors[side.index()] else { return };
+                let _ = actor.cmd.send(ActorCmd::Press(name.clone()));
+                self.output(side, EngineOutputKind::Status, format!("button {name}"));
+            }
+            ControlMsg::Press { side: None, name } => {
+                let Some(a) = &mut self.analysis else { return };
+                let _ = a.cmd.send(ActorCmd::Press(name.clone()));
+                a.log.push(format!("button {name}"));
+                a.dirty = true;
+                self.flush_analysis(true);
+            }
             ControlMsg::FromActor { origin: Origin::Player { generation, side }, request, event } => {
                 if self.generation != Some(generation) {
                     return;
@@ -604,7 +632,11 @@ impl Coordinator {
                 self.flush_analysis(true);
             }
             ActorEvent::Failed(detail) => {
-                let engine = AnalysisEngine { id: a.engine_id.clone(), name: a.name.clone() };
+                let engine = AnalysisEngine {
+                    id: a.engine_id.clone(),
+                    name: a.name.clone(),
+                    options: a.options.clone(),
+                };
                 self.analysis_failed(&engine, detail);
             }
         }
@@ -612,6 +644,18 @@ impl Coordinator {
 }
 
 impl Analysis {
+    /// Has the engine search `target` as request `request`, from scratch.
+    fn search(&mut self, target: AnalysisTarget, request: u64) {
+        self.request = request;
+        let cmd = ActorCmd::Think { request, moves: target.moves.clone(), tc: None, reserves: None };
+        // If the actor is gone, its failure report is on the way.
+        let _ = self.cmd.send(cmd);
+        self.state = if self.started { AnalysisState::Searching } else { AnalysisState::Starting };
+        self.target = Some(target);
+        self.line = None;
+        self.pv_cut = false;
+    }
+
     /// Takes in the engine's answer. Without a PV (Sharp sends none for a
     /// setup), the move it chose is the line.
     fn read_best_move(&mut self, text: String) {
@@ -849,6 +893,18 @@ async fn run_actor(
                         return;
                     }
                 }
+                ActorCmd::Press(name) => {
+                    // Mid-search, what it says comes with the search output
+                    // (`isready` would wait on the search).
+                    let pressed = match thinking {
+                        Some(_) => engine.press(&name).await,
+                        None => press(&mut engine, &name, &report).await,
+                    };
+                    if let Err(e) = pressed {
+                        report(0, ActorEvent::Failed(format!("{} failed: {e}", spec.name)));
+                        return;
+                    }
+                }
                 ActorCmd::Stop => {
                     if thinking.is_some() && !stop_sent {
                         engine.stop().await.ok();
@@ -906,6 +962,15 @@ async fn apply_options(
     for o in &changed {
         engine.set_option(&o.name, &o.value).await?;
     }
+    let said = engine.is_ready(Duration::from_secs(10)).await?;
+    said.into_iter().for_each(|m| report(0, ActorEvent::Line(m)));
+    Ok(())
+}
+
+/// Presses the button option `name` of an idle engine and passes on what
+/// it says about it (`report`).
+async fn press(engine: &mut Engine, name: &str, report: &impl Fn(u64, ActorEvent)) -> Result<(), AeiError> {
+    engine.press(name).await?;
     let said = engine.is_ready(Duration::from_secs(10)).await?;
     said.into_iter().for_each(|m| report(0, ActorEvent::Line(m)));
     Ok(())
@@ -1248,6 +1313,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn buttons_are_pressed_at_once_even_mid_search() {
+        let (cmds, mut rx) = start(Purpose::Play);
+        collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
+        let think = |request| ActorCmd::Think { request, moves: vec![], tc: None, reserves: None };
+        let is_pv = |e: &ActorEvent| matches!(e, ActorEvent::Line(EngineMessage::Info(Info::Pv(_))));
+        // Idle: at once, with no value.
+        cmds.send(ActorCmd::Press("clear_hash".into())).unwrap();
+        cmds.send(think(1)).unwrap();
+        let seen = collect(&mut rx, |_, e| is_pv(e)).await;
+        assert_eq!(logs(&seen)[0], "option clear_hash");
+        // Mid-search: at once, and the search goes on.
+        cmds.send(ActorCmd::Press("clear_hash".into())).unwrap();
+        let seen = collect(&mut rx, |_, e| matches!(e, ActorEvent::Line(EngineMessage::Log(_)))).await;
+        assert_eq!(logs(&seen), ["option clear_hash"]);
+        assert!(seen.iter().all(|(r, e)| *r == 1 && !matches!(e, ActorEvent::BestMove(_))));
+        cmds.send(ActorCmd::Stop).unwrap();
+        collect(&mut rx, |_, e| matches!(e, ActorEvent::BestMove(_))).await;
+    }
+
+    #[tokio::test]
     async fn options_go_after_the_handshake() {
         let (_cmds, mut rx) = start(Purpose::Analysis);
         let seen = collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
@@ -1299,7 +1384,12 @@ mod tests {
         {
             let mut s = lock(&session);
             s.load(&format!("1g {}\n1s {}\n2g Ee2n Ee3n\n", SETUPS[0], SETUPS[1])).unwrap();
-            s.set_analysis(Some(AnalysisEngine { id: spec.id.clone(), name: spec.name.clone() })).unwrap();
+            s.set_analysis(Some(AnalysisEngine {
+                id: spec.id.clone(),
+                name: spec.name.clone(),
+                options: vec![],
+            }))
+            .unwrap();
         }
         controller.poke();
         tokio::time::sleep(Duration::from_millis(300)).await;

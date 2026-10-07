@@ -6,7 +6,8 @@
 //! It logs each option it's sent (`log option NAME=VALUE`). With
 //! `--until-stop`, every `go` searches until `stop` (as an engine analysing
 //! does), sending `info depth/score/pv` every 20 ms, and any command but
-//! `stop`, `isready` and `quit` during a search is logged as an error.
+//! `stop`, `isready`, `quit` and `setoption` (valid at any time) during a
+//! search is logged as an error.
 //!
 //! Modes (applied once, on the engine's (N+1)-th move; N defaults to 0):
 //! - `random` (default): random legal moves.
@@ -23,6 +24,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use howdah_arimaa::notation::{MoveBody, format_placements, format_steps, parse_move_body};
 use howdah_arimaa::{Color, Position, TurnBuilder, apply_setup, default_setup};
+
+/// The log line for `setoption <rest>`: `log option NAME=VALUE`, or
+/// `log option NAME` for a button.
+fn option_log(rest: &str) -> String {
+    let option = rest.strip_prefix("name ").unwrap_or(rest).replacen(" value ", "=", 1);
+    format!("log option {option}")
+}
 
 struct Rng(u64);
 
@@ -183,10 +191,7 @@ fn main() {
                     Err(e) => say(&format!("log Error: bad setposition: {e}")),
                 }
             }
-            "setoption" => {
-                let option = rest.strip_prefix("name ").unwrap_or(rest).replacen(" value ", "=", 1);
-                say(&format!("log option {option}"));
-            }
+            "setoption" => say(&option_log(rest)),
             "makemove" => {
                 if let Err(e) = state.apply(rest) {
                     say(&format!("log Error: bad makemove {rest:?}: {e}"));
@@ -235,6 +240,9 @@ fn main() {
                             Ok(l) if l.trim() == "stop" => break,
                             Ok(l) if l.trim() == "quit" => return,
                             Ok(l) if l.trim() == "isready" => say("readyok"),
+                            Ok(l) if l.starts_with("setoption ") => {
+                                say(&option_log(&l.trim()["setoption ".len()..]))
+                            }
                             Ok(l) => say(&format!("log Error: {l:?} during a search")),
                             Err(mpsc::RecvTimeoutError::Timeout) => {}
                             Err(mpsc::RecvTimeoutError::Disconnected) => return,

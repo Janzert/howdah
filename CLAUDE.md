@@ -392,12 +392,14 @@ Howdah plays and watches games on arimaa.com.
     moves. The session refuses edits that would move a running match's
     line off the main line (`Session::edit_lines`). Variations with more
     than one move have a fold toggle (`MoveNodeView.collapsible`/`folded`).
-  - `GameOptionsDialog.svelte`: an engine's options for one game, with
-    the manifest's fields (`OptionFields.svelte`, shared with the Engines
-    dialog's edit form) filled from the game's values or the saved ones.
-    New game opens it from each engine side's "Options…" button, and
-    `EnginePanel.svelte` from each engine's header during a game
-    (`set_engine_options`).
+  - `GameOptionsDialog.svelte`: an engine's options for one game (or,
+    with `scope="analysis"`, for analysis), with the manifest's fields
+    (`OptionFields.svelte`, shared with the Engines dialog's edit form)
+    filled from the game's values or the saved ones, and its button
+    options while the engine runs (`press_engine_button`). New game opens
+    it from each engine side's "Options…" button, `EnginePanel.svelte`
+    from each engine's header during a game (`set_engine_options`), and
+    `AnalysisPanel.svelte` from its header (`set_analysis_options`).
   - `AnalysisPanel.svelte` (engine picker, eval/depth/speed, PV chips with
     a `MiniBoard` hover preview, engine log), `EvalBar.svelte` beside the
     board, and the PV's first turn drawn by `LastMoveLayer` with `pv`.

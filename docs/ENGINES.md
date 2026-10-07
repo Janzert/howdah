@@ -107,8 +107,9 @@ arguments, options), and Howdah installs from it. `howdah-aei`'s
 `manifest` module reads and checks manifests, and the app's
 `engine_install.rs` does the rest. Built: adding (URL or file),
 suggesting, installing, updating and removing, and the manifest's
-options as fields in the engine's settings. Not yet: file and directory
-pickers, buttons, and using a download-less manifest with a program the
+options as fields in the engine's settings, with buttons in the options
+dialogs of a game's and of analysis's engine. Not yet: file and directory
+pickers, and using a download-less manifest with a program the
 user picks. The design:
 
 - **Adding:** the Engines dialog adds a manifest from a URL or a file.
@@ -139,7 +140,14 @@ user picks. The design:
   options for one game, from New game or during the game (the engine
   panel's Options): they go over the saved settings, and a change during
   the game reaches the engine before its next move, without restarting
-  it. When AEI gains a way for an engine to
+  it. The analysis panel's Options does the same for analysis in that
+  window (kept while the same engine is picked), and the search starts
+  again with the change. `button` options are actions, not settings, so
+  they aren't in the Engines dialog: the game's and the analysis options
+  dialogs show them as buttons (`press_engine_button`, sent as
+  `setoption name <name>` with no value). A press goes to the engine at
+  once, even mid-search, since it's meant to make the engine do something
+  then; the search isn't stopped. When AEI gains a way for an engine to
   list its options (a `protocol-version 2` engine answering an
   `options` request), the engine's own list wins and the manifest's
   descriptions fill in.

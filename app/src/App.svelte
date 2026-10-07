@@ -368,12 +368,21 @@
     return result == null;
   });
 
-  /** Turns analysis on with the engine used last (or the first), or off. */
+  /** The analysis panel is showing: analysis is on, or it failed. */
+  const analysisShown = $derived(analysing || analysis?.state === 'failed');
+
+  /** Turns analysis off (or puts away the panel saying it failed), or on. */
   function toggleAnalysis() {
-    if (analysing) {
-      run(api.setAnalysis(null));
+    if (analysing) run(api.setAnalysis(null));
+    if (analysisShown) {
+      analysis = null;
       return;
     }
+    startAnalysis();
+  }
+
+  /** Turns analysis on with the engine used last (or the first). */
+  function startAnalysis() {
     if (view && !view.analysisAllowed) {
       flash('No analysis during your arimaa.com game (after leaving one mid-game, load another game first)');
       return;
@@ -599,7 +608,7 @@
       {#if hasEngine && view.players}
         <EnginePanel players={view.players} resetKey={matchKey} {engines} />
       {/if}
-      {#if analysing || analysis?.state === 'failed'}
+      {#if analysisShown}
         <AnalysisPanel
           {view}
           {analysis}
@@ -610,10 +619,6 @@
           {flipped}
           sharesCpu={matchRunning}
           onEngine={useAnalysisEngine}
-          onClose={() => {
-            if (analysing) run(api.setAnalysis(null));
-            analysis = null;
-          }}
           onAdd={addPv}
           preview={(line, i) => api.previewLine(line.node, pvMoves(line, i))}
         />
@@ -636,11 +641,13 @@
       <button onclick={() => (showEngines = true)}>Engines</button>
       <button
         onclick={toggleAnalysis}
-        aria-pressed={analysing}
-        disabled={!analysing && view != null && !view.analysisAllowed}
+        aria-pressed={analysisShown}
+        disabled={!analysisShown && view != null && !view.analysisAllowed}
         title={view && !view.analysisAllowed
           ? 'No analysis during your arimaa.com game (after leaving one mid-game, load another game first)'
-          : 'Analyse the shown position with an engine (l)'}
+          : analysisShown
+            ? 'Turn analysis off (l)'
+            : 'Analyse the shown position with an engine (l)'}
       >
         Analysis
       </button>
@@ -682,7 +689,7 @@
     onRematch={watch ? undefined : rematch}
     onSwapSides={swappedSpec && !watch ? () => startGame(swappedSpec!) : undefined}
     note={watch?.chatOpen ? 'The chat stays open below the board.' : undefined}
-    onAnalyse={engines.length && !analysing ? toggleAnalysis : undefined}
+    onAnalyse={engines.length && !analysing ? startAnalysis : undefined}
     onClose={() => (showGameEnd = false)}
   />
 {/if}

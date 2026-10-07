@@ -89,6 +89,13 @@ export const api = {
   /** Replaces the options for this game of the engine playing `side`. */
   setEngineOptions: (side: Color, options: EngineOption[]) =>
     invoke<void>('set_engine_options', { session, side, options }),
+  /** Replaces the analysis engine's options for this window; its search
+   * starts again with them. */
+  setAnalysisOptions: (options: EngineOption[]) => invoke<void>('set_analysis_options', { session, options }),
+  /** Presses a button option of the engine playing `side`, or of the
+   * analysis engine with null. */
+  pressEngineButton: (side: Color | null, name: string) =>
+    invoke<void>('press_engine_button', { session, side, name }),
   /** Turns analysis on with an engine, or off with null. Updates arrive as
    * `analysis://update` events. */
   setAnalysis: (engineId: string | null) => invoke<void>('set_analysis', { session, engineId }),
