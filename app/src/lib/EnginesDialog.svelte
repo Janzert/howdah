@@ -28,6 +28,8 @@
   /** What's being done to a manifest (by id or url), and the last error. */
   let working = $state<string | null>(null);
   let catalogError = $state<string | null>(null);
+  /** What the last update check found, for the manifest it checked. */
+  let checked = $state<{ id: string; text: string } | null>(null);
   let adding = $state(false);
   let manifestUrl = $state('');
   let status = $state<{ ok: boolean; text: string } | null>(null);
@@ -48,6 +50,7 @@
   async function act(key: string, f: () => Promise<unknown>) {
     working = key;
     catalogError = null;
+    checked = null;
     try {
       await f();
       await reload();
@@ -59,6 +62,20 @@
     } finally {
       working = null;
     }
+  }
+
+  /** Fetches manifest `id`'s newest release and says what it found. */
+  async function checkForUpdate(id: string) {
+    if (!(await act(id, () => api.refreshEngineManifest(id)))) return;
+    const m = catalog?.manifests.find((m) => m.id === id);
+    if (!m) return;
+    const text =
+      m.installedVersion == null
+        ? `Newest release: ${m.version}`
+        : m.installedVersion === m.version
+          ? 'Up to date'
+          : `${m.version} is available`;
+    checked = { id, text };
   }
 
   /** A suggested engine: fetch its manifest, then install it. */
@@ -235,6 +252,7 @@
             {#if working === m.id}
               <span class="desc">Working…</span>
             {:else}
+              {#if checked?.id === m.id}<span class="desc" role="status">{checked.text}</span>{/if}
               {#if label}
                 <button
                   disabled={working != null}
@@ -246,7 +264,7 @@
                 <button
                   disabled={working != null}
                   title="Fetch the newest release's manifest (nothing is installed)"
-                  onclick={() => act(m.id, () => api.refreshEngineManifest(m.id))}>Check for update</button
+                  onclick={() => checkForUpdate(m.id)}>Check for update</button
                 >
               {/if}
               <button

@@ -81,8 +81,12 @@ impl EngineCatalog {
         let source = source.or_else(|| {
             self.entries.iter().find(|e| e.manifest.id == manifest.id).and_then(|e| e.source.clone())
         });
-        self.entries.retain(|e| e.manifest.id != manifest.id);
-        self.entries.push(Entry { manifest, source });
+        // A newer manifest takes the old one's place in the list.
+        let entry = Entry { manifest, source };
+        match self.entries.iter().position(|e| e.manifest.id == entry.manifest.id) {
+            Some(i) => self.entries[i] = entry,
+            None => self.entries.push(entry),
+        }
         self.write()
     }
 
@@ -617,6 +621,20 @@ mod tests {
         assert_eq!(view.manifests[0].source.as_deref(), Some("https://example.com/engine.json"));
         assert!(view.manifests[0].downloadable);
         assert_eq!(view.suggested.len(), SUGGESTED.len());
+    }
+
+    #[test]
+    fn a_newer_manifest_keeps_its_place_in_the_catalog() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut c = EngineCatalog::load(tmp.path().join("engine-manifests.json"), tmp.path().join("engines"));
+        let mut other = manifest("1.0");
+        other.id = "github.com/x/other".into();
+        c.add(manifest("1.0"), None).unwrap();
+        c.add(other, None).unwrap();
+        c.add(manifest("2.0"), None).unwrap();
+        let view = c.view(&[]);
+        let ids: Vec<_> = view.manifests.iter().map(|m| (m.id.as_str(), m.version.as_str())).collect();
+        assert_eq!(ids, [("github.com/x/bot", "2.0"), ("github.com/x/other", "1.0")]);
     }
 
     #[test]
