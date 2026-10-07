@@ -415,6 +415,16 @@ names: records say Gold and Silver, as the game does.
   move list. Imported historical games may also have `1/2-1/2` or `*`. An unfinished game has
   neither tags nor the closing token. The closing token also makes the
   end of each game unambiguous in a file of several games.
+- **A variation's result** (decided 2026-10-07): an outside result at
+  the end of a variation (a resignation, a timeout, a played line that
+  was later demoted) goes on its own line before the `)`: the result
+  token and the `ResultCode` letter, `0-1 r`. It says what the tags and
+  closing token say for the main line, so it covers any winner and
+  reason, which the end words can't (they always name the side to move
+  as the loser). An end word in a variation (`3g resigns`) gives its
+  result too, and when it says the same the result line is left out.
+  Rules results aren't written; the reader finds them again. Draws and
+  `*` can't end a variation.
 - **Moves** are one per line, as now, followed by optional glyphs and a
   comment. Move labels are read with either side letters, `g`/`s` or
   arimaa.com's `w`/`b` (`1w`, `1b`), and always written with `g`/`s`. Every move line inside a variation
@@ -459,12 +469,12 @@ writing the main line without tags is exactly today's `to_record`
 output. Export offers "main line only" (for arimaa.com, pyrimaa and
 anything else that reads plain records) and "full record".
 
-Results: only the main line's result is written (as tags and the closing
-token). The end words also give a result when there are no result tags
+Results: the main line's result is written as tags and the closing
+token, and a variation's outside result as a result line in its block
+(`0-1 r`). The end words also give a result when there are no result tags
 (`2s resigns`: gold wins by resignation), so analysis after them stays
-off the main line. Rules results in variations are found again when the record is
-read; an outside result (a resignation) at the end of a variation is not
-written.
+off the main line. Rules results in variations are found again when the
+record is read.
 
 Parsing: `GameRecord::parse` (one game) and `GameRecord::parse_all` read
 both forms into tags plus a `GameTree`; `Game::parse` calls it and takes

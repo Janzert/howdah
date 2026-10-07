@@ -109,7 +109,7 @@ impl GameRecord {
         if let Some(c) = &tree[GameTree::ROOT].annotation().comment {
             out.push_str(&format!("{{{}}}\n", escape_comment(c)));
         }
-        self.write_from(&mut out, GameTree::ROOT);
+        self.write_from(&mut out, GameTree::ROOT, false);
         if let Some(r) = result {
             out.push_str(&r);
             out.push('\n');
@@ -118,8 +118,9 @@ impl GameRecord {
     }
 
     /// Writes the main continuation from `node`, with each move's
-    /// variations after it.
-    fn write_from(&self, out: &mut String, mut node: NodeId) {
+    /// variations after it. `in_variation` is false for the game's main
+    /// line, whose result goes in the tags and closing token instead.
+    fn write_from(&self, out: &mut String, mut node: NodeId, in_variation: bool) {
         let tree = &self.tree;
         loop {
             let children = tree[node].children();
@@ -134,7 +135,7 @@ impl GameRecord {
                         out.push_str(&format!("{{{}}}\n", escape_comment(intro)));
                     }
                     self.write_move(out, c);
-                    self.write_from(out, c);
+                    self.write_from(out, c, true);
                     out.push_str(")\n");
                 }
                 break;
@@ -147,13 +148,22 @@ impl GameRecord {
                     out.push_str(&format!("{{{}}}\n", escape_comment(intro)));
                 }
                 self.write_move(out, v);
-                self.write_from(out, v);
+                self.write_from(out, v, true);
                 out.push_str(")\n");
             }
             node = main;
         }
         if let Some(marker) = tree[node].end_marker() {
             out.push_str(&format!("{} {marker}\n", notation::move_label(tree[node].ply())));
+        }
+        // A variation's outside result (the rules find theirs again) goes on
+        // a line of its own, unless its end word already says it.
+        if in_variation
+            && let Some(r) = tree[node].result()
+            && !r.reason.is_on_board()
+            && marker_result(tree, node) != Some(r)
+        {
+            out.push_str(&format!("{} {}\n", result_token(r.winner), r.reason.letter()));
         }
     }
 
@@ -171,6 +181,24 @@ impl GameRecord {
         }
         out.push('\n');
     }
+}
+
+/// The result an end word gives: it names the side to move as the loser
+/// (`2s resigns`).
+fn marker_result(tree: &GameTree, node: NodeId) -> Option<GameResult> {
+    let reason = match tree[node].end_marker()?.to_ascii_lowercase().as_str() {
+        "resigns" | "resign" => WinReason::Resignation,
+        "timeout" => WinReason::Timeout,
+        "forfeit" => WinReason::Forfeit,
+        _ => return None,
+    };
+    Some(GameResult { winner: tree[node].position().side_to_move().opponent(), reason })
+}
+
+/// The reason a `ResultCode` letter names.
+fn reason_from_code(code: &str) -> Option<WinReason> {
+    let mut chars = code.chars();
+    chars.next().filter(|_| chars.next().is_none()).and_then(WinReason::from_letter)
 }
 
 fn result_token(winner: Color) -> &'static str {
@@ -393,6 +421,9 @@ struct GameParser {
     /// move must still become their main continuation.
     continued: Vec<NodeId>,
     result_token: Option<String>,
+    /// A result token read inside a variation, waiting for its reason
+    /// letter on the same line.
+    line_result: Option<(Color, usize)>,
 }
 
 impl GameParser {
@@ -406,6 +437,7 @@ impl GameParser {
             intro: None,
             has_moves: false,
             result_token: None,
+            line_result: None,
         }
     }
 
@@ -573,6 +605,52 @@ impl GameParser {
         if !frame.moved {
             return Err(parse_error(line, "empty variation"));
         }
+        // An end word ends the variation as it ends the game.
+        let tree = &mut self.record.tree;
+        if tree[frame.current].result().is_none()
+            && let Some(result) = marker_result(tree, frame.current)
+        {
+            tree.end_line(frame.current, result).map_err(|error| RecordError { line, error })?;
+        }
+        Ok(())
+    }
+
+    /// Starts a result inside a variation (`0-1 r`): its winner, with the
+    /// reason to follow.
+    fn start_line_result(&mut self, token: &str, line: usize) -> Result<(), RecordError> {
+        self.flush()?;
+        let winner = match token {
+            "1-0" => Color::Gold,
+            "0-1" => Color::Silver,
+            _ => return Err(parse_error(line, format!("a variation can't end in {token}"))),
+        };
+        if !self.top().moved {
+            return Err(parse_error(line, format!("{token} doesn't follow a move")));
+        }
+        self.line_result = Some((winner, line));
+        Ok(())
+    }
+
+    /// Ends the variation's line with the result started by
+    /// `start_line_result`, given its reason letter.
+    fn end_line_result(&mut self, code: Option<&str>) -> Result<(), RecordError> {
+        let (winner, line) = self.line_result.take().expect("a result was started");
+        let reason = code.and_then(reason_from_code);
+        let Some(reason) = reason else {
+            return Err(parse_error(line, "a result in a variation needs its ResultCode letter"));
+        };
+        let result = GameResult { winner, reason };
+        let current = self.top().current;
+        let tree = &mut self.record.tree;
+        match tree[current].result() {
+            Some(r) if r == result => {}
+            Some(_) => return Err(parse_error(line, "the result doesn't match the line's end")),
+            None if reason.is_on_board() => {
+                return Err(parse_error(line, "the position doesn't show that result"));
+            }
+            None => tree.end_line(current, result).map_err(|error| RecordError { line, error })?,
+        }
+        self.top().ended = true;
         Ok(())
     }
 
@@ -600,24 +678,12 @@ impl GameParser {
             Some("0-1") => Some(Color::Silver),
             _ => None,
         };
-        let reason = self.record.tag("ResultCode").and_then(|c| {
-            let mut chars = c.chars();
-            chars.next().filter(|_| chars.next().is_none()).and_then(WinReason::from_letter)
-        });
+        let reason = self.record.tag("ResultCode").and_then(reason_from_code);
         // The game ends where the main line's moves end; anything after
         // that came from variations.
         let end = self.stack[0].current;
         let tree = &mut self.record.tree;
-        // An end word names the side to move as the loser: `2s resigns`.
-        let from_marker = tree[end].end_marker().and_then(|m| {
-            let reason = match m.to_ascii_lowercase().as_str() {
-                "resigns" | "resign" => WinReason::Resignation,
-                "timeout" => WinReason::Timeout,
-                "forfeit" => WinReason::Forfeit,
-                _ => return None,
-            };
-            Some(GameResult { winner: tree[end].position().side_to_move().opponent(), reason })
-        });
+        let from_marker = marker_result(tree, end);
         let from_tags = winner.zip(reason).map(|(winner, reason)| GameResult { winner, reason });
         // A record can't contradict the board: a result that the rules
         // decide is already set, and these are outside reasons.
@@ -659,11 +725,24 @@ fn parse_games(text: &str) -> Result<Vec<(usize, GameRecord)>, RecordError> {
         if !matches!(tok, Tok::Tag(..)) {
             g.has_moves = true;
         }
+        if let Some((_, result_line)) = g.line_result {
+            let code = match &tok {
+                Tok::Word(w) if line == result_line => Some(w.as_str()),
+                _ => None,
+            };
+            g.end_line_result(code)?;
+            if code.is_some() {
+                continue;
+            }
+        }
         match tok {
             Tok::Tag(name, value) => g.add_tag(&name, value, line)?,
             Tok::Comment(text) => g.comment(text, line)?,
             Tok::Open => g.open(line)?,
             Tok::Close => g.close(line)?,
+            Tok::Word(w) if RESULT_TOKENS.contains(&w.as_str()) && g.stack.len() > 1 => {
+                g.start_line_result(&w, line)?;
+            }
             Tok::Word(w) if RESULT_TOKENS.contains(&w.as_str()) => {
                 g.flush()?;
                 g.result_token = Some(w);
@@ -869,6 +948,58 @@ mod tests {
         // A block starting with neither label is an error.
         let bad = format!("{}2g Ee2n\n(\n3g Ee3n\n)\n", setups());
         assert!(GameRecord::parse(&bad).is_err());
+    }
+
+    #[test]
+    fn outside_results_in_variations() {
+        // The main line went on, but in the variation silver resigned on
+        // gold's turn, which no end word can say.
+        let text = format!("{}2g Ee2n\n(\n2g Db2n\n2s ee7s\n0-1 r\n)\n2s ee7s\n", setups());
+        let r = GameRecord::parse(&text).unwrap();
+        let alt = r.tree[r.tree.main_line()[2]].children()[1];
+        let end = r.tree.line_end(alt);
+        let resigned = GameResult { winner: Color::Silver, reason: WinReason::Resignation };
+        assert_eq!(r.tree[end].result(), Some(resigned));
+        assert_eq!(r.tree[r.tree.line_end(GameTree::ROOT)].result(), None);
+        assert_eq!(r.to_record(), text);
+
+        // A timeout on a played line that's no longer the main line, with
+        // analysis after it.
+        let text = format!("{}2g Ee2n\n(\n2g Db2n\n1-0 t\n(\n2s ee7s\n)\n)\n2s ee7s\n", setups());
+        let r = GameRecord::parse(&text).unwrap();
+        let alt = r.tree[r.tree.main_line()[2]].children()[1];
+        assert_eq!(r.tree[alt].result().unwrap().reason, WinReason::Timeout);
+        assert_eq!(r.tree[alt].children().len(), 1);
+        assert_eq!(r.to_record(), text.replace("1-0 t\n(\n2s ee7s\n)\n", "(\n2s ee7s\n)\n1-0 t\n"));
+
+        // An end word in a variation gives its result too, and is written
+        // alone.
+        let text = format!("{}2g Ee2n\n(\n2g Db2n\n2s resigns\n)\n2s ee7s\n", setups());
+        let r = GameRecord::parse(&text).unwrap();
+        let alt = r.tree[r.tree.main_line()[2]].children()[1];
+        assert_eq!(r.tree[alt].result().unwrap().reason, WinReason::Resignation);
+        assert_eq!(r.to_record(), text);
+
+        // The main line's closing token still ends the game.
+        let text = format!("{}2g Ee2n\n(\n2g Db2n\n0-1 r\n)\n1-0\n", setups());
+        assert_eq!(GameRecord::parse_all(&format!("{text}{text}")).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn variation_result_errors() {
+        let cases = [
+            ("2g Db2n\n0-1\n)", "no reason"),
+            ("2g Db2n\n0-1\nr\n)", "reason on the next line"),
+            ("2g Db2n\n0-1 x\n)", "unknown reason"),
+            ("2g Db2n\n0-1 g\n)", "a goal the board doesn't show"),
+            ("2g Db2n\n1/2-1/2 r\n)", "a draw"),
+            ("0-1 r\n)", "before any move"),
+            ("2g Db2n\n0-1 r\n2s ee7s\n)", "a move after the result"),
+        ];
+        for (block, what) in cases {
+            let text = format!("{}2g Ee2n\n(\n{block}\n", setups());
+            assert!(GameRecord::parse(&text).is_err(), "{what}: parsed");
+        }
     }
 
     #[test]
