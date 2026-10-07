@@ -151,6 +151,9 @@ pub struct GameState {
     pub result_code: Option<String>,
     /// The permanent game id of a finished game.
     pub finished_id: Option<String>,
+    /// How long the last move took (`lastmoveused`, whole seconds; `0`
+    /// before the first). Earlier moves' times aren't sent.
+    pub last_move_used: Option<Duration>,
     pub clock: Option<ServerClock>,
     /// The reply itself.
     pub raw: Record,
@@ -188,6 +191,10 @@ impl GameState {
             result,
             result_code,
             finished_id: raw.nonempty("finishedId"),
+            last_move_used: raw
+                .int("lastmoveused")
+                .and_then(|t| u64::try_from(t).ok())
+                .map(Duration::from_secs),
             clock: server_clock(&raw),
             raw,
         }

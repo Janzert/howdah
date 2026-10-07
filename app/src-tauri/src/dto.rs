@@ -73,6 +73,13 @@ pub struct MoveNodeView {
     /// Move number label, e.g. `2g`.
     pub label: String,
     pub notation: String,
+    /// How long the move took (its `%emt`), if known.
+    #[ts(type = "number | null")]
+    pub elapsed_ms: Option<u64>,
+    /// Time from the start of the game to the end of this move: the move
+    /// times on its line added up, if every one is known.
+    #[ts(type = "number | null")]
+    pub game_time_ms: Option<u64>,
     /// Annotation glyphs as written (`!?`, `$14`).
     pub glyphs: Vec<String>,
     pub comment: Option<String>,

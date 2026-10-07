@@ -63,6 +63,10 @@ architecture. Decided and checked against the live server in October 2026.
   position unless the user is elsewhere (then the missed-move alert), as in
   a local match. Analysis is allowed: the gameroom already delays what
   spectators see.
+- Move times: a move that arrives on its own gets the server's
+  `lastmoveused` as `%emt` (in played games too). Moves made before we
+  sat, or several arriving in one reply, have no time; the state only
+  carries the last move's.
 - A finished game opens by its permanent id, whole, at the start of play,
   with each move's time kept as `%emt`. A watched game's record gets its
   permanent id as `GameId` once it ends.

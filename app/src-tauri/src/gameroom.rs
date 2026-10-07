@@ -906,7 +906,7 @@ struct Applied {
 /// Brings the session up to the server's state: its moves, takeback
 /// request, clocks and result.
 fn apply(s: &mut Session, generation: u64, state: &GameState) -> Applied {
-    let (animation, mut outcome) = match s.sync_remote(generation, &state.moves) {
+    let (animation, mut outcome) = match s.sync_remote(generation, &state.moves, state.last_move_used) {
         Ok(a) => (a, Outcome::Playing),
         Err(e) => (Vec::new(), Outcome::Failed(e.message)),
     };

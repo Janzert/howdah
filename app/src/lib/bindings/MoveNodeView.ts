@@ -30,6 +30,15 @@ closes: number,
  */
 label: string, notation: string, 
 /**
+ * How long the move took (its `%emt`), if known.
+ */
+elapsedMs: number | null, 
+/**
+ * Time from the start of the game to the end of this move: the move
+ * times on its line added up, if every one is known.
+ */
+gameTimeMs: number | null, 
+/**
  * Annotation glyphs as written (`!?`, `$14`).
  */
 glyphs: Array<string>, comment: string | null, 

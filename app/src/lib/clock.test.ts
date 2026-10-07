@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClockView } from './bindings/ClockView';
-import { clockLevel, formatClock, nextTick, TICK_TIMES_MS, turnTimeLeft } from './clock';
+import { clockLevel, formatClock, formatShort, nextTick, TICK_TIMES_MS, turnTimeLeft } from './clock';
 
 describe('turnTimeLeft', () => {
   const clock: ClockView = {
@@ -69,5 +69,17 @@ describe('clockLevel', () => {
     expect(clockLevel(10_000)).toBe('warn');
     expect(clockLevel(9999)).toBe('low');
     expect(clockLevel(0)).toBe('low');
+  });
+});
+
+describe('formatShort', () => {
+  it('keeps the two largest units, rounded down', () => {
+    expect(formatShort(0)).toBe('0:00');
+    expect(formatShort(7_900)).toBe('0:07');
+    expect(formatShort(59 * 60_000 + 59_999)).toBe('59:59');
+    expect(formatShort(3_600_000 + 5 * 60_000 + 59_000)).toBe('1h05');
+    expect(formatShort(23 * 3_600_000 + 59 * 60_000)).toBe('23h59');
+    expect(formatShort(2 * 86_400_000 + 3 * 3_600_000 + 50 * 60_000)).toBe('2d03');
+    expect(formatShort(-5)).toBe('0:00');
   });
 });

@@ -8,6 +8,8 @@
 //! with `1w`/`1b` labels), `timeused` (seconds per move) and `chat`, whose
 //! first lines say when the game was played.
 
+use std::time::Duration;
+
 use howdah_arimaa::{GameRecord, RecordError};
 
 use crate::state::GameState;
@@ -154,8 +156,7 @@ impl FinishedGame {
         let main = record.tree.main_line();
         for (&node, secs) in main[1..].iter().zip(self.time_used()) {
             if let Ok(annotation) = record.tree.annotation_mut(node) {
-                annotation
-                    .set_command("emt", &format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60));
+                annotation.set_elapsed(Duration::from_secs(secs.into()));
             }
         }
         Ok(record)

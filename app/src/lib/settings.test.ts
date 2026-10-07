@@ -21,6 +21,7 @@ describe('settings parse', () => {
         volume: 40,
         stepMs: 120,
         continueTurns: false,
+        moveTimes: 'game',
       }),
       none,
     );
@@ -34,9 +35,10 @@ describe('settings parse', () => {
       volume: 40,
       stepMs: 120,
       continueTurns: false,
+      moveTimes: 'game',
     });
     const bad = parse(
-      JSON.stringify({ coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3, volume: 'loud' }),
+      JSON.stringify({ coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3, volume: 'loud', moveTimes: 'all' }),
       none,
     );
     expect(bad).toEqual(DEFAULTS);

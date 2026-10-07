@@ -8,6 +8,9 @@ export type Coordinates = 'none' | 'traps' | 'all';
 /** Input from pointer movement without a button: none, arrows for a hovered
  * piece's legal steps, or step mode (the step toward the pointer, by click). */
 export type HoverInput = 'off' | 'arrows' | 'step';
+/** Times in the move list: none, each move's time, or the time from the
+ * start of the game to each move. */
+export type MoveTimes = 'off' | 'move' | 'game';
 
 /** The slowest step animation the setting allows, in ms. */
 export const MAX_STEP_MS = 600;
@@ -29,6 +32,7 @@ export interface SettingsData {
   humanAtBottom: boolean;
   /** The engine analysis last used (an engine id). */
   analysisEngine: string | null;
+  moveTimes: MoveTimes;
 }
 
 const KEY = 'settings';
@@ -43,6 +47,7 @@ export const DEFAULTS: SettingsData = {
   continueTurns: true,
   humanAtBottom: true,
   analysisEngine: null,
+  moveTimes: 'off',
 };
 
 function read(key: string): string | null {
@@ -79,6 +84,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   if (typeof raw.continueTurns === 'boolean') s.continueTurns = raw.continueTurns;
   if (typeof raw.humanAtBottom === 'boolean') s.humanAtBottom = raw.humanAtBottom;
   if (typeof raw.analysisEngine === 'string') s.analysisEngine = raw.analysisEngine;
+  if (raw.moveTimes === 'off' || raw.moveTimes === 'move' || raw.moveTimes === 'game') s.moveTimes = raw.moveTimes;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
   if (raw.hoverInput === 'off' || raw.hoverInput === 'arrows' || raw.hoverInput === 'step') {
     s.hoverInput = raw.hoverInput;
@@ -147,6 +153,13 @@ class Settings {
   }
   set analysisEngine(v: string | null) {
     this.update({ analysisEngine: v });
+  }
+
+  get moveTimes() {
+    return this.#data.moveTimes;
+  }
+  set moveTimes(v: MoveTimes) {
+    this.update({ moveTimes: v });
   }
 
   update(patch: Partial<SettingsData>) {

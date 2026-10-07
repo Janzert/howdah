@@ -913,7 +913,16 @@ impl Session {
     ///
     /// A move the rules refuse is an error; the moves before it are still
     /// played.
-    pub fn sync_remote(&mut self, generation: u64, moves: &[String]) -> Result<Vec<AnimStep>, ApiError> {
+    ///
+    /// `last_used` is the server's time for its last move, which replaces
+    /// the local measure when that move is new. Other moves arriving
+    /// together get no time: they were made while nobody was watching.
+    pub fn sync_remote(
+        &mut self,
+        generation: u64,
+        moves: &[String],
+        last_used: Option<Duration>,
+    ) -> Result<Vec<AnimStep>, ApiError> {
         let Some(m) = self.matchup.as_ref().filter(|m| m.server_clock()) else {
             return Err(ApiError::state("no game with a remote player"));
         };
@@ -950,6 +959,7 @@ impl Session {
         }
         let mut added = 0;
         let mut refused = None;
+        let catching_up = moves.len() > agree + 1;
         for (i, text) in moves.iter().enumerate().skip(agree) {
             let live = self.live();
             let node = match self.tree.add_notation(live, text) {
@@ -961,9 +971,21 @@ impl Session {
             };
             let (mover, ply) = (self.live_side(), self.tree[live].ply());
             self.clock_move(Instant::now());
+            if catching_up && let Some(m) = &mut self.matchup {
+                // Moves made while we weren't following: how long each
+                // took isn't known.
+                m.last_move_time = None;
+            }
             self.play_live(node);
             self.after_move(mover, ply);
             added += 1;
+        }
+        if added > 0
+            && refused.is_none()
+            && let Some(used) = last_used
+            && let Ok(annotation) = self.tree.annotation_mut(self.live())
+        {
+            annotation.set_elapsed(used);
         }
         let live = self.live();
         let finished = self.live_result().is_some();
@@ -1248,9 +1270,15 @@ impl Session {
 
     /// Makes `node`, a child of the live node, the match's new live node
     /// and the main continuation (a plan for the same move becomes it).
+    /// The time the move took (from `clock_move`) goes on it as `%emt`.
     fn play_live(&mut self, node: NodeId) {
         self.tree.make_first(node).expect("the node exists");
         if let Some(m) = &mut self.matchup {
+            if let Some(used) = m.last_move_time
+                && let Ok(annotation) = self.tree.annotation_mut(node)
+            {
+                annotation.set_elapsed(used);
+            }
             m.live = node;
             let start = m.turn_start(m.turn_started);
             m.turn_starts.insert(node, start);
@@ -2149,6 +2177,12 @@ impl Session {
         out.last_mut().expect("the first move").closes += 1;
     }
 
+    /// Time from the start of the game to the end of move `id`: the sum
+    /// of the move times on its line, if every move has one.
+    fn game_time(&self, id: NodeId) -> Option<Duration> {
+        self.tree.path(id)[1..].iter().map(|&n| self.tree[n].annotation().elapsed()).sum()
+    }
+
     fn node_view(&self, id: NodeId, depth: usize) -> MoveNodeView {
         let node = &self.tree[id];
         let annotation = node.annotation();
@@ -2161,6 +2195,8 @@ impl Session {
             closes: 0,
             label: notation::move_label(node.ply() - 1),
             notation: node.mv().map(Move::notation).unwrap_or_default(),
+            elapsed_ms: annotation.elapsed().map(|t| t.as_millis() as u64),
+            game_time_ms: self.game_time(id).map(|t| t.as_millis() as u64),
             glyphs: annotation.glyphs.iter().map(ToString::to_string).collect(),
             comment: annotation.comment_text(),
             intro: annotation.intro.clone(),
@@ -2806,20 +2842,27 @@ mod tests {
         assert!(!s.can_input(), "no setup draft for a remote side");
         assert_eq!(s.engine_turn(), None);
         // Joining a game in progress: no animation for a batch.
-        assert!(s.sync_remote(g, &sample_moves(3)).unwrap().is_empty());
+        assert!(s.sync_remote(g, &sample_moves(3), None).unwrap().is_empty());
         let v = s.view();
         assert_eq!((v.ply, v.moves.len()), (3, 3));
         assert_eq!(v.players.unwrap().gold.kind, PlayerKind::Remote);
-        assert!(s.sync_remote(g, &sample_moves(3)).unwrap().is_empty(), "nothing new");
+        assert!(s.sync_remote(g, &sample_moves(3), None).unwrap().is_empty(), "nothing new");
         // One new move while watching live is animated.
-        assert_eq!(s.sync_remote(g, &sample_moves(4)).unwrap().len(), 3);
+        assert_eq!(s.sync_remote(g, &sample_moves(4), None).unwrap().len(), 3);
         assert_eq!(s.view().ply, 4);
-        assert!(s.sync_remote(g + 1, &sample_moves(5)).is_err(), "old game");
+        // Only the move seen arriving has a time; the batch's are unknown.
+        let times: Vec<_> = s.view().tree.iter().map(|m| m.elapsed_ms.is_some()).collect();
+        assert_eq!(times, [false, false, false, true]);
+        assert!(s.sync_remote(g + 1, &sample_moves(5), None).is_err(), "old game");
         // Browsing: the move is played but the cursor stays.
         s.goto(2).unwrap();
-        assert!(s.sync_remote(g, &sample_moves(5)).unwrap().is_empty());
+        assert!(s.sync_remote(g, &sample_moves(5), None).unwrap().is_empty());
         let v = s.view();
         assert_eq!((v.ply, v.live_ply), (2, Some(5)));
+        // The server's time for its last move wins, even in a batch.
+        s.sync_remote(g, &sample_moves(7), Some(Duration::from_secs(42))).unwrap();
+        let times: Vec<_> = s.view().tree.iter().map(|m| m.elapsed_ms).collect();
+        assert_eq!(times[5..], [None, Some(42_000)]);
     }
 
     #[test]
@@ -2827,15 +2870,15 @@ mod tests {
         let mut s = Session::new();
         s.start_match([remote("a"), remote("b")], [None, None], false);
         let g = s.generation();
-        s.sync_remote(g, &sample_moves(5)).unwrap();
-        s.sync_remote(g, &sample_moves(4)).unwrap();
+        s.sync_remote(g, &sample_moves(5), None).unwrap();
+        s.sync_remote(g, &sample_moves(4), None).unwrap();
         let v = s.view();
         assert_eq!((v.ply, v.live_ply), (4, Some(4)));
         assert_eq!(v.moves_after_cursor, 1, "the taken-back move stays as the continuation");
         // A different move then replaces it on the main line.
         let mut moves = sample_moves(4);
         moves.push("Ef5w".into());
-        s.sync_remote(g, &moves).unwrap();
+        s.sync_remote(g, &moves, None).unwrap();
         assert_eq!(s.view().moves[4].notation, "Ef5w");
         assert_eq!(s.export(true).lines().count(), 5);
     }
@@ -2847,7 +2890,7 @@ mod tests {
         let g = s.generation();
         let mut moves = sample_moves(2);
         moves.push("Ea1n".into());
-        let e = s.sync_remote(g, &moves).unwrap_err();
+        let e = s.sync_remote(g, &moves, None).unwrap_err();
         assert!(e.message.contains("server move 3"), "{}", e.message);
         let v = s.view();
         assert_eq!((v.live_ply, v.result), (Some(2), None), "the moves before it stay");
@@ -2859,7 +2902,7 @@ mod tests {
         let tc: TimeControl = "1s/0".parse().unwrap();
         s.start_match([remote("a"), remote("b")], [Some(tc); 2], false);
         let g = s.generation();
-        s.sync_remote(g, &sample_moves(2)).unwrap();
+        s.sync_remote(g, &sample_moves(2), None).unwrap();
         // Far past gold's allowance, but only the server ends the game.
         assert!(!s.check_timeout(Instant::now() + Duration::from_secs(60)));
         let reported = RemoteClock {
@@ -2887,7 +2930,7 @@ mod tests {
         let result = GameResult { winner: Color::Silver, reason: WinReason::Timeout };
         s.finish_remote(g, result, None).unwrap();
         assert_eq!(s.view().result, Some(result));
-        assert!(s.sync_remote(g, &sample_moves(3)).is_err(), "no moves after the end");
+        assert!(s.sync_remote(g, &sample_moves(3), None).is_err(), "no moves after the end");
     }
 
     /// A human (gold) against a remote opponent, with the sample game's
@@ -2896,7 +2939,7 @@ mod tests {
         let mut s = Session::new();
         s.start_match([Player::Human, remote("opponent")], [None, None], false);
         let g = s.generation();
-        s.sync_remote(g, &sample_moves(2)).unwrap();
+        s.sync_remote(g, &sample_moves(2), None).unwrap();
         (s, g)
     }
 
@@ -2922,7 +2965,7 @@ mod tests {
         assert_eq!((v.sent, v.live_ply, v.ply), (Some(out.node), Some(0), 1));
         assert!(!s.plays_live(), "one move on its way at a time");
         // The server's list has it: played, and nothing to animate.
-        assert!(s.sync_remote(g, &[out.text]).unwrap().is_empty());
+        assert!(s.sync_remote(g, &[out.text], None).unwrap().is_empty());
         let v = s.view();
         assert_eq!((v.sent, v.live_ply, v.ply), (None, Some(1), 1));
         assert_eq!(s.outgoing_move(), None);
@@ -2937,10 +2980,10 @@ mod tests {
         let v = s.view();
         assert_eq!((v.live_ply, v.ply, v.sent), (Some(2), 3, Some(out.node)));
         assert_eq!(v.moves.len(), 3, "the sent move shows on the main line");
-        assert!(s.sync_remote(g, &sample_moves(2)).unwrap().is_empty(), "not yet");
+        assert!(s.sync_remote(g, &sample_moves(2), None).unwrap().is_empty(), "not yet");
         assert_eq!(s.view().sent, Some(out.node));
         // It comes back together with the reply: only the reply animates.
-        let anim = s.sync_remote(g, &sample_moves(4)).unwrap();
+        let anim = s.sync_remote(g, &sample_moves(4), None).unwrap();
         assert_eq!(anim.len(), 3, "silver's three steps");
         let v = s.view();
         assert_eq!((v.live_ply, v.ply, v.sent), (Some(4), 4, None));
@@ -2956,7 +2999,7 @@ mod tests {
         let text = s.outgoing_move().unwrap().text;
         assert_eq!(text, "Cf2n Cf3x", "the server refuses a capture without its token");
         moves.push(text);
-        s.sync_remote(g, &moves).unwrap();
+        s.sync_remote(g, &moves, None).unwrap();
         assert_eq!(s.view().live_ply, Some(3));
     }
 
@@ -2981,7 +3024,7 @@ mod tests {
         s.try_step(sq("e2"), sq("e3")).unwrap();
         s.commit_turn(false).unwrap();
         assert!(s.outgoing_move().is_some());
-        s.sync_remote(g, &sample_moves(3)).unwrap();
+        s.sync_remote(g, &sample_moves(3), None).unwrap();
         let v = s.view();
         assert_eq!((v.sent, v.live_ply), (None, Some(3)));
         assert_eq!(v.moves[2].notation, "Ee2n Ee3n Ee4n Ee5e", "the server's move");
@@ -2997,7 +3040,7 @@ mod tests {
     /// move, with a move to take back.
     fn human_vs_remote_with_moves() -> (Session, u64) {
         let (mut s, g) = human_vs_remote();
-        s.sync_remote(g, &sample_moves(4)).unwrap();
+        s.sync_remote(g, &sample_moves(4), None).unwrap();
         (s, g)
     }
 
@@ -3029,7 +3072,7 @@ mod tests {
         assert!(s.view().takeback.unwrap().shown && !s.takeback_unconfirmed());
         assert!(s.answer_takeback(true).is_err(), "not the user's to answer");
         // Accepted: the server's list goes back two plies.
-        s.sync_remote(g, &sample_moves(2)).unwrap();
+        s.sync_remote(g, &sample_moves(2), None).unwrap();
         assert_eq!(s.sync_takeback(g, None).unwrap(), None);
         let v = s.view();
         assert_eq!((v.takeback, v.live_ply, v.ply), (None, Some(2), 2));
@@ -3090,7 +3133,7 @@ mod tests {
         s.sync_takeback(g, Some(Color::Silver)).unwrap();
         assert_eq!(s.view().takeback.unwrap().answer, Some(true), "the server hasn't acted yet");
         // Silver's move 2 goes back.
-        s.sync_remote(g, &sample_moves(3)).unwrap();
+        s.sync_remote(g, &sample_moves(3), None).unwrap();
         s.sync_takeback(g, None).unwrap();
         let v = s.view();
         assert_eq!((v.takeback, v.live_ply), (None, Some(3)));
@@ -3101,7 +3144,7 @@ mod tests {
         let mut s = Session::new();
         s.start_match([remote("a"), remote("b")], [None, None], false);
         let g = s.generation();
-        s.sync_remote(g, &sample_moves(4)).unwrap();
+        s.sync_remote(g, &sample_moves(4), None).unwrap();
         assert!(!s.view().can_ask_takeback);
         assert!(s.request_takeback().is_err());
         s.sync_takeback(g, Some(Color::Gold)).unwrap();
@@ -3119,7 +3162,7 @@ mod tests {
         let mut s = Session::new();
         s.start_match([remote("a"), remote("b")], [None, None], false);
         let g = s.generation();
-        s.sync_remote(g, &sample_moves(2)).unwrap();
+        s.sync_remote(g, &sample_moves(2), None).unwrap();
         s.try_step(sq("e2"), sq("e3")).unwrap();
         s.commit_turn(false).unwrap();
         let v = s.view();
@@ -3134,7 +3177,7 @@ mod tests {
         let mut s = Session::new();
         s.start_match([Player::Human, engine("bot")], [None, None], false);
         let g = s.generation();
-        assert!(s.sync_remote(g, &sample_moves(1)).is_err());
+        assert!(s.sync_remote(g, &sample_moves(1), None).is_err());
         let result = GameResult { winner: Color::Gold, reason: WinReason::Resignation };
         assert!(s.finish_remote(g, result, None).is_err());
     }
@@ -3449,6 +3492,26 @@ mod tests {
         assert_eq!(s.engine_turn().unwrap().time_control, None);
         assert!(s.view().clock.unwrap().running.is_none());
         assert!(!s.check_timeout(Instant::now() + Duration::from_secs(3600)));
+    }
+
+    #[test]
+    fn match_moves_record_their_times() {
+        let mut s = Session::new();
+        s.start_match([engine("a"), engine("b")], [None, None], false);
+        let play = |s: &mut Session, side, ply, text: &str, secs| {
+            s.matchup.as_mut().unwrap().turn_started = Instant::now() - Duration::from_secs(secs);
+            s.apply_engine_move(s.generation(), side, ply, text).unwrap();
+        };
+        play(&mut s, Color::Gold, 0, &setup_text(Color::Gold), 12);
+        play(&mut s, Color::Silver, 1, &setup_text(Color::Silver), 5);
+        play(&mut s, Color::Gold, 2, "Ee2n Ee3n", 75);
+        let v = s.view();
+        let times: Vec<_> = v.tree.iter().map(|m| (m.elapsed_ms, m.game_time_ms)).collect();
+        assert_eq!(
+            times,
+            [(Some(12_000), Some(12_000)), (Some(5_000), Some(17_000)), (Some(75_000), Some(92_000))]
+        );
+        assert!(s.export(false).contains("2g Ee2n Ee3n {[%emt 0:01:15]}"), "{}", s.export(false));
     }
 
     #[test]

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { api } from './api';
+  import { formatClock, formatShort } from './clock';
+  import { settings, type MoveTimes } from './settings.svelte';
   import type { MoveNodeView } from './bindings/MoveNodeView';
   import type { NodeId } from './bindings/NodeId';
   import type { SessionView } from './bindings/SessionView';
@@ -30,6 +32,29 @@
       if (moved || steps > 0) target?.scrollIntoView({ block: 'nearest' });
     });
   });
+
+  // The list gets shorter when panels open below it: keep the shown move
+  // in view then too.
+  $effect(() => {
+    const observer = new ResizeObserver(() => {
+      list?.querySelector('.pending, .current')?.scrollIntoView({ block: 'nearest' });
+    });
+    observer.observe(list);
+    return () => observer.disconnect();
+  });
+
+  const TIMES_NEXT: Record<MoveTimes, MoveTimes> = { off: 'move', move: 'game', game: 'off' };
+  const TIMES_LABEL: Record<MoveTimes, string> = { off: 'Times', move: 'Move time', game: 'Game time' };
+  const TIMES_TITLE: Record<MoveTimes, string> = {
+    off: 'Show each move\'s time',
+    move: 'Showing the time each move took; click for the time into the game',
+    game: 'Showing the time into the game at each move; click to hide times',
+  };
+
+  /** The move's time in the chosen mode, or null when it isn't known. */
+  function timeOf(m: MoveNodeView): number | null {
+    return settings.moveTimes === 'move' ? m.elapsedMs : m.gameTimeMs;
+  }
 
   const byId = $derived(new Map(view.tree.map((m) => [m.id, m])));
 
@@ -79,11 +104,18 @@
 
 <svelte:window onkeydowncapture={onWindowKey} onclick={() => (menu = null)} />
 
-<ol class="moves" bind:this={list}>
-  <li>
+<ol class="moves" class:timed={settings.moveTimes !== 'off'} bind:this={list}>
+  <li class="start">
     <button class="move" class:current={view.ply === 0} onclick={() => onGoto(0)}>
+      {#if settings.moveTimes !== 'off'}<span class="time"></span>{/if}
       <span class="label">start</span>
     </button>
+    <button
+      class="times"
+      class:on={settings.moveTimes !== 'off'}
+      title={TIMES_TITLE[settings.moveTimes]}
+      onclick={() => (settings.moveTimes = TIMES_NEXT[settings.moveTimes])}>{TIMES_LABEL[settings.moveTimes]}</button
+    >
     {#if view.gameComment}<div class="comment game">{view.gameComment}</div>{/if}
   </li>
   {#each view.tree as m (m.id)}
@@ -110,12 +142,17 @@
         onclick={() => onGotoNode(m.id)}
         oncontextmenu={(e) => openMenu(e, m)}
       >
+        {#if settings.moveTimes !== 'off'}
+          {@const t = timeOf(m)}
+          <span class="time" title={t == null ? 'Time not known' : formatClock(t)}>{t == null ? '' : formatShort(t)}</span>
+        {/if}
         <span class="label">{m.label}</span>
         <span class="notation">{m.notation}{#if m.glyphs.length}<span class="glyphs">{m.glyphs.join(' ')}</span>{/if}{#if m.folded}<span class="folded">+{m.folded}</span>{/if}</span>
       </button>
       {#if m.comment}<div class="comment">{m.comment}</div>{/if}
       {#if m.id === view.cursor && view.turn && view.turn.steps.length > 0}
         <div class="pending">
+          {#if settings.moveTimes !== 'off'}<span class="time"></span>{/if}
           <span class="label">…</span>
           <span class="notation">{view.turn.steps.map((s) => s.notation).join(' ')}</span>
         </div>
@@ -124,6 +161,7 @@
   {/each}
   {#if view.ply === 0 && view.turn && view.turn.steps.length > 0}
     <li class="pending">
+      {#if settings.moveTimes !== 'off'}<span class="time"></span>{/if}
       <span class="label">…</span>
       <span class="notation">{view.turn.steps.map((s) => s.notation).join(' ')}</span>
     </li>
@@ -229,6 +267,47 @@
     flex: 0 0 3.2em;
     color: var(--muted);
   }
+  /* Times are right-aligned before the move number; comments line up
+     with the notation either way. */
+  .moves {
+    --time-col: 0px;
+  }
+  .moves.timed {
+    --time-col: calc(4.4em + 8px);
+  }
+  .time {
+    flex: 0 0 4.4em;
+    text-align: right;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .current .time {
+    color: inherit;
+  }
+  .start {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .start > .move {
+    flex: 1;
+  }
+  .times {
+    flex: none;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: none;
+    color: var(--muted);
+    font: 11px system-ui, sans-serif;
+    cursor: pointer;
+  }
+  .times:hover {
+    background: var(--hover);
+  }
+  .times.on {
+    color: var(--text);
+  }
   .current .label {
     color: inherit;
   }
@@ -244,7 +323,7 @@
     font-weight: bold;
   }
   .comment {
-    padding: 0 8px 3px calc(8px + 3.2em + 8px);
+    padding: 0 8px 3px calc(8px + var(--time-col) + 3.2em + 8px);
     font-family: system-ui, sans-serif;
     font-size: 12px;
     color: var(--muted);

@@ -142,7 +142,8 @@ cover it.
 - **[P1] Game-end dialog** with the reason in words. 4steps has one message
   per `WinReason`, and we have all the reasons. Actions: rematch, swap
   sides, analyse.
-- **[P1] Move times in the move list.** arimaa.com records them and shows
+- **[P1] Move times in the move list.** (Done: each move's time or the
+  time into the game, toggled for the list.) arimaa.com records them and shows
   average move times per player. lichess has a move-time chart (`ui/chart`)
   under analysis.
 - **[have] "Show" replays the last move**: Forward (→) at the latest move

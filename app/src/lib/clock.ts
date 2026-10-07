@@ -30,6 +30,17 @@ export function nextTick(left: number, lastTick = Infinity): number | null {
   return TICK_TIMES_MS.find((t) => t < left && t < lastTick) ?? null;
 }
 
+/** A time in its two largest units, to keep it short: `m:ss` under an
+ * hour, then `1h05` (hours and minutes) and `2d03` (days and hours), each
+ * rounded down. */
+export function formatShort(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (total >= 86400) return `${Math.floor(total / 86400)}d${pad(Math.floor((total % 86400) / 3600))}`;
+  if (total >= 3600) return `${Math.floor(total / 3600)}h${pad(Math.floor((total % 3600) / 60))}`;
+  return `${Math.floor(total / 60)}:${pad(total % 60)}`;
+}
+
 /** A clock's time as text: `m:ss`, `h:mm:ss` from an hour, and from a
  * day `Nd h:mm` (postal games run for days; seconds don't matter then). */
 export function formatClock(ms: number): string {

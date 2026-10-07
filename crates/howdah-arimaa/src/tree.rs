@@ -6,6 +6,8 @@
 //! are stable for the life of the tree and never reused, so the UI can
 //! refer to a move by id. See `docs/VARIATIONS.md` for the design.
 
+use std::time::Duration;
+
 use crate::error::GameError;
 use crate::game::{Game, Move, build_turn};
 use crate::notation::{self, MoveBody};
@@ -145,6 +147,32 @@ impl Annotation {
         }
         self.comment = join_commands(&text, &commands);
     }
+
+    /// The time the move took, from its `%emt` command (`0:00:12`;
+    /// `m:ss`, plain seconds and decimals also read).
+    pub fn elapsed(&self) -> Option<Duration> {
+        parse_clock(&self.command("emt")?)
+    }
+
+    /// Records the time the move took as `%emt`, in whole seconds
+    /// (`h:mm:ss`, as arimaa.com's move times are).
+    pub fn set_elapsed(&mut self, time: Duration) {
+        let secs = time.as_secs_f64().round() as u64;
+        self.set_command("emt", &format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60));
+    }
+}
+
+/// Reads a `[h:]m:ss` or plain-seconds time, seconds possibly fractional.
+fn parse_clock(text: &str) -> Option<Duration> {
+    let mut secs = 0.0;
+    for part in text.trim().split(':') {
+        let n: f64 = part.parse().ok()?;
+        if !n.is_finite() || n < 0.0 {
+            return None;
+        }
+        secs = secs * 60.0 + n;
+    }
+    Duration::try_from_secs_f64(secs).ok()
 }
 
 /// Splits a comment into its text and its `[%name args]` commands (the
@@ -688,6 +716,23 @@ mod tests {
         let mut plain = Annotation::default();
         plain.set_comment_text("  ");
         assert_eq!(plain.comment, None);
+    }
+
+    #[test]
+    fn move_times() {
+        let mut a = Annotation::default();
+        assert_eq!(a.elapsed(), None);
+        a.set_elapsed(Duration::from_millis(3_725_600));
+        assert_eq!(a.command("emt").as_deref(), Some("1:02:06"));
+        assert_eq!(a.elapsed(), Some(Duration::from_secs(3726)));
+        for (text, secs) in [("0:00:12", 12.0), ("1:30", 90.0), ("7", 7.0), ("0:00:01.5", 1.5)] {
+            a.set_command("emt", text);
+            assert_eq!(a.elapsed(), Some(Duration::from_secs_f64(secs)), "{text}");
+        }
+        for bad in ["", "x", "1::2", "-3"] {
+            a.set_command("emt", bad);
+            assert_eq!(a.elapsed(), None, "{bad:?}");
+        }
     }
     use crate::WinReason;
     use crate::setup::default_setup;

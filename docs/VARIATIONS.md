@@ -519,8 +519,12 @@ Choices made in step 5 (confirmed with Brian, 2026-10-03):
 
 Not built yet: glyph keys, positional glyphs (`$10`-`$19`), and board
 shapes (`%cal`/`%csl`) stored on moves. Commands live in the comment
-text; the app shows and edits comments without them, and finished
-arimaa.com games get `%emt` from the viewer page's `timeused`.
+text; the app shows and edits comments without them. `%emt` is written
+for every move played live in a match (measured locally, or the
+server's `lastmoveused` in an arimaa.com game), and finished
+arimaa.com games get it from the viewer page's `timeused`. The move
+list can show it, or the time into the game (the `%emt`s on the line
+added up).
 
 ## Decided
 
