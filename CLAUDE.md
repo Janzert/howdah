@@ -526,12 +526,24 @@ Howdah plays and watches games on arimaa.com.
       long-lived gain node with a silent loop playing into it, so the
       output never goes idle between sounds. The loop is what fixed the
       rest; the shared node alone didn't. Keep both.
-    - Sounds are named by event (`SoundName`: step, lastStep, capture,
-      ownLoss, restore, gameStart, win, loss, tick), each mapped to a classic file.
-      A match starting plays gameStart; the game ending plays loss when
-      the lone human player lost, otherwise win. The low-time tick
-      (`Metal2_3.wav`) plays while a human's clock runs, on 4steps'
-      schedule (`lib/clock.ts`).
+    - Sounds are named by event (`SoundName`, each commented with when it
+      plays), mapped to classic files; events without a file yet are
+      silent (the sound rework fills them in). Dev builds log each event
+      as `sound: <name>` (`console.debug`), silent ones included.
+      A match starting plays gameStart; the game ending plays timeout
+      for a loss on time, else loss when the lone human player lost,
+      otherwise win. yourTurn is for a player who doesn't see the
+      opponent's move (or setup) come in: with the window unfocused it
+      plays after the move's animation (`yourTurnPending`; at once if
+      the window is hidden, where animations wait), and away from the
+      live position it plays instead of the missed move's lastStep
+      (spectators keep lastStep). setupDone for other committed setups; illegal
+      when a drop is refused. At an arimaa.com seat `watchSounds`
+      (`lib/gameroom.ts`) gives join, leave, chat and illegal (a move the
+      server refused); notification plays for an opponent's takeback
+      request, invitations and their answers, and postal moves due. The
+      low-time tick (`Metal2_3.wav`) plays while a human's clock runs, on
+      4steps' schedule (`lib/clock.ts`).
   - Game end: `GameEndDialog.svelte` shows the result in words
     (`lib/result.ts`) after the final move's animation, with rematch and
     swap sides (repeating the last New game spec). After an arimaa.com

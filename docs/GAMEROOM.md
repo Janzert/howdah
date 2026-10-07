@@ -186,5 +186,6 @@ architecture. Decided and checked against the live server in October 2026.
 - An engine playing on arimaa.com, and a postal controller for bots (on
   hold). An engine would use the gameroom's bot API, as `gameroom.py`
   does, or ASIP as 4steps's bot launcher does.
-- Sounds for chat and for players coming and going (the web client's
-  aren't public domain).
+- Sounds for chat and for players coming and going: the events are
+  wired up (`watchSounds`), but stay silent until the sound rework
+  gives them sounds (the web client's aren't public domain).

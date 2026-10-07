@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveGameView } from './bindings/LiveGameView';
 import type { WatchView } from './bindings/WatchView';
-import { mySide, myTurn, newOpponentChat } from './gameroom';
+import { mySide, myTurn, newOpponentChat, watchSounds } from './gameroom';
 
 function game(gold: string | null, silver: string | null, turn: LiveGameView['turn']): LiveGameView {
   return { gid: '1', gold, silver, timeControl: '1d/30d/100/0/0', rated: false, postal: true, turn };
@@ -44,5 +44,39 @@ describe('newOpponentChat', () => {
     expect(newOpponentChat(null, watch('7', 'gold', chat))).toEqual([]);
     expect(newOpponentChat(watch('7', null, []), watch('7', null, chat))).toEqual([]);
     expect(newOpponentChat(watch('7', 'gold', []), watch('7', 'gold', [line(null, 'server')]))).toEqual([]);
+  });
+});
+
+describe('watchSounds', () => {
+  const seat = (over: Partial<WatchView> = {}): WatchView =>
+    ({
+      gid: '7',
+      side: 'gold',
+      state: 'following',
+      waiting: false,
+      away: [false, false],
+      refused: null,
+      chat: [],
+      ...over,
+    }) as WatchView;
+
+  it('plays join and leave for the opponent only', () => {
+    expect(watchSounds(seat({ waiting: true }), seat())).toEqual(['join']);
+    expect(watchSounds(seat(), seat({ away: [false, true] }))).toEqual(['leave']);
+    expect(watchSounds(seat({ away: [false, true] }), seat())).toEqual(['join']);
+    expect(watchSounds(seat(), seat({ away: [true, false] }))).toEqual([]);
+    expect(watchSounds(seat(), seat({ state: 'ended', away: [false, true] }))).toEqual([]);
+  });
+
+  it('plays a refused move once, and chat', () => {
+    expect(watchSounds(seat(), seat({ refused: 'Illegal move' }))).toEqual(['illegal']);
+    expect(watchSounds(seat({ refused: 'Illegal move' }), seat({ refused: 'Illegal move' }))).toEqual([]);
+    expect(watchSounds(seat(), seat({ chat: [line('silver', 'hi')] }))).toEqual(['chat']);
+  });
+
+  it('is quiet for a new game and a spectator', () => {
+    expect(watchSounds(null, seat({ chat: [line('silver', 'hi')] }))).toEqual([]);
+    expect(watchSounds(seat({ gid: '6', waiting: true }), seat())).toEqual([]);
+    expect(watchSounds(seat({ side: null }), seat({ side: null, away: [false, true] }))).toEqual([]);
   });
 });

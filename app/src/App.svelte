@@ -38,7 +38,7 @@
   import type { WatchView } from './lib/bindings/WatchView';
   import WatchDialog from './lib/WatchDialog.svelte';
   import WatchPanel from './lib/WatchPanel.svelte';
-  import { myTurn, newOpponentChat } from './lib/gameroom';
+  import { myTurn, newOpponentChat, watchSounds } from './lib/gameroom';
 
   function pref(key: string): string | null {
     try {
@@ -81,6 +81,8 @@
   // The game-end dialog waits for the final move's animation.
   let gameEndPending = $state(false);
   let showGameEnd = $state(false);
+  // The your-turn sound waits for the opponent's move to be shown.
+  let yourTurnPending = $state(false);
   /** The last match started from the new-game dialog, for a rematch. */
   let lastSpec = $state<MatchSpec | null>(null);
   let engines = $state<EngineSpec[]>([]);
@@ -172,6 +174,13 @@
     }
   });
 
+  $effect(() => {
+    if (yourTurnPending && !model.animating) {
+      yourTurnPending = false;
+      play('yourTurn');
+    }
+  });
+
   // Low-time ticks while a human's clock runs, at the times in TICK_TIMES_MS.
   $effect(() => {
     const clock = view?.clock;
@@ -227,15 +236,26 @@
       const setupCommitted = view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;
       setView(u.view);
       model.apply(u.view.position.pieces, u.animation, animHooks(u.view.turn != null), u.animationBudgetMs);
-      if (setupCommitted) play('lastStep');
       if (ended) {
         const human = loneHuman(u.view);
-        play(human && u.view.result?.winner !== human ? 'loss' : 'win');
+        if (u.view.result?.reason === 'timeout') play('timeout');
+        else play(human && u.view.result?.winner !== human ? 'loss' : 'win');
         gameEndPending = true;
       }
-      if (prev && u.view.moves.length > prev.moves.length && awaitsHumanAgainstEngine(u.view)) {
-        requestAttention();
-      }
+      const awaitsUser =
+        prev != null && u.view.moves.length > prev.moves.length && !u.view.result && awaitsHumanAgainstEngine(u.view);
+      if (awaitsUser) requestAttention();
+      // The your-turn sound is for a user who doesn't see the move come
+      // in: here, with the window in the background (away from the live
+      // position, below). An opponent's setup counts as a move.
+      if (awaitsUser && !document.hasFocus()) {
+        // After the move's animation, unless the window is hidden, where
+        // animations wait until it's shown again.
+        if (document.hidden) play('yourTurn');
+        else yourTurnPending = true;
+      } else if (setupCommitted) play('setupDone');
+      const takeback = u.view.takeback;
+      if (takeback && !prev?.takeback && watch?.side != null && takeback.by !== watch.side) play('notification');
       if (!awayFromLive(u.view)) {
         // Back at the live position after missing a move: show it being
         // played, unless this update already animated it.
@@ -243,14 +263,17 @@
         missedMove = null;
       } else if (prev && u.view.liveMove && u.view.liveMove !== prev.liveMove && movedByOpponent(u.view)) {
         missedMove = u.view.liveMove;
-        play('lastStep');
         // Only a player is asked to come back ("Your move"), not a spectator.
-        if (loneHuman(u.view)) requestAttention();
+        if (loneHuman(u.view)) {
+          play('yourTurn');
+          requestAttention();
+        } else play('lastStep');
       }
     });
     const unlistenAnalysis = on('analysis://update', (u) => (analysis = u));
     const unlistenWatch = on('gameroom://watch', (w) => {
       const chat = newOpponentChat(watch, w);
+      for (const sound of watchSounds(watch, w)) play(sound);
       watch = w.state === 'stopped' ? null : w;
       if (chat.length > 0) requestAttention('New chat');
     });
@@ -271,6 +294,7 @@
       } else {
         flash(`Your invitation to ${a.opponent} is gone`);
       }
+      play('notification');
     });
     api.watchStatus().then((w) => (watch = w));
     api.getState().then((v) => {
@@ -296,6 +320,7 @@
     for (const i of incoming) seenInvitations.add(i.created);
     if (fresh.length > 0 && !showWatch) {
       flash(`${fresh[0].opponent ?? 'Someone'} invites you to a game (arimaa.com)`);
+      play('notification');
       requestAttention('Invitation');
     }
     // The game this window plays doesn't count; its own alerts cover it.
@@ -308,6 +333,7 @@
           ? 'A postal game waits on your move (arimaa.com)'
           : `${newTurns.length} postal games wait on your move (arimaa.com)`,
       );
+      play('notification');
       requestAttention('Your postal move');
     }
   }
@@ -406,7 +432,10 @@
 
   function onDrop(from: Square, to: Square, path: Square[]): Promise<boolean> {
     if (!view) return Promise.resolve(false);
-    return run(view.phase === 'setup' ? api.setupSwap(from, to) : api.tryRoute(from, to, path));
+    return run(view.phase === 'setup' ? api.setupSwap(from, to) : api.tryRoute(from, to, path)).then((ok) => {
+      if (!ok) play('illegal');
+      return ok;
+    });
   }
 
   function commit() {

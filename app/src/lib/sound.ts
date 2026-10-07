@@ -24,25 +24,38 @@ import { dataUrlBytes, decodeWav } from './wav';
 /** The events that make a sound. */
 export type SoundName =
   | 'step' // a step within a move
-  | 'lastStep' // a move's last step, a committed move or setup, a missed move
+  | 'lastStep' // a move's last step, a committed move, a missed move watched
   | 'capture' // an opponent's piece trapped
   | 'ownLoss' // the mover's own piece trapped
   | 'restore' // a trapped piece back, as a step is undone
+  | 'setupDone' // a setup committed
+  | 'illegal' // a drop the rules refuse, or a move the server refused
+  | 'yourTurn' // the opponent moved and the human player is to move
   | 'gameStart'
   | 'win' // a game ending, unless the lone human player lost
   | 'loss'
-  | 'tick'; // the low-time clock
+  | 'timeout' // a game ending on time, in place of `win` or `loss`
+  | 'tick' // the low-time clock
+  | 'join' // the opponent sits down at the table, or comes back
+  | 'leave' // the opponent leaves the table
+  | 'chat' // an opponent's chat line
+  | 'notification'; // a takeback request, an invitation, a postal move due
 
 // TODO(themes): let a theme override the sound for each event.
-const sources: Record<SoundName, string> = {
+// TODO(sounds): the sound rework gives every event its own sound; until
+// then the new events are silent or borrow an old one.
+const sources: Partial<Record<SoundName, string>> = {
   step: slide2,
   lastStep: place,
   capture: trapped,
   ownLoss: dogStep,
   restore: place,
+  setupDone: place,
+  yourTurn: place,
   gameStart: win,
   win: drop2,
   loss: elephantStep,
+  timeout: elephantStep,
   tick: metal2,
 };
 
@@ -115,6 +128,8 @@ export function unlockOnInteraction() {
 }
 
 export function play(name: SoundName) {
+  // Shows which event played, also for those without a sound yet.
+  if (import.meta.env.DEV) console.debug(`sound: ${name}`);
   if (muted) return;
   const ctx = init();
   const buffer = buffers.get(name);
