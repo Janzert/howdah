@@ -152,16 +152,17 @@ jobs:
           TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          DL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
           cat > notes.md <<EOF
           Howdah $VERSION.
 
           | System | Download |
           | --- | --- |
-          | Windows (x64) | \`Howdah_${VERSION}_x64-setup.exe\` (installer) or \`Howdah_${VERSION}_x64_en-US.msi\` |
-          | macOS (Apple Silicon) | \`Howdah_${VERSION}_aarch64.dmg\` |
-          | Linux (x86_64) | \`.deb\` (Debian, Ubuntu), \`.rpm\` (Fedora, RHEL) or \`.AppImage\` (any; \`chmod +x\` it) |
+          | Windows (x64) | [Installer](${DL}/Howdah_${VERSION}_x64-setup.exe) or [MSI](${DL}/Howdah_${VERSION}_x64_en-US.msi) |
+          | macOS (Apple Silicon) | [Disk image](${DL}/Howdah_${VERSION}_aarch64.dmg) |
+          | Linux (x86_64) | [.deb](${DL}/Howdah_${VERSION}_amd64.deb) (Debian, Ubuntu), [.rpm](${DL}/Howdah-${VERSION}-1.x86_64.rpm) (Fedora, RHEL) or [AppImage](${DL}/Howdah_${VERSION}_amd64.AppImage) (any; \`chmod +x\` it) |
 
-          The builds aren't code signed, so the first start needs a step:
+          The builds aren't code signed, so the first start may need an extra step:
 
           - **Windows:** SmartScreen says it protected your PC; click
             *More info*, then *Run anyway*.
@@ -170,7 +171,7 @@ jobs:
             If macOS says the app is damaged, run
             \`xattr -dr com.apple.quarantine /Applications/Howdah.app\`.
 
-          \`SHA256SUMS\` lists each file's SHA-256 digest.
+          [\`SHA256SUMS\`](${DL}/SHA256SUMS) lists each file's SHA-256 digest.
           EOF
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
             gh release create "$TAG" -R "$GITHUB_REPOSITORY" --verify-tag --draft \
