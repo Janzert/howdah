@@ -2,7 +2,9 @@
 // from one backend state to the next. Pieces are keyed by stable ids from the
 // backend, so a slide is just a change of square with a CSS transition.
 import type { AnimStep } from '../bindings/AnimStep';
+import type { Color } from '../bindings/Color';
 import type { Piece } from '../bindings/Piece';
+import type { PieceKind } from '../bindings/PieceKind';
 import type { PieceView } from '../bindings/PieceView';
 import type { Square } from '../bindings/Square';
 
@@ -45,6 +47,54 @@ interface QueuedUpdate {
   hooks: AnimHooks;
   /** Longest the animation may take (the move's time off the clock). */
   budgetMs: number | null;
+}
+
+const STRENGTH: PieceKind[] = ['rabbit', 'cat', 'dog', 'horse', 'camel', 'elephant'];
+
+function neighbours(sq: Square): Square[] {
+  const n: Square[] = [];
+  if (sq % 8 > 0) n.push(sq - 1);
+  if (sq % 8 < 7) n.push(sq + 1);
+  if (sq >= 8) n.push(sq - 8);
+  if (sq < 56) n.push(sq + 8);
+  return n;
+}
+
+/** Frozen flags, by piece id: next to a stronger enemy and not to a friend. */
+function frozenFlags(pieces: { id: number; piece: Piece; square: Square }[]): Map<number, boolean> {
+  const at = new Map(pieces.map((p) => [p.square, p.piece]));
+  return new Map(
+    pieces.map(({ id, piece, square }) => {
+      const near = neighbours(square).flatMap((n) => at.get(n) ?? []);
+      const friend = near.some((q) => q.color === piece.color);
+      const stronger = near.some(
+        (q) => q.color !== piece.color && STRENGTH.indexOf(q.kind) > STRENGTH.indexOf(piece.kind),
+      );
+      return [id, stronger && !friend];
+    }),
+  );
+}
+
+/**
+ * Splits a move's steps into units for the frozen marks: a push or pull's
+ * two steps together, any other step alone. Gives each unit's length,
+ * starting at its first step. An enemy step that could be either is a
+ * pull, as the backend reads it.
+ */
+function frozenUnits(anim: AnimStep[], colors: Map<number, Color>): Map<number, number> {
+  const enemy = (a: AnimStep) => colors.get(a.id) !== undefined && colors.get(a.id) !== a.mover;
+  const units = new Map<number, number>();
+  let i = 0;
+  while (i < anim.length) {
+    const a = anim[i];
+    const b = anim[i + 1];
+    // Pull: the puller steps away and the enemy follows into its square.
+    // Push: the enemy is pushed away and the pusher follows into its square.
+    const pair = b !== undefined && b.mover === a.mover && enemy(a) !== enemy(b) && b.to === a.from;
+    units.set(i, pair ? 2 : 1);
+    i += pair ? 2 : 1;
+  }
+  return units;
 }
 
 /** Same pieces on the same squares (ignoring frozen flags). */
@@ -211,12 +261,24 @@ export class BoardModel {
     const route = anim.filter((a) => a.id === dropped);
     for (const p of this.pieces) p.instant = false;
     if (route.length > 1) await this.rewind(dropped!, route[0].from);
+    const colors = new Map(
+      [...this.pieces, ...anim.flatMap((a) => a.restored ?? [])].map((p) => [p.id, p.piece.color]),
+    );
+    const units = frozenUnits(anim, colors);
+    let frozen = new Map<number, boolean>();
     for (const [i, a] of anim.entries()) {
       if (gen !== this.generation) return;
       this.updateSpeed(scale);
       if (route.length > 1) this.stepMs = Math.min(this.stepMs, ROUTE_STEP_MS);
+      // Frozen marks change with the step (or push or pull) that changes
+      // them, and stay on pieces whose status it doesn't change.
+      const unit = units.get(i);
+      if (unit) {
+        frozen = this.frozenAfter(anim.slice(i, i + unit));
+        for (const p of this.pieces) p.frozen = frozen.get(p.id) ?? p.frozen;
+      }
       if (a.restored) {
-        this.pieces.push({ ...a.restored, frozen: false, fading: 'in', instant: true });
+        this.pieces.push({ ...a.restored, frozen: frozen.get(a.restored.id) ?? false, fading: 'in', instant: true });
         hooks.onRestore?.();
         await sleep(this.fadeMs);
         const r = this.find(a.restored.id);
@@ -243,6 +305,18 @@ export class BoardModel {
         }
       }
     }
+  }
+
+  /** Frozen flags once `steps` are played on the displayed pieces (pieces
+   * they capture have none, so they keep their marks as they fade out). */
+  private frozenAfter(steps: AnimStep[]): Map<number, boolean> {
+    let after: { id: number; piece: Piece; square: Square }[] = this.pieces;
+    for (const a of steps) {
+      after = [...after, ...(a.restored ? [a.restored] : [])]
+        .filter((p) => p.id !== a.captured?.id)
+        .map((p) => ({ ...p, square: p.id === a.id ? a.to : p.square }));
+    }
+    return frozenFlags(after);
   }
 
   /** Puts a piece back on `square` without a transition, ready to slide again. */

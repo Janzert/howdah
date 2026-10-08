@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnimStep } from '../bindings/AnimStep';
+import type { Color } from '../bindings/Color';
+import type { PieceKind } from '../bindings/PieceKind';
 import type { PieceView } from '../bindings/PieceView';
 import { BoardModel, INSTANT_GAP_MS, MAX_BEHIND, ROUTE_STEP_MS, STEP_MS } from './boardModel.svelte';
 
@@ -45,6 +47,87 @@ describe('BoardModel', () => {
     await vi.advanceTimersByTimeAsync(3 * STEP_MS);
     expect(onRestore).toHaveBeenCalledTimes(1);
     expect(m.pieces.map((p) => p.square)).toEqual([16]);
+  });
+
+  it('changes frozen marks only on the step that changes them', async () => {
+    const pv = (id: number, color: Color, kind: PieceKind, square: number, frozen = false): PieceView => ({
+      id,
+      piece: { color, kind },
+      square,
+      frozen,
+    });
+    const slide = (id: number, from: number, to: number, mover: Color): AnimStep => ({
+      id,
+      from,
+      to,
+      captured: null,
+      restored: null,
+      mover,
+    });
+    const m = new BoardModel();
+    const rabbitFrozen = () => m.find(1)!.frozen;
+
+    // The gold rabbit d4, frozen by the silver camel d5, is pushed by the
+    // silver horse e4 to c4, beside the silver elephant c5: frozen throughout.
+    const camel = pv(2, 'silver', 'camel', 35);
+    const elephant = pv(3, 'silver', 'elephant', 34);
+    m.snap([pv(1, 'gold', 'rabbit', 27, true), camel, elephant, pv(4, 'silver', 'horse', 28)]);
+    m.apply(
+      [pv(1, 'gold', 'rabbit', 26, true), camel, elephant, pv(4, 'silver', 'horse', 27)],
+      [slide(1, 27, 26, 'silver'), slide(4, 28, 27, 'silver')],
+    );
+    expect(rabbitFrozen()).toBe(true);
+    await vi.advanceTimersByTimeAsync(STEP_MS);
+    expect(rabbitFrozen()).toBe(true);
+    await vi.advanceTimersByTimeAsync(2 * STEP_MS);
+
+    // A gold dog walks up beside it: freed on the dog's second step.
+    m.snap([pv(1, 'gold', 'rabbit', 26, true), elephant, pv(5, 'gold', 'dog', 16)]);
+    m.apply(
+      [pv(1, 'gold', 'rabbit', 26), elephant, pv(5, 'gold', 'dog', 25)],
+      [slide(5, 16, 24, 'gold'), slide(5, 24, 25, 'gold')],
+    );
+    expect(rabbitFrozen()).toBe(true);
+    await vi.advanceTimersByTimeAsync(STEP_MS);
+    expect(rabbitFrozen()).toBe(false);
+  });
+
+  it('changes frozen marks once for both steps of a push or pull', async () => {
+    const pv = (id: number, color: Color, kind: PieceKind, square: number): PieceView => ({
+      id,
+      piece: { color, kind },
+      square,
+      frozen: false,
+    });
+    const slide = (id: number, from: number, to: number): AnimStep => ({
+      id,
+      from,
+      to,
+      captured: null,
+      restored: null,
+      mover: 'silver',
+    });
+    const m = new BoardModel();
+    const rabbitFrozen = () => m.find(1)!.frozen;
+    const elephant = (sq: number) => pv(2, 'silver', 'elephant', sq);
+
+    // The silver elephant d5 pulls the frozen gold rabbit d4 up to d5: apart
+    // between the steps, but frozen before and after.
+    m.snap([{ ...pv(1, 'gold', 'rabbit', 27), frozen: true }, elephant(35)]);
+    m.apply([{ ...pv(1, 'gold', 'rabbit', 35), frozen: true }, elephant(43)], [slide(2, 35, 43), slide(1, 27, 35)]);
+    expect(rabbitFrozen()).toBe(true);
+    await vi.advanceTimersByTimeAsync(STEP_MS);
+    expect(rabbitFrozen()).toBe(true);
+    await vi.advanceTimersByTimeAsync(2 * STEP_MS);
+
+    // It pushes the rabbit d5 to c5, leaving a gold cat c4 beside it: freed
+    // as the push starts.
+    m.snap([{ ...pv(1, 'gold', 'rabbit', 35), frozen: true }, elephant(43), pv(3, 'gold', 'cat', 26)]);
+    m.apply(
+      [pv(1, 'gold', 'rabbit', 34), elephant(35), pv(3, 'gold', 'cat', 26)],
+      [slide(1, 35, 34), slide(2, 43, 35)],
+    );
+    expect(rabbitFrozen()).toBe(false);
   });
 
   it('animates a move and settles on the final position', async () => {

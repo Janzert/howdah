@@ -420,9 +420,14 @@
         >
           <g class="glyph" class:fade-out={p.fading === 'out'} class:fade-in={p.fading === 'in'}>
             <PieceGlyph piece={p.piece} {theme} />
-            {#if p.frozen && !model.animating}
-              <!-- A frosted copy over the piece. -->
-              <g class="frozen" filter="url(#{frozenFilter})" transition:fade={{ duration: model.fadeMs }}>
+            {#if p.frozen}
+              <!-- A frosted copy over the piece. It fades with the step that
+                   freezes or frees the piece and otherwise moves with it. -->
+              <g
+                class="frozen"
+                filter="url(#{frozenFilter})"
+                transition:fade={{ duration: model.animating ? model.stepMs : model.fadeMs }}
+              >
                 <PieceGlyph piece={p.piece} {theme} />
               </g>
             {/if}

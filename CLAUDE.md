@@ -471,6 +471,11 @@ Howdah plays and watches games on arimaa.com.
   - `lib/events.ts`: typed `on()`. It drops events from other sessions.
   - `lib/board/`: SVG board. `BoardModel` plays `AnimStep`s: slide, then
     fade out on capture, with fade-in for restored pieces going backward.
+    Frozen marks stay on through an animation: each step, or a push's or
+    pull's two steps together (`frozenUnits`), works out the flags after
+    it from the displayed pieces (`frozenFlags`, display only), so a mark
+    fades only with the step that freezes or frees its piece, and the
+    backend's flags settle the board at the end.
     - Drag-to-route: `DragPath` records the squares the pointer crosses
       (cutting back on revisits, subdividing fast moves). The board previews
       `plan_route` while dragging, and a drop calls `try_route`, which always
