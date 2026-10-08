@@ -540,7 +540,8 @@ Howdah plays and watches games on arimaa.com.
       as `sound: <name>` (`console.debug`), silent ones included.
       A match starting plays gameStart; the game ending plays timeout
       for a loss on time, else loss when the lone human player lost,
-      otherwise win. yourTurn is for a player who doesn't see the
+      otherwise win, once the final move has animated, with the game-end
+      dialog (`gameEndSound`; at once in a hidden window). yourTurn is for a player who doesn't see the
       opponent's move (or setup) come in: with the window unfocused it
       plays after the move's animation (`yourTurnPending`; at once if
       the window is hidden, where animations wait), and away from the

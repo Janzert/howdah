@@ -31,7 +31,7 @@
   import { settings, type HoverInput } from './lib/settings.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
   import { shortcutFor, type ShortcutId } from './lib/shortcuts';
-  import { play, setMuted, setThemeSounds, setVolume, unlockOnInteraction } from './lib/sound';
+  import { play, setMuted, setThemeSounds, setVolume, type SoundName, unlockOnInteraction } from './lib/sound';
   import { findTheme } from './lib/theme';
   import TurnBar from './lib/TurnBar.svelte';
   import type { GameroomGames } from './lib/bindings/GameroomGames';
@@ -83,6 +83,8 @@
   let showGameEnd = $state(false);
   // The your-turn sound waits for the opponent's move to be shown.
   let yourTurnPending = $state(false);
+  // The game-end sound waits for the final move too, with the dialog.
+  let gameEndSound: SoundName | null = null;
   /** The last match started from the new-game dialog, for a rematch. */
   let lastSpec = $state<MatchSpec | null>(null);
   let engines = $state<EngineSpec[]>([]);
@@ -168,9 +170,12 @@
       // A new game (or going back) drops an announcement not yet made.
       gameEndPending = false;
       showGameEnd = false;
+      gameEndSound = null;
     } else if (gameEndPending && !model.animating) {
       gameEndPending = false;
       showGameEnd = true;
+      if (gameEndSound) play(gameEndSound);
+      gameEndSound = null;
     }
   });
 
@@ -239,8 +244,10 @@
       model.apply(u.view.position.pieces, u.animation, animHooks(u.view.turn != null), u.animationBudgetMs);
       if (ended) {
         const human = loneHuman(u.view);
-        if (u.view.result?.reason === 'timeout') play('timeout');
-        else play(human && u.view.result?.winner !== human ? 'loss' : 'win');
+        const sound = u.view.result?.reason === 'timeout' ? 'timeout' : human && u.view.result?.winner !== human ? 'loss' : 'win';
+        // A hidden window doesn't animate until it's shown, so it plays now.
+        if (document.hidden) play(sound);
+        else gameEndSound = sound;
         gameEndPending = true;
       }
       const awaitsUser =
