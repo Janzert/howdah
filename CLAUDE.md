@@ -588,7 +588,8 @@ Howdah plays and watches games on arimaa.com.
     help's mouse section is a list in `HelpDialog.svelte`.
   - `lib/theme.ts` plus `themes/<dir>/*.theme.json`: data-driven themes
     (image or procedural board/pieces).
-  - `lib/settings.svelte.ts`: display preferences (theme, coordinates,
+  - `lib/settings.svelte.ts`: display preferences (light/dark appearance,
+    applied by `lib/appearance.ts`; theme, coordinates,
     sound and volume, animation speed (`stepMs`, the board's base speed),
     hover input, and `humanAtBottom`, which turns the board when a match
     with one human side starts) as one reactive `settings` object,

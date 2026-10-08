@@ -11,11 +11,14 @@ export type HoverInput = 'off' | 'arrows' | 'step';
 /** Times in the move list: none, each move's time, or the time from the
  * start of the game to each move. */
 export type MoveTimes = 'off' | 'move' | 'game';
+/** Light or dark colors, or whichever the system prefers. */
+export type Appearance = 'system' | 'light' | 'dark';
 
 /** The slowest step animation the setting allows, in ms. */
 export const MAX_STEP_MS = 600;
 
 export interface SettingsData {
+  appearance: Appearance;
   theme: string;
   /** Board labels: none, the four trap squares, or files and ranks along the edges. */
   coordinates: Coordinates;
@@ -38,6 +41,7 @@ export interface SettingsData {
 const KEY = 'settings';
 
 export const DEFAULTS: SettingsData = {
+  appearance: 'system',
   theme: findTheme(null).id,
   coordinates: 'traps',
   sound: true,
@@ -70,6 +74,9 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   } catch {
     /* defaults */
   }
+  if (raw.appearance === 'system' || raw.appearance === 'light' || raw.appearance === 'dark') {
+    s.appearance = raw.appearance;
+  }
   if (typeof raw.theme === 'string') s.theme = raw.theme;
   if (raw.coordinates === 'none' || raw.coordinates === 'traps' || raw.coordinates === 'all') {
     s.coordinates = raw.coordinates;
@@ -96,6 +103,12 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
 class Settings {
   #data = $state<SettingsData>(parse(read(KEY), { theme: read('theme'), muted: read('muted') }));
 
+  get appearance() {
+    return this.#data.appearance;
+  }
+  set appearance(v: Appearance) {
+    this.update({ appearance: v });
+  }
   get theme() {
     return this.#data.theme;
   }

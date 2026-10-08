@@ -12,6 +12,7 @@ describe('settings parse', () => {
   it('keeps valid values and drops invalid ones', () => {
     const s = parse(
       JSON.stringify({
+        appearance: 'dark',
         coordinates: 'all',
         sound: false,
         theme: 'placeholder',
@@ -26,6 +27,7 @@ describe('settings parse', () => {
       none,
     );
     expect(s).toEqual({
+      appearance: 'dark',
       theme: 'placeholder',
       coordinates: 'all',
       sound: false,
@@ -38,7 +40,7 @@ describe('settings parse', () => {
       moveTimes: 'game',
     });
     const bad = parse(
-      JSON.stringify({ coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3, volume: 'loud', moveTimes: 'all' }),
+      JSON.stringify({ appearance: 'dim', coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3, volume: 'loud', moveTimes: 'all' }),
       none,
     );
     expect(bad).toEqual(DEFAULTS);

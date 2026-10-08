@@ -28,6 +28,7 @@ Gatekeeper.
   included.
 - Clocks colored by the time left for the turn, as on arimaa.com.
 - Sounds for game events, including per-theme board sounds.
+- Light and dark colors, following the system or chosen in Settings.
 
 ### Engines
 

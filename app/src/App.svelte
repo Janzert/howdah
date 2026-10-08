@@ -5,6 +5,7 @@
   import { api, errorMessage } from './lib/api';
   import type { AnalysisLine } from './lib/bindings/AnalysisLine';
   import type { AnalysisView } from './lib/bindings/AnalysisView';
+  import { setAppearance } from './lib/appearance';
   import { requestAttention } from './lib/attention';
   import type { Color } from './lib/bindings/Color';
   import type { EngineSpec } from './lib/bindings/EngineSpec';
@@ -207,6 +208,7 @@
   });
 
   $effect(() => savePref('flipped', flipped ? '1' : '0'));
+  $effect(() => setAppearance(settings.appearance));
   $effect(() => setMuted(!settings.sound));
   $effect(() => setVolume(settings.volume));
   $effect(() => setThemeSounds(theme.sounds ?? {}));

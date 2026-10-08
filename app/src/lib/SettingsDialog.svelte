@@ -1,6 +1,6 @@
 <script lang="ts">
   // Display preferences. Changes apply immediately and are saved as they're made.
-  import { MAX_STEP_MS, settings, type Coordinates, type HoverInput } from './settings.svelte';
+  import { MAX_STEP_MS, settings, type Appearance, type Coordinates, type HoverInput } from './settings.svelte';
   import { play } from './sound';
   import { findTheme, themes } from './theme';
 
@@ -11,6 +11,12 @@
   $effect(() => {
     dialog.showModal();
   });
+
+  const appearanceChoices: { value: Appearance; label: string }[] = [
+    { value: 'system', label: 'System' },
+    { value: 'light', label: 'Light' },
+    { value: 'dark', label: 'Dark' },
+  ];
 
   const coordinateChoices: { value: Coordinates; label: string }[] = [
     { value: 'none', label: 'None' },
@@ -38,6 +44,21 @@
 
 <dialog bind:this={dialog} onclose={onClose} aria-labelledby="settings-title">
   <h2 id="settings-title">Settings</h2>
+
+  <section>
+    <h3>Display</h3>
+    <fieldset class="row">
+      <legend>Appearance</legend>
+      <div class="choices">
+        {#each appearanceChoices as c (c.value)}
+          <label>
+            <input type="radio" name="appearance" value={c.value} bind:group={settings.appearance} />
+            {c.label}
+          </label>
+        {/each}
+      </div>
+    </fieldset>
+  </section>
 
   <section>
     <h3>Board</h3>
