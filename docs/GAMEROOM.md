@@ -135,10 +135,12 @@ architecture. Decided and checked against the live server in October 2026.
   game-end dialog offers only analysis and review, and the seat keeps
   following the table's chat (the server keeps it open after the end and
   wakes the long poll for each line). When the server stops answering
-  for the table (it clears finished tables away, perhaps sooner for
-  event games), the chat closes with a note instead of the message box; the lines stay
+  for the table, the chat closes with a note instead of the message box; the lines stay
   (chat only grows, so a state with fewer lines, like a finished game's
-  page, never replaces them).
+  page, never replaces them). The server seems to clear a finished
+  table a minute or two after both players are away ("Invalid Session
+  Id"), and to keep it while one stays (5+ minutes seen). So the chat's
+  poll also gets a full state after a lost connection, to stay present.
   The game's panel offers a new open game with the same time control and
   rating, as either side, which leaves the table.
 - **No analysis while playing** (see `ANALYSIS.md`), postal games included,
@@ -173,7 +175,11 @@ architecture. Decided and checked against the live server in October 2026.
 - Network errors keep their causes ("error sending request: … connection
   reset"), without the URL, which may carry a session id.
 - After the computer sleeps (the wall clock runs ahead of the monotonic
-  one), the old poll is dropped for a full state.
+  one), the old poll is dropped for a full state. A lost connection also
+  ends with a full state: the server marks a seat away when its polls
+  stop, and only a `gamestate` marks it present again (long polls and
+  moves don't), so without it the opponent would see the user as away
+  for the rest of the game.
 - A move that failed to send is checked against the state before it's sent
   again, and not resent while the state can't be checked.
 

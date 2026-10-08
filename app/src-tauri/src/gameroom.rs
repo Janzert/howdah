@@ -1136,7 +1136,9 @@ async fn follow(
     // Whether a failed poll may be sent again at once (see below).
     let mut retry_at_once = true;
     let mut sleep_watch = SleepWatch::new();
-    // After a sleep, the full state instead of waiting on the old poll.
+    // After a sleep or a lost connection, the full state instead of a long
+    // poll. The server marks a seat away when its polls stop, and only a
+    // `gamestate` marks it present again; long polls and moves don't.
     let mut resync = false;
     loop {
         let polled = if std::mem::take(&mut resync) {
@@ -1177,9 +1179,11 @@ async fn follow(
             Err(Error::Network(_)) if std::mem::take(&mut retry_at_once) => continue,
             Err(Error::Network(_)) => {
                 cap = NETWORK_BACKOFF;
+                resync = true;
                 set_state(&target, &view, WatchState::Reconnecting, Some(CONNECTION_LOST.into()));
             }
             Err(e @ (Error::Status(_) | Error::BadReply(_))) => {
+                resync = true;
                 set_state(&target, &view, WatchState::Reconnecting, Some(e.to_string()));
             }
             Err(e @ (Error::Server(_) | Error::Refused | Error::Expired)) if reseats < MAX_RESEATS => {
@@ -1303,11 +1307,20 @@ async fn complete_record(
 /// closes the chat rather than taking a new seat.
 async fn follow_chat(mut server: GameServer, target: Target, generation: u64, view: Arc<Mutex<WatchView>>) {
     let mut backoff = Duration::from_secs(1);
+    // After a lost connection, a `gamestate` to be marked present again
+    // (see `follow`): the server seems to clear a finished table once both
+    // players are away.
+    let mut resync = false;
     loop {
         if lock(&target.session).generation() != generation {
             return;
         }
-        match server.update(MAXWAIT).await {
+        let polled = if std::mem::take(&mut resync) {
+            server.game_state().await
+        } else {
+            server.update(MAXWAIT).await
+        };
+        match polled {
             Ok(state) => {
                 backoff = Duration::from_secs(1);
                 let mut v = lock(&view);
@@ -1319,9 +1332,11 @@ async fn follow_chat(mut server: GameServer, target: Target, generation: u64, vi
                 }
                 continue;
             }
+            Err(Error::Empty) => {}
             // A dropped connection: try again.
-            Err(Error::Empty | Error::Network(_)) => {}
-            Err(_) => {
+            Err(Error::Network(_)) => resync = true,
+            Err(e) => {
+                eprintln!("gameroom: chat closed for game {}: {e}", lock(&view).gid);
                 close_chat(&target, &view);
                 return;
             }
