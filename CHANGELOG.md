@@ -7,7 +7,7 @@ young).
 
 ## [Unreleased]
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-10-08
 
 The first release, with installers for Linux (AppImage, deb, rpm),
 Windows (MSI and NSIS setup) and macOS (dmg, signed ad hoc). None are
