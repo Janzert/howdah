@@ -533,11 +533,10 @@ Howdah plays and watches games on arimaa.com.
       ownLoss, restore) default to `sounds/board/`, mixed from Kenney CC0
       samples (`preset.json` beside them has the settings); a theme's `sounds` replaces any of them
       (`setThemeSounds`, from `App.svelte`), and each play varies their
-      pitch by up to ±8% (`BOARD_VARIATION`). The others are app-wide
-      and fixed in pitch: any `sounds/app/<event>.wav` is used, and an
-      event without one falls back to an older sound (`fallbacks`) or is
-      silent. Dev builds log each event
-      as `sound: <name>` (`console.debug`), silent ones included.
+      pitch by up to ±8% (`BOARD_VARIATION`). The other twelve are
+      app-wide and fixed in pitch, one `sounds/app/<event>.wav` each (a
+      test in `wav.test.ts` checks none is missing). Dev builds log each
+      event as `sound: <name>` (`console.debug`).
       A match starting plays gameStart; the game ending plays timeout
       for a loss on time, else loss when the lone human player lost,
       otherwise win, once the final move has animated, with the game-end

@@ -63,6 +63,12 @@ describe('decodeWav', () => {
     }
   });
 
+  it('has a sound for every app-wide event', () => {
+    const files = Object.keys(import.meta.glob('../sounds/app/*.wav')).map((p) => p.slice(p.lastIndexOf('/') + 1));
+    const events = ['setupDone', 'illegal', 'yourTurn', 'gameStart', 'win', 'loss', 'timeout', 'tick', 'join', 'leave', 'chat', 'notification'];
+    expect(files.sort()).toEqual(events.map((e) => `${e}.wav`).sort());
+  });
+
   it('decodes 16-bit stereo', () => {
     // 2 frames of 16-bit stereo: (0, 32767), (-32768, 0)
     const header = (dataSize: number) => {

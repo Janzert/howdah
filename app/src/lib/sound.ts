@@ -3,8 +3,7 @@
 // CC0 samples (`sounds/board/ATTRIBUTION.md`), and a theme can replace any
 // of them (`setThemeSounds`); each play varies their pitch a little so
 // repeated steps don't sound mechanical. The rest are app-wide, from
-// `sounds/app/` (made the same way, one file per event, named after it);
-// an event without a file there yet falls back to an older sound or none.
+// `sounds/app/` (made the same way, one file per event, named after it).
 // Whether sound is on and its volume are settings (settings.svelte.ts); the
 // app passes them in with `setMuted` and `setVolume`.
 //
@@ -19,10 +18,6 @@ import lastStep from '../sounds/board/lastStep.wav?inline';
 import ownLoss from '../sounds/board/ownLoss.wav?inline';
 import restore from '../sounds/board/restore.wav?inline';
 import step from '../sounds/board/step.wav?inline';
-import drop2 from '../sounds/classic/Drop2.wav?inline';
-import elephantStep from '../sounds/classic/elephantStep.wav?inline';
-import metal2 from '../sounds/classic/Metal2_3.wav?inline';
-import win from '../sounds/classic/win.wav?inline';
 import { dataUrlBytes, decodeWav } from './wav';
 
 /** The events that make a sound. */
@@ -55,24 +50,10 @@ const BOARD_VARIATION = 0.08;
 
 const boardDefaults: Record<BoardSoundName, string> = { step, lastStep, capture, ownLoss, restore };
 
-// What an app-wide event plays until `sounds/app/` has its own file.
-// TODO(sounds): drop these as the sound rework fills `sounds/app/`.
-const fallbacks: Partial<Record<SoundName, string>> = {
-  setupDone: lastStep,
-  yourTurn: lastStep,
-  gameStart: win,
-  win: drop2,
-  loss: elephantStep,
-  timeout: elephantStep,
-  tick: metal2,
-};
 const appFiles = import.meta.glob<string>('../sounds/app/*.wav', { eager: true, query: '?inline', import: 'default' });
-const appSounds: Partial<Record<SoundName, string>> = {
-  ...fallbacks,
-  ...Object.fromEntries(
-    Object.entries(appFiles).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1, -'.wav'.length), url]),
-  ),
-};
+const appSounds: Partial<Record<SoundName, string>> = Object.fromEntries(
+  Object.entries(appFiles).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1, -'.wav'.length), url]),
+);
 
 /** Each event's WAV, as a data URL: the app's, with the theme's board sounds. */
 let sources: Partial<Record<SoundName, string>> = { ...appSounds, ...boardDefaults };
