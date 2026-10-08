@@ -2,8 +2,9 @@
 // last step, captures and a capture undone) are made in the sound lab from
 // CC0 samples (`sounds/board/ATTRIBUTION.md`), and a theme can replace any
 // of them (`setThemeSounds`); each play varies their pitch a little so
-// repeated steps don't sound mechanical. The rest are app-wide and still
-// from the classic arimaa.com set until the sound rework reaches them.
+// repeated steps don't sound mechanical. The rest are app-wide, from
+// `sounds/app/` (made the same way, one file per event, named after it);
+// an event without a file there yet falls back to an older sound or none.
 // Whether sound is on and its volume are settings (settings.svelte.ts); the
 // app passes them in with `setMuted` and `setVolume`.
 //
@@ -54,9 +55,9 @@ const BOARD_VARIATION = 0.08;
 
 const boardDefaults: Record<BoardSoundName, string> = { step, lastStep, capture, ownLoss, restore };
 
-// TODO(sounds): the sound rework gives every event its own sound; until
-// then the new events are silent or borrow another one.
-const appSounds: Partial<Record<SoundName, string>> = {
+// What an app-wide event plays until `sounds/app/` has its own file.
+// TODO(sounds): drop these as the sound rework fills `sounds/app/`.
+const fallbacks: Partial<Record<SoundName, string>> = {
   setupDone: lastStep,
   yourTurn: lastStep,
   gameStart: win,
@@ -64,6 +65,13 @@ const appSounds: Partial<Record<SoundName, string>> = {
   loss: elephantStep,
   timeout: elephantStep,
   tick: metal2,
+};
+const appFiles = import.meta.glob<string>('../sounds/app/*.wav', { eager: true, query: '?inline', import: 'default' });
+const appSounds: Partial<Record<SoundName, string>> = {
+  ...fallbacks,
+  ...Object.fromEntries(
+    Object.entries(appFiles).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1, -'.wav'.length), url]),
+  ),
 };
 
 /** Each event's WAV, as a data URL: the app's, with the theme's board sounds. */

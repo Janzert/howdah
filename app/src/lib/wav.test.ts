@@ -47,8 +47,8 @@ describe('decodeWav', () => {
     }
   });
 
-  it('decodes the board sounds', () => {
-    const board = import.meta.glob<string>(['../sounds/board/*.wav', '../themes/**/*.wav'], {
+  it('decodes the board and app sounds', () => {
+    const board = import.meta.glob<string>(['../sounds/board/*.wav', '../sounds/app/*.wav', '../themes/**/*.wav'], {
       eager: true,
       query: '?inline',
       import: 'default',

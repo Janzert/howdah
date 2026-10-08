@@ -11,7 +11,7 @@
    "offsetMs": 15,
    "lengthMs": 80,
    "rate": 1,
-   "levelDb": -14,
+   "levelDb": -12,
    "highpass": 300,
    "lowpass": 7000,
    "rough": 0.27,
@@ -21,14 +21,14 @@
   "click": {
    "file": "chip-lay-2.ogg",
    "rate": 0.6,
-   "levelDb": -12,
+   "levelDb": -10,
    "lowpass": 16000,
    "overlapMs": -23
   },
   "last": {
    "file": "chip-lay-2.ogg",
    "rate": 0.5,
-   "levelDb": -10,
+   "levelDb": -6,
    "lowpass": 16000
   },
   "captureSlide": true,
