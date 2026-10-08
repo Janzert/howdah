@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import { api } from './api';
   import { formatClock, formatShort } from './clock';
-  import { settings, type MoveTimes } from './settings.svelte';
+  import { settings } from './settings.svelte';
   import type { MoveNodeView } from './bindings/MoveNodeView';
   import type { NodeId } from './bindings/NodeId';
   import type { SessionView } from './bindings/SessionView';
@@ -42,14 +42,6 @@
     observer.observe(list);
     return () => observer.disconnect();
   });
-
-  const TIMES_NEXT: Record<MoveTimes, MoveTimes> = { off: 'move', move: 'game', game: 'off' };
-  const TIMES_LABEL: Record<MoveTimes, string> = { off: 'Times', move: 'Move time', game: 'Game time' };
-  const TIMES_TITLE: Record<MoveTimes, string> = {
-    off: 'Show each move\'s time',
-    move: 'Showing the time each move took; click for the time into the game',
-    game: 'Showing the time into the game at each move; click to hide times',
-  };
 
   /** The move's time in the chosen mode, or null when it isn't known. */
   function timeOf(m: MoveNodeView): number | null {
@@ -110,12 +102,6 @@
       {#if settings.moveTimes !== 'off'}<span class="time"></span>{/if}
       <span class="label">start</span>
     </button>
-    <button
-      class="times"
-      class:on={settings.moveTimes !== 'off'}
-      title={TIMES_TITLE[settings.moveTimes]}
-      onclick={() => (settings.moveTimes = TIMES_NEXT[settings.moveTimes])}>{TIMES_LABEL[settings.moveTimes]}</button
-    >
     {#if view.gameComment}<div class="comment game">{view.gameComment}</div>{/if}
   </li>
   {#each view.tree as m (m.id)}
@@ -273,40 +259,17 @@
     --time-col: 0px;
   }
   .moves.timed {
-    --time-col: calc(4.4em + 8px);
+    --time-col: calc(3.2em + 8px);
   }
   .time {
-    flex: 0 0 4.4em;
+    /* Wide enough for formatShort's five characters. */
+    flex: 0 0 3.2em;
     text-align: right;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
   }
   .current .time {
     color: inherit;
-  }
-  .start {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .start > .move {
-    flex: 1;
-  }
-  .times {
-    flex: none;
-    padding: 1px 6px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: none;
-    color: var(--muted);
-    font: 11px system-ui, sans-serif;
-    cursor: pointer;
-  }
-  .times:hover {
-    background: var(--hover);
-  }
-  .times.on {
-    color: var(--text);
   }
   .current .label {
     color: inherit;

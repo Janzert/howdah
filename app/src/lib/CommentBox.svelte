@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { api } from './api';
+  import { settings, type MoveTimes } from './settings.svelte';
   import type { NodeId } from './bindings/NodeId';
   import type { SessionView } from './bindings/SessionView';
 
@@ -20,6 +21,15 @@
     { n: 5, symbol: '!?', title: 'Interesting move' },
     { n: 6, symbol: '?!', title: 'Dubious move' },
   ];
+
+  /** The move list's time column, cycled by the button beside Annotate. */
+  const TIMES_NEXT: Record<MoveTimes, MoveTimes> = { off: 'move', move: 'game', game: 'off' };
+  const TIMES_LABEL: Record<MoveTimes, string> = { off: 'Times: off', move: 'Times: per move', game: 'Times: elapsed' };
+  const TIMES_TITLE: Record<MoveTimes, string> = {
+    off: "Click to show each move's time",
+    move: 'Showing the time each move took; click for the time into the game',
+    game: 'Showing the time into the game at each move; click to hide times',
+  };
 
   const move = $derived(view.tree.find((m) => m.id === view.cursor) ?? null);
 
@@ -70,6 +80,13 @@
   }
 </script>
 
+<div class="below-moves">
+<button
+  class="times"
+  class:on={settings.moveTimes !== 'off'}
+  title={TIMES_TITLE[settings.moveTimes]}
+  onclick={() => (settings.moveTimes = TIMES_NEXT[settings.moveTimes])}>{TIMES_LABEL[settings.moveTimes]}</button
+>
 <details class="annotate">
   <summary>Annotate</summary>
   {#if move}
@@ -97,8 +114,31 @@
     {onkeydown}
   ></textarea>
 </details>
+</div>
 
 <style>
+  /* The times button sits on the Annotate line, at its right end. */
+  .below-moves {
+    position: relative;
+  }
+  .times {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: none;
+    color: var(--muted);
+    font: 11px system-ui, sans-serif;
+    cursor: pointer;
+  }
+  .times:hover {
+    background: var(--hover);
+  }
+  .times.on {
+    color: var(--text);
+  }
   .annotate[open] {
     display: flex;
     flex-direction: column;
