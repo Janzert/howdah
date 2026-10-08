@@ -34,7 +34,11 @@ Howdah plays and watches games on arimaa.com.
   - `setup`, `outcome` (goal, elimination, immobilization; `WinReason` also
     covers timeout/resignation/illegal move/score/forfeit, with arimaa.com
     letters), `timecontrol` (`M/R/P/L/G/T` format and reserve arithmetic,
-    ported from pyrimaa `util.py`), `notation` (syntax only), and
+    ported from pyrimaa `util.py`, plus the one-minute setup rule from
+    `matchRules.html`: with under a minute per move the setup gets a
+    minute, overtime comes out of the reserve, and unused setup time is
+    never added; `setup_allowance`, `reserve_after_setup`; pyrimaa
+    doesn't charge setup overtime to the reserve), `notation` (syntax only), and
     `game::Game`: moves plus cached positions per ply. It rejects third
     repetitions, and a player whose only moves would all be third
     repetitions is immobilized (`outcome_with_history`, from
@@ -658,6 +662,13 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
   run stops if the tag doesn't match them all. Run by hand, it only
   keeps the installers as artifacts. No code signing (macOS is signed ad
   hoc, `bundle.macOS.signingIdentity`) and no auto-updater yet.
+- To release: bump the version (not needed for the first, `v0.1.0`),
+  push a `v*` tag, look over the draft and publish it.
+- App icon: the master is `app/src-tauri/app-icon.svg` (an elephant
+  carrying a howdah; the blanket shows a board's edge and its four
+  traps). Render it to `app-icon.png` (1024 px), then run
+  `npx tauri icon src-tauri/app-icon.png` in `app/` to remake `icons/`,
+  and delete the `android/` and `ios/` directories it also writes.
 - Linux system packages: see README.md (WebKitGTK 4.1 is the essential one).
 - TypeScript is pinned to 6.x because svelte-check doesn't support TS 7 yet.
 - Tauri 3 is in alpha; stay on 2.x.

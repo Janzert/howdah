@@ -157,3 +157,25 @@ user picks. The design:
 - **Engines added by path** keep working as before, with no manifest.
 - Engine-specific behaviour (`Profile`) stays in code, keyed by the
   engine's `id name`, not in manifests.
+
+## Engine releases
+
+Sharp ([arimaasharp](https://github.com/Janzert/arimaasharp)) and
+[OpFor](https://github.com/Janzert/OpFor) each have a
+`.github/workflows/release.yml`. A `v*` tag builds Linux (on Ubuntu
+22.04), Windows and macOS arm64, smoke-tests each build over AEI (Sharp
+also runs its self-tests), packages `<engine>/<program>` with the
+LICENSE and README, writes `engine.json` with the digests, publishes the
+release, and downloads the files back to check them. Run by hand
+(`workflow_dispatch`), it publishes nothing.
+
+- **Versions** are the release date, `vYYYY.M.D` without zero padding
+  (`v2026.10.6`; a fourth number for a second release that day), echoing
+  championship names such as bot_OpFor2010. Zero padding would break
+  semver parsers, and PEP 440 normalizes it away.
+- **Portability:** the Linux builds need glibc 2.34 or later (Ubuntu
+  22.04, Debian 12, RHEL 9). Sharp links the C runtime statically on
+  Windows and libstdc++ statically on Linux, so neither Windows build
+  needs the VC++ runtime DLLs. There's no macOS x86_64 build: macOS 27 is
+  Apple Silicon only.
+- Sharp's workflow is packaging only, with no change to its source.
