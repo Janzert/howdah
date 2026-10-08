@@ -30,14 +30,16 @@ export function newOpponentChat(prev: WatchView | null, next: WatchView): WatchV
 }
 
 /** The sounds for a change at the user's seat from `prev` to `next` (the
- * same game): the opponent sitting down, leaving or coming back, their
- * chat, and the server refusing the user's move. */
+ * same game): the opponent sitting down, leaving or coming back (also at
+ * the table after the game, while its chat is open), their chat, and the
+ * server refusing the user's move. */
 export function watchSounds(prev: WatchView | null, next: WatchView): SoundName[] {
   const side = next.side;
   if (side == null || prev?.gid !== next.gid) return [];
   const sounds: SoundName[] = [];
   const opponent = side === 'gold' ? 1 : 0;
-  if (next.state === 'following') {
+  const afterGame = next.state === 'ended' && prev.state === 'ended' && next.chatOpen;
+  if (next.state === 'following' || afterGame) {
     if (prev.waiting && !next.waiting) sounds.push('join');
     else if (!next.waiting && prev.away[opponent] !== next.away[opponent]) {
       sounds.push(next.away[opponent] ? 'leave' : 'join');

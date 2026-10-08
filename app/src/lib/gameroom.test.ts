@@ -68,6 +68,13 @@ describe('watchSounds', () => {
     expect(watchSounds(seat(), seat({ state: 'ended', away: [false, true] }))).toEqual([]);
   });
 
+  it('plays leave and join at the table after the game, while its chat is open', () => {
+    const ended = (over: Partial<WatchView> = {}) => seat({ state: 'ended', chatOpen: true, ...over });
+    expect(watchSounds(ended(), ended({ away: [false, true] }))).toEqual(['leave']);
+    expect(watchSounds(ended({ away: [false, true] }), ended())).toEqual(['join']);
+    expect(watchSounds(ended(), ended({ chatOpen: false, away: [false, true] }))).toEqual([]);
+  });
+
   it('plays a refused move once, and chat', () => {
     expect(watchSounds(seat(), seat({ refused: 'Illegal move' }))).toEqual(['illegal']);
     expect(watchSounds(seat({ refused: 'Illegal move' }), seat({ refused: 'Illegal move' }))).toEqual([]);
