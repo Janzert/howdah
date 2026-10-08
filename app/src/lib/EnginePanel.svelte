@@ -74,7 +74,10 @@
   function scrollToEnd(node: HTMLElement, _lines: unknown) {
     const go = () => (node.scrollTop = node.scrollHeight);
     go();
-    return { update: go };
+    // The log starts folded away, with nothing to scroll until it opens.
+    const details = node.closest('details');
+    details?.addEventListener('toggle', go);
+    return { update: go, destroy: () => details?.removeEventListener('toggle', go) };
   }
 </script>
 
@@ -100,11 +103,14 @@
       {#if s.pv.length}
         <div class="pv" title="principal variation">{s.pv.join('  |  ')}</div>
       {/if}
-      <div class="log" use:scrollToEnd={s.lines.length}>
-        {#each s.lines as line, i (i)}
-          <div class="line {line.kind}">{line.text}</div>
-        {/each}
-      </div>
+      <details>
+        <summary>Log</summary>
+        <div class="log" use:scrollToEnd={s.lines.length}>
+          {#each s.lines as line, i (i)}
+            <div class="line {line.kind}">{line.text}</div>
+          {/each}
+        </div>
+      </details>
     </section>
   {/each}
 </div>
@@ -173,6 +179,11 @@
     font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
     font-size: 11px;
     word-break: break-word;
+  }
+  details summary {
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
   }
   .log {
     font-family: ui-monospace, 'DejaVu Sans Mono', monospace;

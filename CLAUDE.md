@@ -408,8 +408,8 @@ Howdah plays and watches games on arimaa.com.
     a `MiniBoard` hover preview, engine log), `EvalBar.svelte` beside the
     board, and the PV's first turn drawn by `LastMoveLayer` with `pv`.
     `lib/analysis.ts` formats evals and picks the engine.
-  - `CommentBox.svelte`, under the move list, edits the shown move's
-    comment (the game comment at the start; saved on blur or Ctrl+Enter,
+  - `CommentBox.svelte`, under the move list (folded away until opened),
+    edits the shown move's comment (the game comment at the start; saved on blur or Ctrl+Enter,
     Esc reverts) and toggles its move glyphs.
   - `WatchDialog.svelte` (toolbar button "arimaa.com"): the gameroom
     login (with "Remember password"; a saved login fills the username, and

@@ -70,7 +70,8 @@
   }
 </script>
 
-<div class="annotate">
+<details class="annotate">
+  <summary>Annotate</summary>
   {#if move}
     <div class="glyphs" role="group" aria-label="Glyphs for {move.label}">
       {#each GLYPHS as g (g.n)}
@@ -95,13 +96,18 @@
     onblur={save}
     {onkeydown}
   ></textarea>
-</div>
+</details>
 
 <style>
-  .annotate {
+  .annotate[open] {
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+  summary {
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
   }
   .glyphs {
     display: flex;

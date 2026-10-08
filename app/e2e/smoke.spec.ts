@@ -305,6 +305,7 @@ test('arrow keys switch lines, the comment box annotates, and a variation folds'
   await expect.poll(cursor).toBe('Ee2n Ee3n');
   await page.keyboard.press('ArrowDown');
 
+  await page.getByText('Annotate', { exact: true }).click();
   await page.getByRole('button', { name: 'Interesting move' }).click();
   const comment = page.getByRole('textbox', { name: /Comment on 2g Ha2n/ });
   await comment.fill('A quieter start.');
