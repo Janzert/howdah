@@ -47,6 +47,22 @@ describe('decodeWav', () => {
     }
   });
 
+  it('decodes the board sounds', () => {
+    const board = import.meta.glob<string>(['../sounds/board/*.wav', '../themes/**/*.wav'], {
+      eager: true,
+      query: '?inline',
+      import: 'default',
+    });
+    expect(Object.keys(board).length).toBeGreaterThanOrEqual(5);
+    for (const [path, url] of Object.entries(board)) {
+      const w = decodeWav(dataUrlBytes(url));
+      expect(w.sampleRate, path).toBe(48000);
+      expect(w.channels.length, path).toBe(1);
+      const peak = w.channels[0].reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+      expect(peak, `${path} isn't silent`).toBeGreaterThan(0.05);
+    }
+  });
+
   it('decodes 16-bit stereo', () => {
     // 2 frames of 16-bit stereo: (0, 32767), (-32768, 0)
     const header = (dataSize: number) => {

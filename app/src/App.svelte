@@ -31,7 +31,7 @@
   import { settings, type HoverInput } from './lib/settings.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
   import { shortcutFor, type ShortcutId } from './lib/shortcuts';
-  import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
+  import { play, setMuted, setThemeSounds, setVolume, unlockOnInteraction } from './lib/sound';
   import { findTheme } from './lib/theme';
   import TurnBar from './lib/TurnBar.svelte';
   import type { GameroomGames } from './lib/bindings/GameroomGames';
@@ -204,6 +204,7 @@
   $effect(() => savePref('flipped', flipped ? '1' : '0'));
   $effect(() => setMuted(!settings.sound));
   $effect(() => setVolume(settings.volume));
+  $effect(() => setThemeSounds(theme.sounds ?? {}));
   $effect(() => model.setBaseSpeed(settings.stepMs));
   $effect(() => {
     api.setContinueTurns(settings.continueTurns).catch(() => {});

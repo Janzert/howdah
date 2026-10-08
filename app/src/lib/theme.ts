@@ -2,6 +2,7 @@
 // src/themes/<dir>/ plus its image files; asset paths in the manifest are
 // relative to the manifest. Adding a theme needs no code changes.
 import type { Piece } from './bindings/Piece';
+import type { BoardSoundName } from './sound';
 
 export interface GridRect { x: number; y: number; width: number; height: number }
 
@@ -66,6 +67,9 @@ export interface Theme {
   board: BoardSpec;
   pieces: PieceSpec;
   ui: ThemeUi;
+  /** WAV files replacing the app's board sounds (step, lastStep, capture,
+   * ownLoss, restore); any left out keep the default. Data URLs once loaded. */
+  sounds?: Partial<Record<BoardSoundName, string>>;
 }
 
 const manifests = import.meta.glob<Theme>('../themes/*/*.theme.json', { eager: true, import: 'default' });
@@ -74,6 +78,16 @@ const assetUrls = import.meta.glob<string>('../themes/**/*.{png,jpg,jpeg,svg,web
   query: '?url',
   import: 'default',
 });
+
+// Inlined like the app's own sounds, which `lib/sound.ts` decodes itself.
+const soundData = import.meta.glob<string>('../themes/**/*.wav', { eager: true, query: '?inline', import: 'default' });
+
+function resolveSound(manifestPath: string, rel: string): string | undefined {
+  const dir = manifestPath.slice(0, manifestPath.lastIndexOf('/') + 1);
+  const data = soundData[dir + rel];
+  if (!data) console.warn(`theme sound not found: ${dir + rel}`);
+  return data;
+}
 
 function resolveAsset(manifestPath: string, rel: string): string {
   const dir = manifestPath.slice(0, manifestPath.lastIndexOf('/') + 1);
@@ -87,6 +101,14 @@ function load(path: string, raw: Theme): Theme {
   if (t.board.kind === 'image') t.board.src = resolveAsset(path, t.board.src);
   if (t.pieces.kind === 'image') {
     for (const k of Object.keys(t.pieces.srcs)) t.pieces.srcs[k] = resolveAsset(path, t.pieces.srcs[k]);
+  }
+  if (t.sounds) {
+    const sounds: Theme['sounds'] = {};
+    for (const [name, rel] of Object.entries(t.sounds) as [BoardSoundName, string][]) {
+      const data = resolveSound(path, rel);
+      if (data) sounds[name] = data;
+    }
+    t.sounds = sounds;
   }
   return t;
 }

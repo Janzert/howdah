@@ -30,13 +30,13 @@ describe('BoardModel', () => {
     expect(slides.mock.calls).toEqual([[false], [true]]);
 
     // The rabbit steps onto c3 alone and is trapped: gold's own loss,
-    // with the capture's sound instead of the step's.
+    // with the step's sound and then the capture's.
     const onSlide = vi.fn();
     const onCapture = vi.fn();
     const trapped = { id: 1, piece: { color: 'gold', kind: 'rabbit' }, square: 18 } as const;
     m.apply([], [{ id: 1, from: 16, to: 18, captured: trapped, restored: null, mover: 'gold' }], { onSlide, onCapture });
     await vi.advanceTimersByTimeAsync(3 * STEP_MS);
-    expect(onSlide).not.toHaveBeenCalled();
+    expect(onSlide.mock.calls).toEqual([[true]]);
     expect(onCapture.mock.calls).toEqual([[true]]);
 
     // Undoing it brings the rabbit back.

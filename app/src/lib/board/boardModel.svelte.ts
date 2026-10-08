@@ -226,8 +226,9 @@ export class BoardModel {
         }
       }
       const p = this.find(a.id);
-      // A capture has its own sound instead of the step's, as in 4steps.
-      if (!a.captured) hooks.onSlide?.(i === anim.length - 1);
+      // A capturing step slides with its sound too; the capture's own sound
+      // comes as the captured piece fades out.
+      hooks.onSlide?.(i === anim.length - 1);
       if (p && p.square !== a.to) {
         p.square = a.to;
         await sleep(this.stepMs);

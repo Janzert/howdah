@@ -1,0 +1,82 @@
+{
+ "sounds": [
+  "step.wav",
+  "lastStep.wav"
+ ],
+ "settings": {
+  "stepMs": 220,
+  "jitter": 0.08,
+  "slide": {
+   "file": "card-shove-1.ogg",
+   "offsetMs": 15,
+   "lengthMs": 80,
+   "rate": 1,
+   "levelDb": -14,
+   "highpass": 300,
+   "lowpass": 7000,
+   "rough": 0.27,
+   "roughHz": 27,
+   "fadeMs": 40
+  },
+  "click": {
+   "file": "chip-lay-2.ogg",
+   "rate": 0.6,
+   "levelDb": -12,
+   "lowpass": 16000,
+   "overlapMs": -23
+  },
+  "last": {
+   "file": "chip-lay-2.ogg",
+   "rate": 0.5,
+   "levelDb": -10,
+   "lowpass": 16000
+  },
+  "captureSlide": true,
+  "capture": {
+   "a": {
+    "file": "minimize_008.ogg",
+    "offsetMs": 15,
+    "lengthMs": 295,
+    "rate": 0.95,
+    "levelDb": -6,
+    "highpass": 20,
+    "lowpass": 9000,
+    "fadeInMs": 15,
+    "fadeMs": 120,
+    "delayMs": 0,
+    "reverse": false
+   },
+   "b": {
+    "file": "footstep_wood_001.ogg",
+    "offsetMs": 0,
+    "lengthMs": 400,
+    "rate": 1,
+    "levelDb": -8,
+    "highpass": 20,
+    "lowpass": 6000,
+    "fadeInMs": 0,
+    "fadeMs": 150,
+    "delayMs": 150,
+    "reverse": false
+   }
+  },
+  "own": {
+   "rate": 0.7,
+   "levelDb": 0,
+   "lowpass": 5000
+  },
+  "restore": {
+   "file": "minimize_008.ogg",
+   "offsetMs": 10,
+   "lengthMs": 220,
+   "rate": 0.95,
+   "levelDb": -6,
+   "highpass": 20,
+   "lowpass": 16000,
+   "fadeInMs": 40,
+   "fadeMs": 0,
+   "delayMs": 0,
+   "reverse": true
+  }
+ }
+}

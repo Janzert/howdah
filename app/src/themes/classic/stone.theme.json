@@ -38,5 +38,9 @@
     "target": "rgba(20, 20, 20, 0.35)",
     "coord": "rgba(40, 30, 20, 0.7)",
     "pushPending": "rgba(210, 40, 40, 0.8)"
+  },
+  "sounds": {
+    "step": "sounds/stone/step.wav",
+    "lastStep": "sounds/stone/lastStep.wav"
   }
 }

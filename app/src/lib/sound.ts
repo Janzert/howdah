@@ -1,23 +1,26 @@
-// Sound effects, one per game event, from the classic arimaa.com set and
-// assigned to events as 4steps does: a soft click per step and a louder one
-// for a move's last, separate sounds for capturing and for losing one's own
-// piece on a trap, and for winning and losing. Whether sound is on and its
-// volume are settings (settings.svelte.ts); the app passes them in with
-// `setMuted` and `setVolume`.
+// Sound effects, one per game event. The board sounds (a step, a move's
+// last step, captures and a capture undone) are made in the sound lab from
+// CC0 samples (`sounds/board/ATTRIBUTION.md`), and a theme can replace any
+// of them (`setThemeSounds`); each play varies their pitch a little so
+// repeated steps don't sound mechanical. The rest are app-wide and still
+// from the classic arimaa.com set until the sound rework reaches them.
+// Whether sound is on and its volume are settings (settings.svelte.ts); the
+// app passes them in with `setMuted` and `setVolume`.
 //
-// Sounds are played through Web Audio from buffers decoded once at startup
+// Sounds are played through Web Audio from buffers decoded once each
 // (by our own WAV decoder, so every platform behaves the same). Each play is
 // a cheap buffer source, so overlapping sounds (a step and a capture) mix
 // instead of cutting each other off. HTML audio elements, which we used
 // before, were unreliable in WebKitGTK: very short clips (place.wav is 45 ms)
 // often didn't play, and overlapping ones were dropped.
-import dogStep from '../sounds/classic/dogStep.wav?inline';
+import capture from '../sounds/board/capture.wav?inline';
+import lastStep from '../sounds/board/lastStep.wav?inline';
+import ownLoss from '../sounds/board/ownLoss.wav?inline';
+import restore from '../sounds/board/restore.wav?inline';
+import step from '../sounds/board/step.wav?inline';
 import drop2 from '../sounds/classic/Drop2.wav?inline';
 import elephantStep from '../sounds/classic/elephantStep.wav?inline';
 import metal2 from '../sounds/classic/Metal2_3.wav?inline';
-import place from '../sounds/classic/place.wav?inline';
-import slide2 from '../sounds/classic/slide2.wav?inline';
-import trapped from '../sounds/classic/trapped.wav?inline';
 import win from '../sounds/classic/win.wav?inline';
 import { dataUrlBytes, decodeWav } from './wav';
 
@@ -41,17 +44,21 @@ export type SoundName =
   | 'chat' // an opponent's chat line
   | 'notification'; // a takeback request, an invitation, a postal move due
 
-// TODO(themes): let a theme override the sound for each event.
+/** The sounds a theme can replace. */
+export const BOARD_SOUNDS = ['step', 'lastStep', 'capture', 'ownLoss', 'restore'] as const;
+export type BoardSoundName = (typeof BOARD_SOUNDS)[number];
+const isBoardSound = (n: SoundName): n is BoardSoundName => (BOARD_SOUNDS as readonly string[]).includes(n);
+
+/** How far a board sound's pitch varies from play to play, either way. */
+const BOARD_VARIATION = 0.08;
+
+const boardDefaults: Record<BoardSoundName, string> = { step, lastStep, capture, ownLoss, restore };
+
 // TODO(sounds): the sound rework gives every event its own sound; until
-// then the new events are silent or borrow an old one.
-const sources: Partial<Record<SoundName, string>> = {
-  step: slide2,
-  lastStep: place,
-  capture: trapped,
-  ownLoss: dogStep,
-  restore: place,
-  setupDone: place,
-  yourTurn: place,
+// then the new events are silent or borrow another one.
+const appSounds: Partial<Record<SoundName, string>> = {
+  setupDone: lastStep,
+  yourTurn: lastStep,
   gameStart: win,
   win: drop2,
   loss: elephantStep,
@@ -59,10 +66,14 @@ const sources: Partial<Record<SoundName, string>> = {
   tick: metal2,
 };
 
+/** Each event's WAV, as a data URL: the app's, with the theme's board sounds. */
+let sources: Partial<Record<SoundName, string>> = { ...appSounds, ...boardDefaults };
+
 let muted = false;
 let gain = 1;
 let context: AudioContext | null = null;
-const buffers = new Map<SoundName, AudioBuffer>();
+/** Decoded sounds, by data URL. */
+const buffers = new Map<string, AudioBuffer | null>();
 // Sources still playing. WebKit can garbage-collect a source node nothing
 // refers to before it finishes, cutting the sound off part way.
 const playing = new Set<AudioBufferSourceNode>();
@@ -100,17 +111,35 @@ function init(): AudioContext | null {
   keepAlive.loop = true;
   keepAlive.connect(output);
   keepAlive.start();
-  for (const [name, url] of Object.entries(sources) as [SoundName, string][]) {
-    try {
-      const wav = decodeWav(dataUrlBytes(url));
-      const buffer = context.createBuffer(wav.channels.length, wav.channels[0].length, wav.sampleRate);
-      wav.channels.forEach((samples, i) => buffer.copyToChannel(samples, i));
-      buffers.set(name, buffer);
-    } catch (e) {
-      console.warn(`couldn't decode sound ${name}:`, e);
-    }
-  }
+  decodeAll();
   return context;
+}
+
+/** Decodes every current sound not decoded yet. */
+function decodeAll() {
+  for (const [name, url] of Object.entries(sources) as [SoundName, string][]) bufferFor(name, url);
+}
+
+function bufferFor(name: SoundName, url: string): AudioBuffer | null {
+  if (!context) return null;
+  if (buffers.has(url)) return buffers.get(url)!;
+  let buffer: AudioBuffer | null = null;
+  try {
+    const wav = decodeWav(dataUrlBytes(url));
+    buffer = context.createBuffer(wav.channels.length, wav.channels[0].length, wav.sampleRate);
+    wav.channels.forEach((samples, i) => buffer!.copyToChannel(samples, i));
+  } catch (e) {
+    console.warn(`couldn't decode sound ${name}:`, e);
+  }
+  buffers.set(url, buffer);
+  return buffer;
+}
+
+/** Uses a theme's board sounds (data URLs) in place of the defaults; any
+ * it leaves out keep the default. */
+export function setThemeSounds(theme: Partial<Record<BoardSoundName, string>>) {
+  sources = { ...appSounds, ...boardDefaults, ...theme };
+  decodeAll();
 }
 
 /**
@@ -132,11 +161,13 @@ export function play(name: SoundName) {
   if (import.meta.env.DEV) console.debug(`sound: ${name}`);
   if (muted) return;
   const ctx = init();
-  const buffer = buffers.get(name);
+  const url = sources[name];
+  const buffer = url ? bufferFor(name, url) : null;
   if (!ctx || !buffer || !output) return;
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   const source = ctx.createBufferSource();
   source.buffer = buffer;
+  if (isBoardSound(name)) source.playbackRate.value = 1 + (Math.random() * 2 - 1) * BOARD_VARIATION;
   source.connect(output);
   playing.add(source);
   source.onended = () => {

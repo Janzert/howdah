@@ -487,12 +487,14 @@ Howdah plays and watches games on arimaa.com.
     - An update without animation that doesn't change the position (a clock
       or "thinking" change) doesn't interrupt; any other one cancels the
       queue and snaps.
-    - Sounds follow 4steps (see `lib/sound.ts`): `AnimHooks.onSlide(last)`
-      gives a soft click per step and a louder one for a move's last (all
-      soft while a turn is being entered; the loud one comes on Play), and
-      `onCapture(own)` tells a capture from losing the mover's own piece,
-      using `AnimStep.mover`. A step with a capture plays only the
-      capture's sound. `onRestore` is a captured piece coming back as a
+    - Sounds (see `lib/sound.ts`): `AnimHooks.onSlide(last)` gives a
+      step sound per step and a firmer one for a move's last (all plain
+      steps while a turn is being entered; the firm one comes on Play),
+      and `onCapture(own)` tells a capture from losing the mover's own
+      piece, using `AnimStep.mover`. A capturing step plays its step sound
+      as it slides, then the capture's as the captured piece fades out
+      (4steps plays only the capture's; Brian wants both, to be judged in
+      the real app). `onRestore` is a captured piece coming back as a
       step is undone.
     - Hover input (setting `hoverInput`: off, arrows or step mode) reads
       each square's legal single steps from a cache filled from
@@ -527,8 +529,13 @@ Howdah plays and watches games on arimaa.com.
       output never goes idle between sounds. The loop is what fixed the
       rest; the shared node alone didn't. Keep both.
     - Sounds are named by event (`SoundName`, each commented with when it
-      plays), mapped to classic files; events without a file yet are
-      silent (the sound rework fills them in). Dev builds log each event
+      plays). The board sounds (`BOARD_SOUNDS`: step, lastStep, capture,
+      ownLoss, restore) default to `sounds/board/`, mixed from Kenney CC0
+      samples (`preset.json` beside them has the settings); a theme's `sounds` replaces any of them
+      (`setThemeSounds`, from `App.svelte`), and each play varies their
+      pitch by up to ±8% (`BOARD_VARIATION`). The others are app-wide,
+      still classic files until the rework; events without a file yet are
+      silent. Dev builds log each event
       as `sound: <name>` (`console.debug`), silent ones included.
       A match starting plays gameStart; the game ending plays timeout
       for a loss on time, else loss when the lone human player lost,
@@ -657,4 +664,7 @@ in image pixels. It's picked up automatically. `ui.frozen` (optional) tunes
 the frozen-piece marker, an SVG filter drawn from each piece's alpha
 (`board/FrozenFilter.svelte`): how far colors cool, the rim and speck
 strength, and the glow and outline colors; anything left out takes
-`FROZEN_DEFAULTS`.
+`FROZEN_DEFAULTS`. `sounds` (optional) maps board sounds (`step`,
+`lastStep`, `capture`, `ownLoss`, `restore`) to WAV files beside the
+manifest (8- or 16-bit PCM); any left out keep the app's default, as the
+classic stone theme does for all but its steps.
