@@ -62,8 +62,12 @@ Linux, macOS and Windows.
 - **A `stop` right after `go`** (within a few ms, before its search thread
   starts) gets no `bestmove`: the search reports a null move, which Sharp
   logs as `Error: Bot tried to make illegal move:` before waiting for
-  commands again. `Profile::ends_search_without_move` recognizes it, so
-  analysis moves on; fast arrow-key navigation hit it in the app.
+  commands again. `Profile::ends_search_without_move` recognizes it:
+  analysis takes the search as over (fast arrow-key navigation hit it in
+  the app), and a match player is sent `go` again and, 100 ms later,
+  `stop` again (a "move now" right after `go`). Our fork answers such a
+  `stop` with a move from a quick one-turn search instead (arimaasharp
+  41bf6f1, after v2026.10.6), so only older builds need this.
 - **`setposition`** wants exactly `[` + 64 squares + `]`, and ignores the
   side: with `s` it still searches for gold.
 - **Clock:** it keeps its own reserve (a default of 60 s showed in its log),

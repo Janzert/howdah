@@ -41,6 +41,11 @@ const STOP_MARGIN: Duration = Duration::from_secs(1);
 /// How long an engine has to answer `stop` before a new search.
 const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// How long after a repeated `go` the repeated `stop` follows, when Sharp
+/// lost the first `stop` (`Profile::ends_search_without_move`): long enough
+/// for its search thread to start.
+const RESTOP_DELAY: Duration = Duration::from_millis(100);
+
 /// Analysis updates go out at most this often.
 const ANALYSIS_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -822,6 +827,8 @@ async fn run_actor(
     let mut stop_sent = false;
     // Options for this game waiting for the search to end.
     let mut waiting: Option<Vec<EngineOption>> = None;
+    // When to send `stop` again to a search restarted after a lost `stop`.
+    let mut restop: Option<tokio::time::Instant> = None;
     loop {
         let first = tokio::select! {
             cmd = cmds.recv() => match cmd {
@@ -844,11 +851,33 @@ async fn run_actor(
                             return;
                         }
                     }
-                    Ok(other) => report(request, ActorEvent::Line(other)),
+                    Ok(other) => {
+                        let lost = stop_sent && profile.ends_search_without_move(&other);
+                        report(request, ActorEvent::Line(other));
+                        if lost && purpose == Purpose::Analysis {
+                            // The search is over, with nothing to report.
+                            thinking = None;
+                        } else if lost {
+                            // A player must still move: search again, and
+                            // stop once the search is under way.
+                            if let Err(e) = engine.go().await {
+                                report(request, ActorEvent::Failed(format!("{} failed: {e}", spec.name)));
+                                return;
+                            }
+                            restop = Some(tokio::time::Instant::now() + RESTOP_DELAY);
+                        }
+                    }
                     Err(e) => {
                         report(request, ActorEvent::Failed(format!("{} failed: {e}", spec.name)));
                         return;
                     }
+                }
+                continue;
+            }
+            _ = tokio::time::sleep_until(restop.unwrap_or_else(tokio::time::Instant::now)), if restop.is_some() => {
+                restop = None;
+                if thinking.is_some() {
+                    engine.stop().await.ok();
                 }
                 continue;
             }
@@ -883,6 +912,7 @@ async fn run_actor(
                     }
                     thinking = Some(request);
                     stop_sent = false;
+                    restop = None;
                 }
                 ActorCmd::SetOptions(options) => {
                     let options = merge_options(&spec.options, &options);
@@ -1274,11 +1304,60 @@ mod tests {
         purpose: Purpose,
         game: Vec<EngineOption>,
     ) -> (UnboundedSender<ActorCmd>, UnboundedReceiver<ControlMsg>) {
+        start_engine(purpose, game, &["--until-stop"])
+    }
+
+    fn start_engine(
+        purpose: Purpose,
+        game: Vec<EngineOption>,
+        args: &[&str],
+    ) -> (UnboundedSender<ActorCmd>, UnboundedReceiver<ControlMsg>) {
         let (cmd_tx, cmd_rx) = unbounded_channel();
         let (tx, rx) = unbounded_channel();
-        let spec = test_engine(&["--until-stop"]);
+        let spec = test_engine(args);
         tokio::spawn(run_actor(spec, game, purpose, Origin::Analysis { run: 1 }, cmd_rx, tx));
         (cmd_tx, rx)
+    }
+
+    /// A stand-in for Sharp that loses the first `stop` (sent right after
+    /// `go`) and moves on its own only after a minute.
+    fn start_lost_stop(purpose: Purpose) -> (UnboundedSender<ActorCmd>, UnboundedReceiver<ControlMsg>) {
+        start_engine(
+            purpose,
+            Vec::new(),
+            &["--name", "bot_Sharp", "--mode", "lost-stop", "--delay-ms", "60000"],
+        )
+    }
+
+    #[tokio::test]
+    async fn a_player_whose_stop_was_lost_searches_again_and_moves() {
+        let (cmds, mut rx) = start_lost_stop(Purpose::Play);
+        collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
+        cmds.send(ActorCmd::Think { request: 1, moves: vec![], tc: None, reserves: None }).unwrap();
+        cmds.send(ActorCmd::Stop).unwrap();
+        let seen =
+            collect(&mut rx, |_, e| matches!(e, ActorEvent::BestMove(_) | ActorEvent::Failed(_))).await;
+        assert!(logs(&seen).iter().any(|l| l.starts_with("Error: Bot tried to make illegal move")));
+        assert!(matches!(seen.last(), Some((1, ActorEvent::BestMove(_)))), "moved after the lost stop");
+    }
+
+    #[tokio::test]
+    async fn analysis_whose_stop_was_lost_is_over() {
+        let (cmds, mut rx) = start_lost_stop(Purpose::Analysis);
+        collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
+        let think = |request| ActorCmd::Think { request, moves: vec![], tc: None, reserves: None };
+        cmds.send(think(1)).unwrap();
+        cmds.send(ActorCmd::Stop).unwrap();
+        collect(
+            &mut rx,
+            |_, e| matches!(e, ActorEvent::Line(EngineMessage::Log(l)) if l.starts_with("Error:")),
+        )
+        .await;
+        // The next search doesn't wait for a `bestmove` that isn't coming.
+        cmds.send(think(2)).unwrap();
+        let seen =
+            collect(&mut rx, |_, e| matches!(e, ActorEvent::BestMove(_) | ActorEvent::Failed(_))).await;
+        assert!(matches!(seen.last(), Some((2, ActorEvent::BestMove(_)))));
     }
 
     fn option(name: &str, value: &str) -> EngineOption {

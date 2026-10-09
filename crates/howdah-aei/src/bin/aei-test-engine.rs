@@ -1,8 +1,10 @@
 //! A minimal AEI engine for tests: plays random legal moves, and can be told
 //! to misbehave. Not a useful opponent.
 //!
-//! Usage: `aei-test-engine [--mode MODE] [--after N] [--delay-ms MS] [--seed S] [--until-stop]`
+//! Usage: `aei-test-engine [--mode MODE] [--after N] [--delay-ms MS] [--seed S] [--name NAME] [--until-stop]`
 //!
+//! `--name` sets the name it gives (`id name`), so it can stand in for an
+//! engine with a `Profile`.
 //! It logs each option it's sent (`log option NAME=VALUE`). With
 //! `--until-stop`, every `go` searches until `stop` (as an engine analysing
 //! does), sending `info depth/score/pv` every 20 ms, and any command but
@@ -17,6 +19,9 @@
 //! - `resign`: resigns.
 //! - `garbage`: sends an unknown message before a normal move.
 //! - `slow`: waits `--delay-ms` before moving, or until `stop`.
+//! - `lost-stop`: as `slow`, but a `stop` ends the search without a move,
+//!   as Sharp does when stopped right after `go`: it logs
+//!   `Error: Bot tried to make illegal move:` and waits for commands.
 
 use std::io::{BufRead, Write};
 use std::sync::mpsc;
@@ -54,6 +59,7 @@ struct Options {
     delay: Duration,
     seed: u64,
     until_stop: bool,
+    name: String,
 }
 
 fn parse_options() -> Options {
@@ -63,6 +69,7 @@ fn parse_options() -> Options {
         delay: Duration::from_millis(0),
         seed: SystemTime::now().duration_since(UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1,
         until_stop: false,
+        name: "aei-test-engine".into(),
     };
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(i) = args.iter().position(|a| a == "--until-stop") {
@@ -77,6 +84,7 @@ fn parse_options() -> Options {
             "--after" => o.after = v.parse().expect("--after N"),
             "--delay-ms" => o.delay = Duration::from_millis(v.parse().expect("--delay-ms MS")),
             "--seed" => o.seed = v.parse::<u64>().expect("--seed S") | 1,
+            "--name" => o.name = v.clone(),
             other => panic!("unknown option {other}"),
         }
         i += 2;
@@ -147,6 +155,27 @@ impl State {
     }
 }
 
+#[derive(PartialEq)]
+enum Wait {
+    Stopped,
+    TimedOut,
+    Quit,
+}
+
+/// Waits up to `delay` for `stop` (or `quit`), ignoring anything else.
+fn wait_for_stop(rx: &mpsc::Receiver<String>, delay: Duration) -> Wait {
+    let until = Instant::now() + delay;
+    while let Some(left) = until.checked_duration_since(Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok(l) if l.trim() == "stop" => return Wait::Stopped,
+            Ok(l) if l.trim() == "quit" => return Wait::Quit,
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Wait::Quit,
+            _ => {}
+        }
+    }
+    Wait::TimedOut
+}
+
 fn main() {
     let opts = parse_options();
     let mut rng = Rng(opts.seed);
@@ -173,7 +202,7 @@ fn main() {
         match cmd {
             "aei" => {
                 say("protocol-version 1");
-                say("id name aei-test-engine");
+                say(&format!("id name {}", opts.name));
                 say("id author howdah");
                 say(&format!("id version {}", opts.mode));
                 say("aeiok");
@@ -215,16 +244,15 @@ fn main() {
                         continue;
                     }
                     "garbage" if misbehave => say("this is not an AEI message"),
-                    "slow" if misbehave => {
-                        let until = Instant::now() + opts.delay;
-                        while let Some(left) = until.checked_duration_since(Instant::now()) {
-                            match rx.recv_timeout(left) {
-                                Ok(l) if l.trim() == "stop" => break,
-                                Ok(l) if l.trim() == "quit" => return,
-                                _ => {}
-                            }
+                    "lost-stop" if misbehave => match wait_for_stop(&rx, opts.delay) {
+                        Wait::Quit => return,
+                        Wait::Stopped => {
+                            say("log Error: Bot tried to make illegal move: ");
+                            continue;
                         }
-                    }
+                        Wait::TimedOut => {}
+                    },
+                    "slow" if misbehave && wait_for_stop(&rx, opts.delay) == Wait::Quit => return,
                     _ => {}
                 }
                 let best = state.random_move(&mut rng);
