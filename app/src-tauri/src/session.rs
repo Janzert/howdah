@@ -1915,9 +1915,9 @@ impl Session {
             return Err(ApiError::illegal(e));
         }
         let turn = tb.clone().finish().expect("checked above");
-        if self.game.is_third_repetition(self.cursor, &turn.end) {
+        if let Some(why) = self.repetition(&turn.end) {
             self.turn = Some(tb);
-            return Err(ApiError::illegal(GameError::Repetition));
+            return Err(ApiError::illegal(why));
         }
         if let Err(e) = self.require_input() {
             self.turn = Some(tb);
@@ -2058,9 +2058,18 @@ impl Session {
         }
         let mut end = tb.position().clone();
         end.set_side_to_move(end.side_to_move().opponent());
-        self.game
-            .is_third_repetition(self.cursor, &end)
-            .then(|| howdah_arimaa::GameError::Repetition.to_string())
+        self.repetition(&end)
+    }
+
+    /// Why a turn from the shown position ending in `end` can't be played,
+    /// if it would be a third repetition: naming the moves after which the
+    /// position stood before, as arimaa.com does.
+    fn repetition(&self, end: &Position) -> Option<String> {
+        let earlier = self.game.earlier_occurrences(self.cursor, end);
+        (earlier.len() >= 2).then(|| {
+            let labels: Vec<String> = earlier.into_iter().map(notation::move_label).collect();
+            format!("{} (as after {})", GameError::Repetition, labels.join(" and "))
+        })
     }
 
     fn phase(&self) -> Phase {
@@ -2424,6 +2433,22 @@ mod tests {
         assert_eq!(steps("e3"), Some(1));
         assert_eq!(steps("e5"), Some(3));
         assert_eq!(steps("e7"), None);
+    }
+
+    #[test]
+    fn a_third_repetition_names_the_earlier_moves() {
+        let mut s = Session::new();
+        s.commit_setup().unwrap();
+        s.commit_setup().unwrap();
+        // Horses shuffle back to the position after the setups twice.
+        for (from, to) in [("a2", "a3"), ("a7", "a6"), ("a3", "a2"), ("a6", "a7")].iter().cycle().take(7) {
+            s.try_step(sq(from), sq(to)).unwrap();
+            s.commit_turn(false).unwrap();
+        }
+        s.try_step(sq("a6"), sq("a7")).unwrap();
+        let why = "the move repeats a position for the third time (as after 1s and 3s)";
+        assert_eq!(s.view().turn.unwrap().commit_blocker.as_deref(), Some(why));
+        assert_eq!(s.commit_turn(false).unwrap_err().message, why);
     }
 
     #[test]

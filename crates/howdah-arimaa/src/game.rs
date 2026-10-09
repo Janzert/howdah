@@ -139,8 +139,13 @@ impl Game {
     /// Only positions from `ply` back are counted, so this also answers
     /// "what if I play this instead of the moves after `ply`?".
     pub fn is_third_repetition(&self, ply: usize, end: &Position) -> bool {
-        let history = self.positions.get(2..=ply).unwrap_or(&[]);
-        history.iter().filter(|p| *p == end).count() >= 2
+        self.earlier_occurrences(ply, end).len() >= 2
+    }
+
+    /// The moves (as plies, 0 = `1g`) after which `end` already stood,
+    /// counted as [`Game::is_third_repetition`] does.
+    pub fn earlier_occurrences(&self, ply: usize, end: &Position) -> Vec<usize> {
+        (2..=ply).filter(|&i| self.positions.get(i) == Some(end)).map(|i| i - 1).collect()
     }
 
     /// How the game ends after `turn` from the position at `ply`, if it
@@ -326,6 +331,8 @@ mod tests {
             g.play_notation(m).unwrap();
         }
         let before = g.ply_count();
+        let start = g.position_at(2).unwrap().clone();
+        assert_eq!(g.earlier_occurrences(before, &start), [1, 5], "after 1s and 3s");
         assert_eq!(g.play_notation("ha6n"), Err(GameError::Repetition));
         assert_eq!(g.ply_count(), before, "rejected move isn't added");
         // A different move is fine.
