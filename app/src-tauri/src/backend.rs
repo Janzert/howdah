@@ -489,8 +489,18 @@ impl Backend {
         self.engines().save(spec)
     }
 
+    /// Removes an engine; one installed from a manifest takes its
+    /// downloaded files with it.
     pub fn delete_engine(&self, id: &str) -> Result<(), ApiError> {
-        self.engines().delete(id)
+        let mut engines = self.engines();
+        let gone = engines.get(id);
+        engines.delete(id)?;
+        let remaining = engines.list();
+        drop(engines);
+        match gone {
+            Some(spec) => self.catalog().remove_files(&spec, &remaining),
+            None => Ok(()),
+        }
     }
 
     /// The engine manifests added and suggested, with what's installed.

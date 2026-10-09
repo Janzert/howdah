@@ -530,7 +530,7 @@ pub struct ManifestView {
     pub updatable: bool,
     /// Whether it has a download for this computer.
     pub downloadable: bool,
-    /// The version installed from it, and that engine's id.
+    /// The newest version installed from it, and that engine's id.
     pub installed_version: Option<String>,
     pub engine_id: Option<String>,
     pub options: Vec<ManifestOptionView>,

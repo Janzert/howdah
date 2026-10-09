@@ -11,6 +11,13 @@ young).
 
 - A refused third repetition names the moves after which the position
   stood before ("as after 12g and 14g"), as arimaa.com does.
+- Installing an engine update adds the new version as its own engine,
+  with the earlier one's options, and offers to remove the earlier one;
+  until then both can be used. A new engine whose name another engine
+  already has gets its version added to the name (which can be changed in
+  the Engines dialog).
+- Deleting an engine installed from a manifest deletes its downloaded
+  files too, after a second click.
 - The arimaa.com game panel says whether the game is rated, with its
   time control, instead of the server's event name ("Casual game" for
   nearly every game), and the disabled "Ask for takeback" button says

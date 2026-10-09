@@ -42,6 +42,12 @@
   let catalogError = $state<string | null>(null);
   /** What the last update check found, for the manifest it checked. */
   let checked = $state<{ id: string; text: string } | null>(null);
+  /** After an update: the new engine, and the earlier ones from the same
+   * manifest, which stay installed until the user removes them. */
+  let updated = $state<{ manifest: string; engine: EngineSpec; earlier: EngineSpec[] } | null>(null);
+  /** The installed engine whose Delete was clicked once; the second click
+   * deletes it and its files. */
+  let confirmDelete = $state<string | null>(null);
   let adding = $state(false);
   let manifestUrl = $state('');
   let status = $state<{ ok: boolean; text: string } | null>(null);
@@ -119,6 +125,26 @@
     if (!file) return;
     const text = await file.text();
     if (await act('add', () => api.addEngineManifest({ text }))) adding = false;
+  }
+
+  /** Installs manifest `m`'s release. An update is a new engine beside the
+   * earlier ones, which the dialog then offers to remove. */
+  async function install(m: ManifestView) {
+    updated = null;
+    let engine: EngineSpec | null = null;
+    if (!(await act(m.id, async () => (engine = await api.installEngine(m.id))))) return;
+    const installed: EngineSpec = engine!;
+    const earlier = engines.filter((e) => e.installed?.manifest === m.id && e.id !== installed.id);
+    if (earlier.length > 0) updated = { manifest: m.id, engine: installed, earlier };
+  }
+
+  async function removeEarlier() {
+    const u = updated;
+    if (!u) return;
+    await act(u.manifest, async () => {
+      for (const e of u.earlier) await api.deleteEngine(e.id);
+    });
+    updated = null;
   }
 
   /** What the manifest's install button says, if it has one. */
@@ -206,10 +232,20 @@
   }
 
   async function remove(e: EngineSpec) {
-    await api.deleteEngine(e.id);
-    await reload();
-    onChanged();
+    // An installed engine's files go too, and a "latest release" manifest
+    // may not offer that version again: ask twice.
+    if (e.installed && confirmDelete !== e.id) {
+      confirmDelete = e.id;
+      return;
+    }
+    confirmDelete = null;
+    if (updated) updated.earlier = updated.earlier.filter((x) => x.id !== e.id);
+    await act(e.id, () => api.deleteEngine(e.id));
   }
+
+  /** The engine's name, with its version if the name doesn't have it. */
+  const describe = (e: EngineSpec) =>
+    e.installed && !e.name.includes(e.installed.version) ? `${e.name} (${e.installed.version})` : e.name;
 </script>
 
 <dialog bind:this={dialog} onclose={onClose}>
@@ -253,11 +289,20 @@
       {#each engines as e (e.id)}
         <li>
           <div class="info">
-            <strong>{e.name}{#if e.installed}<span class="version"> · {e.installed.version}</span>{/if}</strong>
+            <strong
+              >{e.name}{#if e.installed && !e.name.includes(e.installed.version)}<span class="version">
+                  · {e.installed.version}</span
+                >{/if}</strong
+            >
             <code>{[e.program, ...e.args].join(' ')}</code>
           </div>
           <button onclick={() => edit(e)}>Edit</button>
-          <button onclick={() => remove(e)}>Delete</button>
+          <button
+            onclick={() => remove(e)}
+            onblur={() => confirmDelete === e.id && (confirmDelete = null)}
+            title={e.installed ? 'Remove this engine and its downloaded files' : 'Remove this engine from the list'}
+            >{confirmDelete === e.id ? 'Delete files too?' : 'Delete'}</button
+          >
         </li>
       {/each}
     </ul>
@@ -289,8 +334,10 @@
               {#if label}
                 <button
                   disabled={working != null}
-                  title="Download this release for this computer and add it to your engines"
-                  onclick={() => act(m.id, () => api.installEngine(m.id))}>{label}</button
+                  title={m.installedVersion == null
+                    ? 'Download this release for this computer and add it to your engines'
+                    : 'Download this release and add it to your engines beside the installed one'}
+                  onclick={() => install(m)}>{label}</button
                 >
               {/if}
               {#if m.updatable}
@@ -307,6 +354,20 @@
               >
             {/if}
           </li>
+          {#if updated?.manifest === m.id && updated.earlier.length > 0}
+            <li class="notice">
+              <span class="desc" role="status">
+                Added {describe(updated.engine)}. {updated.earlier.map(describe).join(', ')}
+                {updated.earlier.length === 1 ? 'is' : 'are'} still installed.
+              </span>
+              <button
+                disabled={working != null}
+                title="Delete the earlier versions and their downloaded files"
+                onclick={removeEarlier}>Remove {updated.earlier.length === 1 ? 'it' : 'them'}</button
+              >
+              <button onclick={() => (updated = null)}>Keep</button>
+            </li>
+          {/if}
         {/each}
         {#each catalog.suggested as s (s.url)}
           <li>
@@ -375,6 +436,9 @@
     gap: 6px;
     padding: 6px 0;
     border-bottom: 1px solid var(--border);
+  }
+  .notice .desc {
+    flex: 1;
   }
   .info {
     flex: 1;

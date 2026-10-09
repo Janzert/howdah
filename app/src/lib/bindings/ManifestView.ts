@@ -22,6 +22,6 @@ updatable: boolean,
  */
 downloadable: boolean, 
 /**
- * The version installed from it, and that engine's id.
+ * The newest version installed from it, and that engine's id.
  */
 installedVersion: string | null, engineId: string | null, options: Array<ManifestOptionView>, };

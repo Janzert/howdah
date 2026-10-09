@@ -359,8 +359,14 @@ Howdah plays and watches games on arimaa.com.
     staging directory (refusing paths that leave it, links and drive
     letters; a leading `./` and pax headers are fine) and renames it to
     `<app local data>/engines/<id>/<version>/`, marks the program
-    executable, and registers it: a new engine, or the one installed from
-    the same manifest updated (keeping its id, name and options).
+    executable, and registers it (`register`): an update is a new engine
+    beside the earlier versions (taking the newest earlier one's options,
+    and named with the version appended if another engine has the
+    manifest's name), while reinstalling a version updates its entry.
+    The Engines dialog then offers to remove the earlier versions.
+    `remove_files` deletes an installed engine's version directory when
+    the engine is deleted (`Backend::delete_engine`), unless another
+    engine runs from it.
     `refresh` fetches the newest manifest from its `update_url` (or the
     URL it came from) without installing. The dev bridge keeps both in
     its config dir (`installed-engines/`).

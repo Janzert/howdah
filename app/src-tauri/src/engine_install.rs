@@ -56,6 +56,26 @@ impl EngineCatalog {
         EngineCatalog { path, root, entries, http: None }
     }
 
+    /// Deletes the files installed for `engine` (its version's directory),
+    /// unless one of the `remaining` engines still runs from there. Engines
+    /// not installed from a manifest, or whose program lies elsewhere, are
+    /// left alone.
+    pub fn remove_files(&self, engine: &EngineSpec, remaining: &[EngineSpec]) -> Result<(), ApiError> {
+        let Some(i) = &engine.installed else { return Ok(()) };
+        let dir = self.root.join(dir_name(&i.manifest)).join(dir_name(&i.version));
+        let inside = |e: &EngineSpec| Path::new(&e.program).starts_with(&dir);
+        if !inside(engine) || remaining.iter().any(inside) || !dir.exists() {
+            return Ok(());
+        }
+        std::fs::remove_dir_all(&dir)
+            .map_err(|e| ApiError::state(format!("couldn't delete {}: {e}", dir.display())))?;
+        // The manifest's directory too, once no version is left in it.
+        if let Some(parent) = dir.parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
+        Ok(())
+    }
+
     /// The manifests, as the Engines dialog shows them, with what's
     /// installed from each in `engines`.
     pub fn view(&self, engines: &[EngineSpec]) -> EngineCatalogView {
@@ -247,8 +267,13 @@ fn dir_name(s: &str) -> String {
     if name.starts_with('.') { format!("_{name}") } else { name }
 }
 
-/// Adds the installed engine to the registry, or updates the one installed
-/// from the same manifest.
+/// Adds the installed engine to the registry as a new engine, so an
+/// update leaves the earlier version installed beside it (the Engines
+/// dialog offers to remove it). Reinstalling a version updates its entry
+/// (keeping its id, name and options). A new engine takes the options of
+/// the newest one installed from the same manifest, and is named with its
+/// version appended if another engine has the manifest's name; the user
+/// can rename it.
 fn register(
     registry: &mut EngineRegistry,
     manifest: &Manifest,
@@ -256,15 +281,23 @@ fn register(
     program: &Path,
 ) -> Result<EngineSpec, ApiError> {
     let installed = InstalledFrom { manifest: manifest.id.clone(), version: manifest.version.clone() };
-    let existing =
-        registry.list().into_iter().find(|e| e.installed.as_ref().is_some_and(|i| i.manifest == manifest.id));
+    let engines = registry.list();
+    let same = engines.iter().find(|e| e.installed.as_ref() == Some(&installed));
+    let earlier = engines.iter().rfind(|e| e.installed.as_ref().is_some_and(|i| i.manifest == manifest.id));
+    let name = match same {
+        Some(e) => e.name.clone(),
+        None if engines.iter().any(|e| e.name == manifest.name) => {
+            format!("{} {}", manifest.name, manifest.version)
+        }
+        None => manifest.name.clone(),
+    };
     let spec = EngineSpec {
-        id: existing.as_ref().map(|e| e.id.clone()).unwrap_or_default(),
-        name: existing.as_ref().map_or_else(|| manifest.name.clone(), |e| e.name.clone()),
+        id: same.map(|e| e.id.clone()).unwrap_or_default(),
+        name,
         program: program.display().to_string(),
         args: manifest.args_for(download).to_vec(),
         working_dir: program.parent().map(|d| d.display().to_string()),
-        options: existing.map(|e| e.options).unwrap_or_default(),
+        options: same.or(earlier).map(|e| e.options.clone()).unwrap_or_default(),
         installed: Some(installed),
     };
     registry.save(spec)
@@ -414,7 +447,8 @@ fn make_executable(path: &Path) -> std::io::Result<()> {
 
 fn manifest_view(e: &Entry, engines: &[EngineSpec]) -> ManifestView {
     let m = &e.manifest;
-    let engine = engines.iter().find(|s| s.installed.as_ref().is_some_and(|i| i.manifest == m.id));
+    // The newest one installed from it: updates are added after earlier ones.
+    let engine = engines.iter().rfind(|s| s.installed.as_ref().is_some_and(|i| i.manifest == m.id));
     ManifestView {
         id: m.id.clone(),
         name: m.name.clone(),
@@ -583,26 +617,72 @@ mod tests {
     }
 
     #[test]
-    fn registering_again_updates_the_same_engine() {
+    fn an_update_is_a_new_engine_and_a_reinstall_isnt() {
         let tmp = tempfile::tempdir().unwrap();
         let mut registry = EngineRegistry::load(tmp.path().join("engines.json"));
         let m1 = manifest("1.0");
         let d = m1.download().unwrap().clone();
         let first = register(&mut registry, &m1, &d, &tmp.path().join("bot/1.0/bot")).unwrap();
-        assert_eq!(first.args, ["aei"]);
+        assert_eq!((first.name.as_str(), &first.args[..]), ("Bot", &["aei".to_string()][..]));
         assert_eq!(first.working_dir.as_deref(), Some(tmp.path().join("bot/1.0").to_str().unwrap()));
-        // The user renames it and sets an option; an update keeps both.
+        // The user sets an option; a reinstall of 1.0 keeps the entry.
         let mut edited = first.clone();
-        edited.name = "My bot".into();
         edited.options = vec![crate::dto::EngineOption { name: "hash".into(), value: "64".into() }];
         registry.save(edited).unwrap();
-        let m2 = manifest("2.0");
-        let second = register(&mut registry, &m2, &d, &tmp.path().join("bot/2.0/bot")).unwrap();
-        assert_eq!(second.id, first.id);
-        assert_eq!(second.name, "My bot");
-        assert_eq!(second.options.len(), 1);
-        assert_eq!(second.installed.unwrap().version, "2.0");
+        let again = register(&mut registry, &m1, &d, &tmp.path().join("bot/1.0/bot")).unwrap();
+        assert_eq!((again.id.as_str(), again.options.len()), (first.id.as_str(), 1));
         assert_eq!(registry.list().len(), 1);
+        // 2.0 is added beside it, named apart, with the same options.
+        let second = register(&mut registry, &manifest("2.0"), &d, &tmp.path().join("bot/2.0/bot")).unwrap();
+        assert_ne!(second.id, first.id);
+        assert_eq!(second.name, "Bot 2.0");
+        assert_eq!(second.options.len(), 1);
+        assert_eq!(registry.list().len(), 2);
+    }
+
+    #[test]
+    fn a_new_engine_with_a_free_name_keeps_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut registry = EngineRegistry::load(tmp.path().join("engines.json"));
+        let m1 = manifest("1.0");
+        let d = m1.download().unwrap().clone();
+        let mut first = register(&mut registry, &m1, &d, &tmp.path().join("bot/1.0/bot")).unwrap();
+        first.name = "Old bot".into();
+        registry.save(first).unwrap();
+        let second = register(&mut registry, &manifest("2.0"), &d, &tmp.path().join("bot/2.0/bot")).unwrap();
+        assert_eq!(second.name, "Bot");
+    }
+
+    #[test]
+    fn deleting_files_leaves_what_others_use() {
+        let tmp = tempfile::tempdir().unwrap();
+        let catalog = EngineCatalog::load(tmp.path().join("m.json"), tmp.path().join("engines"));
+        let dir = |v: &str| tmp.path().join("engines").join(dir_name("github.com/x/bot")).join(v);
+        let engine = |v: &str| EngineSpec {
+            id: v.into(),
+            name: "Bot".into(),
+            program: dir(v).join("bot").display().to_string(),
+            args: vec![],
+            working_dir: None,
+            options: vec![],
+            installed: Some(InstalledFrom { manifest: "github.com/x/bot".into(), version: v.into() }),
+        };
+        for v in ["1.0", "2.0"] {
+            std::fs::create_dir_all(dir(v)).unwrap();
+            std::fs::write(dir(v).join("bot"), "").unwrap();
+        }
+        // Another entry still runs 1.0 from there: kept.
+        catalog.remove_files(&engine("1.0"), &[engine("1.0")]).unwrap();
+        assert!(dir("1.0").exists());
+        catalog.remove_files(&engine("1.0"), &[engine("2.0")]).unwrap();
+        assert!(!dir("1.0").exists() && dir("2.0").exists());
+        // A program outside the install directory isn't ours to delete.
+        let mut elsewhere = engine("2.0");
+        elsewhere.program = tmp.path().join("bot").display().to_string();
+        catalog.remove_files(&elsewhere, &[]).unwrap();
+        assert!(dir("2.0").exists());
+        catalog.remove_files(&engine("2.0"), &[]).unwrap();
+        assert!(!dir("2.0").parent().unwrap().exists(), "the manifest's directory goes when empty");
     }
 
     #[test]

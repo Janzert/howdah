@@ -131,7 +131,15 @@ user picks. The design:
   running engine and can be undone.
 - **Updating:** fetch the manifest again from its `update_url` (or the
   URL it was added from) when the user asks; offer the newer version,
-  never install it unasked.
+  never install it unasked. An update is added as a new engine, with the
+  earlier one's options, beside the earlier version (named with its
+  version when the manifest's name is taken, which the user can change),
+  and the dialog then offers to remove the earlier one. Reinstalling the
+  same version updates its entry instead.
+- **Deleting** an engine installed from a manifest also deletes its
+  version's directory, unless another engine runs from it. The dialog
+  asks for a second click, since a "latest release" manifest may not
+  offer that version again.
 - **Options:** the manifest's options give the Engines dialog names,
   types, bounds and descriptions (`check`, `spin`, `float`, `combo`,
   `string`, `file` and `path` with pickers, `button` for actions). The
