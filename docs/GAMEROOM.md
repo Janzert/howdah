@@ -91,7 +91,11 @@ architecture. Decided and checked against the live server in October 2026.
   message. Moves carry their capture tokens, which the server requires.
 - **Takebacks.** "Ask for takeback" and Accept/Decline follow the server's
   takeback field. Rated games ignore takebacks on the server, so Howdah
-  doesn't ask in them. Undo at the live position doesn't ask: a request
+  doesn't ask in them: the button is disabled, and its tooltip says why
+  (`SessionView.takebackBlocker`, as for every other reason it can't ask).
+  The panel says whether the game is rated, with its time control; the
+  server's event name is left out, since it's "Casual game" for nearly
+  every game, rated or not. Undo at the live position doesn't ask: a request
   goes to another person, so only the button sends one.
 - **Resigning and leaving.** Resign asks for a second click. "Leave game"
   stops playing here; the game goes on at arimaa.com with the user's clock

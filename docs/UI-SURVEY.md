@@ -2,7 +2,8 @@
 
 A survey of established clients for UI and features worth adopting. It's
 input for planning, not a commitment.
-Written 2026-10-01, when local play (HvB, BvB) first worked.
+Written 2026-10-01, when local play (HvB, BvB) first worked; the labels
+were brought up to date on 2026-10-09, after the 0.1.0 release.
 
 Sources:
 - **lichess** (`lichess-org/lila`, `ui/` modules: `round`, `analyse`,
@@ -109,15 +110,16 @@ cover it.
 - **[have] Coordinates: none, traps only, or all (4steps)**, in Settings,
   with traps as the default. arimaa.com
   labels the four traps (C3/F3/C6/F6) on the board.
-- **[P1] Auto-rotate (4steps):** in a game, put the human's side at the
-  bottom. Flip stays available (lichess key `f`).
+- **[have] Auto-rotate (4steps):** in a game, the human's side goes at
+  the bottom (a setting, on by default). Flip stays available (lichess
+  key `f`).
 - **[P2] Three views (arimaa.com "Vw"):** gold at the bottom, silver at the
   bottom, and a sideways view with gold on the left and silver on the
   right.
 - **[P2] Exploration-mode tint (4steps).** In a live game, the board uses an
   alternative square palette while you're browsing variations. You can't
-  confuse analysis with the real game. Pair this with a "back to live"
-  button (4steps "Current", lichess's jump to the latest move).
+  confuse analysis with the real game. (The "Back to live game" button,
+  End, and the planning note in the turn bar are done; the tint isn't.)
 - **[P2] Square color customization (4steps):** goal rows and traps per
   side, plus light and dark.
 - **[P3] Teaching overlays.** Mark pieces that can be captured next turn,
@@ -130,22 +132,24 @@ cover it.
 ## 3. Clocks and game flow
 
 - **[have]** Move time and reserve, per-side time controls, and presets.
-- **[P1] Low-time cues.** arimaa.com colors the clock by the time left
-  for the turn (move time plus reserve): green, then yellow under 30 s,
-  then red under 10 s. (Done: both clocks, the idle one by its next
-  turn's time and only once it's under 30 s.) Play a tick sound in
-  the last seconds (arimaa.com `clock.mp3`, 4steps `clock-tick.wav`).
-  arimaa.com also shows the steps left in the turn and the total game time,
-  and clicking a clock explains the time control. Add a game-start
-  sound and a window alert when it's your move while the window is
-  unfocused (4steps `QApplication::alert`).
-- **[P1] Game-end dialog** with the reason in words. 4steps has one message
-  per `WinReason`, and we have all the reasons. Actions: rematch, swap
-  sides, analyse.
-- **[P1] Move times in the move list.** (Done: each move's time or the
-  time into the game, toggled for the list.) arimaa.com records them and shows
-  average move times per player. lichess has a move-time chart (`ui/chart`)
-  under analysis.
+- **[have] Low-time cues.** As arimaa.com does, the clocks are colored
+  by the time left for the turn (move time plus reserve): green, then
+  yellow under 30 s, then red under 10 s (the idle one by its next turn's
+  time, and only once it's under 30 s). A tick sound plays in the last
+  seconds (4steps' schedule), a game-start sound plays, and the window
+  asks for attention when it's your move while it's unfocused (4steps
+  `QApplication::alert`).
+- **[P2] More clock detail (arimaa.com):** the total game time, and a
+  click on a clock explaining the time control. (The turn bar already
+  shows the step count.)
+- **[have] Game-end dialog** with the reason in words, after the final
+  move's animation. Actions: rematch, swap sides, analyse; after an
+  arimaa.com game only Analyse and Review, since players stay at the
+  table.
+- **[have] Move times in the move list**: each move's time or the time
+  into the game, toggled for the list.
+- **[P2] Move-time summaries:** arimaa.com shows average move times per
+  player, and lichess has a move-time chart (`ui/chart`) under analysis.
 - **[have] "Show" replays the last move**: Forward (→) at the latest move
   replays it, instead of a separate button. arimaa.com has four
   speeds (S1–S4), and it's the documented way to see the opponent's move.
@@ -154,50 +158,57 @@ cover it.
   recorded `timeused`. Autoplay through the game either at a fixed speed or
   at the pace the moves were actually played. lichess has `autoplay.ts` with similar modes. It fits our
   animation queue, which already paces by `animationBudgetMs`.
-- **[P2] Takeback request and accept** for online games. Local games
-  have takebacks already (an option when starting, `VARIATIONS.md`). The
-  arimaa.com client also
-  has buttons (some hidden) for adjourn, draw request, resign and pass.
-- **[P1] Repetition message that names the earlier plies.** arimaa.com
-  says "Position repeats 3 times. Same as: 12g 14g". Our commit blocker
-  should say the same.
+- **[have] Takeback request and accept** for arimaa.com games (the
+  server ignores them in rated games, so the button is disabled there and
+  says why), and Resign. Local games have takebacks as an option when
+  starting (`VARIATIONS.md`). The arimaa.com client also has buttons
+  (some hidden) for adjourn, draw request and pass; we have none of them.
+- **[have] Repetition message that names the earlier plies.** As
+  arimaa.com says "Position repeats 3 times. Same as: 12g 14g", the turn
+  bar says "the move repeats a position for the third time (as after 12g
+  and 14g)".
 
 ## 4. Move list and variations
 
-- **[have]** A flat move list with navigation and follow-live scrolling.
-- **[P1] Keyboard map (lichess):**
+- **[have]** The move list shows the whole tree, with navigation and
+  follow-live scrolling.
+- **[have] Keyboard map (lichess)**, from one table in
+  `lib/shortcuts.ts`, with the `?` help overlay. Only `x` waits, on
+  threat mode:
   - `←`/`→` and `j`/`k` to step, `Home`/`End` (also `0`/`$`)
   - `↑`/`↓` to pick among sibling variations
   - `Shift+←`/`Shift+→` for the previous or next branch point
   - `f` to flip, `space` to play the engine's best move
   - `l` to toggle the engine, `x` for threat mode, `?` for the help overlay
-
-  A `?` overlay also closes the "no keyboard-shortcut help" to-do.
-- **[P2] Variation tree** (needed for analysis; design in `VARIATIONS.md`):
+- **[have] Variation tree** (design in `VARIATIONS.md`):
   - Entering a move mid-game creates a branch instead of truncating.
-  - 4steps's tree context menu: copy move, copy sequence, promote/demote
-    (shift up/down), and delete. Deleting is disabled for the live line.
+  - The move list's menu, after 4steps's and lichess's: copy the move or
+    the moves to it, move a line up or down, make it the main line, and
+    delete from a move (refused for a running match's line). Variations
+    fold.
   - lichess offers two layouts: column (two moves per row) and inline
-    (variations in parentheses). Its menu adds "promote variation", "make
-    mainline", and "delete from here".
-- **[P2] Comments and glyphs (lichess):** `!`, `?`, `!!`, `??`, `!?`, `?!`
-  plus free-text comments per move, and board shapes saved with the move.
-  They need a record format. The arimaa.com game-comment conventions and
-  the `.ann` format used by annotated Arimaa games are candidates.
-- **[P2] Plan ahead in a live game** (arimaa.com Expert mode and the "P"
-  plan window):
+    (variations in parentheses); ours is one move per row.
+- **[have] Comments and glyphs (lichess):** `!`, `?`, `!!`, `??`, `!?`,
+  `?!` plus free-text comments per move, in the PGN-style record format.
+  Still open: positional glyphs (`$10`-`$19`) and board shapes saved with
+  the move (`%cal`/`%csl`).
+- **[have] Plan ahead in a live game** (arimaa.com Expert mode and the "P"
+  plan window), as below:
   - Play both sides forward from the live position. Planned moves are
     marked in the move list (`planmove`).
   - "Send" submits only the first move of the planned line.
   - The plan window is separate, so an incoming opponent move doesn't
     wipe the plan, and you can't send by accident.
 
-  For us this is the variation tree plus the exploration tint, with
-  "play the first move of this line" as an action.
+  For us it's the variation tree: a move away from the live position is
+  a plan, never sent, and Play sends the plan's first move. The
+  exploration tint isn't done.
 - **[P2] Copy and paste everywhere (4steps context menu):**
   - Copy the position (short format)
-  - Copy the move sequence up to the current ply
-  - Paste a move or record anywhere
+  - Copy the move sequence up to the current ply (done, in the move
+    list's menu)
+  - Paste a move or record anywhere (a record can be pasted in the Record
+    dialog)
   - Drag and drop a record file onto the window (Nibbler, En Croissant)
   - arimaa.com's "M" opens the move list as plain text, using g/s notation,
     with the current position in setup notation above it.
@@ -206,19 +217,16 @@ cover it.
 
 The current engine panel shows depth, eval, PV and log per side.
 
-- **[P1] Analysis mode** (already planned): an engine on the displayed
-  position, restarting as you navigate.
-  - Ideas from lichess (`ceval`): a toggle (`l`), an eval bar beside the
-    board, and the best move drawn as arrows. Draw the first PV turn's
-    steps as arrows (`autoShape.ts` already draws "maneuver" chains of up
-    to 3 moves).
-  - Include the in-progress partial turn. 4steps's "Run analysis" passes
-    the partial move to the engine.
-- **[P1] Interactive PV:**
-  - Hovering a PV turn previews that position (lichess's PV board
-    preview).
-  - Clicking a PV turn adds the PV as a variation up to that turn.
-  - 4steps's analysis output also makes move sequences clickable.
+- **[have] Analysis mode** (`ANALYSIS.md`): an engine on the displayed
+  position, restarting as you navigate, with lichess's toggle (`l`), an
+  eval bar beside the board, and the first PV turn drawn as arrows.
+  - Not done: the in-progress partial turn (4steps's "Run analysis"
+    passes it to the engine). AEI has no way to send one; see
+    `ANALYSIS.md`.
+- **[have] Interactive PV:** hovering a PV turn previews that position
+  (lichess's PV board preview), and clicking one adds the PV as a
+  variation up to that turn. The chips hold still while the pointer is
+  over them.
 - **[P2] Threat mode (lichess `x`):** analyse as if you passed, which shows
   the opponent's threats. In Arimaa this answers the most common question,
   "what is threatening goal or captures?", and maps onto a null move: hand
@@ -260,18 +268,20 @@ The current engine panel shows depth, eval, PV and log per side.
 
 ## 7. Online play and spectating (use cases 2 and 3)
 
-- **[P2] Lobby:**
-  - Game lists: my games, invited, open, live, recent (the ASIP 2.0 `state`
-    lists).
-  - Create game (side, time control, rated).
+- **[have] Lobby** (the arimaa.com dialog, `GAMEROOM.md`): my games,
+  invitations, open, live and recently finished games (the ASIP 2.0
+  `state` lists), postal games, a player search with their past games,
+  and creating or inviting to a game (side, time control, rated).
+  Still open:
   - The 4steps bot launcher: create a game against a server bot, with
     "join on creation".
   - A "Last updated" time, and "last server response" age in the corner as
     a connection-health cue (4steps).
-- **[P2] Game header like arimaa.com:** game id, rated flag, time control
-  string, and players with ratings. The result appears as Won/Lost next to
-  each name. Under the board, finished games show the dates played and
-  average move times.
+- **[have] Game header like arimaa.com:** the panel shows the game id
+  (and the permanent id once it ends), Rated or Unrated with the time
+  control, and the player bars show names and ratings. Still open: the
+  result as Won/Lost beside each name, and for finished games the dates
+  played and average move times.
 - **[P2] Game lists with board thumbnails** (the arimaa.com lobby). Recent
   games show a small board of the final position, the move count and
   result (`g 71`), and the time control. Clicking the thumbnail opens the
@@ -279,16 +289,19 @@ The current engine panel shows depth, eval, PV and log per side.
 - **[P2] Game comments** (arimaa.com "G" and `comments.cgi`, plus the
   "Commented Games" list): a discussion thread for each finished game.
   Showing it for gameroom games is read-only and easy.
-- **[P2] Sound events** (arimaa.com): step, trap, win, lose, clock, start,
-  setup, chat, and the opponent entering and leaving (the server doesn't
-  tell players about spectators).
-- **[P2] Chat** under the board (arimaa.com and 4steps).
+- **[have] Sound events** (arimaa.com): step, capture, win, lose,
+  clock, start, setup, chat, a refused move, and the opponent joining and
+  leaving (the server doesn't tell players about spectators).
+- **[have] Chat** under the board (arimaa.com and 4steps), at a player's
+  seat; spectators don't get it from the server.
 - **[P2] Several games at once:** tabs or windows, already planned. lichess's "move on" (`moveOn.ts`) jumps to the next game where
   it's your turn. This is essential for postal play.
 - **[P3] Postal conveniences:**
   - Conditional moves (lichess "forecast" for correspondence games).
   - A per-game notes pad.
-  - Notifications when the opponent moves.
+  - Notifications when the opponent moves. (While the app runs and is
+    logged in, the arimaa.com button counts postal games waiting on your
+    move and announces new ones; nothing tells you otherwise.)
 - **[P3] Opening and setup explorer** (lichess `explorer`, En Croissant's
   database). Show statistics per setup and early position from a local
   copy of the arimaa.com game archive. Setups have a much smaller space
@@ -319,9 +332,10 @@ From Cute Chess. Our `play_match` plus the app's BvB are the seed.
 
 ## 9. Settings, layout and accessibility
 
-- **[have] Settings dialog**: theme, coordinates, auto-rotate (human at
-  the bottom), animation speed (ms per step, as 4steps has), hover input
-  (arrows or step mode), continuous step entry, sound and volume.
+- **[have] Settings dialog**: light or dark appearance (or the
+  system's), theme, coordinates, auto-rotate (human at the bottom),
+  animation speed (ms per step, as 4steps has), hover input (arrows or
+  step mode), continuous step entry, sound and volume.
 - **[P2] Dockable or resizable panels** (4steps docks for the move list,
   player bars and off-board pieces, with the layout saved). A lighter
   version for us: collapsible side panels with remembered sizes.
@@ -356,21 +370,7 @@ Not adopted:
 
 ## Suggested next steps
 
-The **[P1]** items, roughly in this order, since they make HvB against
-Sharp pleasant, which is the next planned milestone:
-
-1. (Done: last-move arrows, the captured tray, coordinates, hover arrows,
-   and replaying the last move.)
-2. (Done: step mode. Wheel step scrubbing moved to P2.)
-3. (Done: the game-end dialog with rematch, swap sides and analyse, the
-   low-time tick, the unfocused-window alert, and the clock colors.
-   Still open: a game-start sound.)
-4. (Done: the keyboard map, from one table in `lib/shortcuts.ts`, and the
-   `?` help overlay, with the variation keys and `l`. `x` waits on threat
-   mode.)
-5. (Done: analysis mode with an eval bar, PV arrows, and interactive PV;
-   see `ANALYSIS.md`.)
-6. More settings (the dialog exists; see section 9).
-
-The variation tree, which analysis, comments and threat mode depend on,
-is done too (`VARIATIONS.md`).
+Every **[P1]** item, which made HvB against Sharp pleasant, is done, and
+so is the variation tree that analysis, comments and threat mode depend
+on (`VARIATIONS.md`). Only `x` waits, on threat mode. The next
+milestone will come from the **[P2]** items.

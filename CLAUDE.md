@@ -33,14 +33,17 @@ Howdah plays and watches games on arimaa.com.
     one losing the fewest friends on traps.
   - `setup`, `outcome` (goal, elimination, immobilization; `WinReason` also
     covers timeout/resignation/illegal move/score/forfeit, with arimaa.com
-    letters), `timecontrol` (`M/R/P/L/G/T` format and reserve arithmetic,
+    letters; `limit_score_winner` is arimaa.com's score rule for game and
+    turn limits, looking back past equal piece counts, which
+    `Game::score_winner`/`GameTree::score_winner` apply), `timecontrol` (`M/R/P/L/G/T` format and reserve arithmetic,
     ported from pyrimaa `util.py`, plus the one-minute setup rule from
     `matchRules.html`: with under a minute per move the setup gets a
     minute, overtime comes out of the reserve, and unused setup time is
     never added; `setup_allowance`, `reserve_after_setup`; pyrimaa
     doesn't charge setup overtime to the reserve), `notation` (syntax only), and
     `game::Game`: moves plus cached positions per ply. It rejects third
-    repetitions, and a player whose only moves would all be third
+    repetitions (`earlier_occurrences` gives the moves the position stood
+    after, which the refusal names), and a player whose only moves would all be third
     repetitions is immobilized (`outcome_with_history`, from
     `Game::outcome_after`/`GameTree::outcome_after`: a depth-first search
     for one turn ending outside the positions seen twice, memoized on
@@ -83,7 +86,9 @@ Howdah plays and watches games on arimaa.com.
   - `src/bin/aei-test-engine.rs` is a random-move engine with misbehaviour
     modes, used by the tests. `--until-stop` makes it search until `stop`
     like an analysing engine, logging anything else sent mid-search as an
-    error; the app's controller tests use it. `examples/match.rs` plays one game from the
+    error; the app's controller tests use it. `--name` sets its `id name`,
+    so with `--mode lost-stop` it stands in for Sharp losing a `stop`
+    sent right after `go`. `examples/match.rs` plays one game from the
     command line.
 - `crates/howdah-gameroom`: client for the arimaa.com gameroom over ASIP
   (reqwest; depends only on `howdah-arimaa`). For a game on the server,
@@ -229,7 +234,10 @@ Howdah plays and watches games on arimaa.com.
       engine to think, and keeps the engine's move list in sync (`newgame`
       plus `makemove`s when the history diverges).
     - It sends `stop` shortly before the deadline, flags timeouts, and turns
-      engine failures into forfeits.
+      engine failures into forfeits. A search that ends without a move
+      after `stop` (`Profile::ends_search_without_move`, older Sharp
+      builds) is over for analysis; a player is sent `go` again and
+      `stop` again 100 ms later (`RESTOP_DELAY`).
     - Commands call `Controller::poke()` after every change.
     - Engine output goes out as `engine://output`.
     - A game's engine player carries options for that game

@@ -359,7 +359,10 @@ Differences from the design above, and details it left open:
 - **Analysis stays on** across new games and loaded records; only the
   target changes. Turning it off quits the engine, as proposed.
 - **The hover preview** is a small board beside the panel, as proposed,
-  kept inside the window.
+  kept inside the window. While the pointer is over the PV, the chips
+  hold the line it entered (for the same node), so a chip doesn't turn
+  into another move as the engine's PV changes; eval and depth keep
+  updating.
 - **`Space`** is "move now" while a match engine thinks; otherwise it
   adds the analysis's first turn (not while steps are being entered).
 - **Coalescing** happens in the actor: when commands queue up behind a

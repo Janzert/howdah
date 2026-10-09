@@ -7,6 +7,31 @@ young).
 
 ## [Unreleased]
 
+### Changed
+
+- A refused third repetition names the moves after which the position
+  stood before ("as after 12g and 14g"), as arimaa.com does.
+- The arimaa.com game panel says whether the game is rated, with its
+  time control, instead of the server's event name ("Casual game" for
+  nearly every game), and the disabled "Ask for takeback" button says
+  why it's disabled.
+
+### Fixed
+
+- Games ended by the game or turn limit are scored by arimaa.com's rule:
+  with equal piece counts, the side ahead after the most recent turn
+  where the counts differed wins (silver only if they never differed),
+  not silver on every tie.
+- "Move now" right after Sharp started thinking no longer makes it lose
+  on time, and analysis no longer stalls when Sharp is stopped that
+  early. (Sharp's next release also answers such a stop with a move.)
+- On Linux, drop-down lists and tooltips match the light or dark setting
+  instead of the desktop's theme.
+- The analysis line holds still while the pointer is over it, so a click
+  adds the line that was shown.
+- Long player names shorten instead of wrapping in a narrow window, and
+  the setup header no longer wraps.
+
 ## [0.1.0] - 2026-10-08
 
 The first release, with installers for Linux (AppImage, deb, rpm),
