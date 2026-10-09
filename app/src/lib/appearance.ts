@@ -3,6 +3,10 @@
 // live. The window frame is left to the OS: Tauri's window `setTheme` on
 // Linux overrides the webview's `prefers-color-scheme` and `setTheme(null)`
 // doesn't restore it, so System would stay stuck on the last forced value.
+// The native widgets the webview leaves to the toolkit (GTK's `<select>`
+// popups and tooltips) get the page's colors through
+// `set_native_appearance`.
+import { api } from './api';
 import type { Appearance } from './settings.svelte';
 
 const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
@@ -11,6 +15,7 @@ let mode: Appearance = 'system';
 function apply() {
   const dark = mode === 'dark' || (mode === 'system' && systemDark.matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  api.setNativeAppearance(dark).catch(() => {});
 }
 
 systemDark.addEventListener('change', apply);

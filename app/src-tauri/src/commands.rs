@@ -481,3 +481,57 @@ pub fn stop_watching(state: State<Backend>, session: SessionId) -> Result<(), Ap
 pub fn watch_status(state: State<Backend>, session: SessionId) -> Result<Option<WatchView>, ApiError> {
     state.watch_status(session)
 }
+
+/// Matches the native widgets the webview leaves to the toolkit (on Linux,
+/// GTK's `<select>` popups and tooltips) to the page's colors, dark or light.
+#[tauri::command]
+pub fn set_native_appearance(app: tauri::AppHandle, dark: bool) {
+    #[cfg(target_os = "linux")]
+    if let Err(e) = app.run_on_main_thread(move || gtk_appearance(dark)) {
+        eprintln!("couldn't set the GTK appearance: {e}");
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (app, dark);
+}
+
+/// WebKitGTK draws `<select>` popups and `title` tooltips with the GTK
+/// theme, whatever the page's colors, so they can be light on a dark page
+/// or the other way round. An app stylesheet over the theme gives them the
+/// page's panel colors (`app.css`). Changing GTK's theme settings instead
+/// would also change WebKit's `prefers-color-scheme`, and resetting them
+/// doesn't bring back what the system said.
+#[cfg(target_os = "linux")]
+fn gtk_appearance(dark: bool) {
+    use gtk::prelude::*;
+    thread_local! {
+        static PROVIDER: std::cell::OnceCell<gtk::CssProvider> = const { std::cell::OnceCell::new() };
+    }
+    // Panel, text, border and accent colors, as in app.css.
+    let (bg, fg, border, accent) = if dark {
+        ("#262522", "#e9e5dc", "#3a3834", "#4f86aa")
+    } else {
+        ("#fbfaf6", "#22201c", "#ddd6c8", "#3c6e8f")
+    };
+    let css = format!(
+        "menu, .popup, treeview.view, treeview.view header button {{ background-color: {bg}; color: {fg}; }}\n\
+         menu menuitem:hover, treeview.view:selected {{ background-color: {accent}; color: #ffffff; }}\n\
+         tooltip, tooltip.background {{ background-color: {bg}; color: {fg}; border: 1px solid {border}; }}\n\
+         tooltip * {{ background-color: transparent; color: {fg}; }}\n"
+    );
+    PROVIDER.with(|cell| {
+        let provider = cell.get_or_init(|| {
+            let provider = gtk::CssProvider::new();
+            if let Some(screen) = gtk::gdk::Screen::default() {
+                gtk::StyleContext::add_provider_for_screen(
+                    &screen,
+                    &provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                );
+            }
+            provider
+        });
+        if let Err(e) = provider.load_from_data(css.as_bytes()) {
+            eprintln!("couldn't load the GTK stylesheet: {e}");
+        }
+    });
+}

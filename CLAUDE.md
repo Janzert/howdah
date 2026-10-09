@@ -590,7 +590,10 @@ Howdah plays and watches games on arimaa.com.
   - `lib/theme.ts` plus `themes/<dir>/*.theme.json`: data-driven themes
     (image or procedural board/pieces).
   - `lib/settings.svelte.ts`: display preferences (light/dark appearance,
-    applied by `lib/appearance.ts`; theme, coordinates,
+    applied by `lib/appearance.ts`, which also gives GTK's `<select>`
+    popups and tooltips the page's colors through
+    `set_native_appearance`, since WebKitGTK draws them with the GTK
+    theme; theme, coordinates,
     sound and volume, animation speed (`stepMs`, the board's base speed),
     hover input, and `humanAtBottom`, which turns the board when a match
     with one human side starts) as one reactive `settings` object,

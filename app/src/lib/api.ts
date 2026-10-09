@@ -182,6 +182,9 @@ export const api = {
   stopWatching: () => invoke<void>('stop_watching', { session }),
   /** The game this session follows, if any. */
   watchStatus: () => invoke<WatchView | null>('watch_status', { session }),
+  /** Matches native widgets (GTK's `<select>` popups and tooltips) to the
+   * page's colors. */
+  setNativeAppearance: (dark: boolean) => invoke<void>('set_native_appearance', { dark }),
 };
 
 export function isApiError(e: unknown): e is ApiError {

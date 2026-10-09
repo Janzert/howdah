@@ -908,6 +908,8 @@ impl Backend {
             }
             "stop_watching" => ok(self.stop_watching(sid()?)?),
             "watch_status" => ok(self.watch_status(sid()?)?),
+            // A browser has no native widgets to match.
+            "set_native_appearance" => ok(()),
             _ => Err(ApiError::state(format!("unknown command {cmd:?}"))),
         }
     }

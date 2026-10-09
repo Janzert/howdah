@@ -114,6 +114,7 @@ pub fn run() {
             commands::send_gameroom_chat,
             commands::stop_watching,
             commands::watch_status,
+            commands::set_native_appearance,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
