@@ -53,6 +53,12 @@ pub type Events = Arc<dyn EventSink>;
 /// closed. `api.ts` has the same number.
 pub const MAIN_SESSION: SessionId = SessionId(1);
 
+/// The session a game window shows, from its label (`game-<session>`, as
+/// the frontend names the windows it opens; `lib/windows.ts`).
+pub fn game_window_session(label: &str) -> Option<SessionId> {
+    label.strip_prefix("game-")?.parse().ok().map(SessionId)
+}
+
 /// Adds the session's id to every event it sends, as a `session` field.
 struct SessionEvents {
     id: SessionId,
@@ -193,20 +199,49 @@ impl Backend {
     /// Opens a new session with an empty game, and returns its id.
     pub fn open_session(&self) -> SessionId {
         let id = SessionId(self.next_session.fetch_add(1, Ordering::Relaxed));
+        self.start_session(id);
+        id
+    }
+
+    /// Starts session `id` with an empty game.
+    fn start_session(&self, id: SessionId) {
         let events: Events = Arc::new(SessionEvents { id, inner: self.events.clone() });
         let session = Arc::new(Mutex::new(Session::new()));
         let controller = controller::spawn(events.clone(), session.clone(), self.engines.clone());
         self.sessions()
             .insert(id, Arc::new(SessionHandle { session, controller, events, watch: Mutex::new(None) }));
-        id
     }
 
-    /// Closes a session, quitting its engines. The main session stays.
+    /// Closes a session, quitting its engines and leaving any arimaa.com
+    /// game it follows (the game goes on there). The main session stays.
     pub fn close_session(&self, id: SessionId) -> Result<(), ApiError> {
         if id == MAIN_SESSION {
             return Err(ApiError::state("the main session can't be closed"));
         }
-        self.sessions().remove(&id).map(drop).ok_or_else(|| ApiError::state(format!("no session {id}")))
+        let handle =
+            self.sessions().remove(&id).ok_or_else(|| ApiError::state(format!("no session {id}")))?;
+        handle.stop_watching();
+        Ok(())
+    }
+
+    /// A window was destroyed (`label` is its Tauri label). A game window's
+    /// session ends with it, as [`close_session`](Self::close_session)
+    /// does, unless the frontend closed it already. The main window's is
+    /// replaced by a fresh one, since the main session always exists: its
+    /// engines quit and its arimaa.com game is left.
+    pub fn window_closed(&self, label: &str) {
+        let id = if label == "main" { MAIN_SESSION } else { return self.close_game_window(label) };
+        let old = self.sessions().remove(&id);
+        if let Some(handle) = old {
+            handle.stop_watching();
+        }
+        self.start_session(id);
+    }
+
+    fn close_game_window(&self, label: &str) {
+        if let Some(id) = game_window_session(label) {
+            let _ = self.close_session(id);
+        }
     }
 
     pub fn list_sessions(&self) -> Vec<SessionId> {
@@ -991,6 +1026,29 @@ mod tests {
         let e = b.get_state(other).unwrap_err();
         assert_eq!(e.message, format!("no session {other}"));
         assert!(b.close_session(other).is_err());
+    }
+
+    #[test]
+    fn closing_a_window_ends_its_session() {
+        let b = backend(Arc::new(Recorder::default()));
+        let game = b.open_session();
+        b.window_closed(&format!("game-{game}"));
+        assert_eq!(b.list_sessions(), [MAIN_SESSION]);
+        b.window_closed(&format!("game-{game}")); // already gone: nothing happens
+        b.commit_setup(MAIN_SESSION).unwrap();
+        b.window_closed("main");
+        assert_eq!(b.list_sessions(), [MAIN_SESSION], "the main session stays");
+        assert_eq!(b.get_state(MAIN_SESSION).unwrap().ply, 0, "with a fresh game");
+        b.window_closed("other");
+        assert_eq!(b.list_sessions(), [MAIN_SESSION]);
+    }
+
+    #[test]
+    fn game_window_labels_name_their_session() {
+        assert_eq!(game_window_session("game-7"), Some(SessionId(7)));
+        assert_eq!(game_window_session("main"), None);
+        assert_eq!(game_window_session("game-"), None);
+        assert_eq!(game_window_session("game-x"), None);
     }
 
     /// Every command `api.ts` invokes must be handled by `dispatch`, or the

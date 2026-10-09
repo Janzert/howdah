@@ -175,6 +175,20 @@ class Settings {
     this.update({ moveTimes: v });
   }
 
+  constructor() {
+    // Another window saved its settings: take them, so a change applies in
+    // every window (the appearance and sound follow through App's effects).
+    // `storage` fires only in the windows that didn't make the change.
+    globalThis.addEventListener?.('storage', (e) => {
+      if (e.key === KEY || e.key === null) this.reload();
+    });
+  }
+
+  /** Reads the settings saved in localStorage again. */
+  reload() {
+    this.#data = parse(read(KEY), { theme: read('theme'), muted: read('muted') });
+  }
+
   update(patch: Partial<SettingsData>) {
     this.#data = { ...this.#data, ...patch };
     try {

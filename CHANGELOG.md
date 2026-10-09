@@ -7,6 +7,13 @@ young).
 
 ## [Unreleased]
 
+### Added
+
+- "New window" opens another window with a game of its own, so several
+  games can be played, watched or analysed at once. Closing a window
+  ends its game; while it plays an arimaa.com game or a match is on, it
+  asks first. Settings changed in one window apply in all of them.
+
 ### Changed
 
 - A refused third repetition names the moves after which the position

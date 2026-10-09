@@ -375,7 +375,12 @@ Howdah plays and watches games on arimaa.com.
     It holds several sessions keyed by `SessionId`, each with its own
     controller (`open_session`, `close_session`, `list_sessions`).
     `MAIN_SESSION` (1) is the main window's: it always exists, and
-    `api.ts` has the same number (a test checks). Every session command
+    `api.ts` has the same number (a test checks). A game window (plan in
+    `docs/WINDOWS.md`) has its own session and the Tauri label
+    `game-<session>` (`game_window_session`); `window_closed`, called from
+    `lib.rs` when Tauri destroys a window, closes a game window's session
+    and replaces the main window's with a fresh one. `close_session` also
+    leaves the session's arimaa.com game (`stop_watching`). Every session command
     takes a `session` argument, and a session's events carry a `session`
     field (`SessionEvents` adds it).
     Commands are **intents**. Mutating commands return
@@ -393,9 +398,28 @@ Howdah plays and watches games on arimaa.com.
     frontend can run in a plain browser against the real session and
     engines. Its engine list lives in `target/debug/dev-bridge-config/`.
 - `app/src`: Svelte 5 (runes) + Vite, no SvelteKit.
+  - `main.ts` is the one entry page for every window: a game window
+    (`?session=<id>`) and the main window both mount `App.svelte` for now
+    (the main window becomes the lobby later; `docs/WINDOWS.md`).
   - `lib/api.ts`: typed invoke wrappers. `session` is the window's
-    session: `?session=<id>` in its URL, otherwise `MAIN_SESSION`; every
-    session command passes it.
+    session: `?session=<id>` in its URL, otherwise `MAIN_SESSION`
+    (`isGameWindow` when it isn't); every session command passes it.
+  - `lib/windows.ts`: game windows. `openGameWindow` (toolbar button "New
+    window") calls `open_session` and opens `index.html?session=<id>`: a
+    `WebviewWindow` labelled `game-<id>` in Tauri, `window.open` in the
+    browser preview. `guardClose` asks before a window closes while App's
+    `closeWarning` says it would leave the user's arimaa.com game or stop
+    a match (`CloseWindowDialog.svelte`, from Tauri's `onCloseRequested`;
+    the browser preview gets only `beforeunload`'s prompt, in game
+    windows). In Tauri the backend ends the session as the window is
+    destroyed; in the browser preview a game window's tab closes it on
+    `pagehide` (`closeSessionWithPage`, a beacon), and a reloaded tab
+    whose session is gone gets a new one (`useSession`). The capability
+    file (`capabilities/default.json`) covers `main` and `game-*`,
+    including creating windows and `destroy` (which `onCloseRequested`
+    needs). Until the lobby window exists, app-wide arimaa.com news is
+    announced (flash, sound, attention) and invitation answers acted on
+    only in the main window; every window shows the badges.
   - `lib/devBridge.ts`: in dev outside Tauri (`main.ts` checks), `mockIPC`
     forwards every `invoke` to the dev bridge (Vite proxies `/bridge`) and
     replays its event stream as Tauri events.
@@ -614,6 +638,8 @@ Howdah plays and watches games on arimaa.com.
     saved to localStorage as JSON (`parse` validates and reads the older
     `theme`/`muted` keys).
     `SettingsDialog.svelte` binds to it directly; add new options to both.
+    A `storage` event (another window saved) reloads it, so changes apply
+    in every window; App's effects reapply the appearance and sound.
 
 ## Conventions
 

@@ -59,3 +59,9 @@ export function installDevBridge(): void {
   source.addEventListener('error', () => console.warn('dev bridge: event stream lost, retrying'));
   console.info('dev bridge: frontend is using the native backend at', BASE);
 }
+
+/** Closes a session as the page goes away. A beacon, since a request
+ * started from `pagehide` may be cut off with the page. */
+export function closeSessionOnUnload(id: number): void {
+  navigator.sendBeacon(`${BASE}/invoke/close_session`, JSON.stringify({ session: id }));
+}

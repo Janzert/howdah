@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { analysisEngine, pvMoves } from './lib/analysis';
   import AnalysisPanel from './lib/AnalysisPanel.svelte';
-  import { api, errorMessage } from './lib/api';
+  import { api, errorMessage, isGameWindow } from './lib/api';
   import type { AnalysisLine } from './lib/bindings/AnalysisLine';
   import type { AnalysisView } from './lib/bindings/AnalysisView';
   import { setAppearance } from './lib/appearance';
@@ -26,6 +26,7 @@
   import CommentBox from './lib/CommentBox.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
   import ChatPanel from './lib/ChatPanel.svelte';
+  import CloseWindowDialog from './lib/CloseWindowDialog.svelte';
   import PlayerBar from './lib/PlayerBar.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
   import { justEnded } from './lib/result';
@@ -40,6 +41,7 @@
   import WatchDialog from './lib/WatchDialog.svelte';
   import WatchPanel from './lib/WatchPanel.svelte';
   import { myTurn, newOpponentChat, watchSounds } from './lib/gameroom';
+  import { guardClose, openGameWindow } from './lib/windows';
 
   function pref(key: string): string | null {
     try {
@@ -70,6 +72,8 @@
   let showSettings = $state(false);
   let showHelp = $state(false);
   let showWatch = $state(false);
+  /** The question asked before closing the window, while it's open. */
+  let closing = $state<{ reason: string; confirm: string; answer: (close: boolean) => void } | null>(null);
   /** The arimaa.com game this session follows, if any. */
   let watch = $state<WatchView | null>(null);
   /** Open invitations to the user (from the lobby watcher), and those
@@ -289,6 +293,8 @@
     });
     const unlistenLobby = on('gameroom://lobby', lobbyGames);
     const unlistenInvitation = on('gameroom://invitation', (a) => {
+      // App-wide: the main window answers it, so the seat is taken once.
+      if (isGameWindow) return;
       if (a.outcome.kind === 'accepted') {
         const { gid, side } = a.outcome;
         // Into the game, unless this window plays another one.
@@ -306,6 +312,13 @@
       }
       play('notification');
     });
+    void guardClose(
+      () => closeWarning?.reason ?? null,
+      (reason) =>
+        new Promise((answer) => {
+          closing = { reason, confirm: closeWarning?.confirm ?? 'Close', answer };
+        }),
+    );
     api.watchStatus().then((w) => (watch = w));
     api.getState().then((v) => {
       setView(v);
@@ -328,7 +341,8 @@
     const fresh = incoming.filter((i) => !seenInvitations.has(i.created));
     invitationCount = incoming.length;
     for (const i of incoming) seenInvitations.add(i.created);
-    if (fresh.length > 0 && !showWatch) {
+    // Announced in the main window only, so once (the badges show in all).
+    if (fresh.length > 0 && !showWatch && !isGameWindow) {
       flash(`${fresh[0].opponent ?? 'Someone'} invites you to a game (arimaa.com)`);
       play('notification');
       requestAttention('Invitation');
@@ -337,7 +351,7 @@
     const turns = g.mine.filter((m) => m.postal && myTurn(m, g.user) && m.gid !== watch?.gid).map((m) => m.gid);
     const newTurns = turns.filter((gid) => !postalTurns.includes(gid));
     postalTurns = turns;
-    if (newTurns.length > 0 && fresh.length === 0 && !showWatch) {
+    if (newTurns.length > 0 && fresh.length === 0 && !showWatch && !isGameWindow) {
       flash(
         newTurns.length === 1
           ? 'A postal game waits on your move (arimaa.com)'
@@ -396,12 +410,28 @@
   });
   /** The PV's first turn, drawn on the board while no steps are taken. */
   const pvMove = $derived(view?.turn?.steps.length ? null : (shown.line?.pv[0]?.steps ?? null));
-  /** A match with an engine is still being played (its live node has no result). */
-  const matchRunning = $derived.by(() => {
-    if (!hasEngine || view?.live == null) return false;
+  /** A match is still being played: its live node has no result. */
+  const matchOn = $derived.by(() => {
+    if (!view?.players || view.live == null) return false;
     const live = view.live;
     const result = live === view.cursor ? view.result : view.tree.find((n) => n.id === live)?.result;
     return result == null;
+  });
+  /** A match with an engine is still being played. */
+  const matchRunning = $derived(hasEngine && matchOn);
+  /** Why closing the window should ask first: it would leave the user's
+   * game on arimaa.com, or stop a match (watching a game doesn't count). */
+  const closeWarning = $derived.by((): { reason: string; confirm: string } | null => {
+    if (!view?.players || !matchOn) return null;
+    const remote = [view.players.gold, view.players.silver].filter((p) => p.kind === 'remote').length;
+    if (remote === 1) {
+      return {
+        reason: "You're playing a game on arimaa.com. Closing the window leaves it; the game goes on there with your clock running.",
+        confirm: 'Leave game and close',
+      };
+    }
+    if (remote === 0) return { reason: 'A match is being played. Closing the window stops it.', confirm: 'Stop match and close' };
+    return null;
   });
 
   /** The analysis panel is showing: analysis is on, or it failed. */
@@ -551,7 +581,7 @@
   };
 
   function onkeydown(e: KeyboardEvent) {
-    if (!view || record != null || showNewGame || showEngines || showSettings || showGameEnd || showHelp || showWatch) return;
+    if (!view || record != null || showNewGame || showEngines || showSettings || showGameEnd || showHelp || showWatch || closing) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, select')) return;
     const shortcut = shortcutFor(e);
@@ -671,6 +701,9 @@
     {/if}
     <div class="tools">
       <button onclick={() => (showNewGame = true)}>New game</button>
+      <button onclick={() => openGameWindow().catch((e) => flash(errorMessage(e)))} title="Open another window, with a game of its own">
+        New window
+      </button>
       <button onclick={() => (showWatch = true)} title="Play or watch games on arimaa.com, or open finished ones">
         arimaa.com{#if invitationCount > 0}<span class="badge" title="Invitations to you">{invitationCount}</span>{/if}{#if postalTurns.length > 0}<span
             class="badge"
@@ -698,6 +731,16 @@
   </aside>
 </main>
 
+{#if closing}
+  <CloseWindowDialog
+    reason={closing.reason}
+    confirm={closing.confirm}
+    onAnswer={(close) => {
+      closing?.answer(close);
+      closing = null;
+    }}
+  />
+{/if}
 {#if record != null}
   <RecordDialog
     initial={record}

@@ -28,7 +28,18 @@ export const MAIN_SESSION = 1;
 
 /** The session this window shows: `?session=<id>` in its URL, otherwise
  * the main one. Every session command passes it. */
-export const session: SessionId = Number(new URLSearchParams(location.search).get('session') ?? MAIN_SESSION);
+export let session: SessionId = Number(new URLSearchParams(location.search).get('session') ?? MAIN_SESSION);
+
+/** Whether this is a game window (one opened with its own session), not
+ * the main window. */
+export const isGameWindow = session !== MAIN_SESSION;
+
+/** Moves this window to another session, before anything uses it (the
+ * browser preview, when a reloaded game window's session is gone). */
+export function useSession(id: SessionId) {
+  session = id;
+  history.replaceState(null, '', `?session=${id}`);
+}
 
 export const api = {
   /** Opens a session with an empty game, for another window. */

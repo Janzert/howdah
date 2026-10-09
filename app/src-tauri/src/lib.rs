@@ -15,7 +15,7 @@ pub mod session;
 use std::sync::Arc;
 
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use backend::{Backend, EventSink};
 use engine_install::EngineCatalog;
@@ -42,6 +42,12 @@ pub fn run() {
             let saved_login = SavedLogin::new(Some(config_dir.join("gameroom-login.json")));
             app.manage(Backend::new(registry, catalog, saved_login, Arc::new(app.handle().clone())));
             Ok(())
+        })
+        // A window's session ends with the window, however it closed.
+        .on_window_event(|window, event| {
+            if let WindowEvent::Destroyed = event {
+                window.state::<Backend>().window_closed(window.label());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_session,

@@ -2,7 +2,8 @@
 
 Plan for playing, watching and analysing several games at once, each in
 its own window, with a main window that works as a home screen and
-arimaa.com lobby. Written 2026-10-09; nothing here is built yet.
+arimaa.com lobby. Written 2026-10-09; phase 1 (game windows) is built,
+the rest isn't yet.
 
 ## What other clients do
 
@@ -53,16 +54,16 @@ Patterns worth taking:
   `close_session`, `list_sessions`), each with its own controller, and
   every session command and event carries a session id. A window picks
   its session from `?session=<id>` in its URL (`lib/api.ts`), and
-  `lib/events.ts` drops other sessions' events. Only the main window
-  exists, on `MAIN_SESSION`.
+  `lib/events.ts` drops other sessions' events. Before phase 1 only the
+  main window existed, on `MAIN_SESSION`.
 - App-wide state: the arimaa.com login and its lobby poll
   (`Gameroom::watch_lobby`, `gameroom://lobby`), invitations
   (`gameroom://invitation`), the engine list and catalog. A followed
   arimaa.com game (`Watch`) belongs to its session.
-- Settings are in `localStorage`, which windows share, but a window
-  doesn't notice another one changing them.
-- The capability file allows only the `main` window
-  (`capabilities/default.json`).
+- Settings are in `localStorage`, which windows share; before phase 1 a
+  window didn't notice another one changing them.
+- The capability file allowed only the `main` window
+  (`capabilities/default.json`) before phase 1.
 - `App.svelte` is both the toolbar (New game, arimaa.com, Engines,
   Analysis, Record, Flip, Settings, Help) and the game view.
   `WatchDialog.svelte` is the arimaa.com lobby, as a dialog.
@@ -173,10 +174,11 @@ the client has to trust the user and community norms (Brian,
 
 ## Phases
 
-1. **Game windows:** the two roots, opening and closing windows (Tauri
-   and the browser preview), sessions ending with their windows, the
-   capability, settings kept in step, and an e2e test with two windows.
-   The main window keeps today's UI, with a "New window" button.
+1. **Game windows** (done 2026-10-09): the two roots, opening and
+   closing windows (Tauri and the browser preview), sessions ending with
+   their windows, the capability, settings kept in step, and an e2e test
+   with two windows. The main window keeps today's UI, with a "New
+   window" button.
 2. **The lobby window:** the main window becomes home plus the arimaa.com
    lobby (moved out of `WatchDialog`), the open-windows list, and the
    notifications moved there. Game windows get the smaller toolbar.
@@ -184,6 +186,30 @@ the client has to trust the user and community norms (Brian,
    "your move" in titles, and remembering the window size.
 4. **Later:** reopening windows after a restart, a full game wall for
    engine matches, tabs as an alternative to windows if they're wanted.
+
+**As built (phase 1)**, where it differs from or adds to the plan:
+- Both roots mount `App.svelte` for now; every window, not just the
+  main one, has the "New window" button, as the Proposal has it.
+- The close check applies to the main window too. Closing a window asks
+  while it plays an arimaa.com game (not one only watched) or a match
+  is on (`closeWarning` in `App.svelte`), in an in-app dialog
+  (`CloseWindowDialog.svelte`); confirming closes it, and the backend
+  ends the session (leaving the arimaa.com game) when the window is
+  destroyed. The browser preview can only offer `beforeunload`'s
+  generic prompt, and only in game windows.
+- The main window being closed while game windows stay open (the app
+  goes on) gives the main session a fresh game, so a hidden game or
+  match doesn't go on with no window (`Backend::window_closed`). Phase 2
+  hides the lobby instead.
+- Until the lobby window exists, arimaa.com notifications (invitations,
+  postal moves due) are announced and invitation answers acted on in the
+  main window only, so a seat isn't taken twice; the toolbar badges show
+  in every window.
+- Browser preview: a game window's tab closes its session on `pagehide`
+  with a beacon, so reloading it starts a new session (an empty game);
+  Tauri windows keep their session across a reload.
+- Settings follow `storage` events; checked in the real app too
+  (WebKitGTK delivers them between Tauri windows).
 
 Windows come first; nothing in the design should rule out tabs (a game
 view that doesn't assume it owns the whole window, and a session per
