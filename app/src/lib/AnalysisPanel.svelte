@@ -86,6 +86,14 @@
     }
   });
 
+  // While the pointer is over the PV, its chips hold still: the line it
+  // entered stays shown (for the same node) until it leaves.
+  let held = $state<AnalysisLine | null>(null);
+  const pvLine = $derived(held && line && held.node === line.node ? held : line);
+  $effect(() => {
+    if (!line) held = null;
+  });
+
   // The hover preview: the position after a PV turn.
   let hovered = $state<{ index: number; top: number; position: PositionView | null } | null>(null);
   const cache = new Map<string, PositionView>();
@@ -94,8 +102,8 @@
   let panel: HTMLElement;
 
   async function hover(index: number, chip: HTMLElement) {
-    if (!line) return;
-    const l = line;
+    if (!pvLine) return;
+    const l = pvLine;
     // Beside the chip, but kept inside the window.
     const top =
       Math.max(8, Math.min(chip.getBoundingClientRect().top, window.innerHeight - PREVIEW_HEIGHT - 8)) -
@@ -106,7 +114,7 @@
     try {
       const position = await preview(l, index);
       cache.set(key, position);
-      if (hovered?.index === index && line === l) hovered = { index, top, position };
+      if (hovered?.index === index && pvLine === l) hovered = { index, top, position };
     } catch {
       /* the line changed under the pointer; no preview */
     }
@@ -151,13 +159,19 @@
   {/if}
   <p class="status" class:failed={phase === 'failed'} role="status">{status}</p>
   {#if sharesCpu}<p class="note">Shares the CPU with the match engines.</p>{/if}
-  {#if line && line.pv.length && phase !== 'failed'}
-    <div class="pv" aria-label="Principal variation">
-      {#each line.pv as turn, i (i)}
+  {#if pvLine && pvLine.pv.length && phase !== 'failed'}
+    <div
+      class="pv"
+      role="group"
+      aria-label="Principal variation"
+      onmouseenter={() => (held = line)}
+      onmouseleave={() => (held = null)}
+    >
+      {#each pvLine.pv as turn, i (i)}
         <button
           class="chip"
           title="Add the line up to here"
-          onclick={() => onAdd(line, i)}
+          onclick={() => onAdd(pvLine, i)}
           onmouseenter={(e) => hover(i, e.currentTarget)}
           onmouseleave={() => (hovered = null)}
           onfocus={(e) => hover(i, e.currentTarget)}
@@ -172,7 +186,7 @@
   {#if hovered?.position}
     <div class="preview" style:top="{hovered.top}px" aria-hidden="true">
       <MiniBoard position={hovered.position} {theme} {flipped} />
-      <div class="caption">after {line?.pv[hovered.index]?.label}</div>
+      <div class="caption">after {pvLine?.pv[hovered.index]?.label}</div>
     </div>
   {/if}
   {#if log.length}
