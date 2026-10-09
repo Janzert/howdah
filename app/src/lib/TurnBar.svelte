@@ -72,13 +72,10 @@
   {:else if view.phase === 'setup'}
     <div class="status">
       <span class="dot {view.position.sideToMove}"></span>
-      {#if hasDraft}
-        <strong>{side} setup</strong> — drag pieces to swap them
-      {:else}
-        {side} setup
-      {/if}
+      {#if hasDraft}<strong>{side} setup</strong>{:else}{side} setup{/if}
     </div>
     {#if hasDraft}
+      <div class="note">Drag pieces to swap them.</div>
       <div class="buttons">
         <button class="primary" onclick={onCommit}>Confirm setup <kbd>⏎</kbd></button>
       </div>
