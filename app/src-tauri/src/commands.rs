@@ -357,6 +357,11 @@ pub async fn gameroom_games(state: State<'_, Backend>) -> Result<GameroomGames, 
 }
 
 #[tauri::command]
+pub fn gameroom_game_session(state: State<Backend>, gid: String) -> Option<SessionId> {
+    state.gameroom_game_session(&gid)
+}
+
+#[tauri::command]
 pub fn gameroom_last_games(state: State<Backend>) -> Option<GameroomGames> {
     state.gameroom_last_games()
 }

@@ -15,9 +15,13 @@ setAppearance(settings.appearance);
 if (import.meta.env.DEV && !inTauri) {
   const { installDevBridge } = await import('./lib/devBridge');
   installDevBridge();
-  // A game window's tab closes its session as it goes, so a reload finds
-  // it gone (or the bridge restarted): carry on with a new one.
-  if (session != null && !(await api.listSessions()).includes(session)) useSession(await api.openSession());
+  // A game window's tab closes its session as it goes, so a reload (whose
+  // close may still be on its way) or a restarted bridge carries on with a
+  // new one.
+  const reloaded = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
+  if (session != null && (reloaded || !(await api.listSessions()).includes(session))) {
+    useSession(await api.openSession());
+  }
   nameTab();
   await closeSessionWithPage();
 }

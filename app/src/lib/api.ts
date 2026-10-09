@@ -146,6 +146,9 @@ function makeApi(sid: () => SessionId | null) {
     /** The lists as last fetched (by the lobby's poll or a refresh), without
      * asking the server; null while logged out. */
     gameroomLastGames: () => invoke<GameroomGames | null>('gameroom_last_games'),
+    /** The session following arimaa.com game `gid` (its gameroom id), if
+     * one does: that game's window. */
+    gameroomGameSession: (gid: string) => invoke<SessionId | null>('gameroom_game_session', { gid }),
     /** The postal games being played on arimaa.com (the live list leaves
      * them out); one page fetch, so only when asked. */
     gameroomPostalGames: () => invoke<PostalGameView[]>('gameroom_postal_games'),

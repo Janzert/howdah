@@ -20,9 +20,10 @@
 
   interface Props {
     /** Opens a game window whose session `start` makes a gameroom game
-     * (opening, joining or creating one). Resolves to an error message,
-     * or null on success. */
-    onOpen: (start: (a: Api) => Promise<void>) => Promise<string | null>;
+     * (opening, joining or creating one), or brings forward the window
+     * that has `game` already. Resolves to an error message, or null on
+     * success. */
+    onOpen: (start: (a: Api) => Promise<void>, game?: { gid: string; play: boolean }) => Promise<string | null>;
     /** The lists, whenever they're fetched here (the lobby's poll comes
      * as an event too). */
     onGames?: (games: GameroomGames) => void;
@@ -205,14 +206,14 @@
     });
   }
 
-  async function enter(start: (a: Api) => Promise<void>) {
+  async function enter(start: (a: Api) => Promise<void>, game?: { gid: string; play: boolean }) {
     busy = true;
-    error = await onOpen(start);
+    error = await onOpen(start, game);
     busy = false;
   }
 
   function open(gid: string) {
-    return enter((a) => a.openGameroomGame(gid.trim()));
+    return enter((a) => a.openGameroomGame(gid.trim()), { gid: gid.trim(), play: false });
   }
 
   function openById(e: SubmitEvent) {
@@ -412,7 +413,7 @@
               <span class="meta">{gameMeta(g)}</span>
             </span>
             {#if side}
-              <button onclick={() => enter((a) => a.playGameroomGame(g.gid, side))} disabled={busy}
+              <button onclick={() => enter((a) => a.playGameroomGame(g.gid, side), { gid: g.gid, play: true })} disabled={busy}
                 aria-label="Play game {g.gid}">Play</button
               >
             {/if}
@@ -440,7 +441,7 @@
               </span>
               <span class="meta">{gameMeta(g)}</span>
             </span>
-            <button onclick={() => enter((a) => a.playGameroomGame(g.gid, side))} disabled={busy}
+            <button onclick={() => enter((a) => a.playGameroomGame(g.gid, side), { gid: g.gid, play: true })} disabled={busy}
               aria-label="Sit as {side} in game {g.gid}">Play as {side === 'gold' ? 'Gold' : 'Silver'}</button
             >
           </li>

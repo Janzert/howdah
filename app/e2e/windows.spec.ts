@@ -93,3 +93,33 @@ test("a game window's Lobby button goes back to the lobby tab", async ({ page, c
   expect(context.pages()).toHaveLength(2);
   await expect(page.getByRole('heading', { name: 'Play and analyse' })).toBeVisible();
 });
+
+test('titles say whose move it is, and Next game goes to the other waiting game', async ({ page, context }) => {
+  await lobby(page);
+  const engines = await bridge<{ id: string }[]>(page, 'list_engines');
+  test.skip(engines.length === 0, 'no test engine (cargo build -p howdah-aei --bin aei-test-engine)');
+  /** A game against the engine, the user setting up first. */
+  const engineGame = async () => {
+    await page.getByRole('button', { name: 'New game' }).click();
+    const dialog = page.getByRole('dialog', { name: 'New game' });
+    await dialog.locator('#ng-silver').selectOption(engines[0].id);
+    return opens(context, () => dialog.getByRole('button', { name: 'Start' }).click());
+  };
+  const first = await engineGame();
+  const second = await engineGame();
+  await expect(first).toHaveTitle(/^Your move · Human - .* – Howdah$/);
+  const next = (p: Page) => p.getByRole('button', { name: /^Next game/ });
+  await expect(next(first)).toContainText('1');
+  await expect(next(second)).toContainText('1');
+
+  // n finds the other window rather than opening one.
+  await first.locator('body').press('n');
+  await first.waitForTimeout(300);
+  expect(context.pages()).toHaveLength(3);
+
+  // After the engine's setup it's the user's move again there.
+  await second.evaluate(() => window.__arimaa!.api.commitSetup());
+  await expect.poll(() => second.evaluate(() => window.__arimaa!.state()!.moves.length)).toBe(2);
+  await expect(second).toHaveTitle(/^Your move/);
+  await expect(next(first)).toContainText('1');
+});

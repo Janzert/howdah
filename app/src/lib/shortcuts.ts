@@ -20,6 +20,7 @@ export type ShortcutId =
   | 'flip'
   | 'cycleHover'
   | 'mute'
+  | 'nextGame'
   | 'help';
 
 export interface Shortcut {
@@ -52,6 +53,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   { id: 'flip', group: 'Board', keys: ['f'], label: 'Flip the board' },
   { id: 'cycleHover', group: 'Board', keys: ['s'], label: 'Hover input: off, arrows, step mode' },
+  { id: 'nextGame', group: 'Other', keys: ['n'], label: 'Next game waiting on your move' },
   { id: 'mute', group: 'Other', keys: ['m'], label: 'Sound on or off' },
   { id: 'help', group: 'Other', keys: ['?'], label: 'This help' },
 ];

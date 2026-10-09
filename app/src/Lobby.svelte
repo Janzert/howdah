@@ -15,12 +15,12 @@
   import type { MatchSpec } from './lib/bindings/MatchSpec';
   import type { SessionId } from './lib/bindings/SessionId';
   import type { SessionView } from './lib/bindings/SessionView';
-  import type { WatchView } from './lib/bindings/WatchView';
   import MiniBoard from './lib/board/MiniBoard.svelte';
   import { formatClock, sideTimes } from './lib/clock';
   import EnginesDialog from './lib/EnginesDialog.svelte';
-  import { on, onEvery } from './lib/events';
+  import { on } from './lib/events';
   import { myTurn } from './lib/gameroom';
+  import { OpenGames } from './lib/openGames.svelte';
   import GameroomLobby from './lib/GameroomLobby.svelte';
   import HelpDialog from './lib/HelpDialog.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
@@ -41,12 +41,8 @@
   let showHelp = $state(false);
   let showRecord = $state(false);
 
-  /** The open game windows' sessions, in the order they were opened. */
-  let sessions = $state<SessionId[]>([]);
-  /** Each session's latest view, and when it arrived (for its clock). */
-  let views = $state<Record<SessionId, { view: SessionView; at: number }>>({});
-  /** Each session's followed arimaa.com game. */
-  let watches = $state<Record<SessionId, WatchView>>({});
+  /** The open game windows. */
+  const games = new OpenGames();
   let now = $state(performance.now());
 
   /** Open invitations to the user, and those already announced. */
@@ -63,7 +59,7 @@
 
   // Clocks tick while any game's runs.
   $effect(() => {
-    if (!Object.values(views).some((v) => v.view.clock?.running)) return;
+    if (!Object.values(games.views).some((v) => v.view.clock?.running)) return;
     const timer = setInterval(() => (now = performance.now()), 500);
     return () => clearInterval(timer);
   });
@@ -92,6 +88,24 @@
     }
   }
 
+  /** Opens an arimaa.com game, unless it has a window already (one window
+   * per game): then that window comes forward, taking the user's seat
+   * first if they asked to play and it only watches. */
+  async function openGameroom(
+    start: (a: Api) => Promise<void>,
+    game?: { gid: string; play: boolean },
+  ): Promise<string | null> {
+    const id = game ? await api.gameroomGameSession(game.gid).catch(() => null) : null;
+    if (id == null) return openWindow(start);
+    try {
+      if (game?.play && games.watches[id]?.side == null) await start(apiFor(id));
+      await focusGameWindow(id);
+      return null;
+    } catch (e) {
+      return errorMessage(e);
+    }
+  }
+
   function startGame(spec: MatchSpec): Promise<string | null> {
     const free =
       spec.gold.kind === 'human' && spec.silver.kind === 'human' && !spec.goldTimeControl && !spec.silverTimeControl;
@@ -109,44 +123,11 @@
     else if (!engine) flash('Add an engine to analyse with (Engines)');
   }
 
-  /** Follows a session's view; a new session is listed. */
-  function track(id: SessionId, view: SessionView) {
-    views[id] = { view, at: performance.now() };
-    if (!sessions.includes(id)) sessions = [...sessions, id];
-  }
-
-  async function addSession(id: SessionId) {
-    const a = apiFor(id);
-    try {
-      const [view, watch] = await Promise.all([a.getState(), a.watchStatus()]);
-      if (!views[id]) track(id, view);
-      if (watch) watches[id] = watch;
-    } catch {
-      /* closed meanwhile */
-    }
-  }
-
-  function setSessions(list: SessionId[]) {
-    sessions = sessions.filter((id) => list.includes(id));
-    for (const id of Object.keys(views).map(Number)) {
-      if (!list.includes(id)) {
-        delete views[id];
-        delete watches[id];
-      }
-    }
-    for (const id of list) if (!views[id]) void addSession(id);
-  }
 
   onMount(() => {
     unlockOnInteraction();
+    const stopFollowing = games.follow();
     const unlisteners = [
-      on('sessions://changed', (s) => setSessions(s.sessions)),
-      onEvery('game://changed', (u, id) => id != null && track(id, u.view)),
-      onEvery('gameroom://watch', (w, id) => {
-        if (id == null) return;
-        if (w.state === 'stopped') delete watches[id];
-        else watches[id] = w;
-      }),
       on('gameroom://lobby', lobbyGames),
       on('gameroom://invitation', async (a) => {
         play('notification');
@@ -154,7 +135,7 @@
           const { gid, side } = a.outcome;
           flash(`${a.opponent} accepted your invitation`);
           requestAttention('Invitation accepted');
-          const error = await openWindow((s) => s.playGameroomGame(gid, side));
+          const error = await openGameroom((s) => s.playGameroomGame(gid, side), { gid, play: true });
           if (error) flash(error);
         } else if (a.outcome.kind === 'declined') {
           flash(a.outcome.message);
@@ -163,10 +144,12 @@
         }
       }),
     ];
-    api.listSessions().then(setSessions);
     api.gameroomLastGames().then((g) => g && lobbyGames(g));
     reloadEngines();
-    return () => unlisteners.forEach((u) => void u.then((f) => f()));
+    return () => {
+      stopFollowing();
+      unlisteners.forEach((u) => void u.then((f) => f()));
+    };
   });
 
   /** Counts the invitations to the user and their postal games waiting on
@@ -182,7 +165,7 @@
       play('notification');
       requestAttention('Invitation');
     }
-    const open = new Set(Object.values(watches).map((w) => w.gid));
+    const open = games.openGids();
     const turns = g.mine.filter((m) => m.postal && myTurn(m, g.user) && !open.has(m.gid)).map((m) => m.gid);
     const newTurns = turns.filter((gid) => !postalTurns.includes(gid));
     postalTurns = turns;
@@ -205,14 +188,14 @@
 
   /** The open windows, those waiting on the user's move first. */
   const listed = $derived(
-    sessions
-      .filter((id) => views[id])
-      .map((id) => ({ id, ...views[id], yourMove: waitsOnUser(views[id].view) }))
+    games.ids
+      .filter((id) => games.views[id])
+      .map((id) => ({ id, ...games.views[id], yourMove: waitsOnUser(games.views[id].view) }))
       .sort((a, b) => Number(b.yourMove) - Number(a.yourMove)),
   );
 
   function describe(v: SessionView, id: SessionId): string {
-    const watch = watches[id];
+    const watch = games.watches[id];
     if (watch) return watch.side != null ? 'arimaa.com game' : 'Watching on arimaa.com';
     if (v.players) {
       const engine = v.players.gold.kind === 'engine' || v.players.silver.kind === 'engine';
@@ -296,7 +279,7 @@
     </div>
 
     <div class="column">
-      <GameroomLobby onOpen={(start) => openWindow(start)} onGames={lobbyGames} />
+      <GameroomLobby onOpen={openGameroom} onGames={lobbyGames} />
     </div>
   </div>
 

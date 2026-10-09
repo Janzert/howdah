@@ -131,6 +131,7 @@ pub fn run() {
             commands::gameroom_logout,
             commands::gameroom_games,
             commands::gameroom_last_games,
+            commands::gameroom_game_session,
             commands::gameroom_postal_games,
             commands::invite_gameroom_player,
             commands::accept_gameroom_invitation,

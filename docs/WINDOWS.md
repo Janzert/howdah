@@ -2,8 +2,8 @@
 
 Plan for playing, watching and analysing several games at once, each in
 its own window, with a main window that works as a home screen and
-arimaa.com lobby. Written 2026-10-09; phases 1 (game windows) and 2 (the
-lobby window) are built, the rest isn't yet.
+arimaa.com lobby. Written 2026-10-09; phases 1 to 3 (game windows, the
+lobby window, moving between games) are built, phase 4 isn't yet.
 
 ## What other clients do
 
@@ -185,8 +185,9 @@ the client has to trust the user and community norms (Brian,
    plus the arimaa.com lobby (moved out of `WatchDialog`), the
    open-windows list, and the notifications moved there. Game windows
    get the smaller toolbar.
-3. **Moving between games:** one window per arimaa.com game, Next game,
-   "your move" in titles, and remembering the window size.
+3. **Moving between games** (done 2026-10-09): one window per arimaa.com
+   game, Next game, "your move" in titles, and remembering the window
+   size.
 4. **Later:** reopening windows after a restart, a full game wall for
    engine matches, tabs as an alternative to windows if they're wanted.
 
@@ -245,6 +246,36 @@ the client has to trust the user and community norms (Brian,
   opening another (a browser may not switch to it).
 - Not done: the "shares the CPU" note in a game window still counts only
   its own session's engines (Shared state, above).
+
+**As built (phase 3):**
+- One window per arimaa.com game: Play, Watch and Open in the lobby (and
+  an accepted invitation) first ask the backend which session follows
+  that gameroom id (`gameroom_game_session`); if one does, its window
+  comes forward instead, taking the user's seat first when they asked to
+  play and the window only watches. A finished game opened by its
+  permanent id loads a record and isn't matched.
+- Next game: a toolbar button in game windows (with how many games wait)
+  and the `n` key. It brings forward the next window waiting on the
+  user's move (`waitsOnUser`: a match against an engine or a remote
+  player with the human to move), in the order the windows were opened
+  after this one, else opens a window playing the first postal game on
+  the user's move from the lobby's lists that has no window
+  (`lib/nextGame.ts`). It stays a button and a key; no automatic switch
+  after a move (the open question below).
+- Titles: a game window's is "Gold - Silver – Howdah" (the players, or
+  the record's names; "Untitled game" otherwise), with "Your move · " in
+  front while the game waits on the user (`setTitle` in
+  `lib/attention.ts`, which also sets the native window's title).
+- Size: a game window saves its size when resized (not maximized) in
+  localStorage, and new game windows open at that size, 32 px down and
+  right of the newest game window (back at the screen's top left if
+  that would run off it). Tauri only; the browser preview's tabs have no
+  size. Checked in the real app in Xephyr.
+- Each game window follows the other sessions (`lib/openGames.svelte.ts`,
+  shared with the lobby's list) to know what waits.
+- Browser preview: a reloaded game tab always takes a new session, since
+  the old one's close (a beacon on `pagehide`) may arrive after the new
+  page loads.
 
 Windows come first; nothing in the design should rule out tabs (a game
 view that doesn't assume it owns the whole window, and a session per

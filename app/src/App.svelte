@@ -2,11 +2,11 @@
   import { onMount } from 'svelte';
   import { analysisEngine, pvMoves } from './lib/analysis';
   import AnalysisPanel from './lib/AnalysisPanel.svelte';
-  import { api, errorMessage } from './lib/api';
+  import { api, errorMessage, session } from './lib/api';
   import type { AnalysisLine } from './lib/bindings/AnalysisLine';
   import type { AnalysisView } from './lib/bindings/AnalysisView';
   import { setAppearance } from './lib/appearance';
-  import { requestAttention } from './lib/attention';
+  import { requestAttention, setTitle } from './lib/attention';
   import type { Color } from './lib/bindings/Color';
   import type { EngineSpec } from './lib/bindings/EngineSpec';
   import type { MatchSpec } from './lib/bindings/MatchSpec';
@@ -39,7 +39,10 @@
   import type { WatchView } from './lib/bindings/WatchView';
   import WatchPanel from './lib/WatchPanel.svelte';
   import { myTurn, newOpponentChat, watchSounds } from './lib/gameroom';
-  import { guardClose, openGameWindow, showLobby, takeHandOff } from './lib/windows';
+  import { countNext, pickNext } from './lib/nextGame';
+  import { OpenGames } from './lib/openGames.svelte';
+  import { gameTitle, waitsOnUser } from './lib/windowList';
+  import { focusGameWindow, guardClose, openGameWindow, rememberSize, showLobby, takeHandOff } from './lib/windows';
 
   function pref(key: string): string | null {
     try {
@@ -72,9 +75,21 @@
   let closing = $state<{ reason: string; confirm: string; answer: (close: boolean) => void } | null>(null);
   /** The arimaa.com game this session follows, if any. */
   let watch = $state<WatchView | null>(null);
-  /** What waits in the lobby (from its poll): invitations to the user and
-   * their postal games waiting on their move, leaving out this window's. */
-  let lobbyWaiting = $state(0);
+  /** The lobby's lists, from its poll. */
+  let lobbyLists = $state<GameroomGames | null>(null);
+  /** The other game windows, for Next game. */
+  const games = new OpenGames();
+  /** What waits in the lobby: invitations to the user and their postal
+   * games waiting on their move without a window. */
+  const lobbyWaiting = $derived.by(() => {
+    const g = lobbyLists;
+    if (!g) return 0;
+    const open = games.openGids();
+    const invitations = g.invitations.filter((i) => i.incoming).length;
+    return invitations + g.mine.filter((m) => m.postal && myTurn(m, g.user) && !open.has(m.gid)).length;
+  });
+  /** How many other games wait on the user's move (Next game). */
+  const nextCount = $derived(countNext(session!, games.waiting(), lobbyLists, games.openGids()));
   // The game-end dialog waits for the final move's animation.
   let gameEndPending = $state(false);
   let showGameEnd = $state(false);
@@ -300,7 +315,10 @@
     reloadEngines();
     // The lobby's Engines dialog may have changed them.
     window.addEventListener('focus', reloadEngines);
+    const stopFollowing = games.follow();
+    void rememberSize();
     return () => {
+      stopFollowing();
       window.removeEventListener('focus', reloadEngines);
       unlisten.then((f) => f());
       unlistenAnalysis.then((f) => f());
@@ -309,13 +327,34 @@
     };
   });
 
-  /** Counts what waits in the lobby's lists, for the Lobby button. The
-   * lobby announces it; the game this window plays has its own alerts. */
+  /** Keeps the lobby's lists, for the Lobby button and Next game. The
+   * lobby announces what's new; this window's game has its own alerts. */
   function lobbyGames(g: GameroomGames) {
-    const invitations = g.invitations.filter((i) => i.incoming).length;
-    const turns = g.mine.filter((m) => m.postal && myTurn(m, g.user) && m.gid !== watch?.gid).length;
-    lobbyWaiting = invitations + turns;
+    lobbyLists = g;
   }
+
+  /** Brings forward the next game waiting on the user's move: another
+   * window, else a postal game from the lobby's lists, in a new window. */
+  async function nextGame() {
+    const next = pickNext(session!, games.waiting(), lobbyLists, games.openGids());
+    if (!next) {
+      flash('No other game waits on your move');
+      return;
+    }
+    if (next.kind === 'window') {
+      await focusGameWindow(next.session);
+      return;
+    }
+    const { gid, side } = next;
+    await openGameWindow((a) => a.playGameroomGame(gid, side)).catch((e) => flash(errorMessage(e)));
+  }
+
+  // The title names the game, and says when it waits on the user.
+  $effect(() => {
+    if (!view) return;
+    const name = gameTitle(view) ?? 'Untitled game';
+    void setTitle(`${waitsOnUser(view) ? 'Your move · ' : ''}${name} – Howdah`);
+  });
 
   /** A new open game on arimaa.com with the time control and rating of
    * the online game the user just played, as `side`. It leaves that
@@ -533,6 +572,7 @@
       flash(settings.sound ? 'Sound on' : 'Sound off');
     },
     help: () => (showHelp = true),
+    nextGame: () => void nextGame(),
   };
 
   function onkeydown(e: KeyboardEvent) {
@@ -673,6 +713,13 @@
       </button>
       <button onclick={openRecord}>Record</button>
       <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
+      <button
+        onclick={nextGame}
+        disabled={nextCount === 0}
+        title={nextCount > 0 ? 'The next game waiting on your move (n)' : 'No other game waits on your move (n)'}
+      >
+        Next game{#if nextCount > 0}<span class="badge">{nextCount}</span>{/if}
+      </button>
       <button
         onclick={() => showLobby()}
         title="The lobby: new games, open windows, arimaa.com, engines and settings{lobbyWaiting > 0

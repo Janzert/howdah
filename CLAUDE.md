@@ -412,7 +412,9 @@ Howdah plays and watches games on arimaa.com.
     board with the last analysis engine, Open record), Open windows (each
     game window's `MiniBoard`, players from `lib/windowList.ts`'s
     `gameTitle`, clocks, and "Your move" from `waitsOnUser`, those first;
-    a click brings the window forward), the arimaa.com section
+    a click brings the window forward; `lib/openGames.svelte.ts` follows
+    every session's view and arimaa.com game, for the lobby and for game
+    windows' Next game), the arimaa.com section
     (`GameroomLobby.svelte`), and the Engines, Settings and Help dialogs.
     It follows every session's `game://changed` and `gameroom://watch`
     (`onEvery` in `lib/events.ts`) and `sessions://changed`. It owns the
@@ -430,14 +432,22 @@ Howdah plays and watches games on arimaa.com.
     localStorage, read once by the window (`takeHandOff`). Game windows
     also have "New window" (an empty one) and a Lobby button, with what
     waits there (invitations and postal moves due, from
-    `gameroom_last_games` and `gameroom://lobby`). `guardClose` asks before a window closes while App's
+    `gameroom_last_games` and `gameroom://lobby`), and Next game (`n`;
+    `lib/nextGame.ts`): the next other window waiting on the user's
+    move, else a postal game on their move without a window. One window
+    per arimaa.com game: the lobby asks `gameroom_game_session(gid)` and
+    brings that window forward if there is one. A game window's title
+    (`setTitle` in `lib/attention.ts`) names the players, with "Your
+    move · " in front while it waits on the user. Game windows open at
+    the size the last one was resized to (`rememberSize`, localStorage)
+    and cascade from the newest. `guardClose` asks before a window closes while App's
     `closeWarning` says it would leave the user's arimaa.com game or stop
     a match (`CloseWindowDialog.svelte`, from Tauri's `onCloseRequested`;
     the browser preview gets only `beforeunload`'s prompt, in game
     windows). In Tauri the backend ends the session as the window is
     destroyed; in the browser preview a game window's tab closes it on
     `pagehide` (`closeSessionWithPage`, a beacon), and a reloaded tab
-    whose session is gone gets a new one (`useSession`). The capability
+    gets a new one (`useSession`). The capability
     file (`capabilities/default.json`) covers `main` and `game-*`,
     including creating windows, `destroy` (which `onCloseRequested`
     needs), and showing and focusing them.

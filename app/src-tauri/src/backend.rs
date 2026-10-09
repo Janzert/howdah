@@ -789,6 +789,17 @@ impl Backend {
         Ok(())
     }
 
+    /// The session following arimaa.com game `gid` (its gameroom id), if
+    /// one does, so a game gets only one window.
+    pub fn gameroom_game_session(&self, gid: &str) -> Option<SessionId> {
+        let gid = gid.trim();
+        let handles: Vec<_> = self.sessions().iter().map(|(id, h)| (*id, h.clone())).collect();
+        handles
+            .into_iter()
+            .find(|(_, h)| h.watch().as_ref().is_some_and(|w| w.view().gid == gid))
+            .map(|(id, _)| id)
+    }
+
     /// The session's followed gameroom game, if it has one.
     pub fn watch_status(&self, id: SessionId) -> Result<Option<WatchView>, ApiError> {
         Ok(self.handle(id)?.watch().as_ref().map(Watch::view))
@@ -895,6 +906,7 @@ impl Backend {
             "gameroom_logout" => ok(self.gameroom_logout().await?),
             "gameroom_games" => ok(self.gameroom_games().await?),
             "gameroom_last_games" => ok(self.gameroom_last_games()),
+            "gameroom_game_session" => ok(self.gameroom_game_session(&arg::<String>(args, "gid")?)),
             "gameroom_postal_games" => ok(self.gameroom_postal_games().await?),
             "invite_gameroom_player" => ok(self
                 .invite_gameroom_player(
@@ -1019,6 +1031,7 @@ mod tests {
             assert_eq!(name, GAME_CHANGED);
             assert_eq!(payload["session"], other.0, "every event names its session");
         }
+        assert_eq!(b.gameroom_game_session("539546"), None, "no session follows an arimaa.com game");
         b.close_session(other).unwrap();
         assert_eq!(b.list_sessions(), [one]);
         let e = b.get_state(other).unwrap_err();

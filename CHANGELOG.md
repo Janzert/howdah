@@ -19,6 +19,11 @@ young).
   it back. Closing a game window ends its game; while it plays an
   arimaa.com game or a match is on, it asks first. Settings changed in
   one window apply in all of them.
+- Moving between games: an arimaa.com game opens in one window only (its
+  window comes forward when opened again), "Next game" (`n`) goes to the
+  next game waiting on your move, a game window's title names the
+  players and says "Your move" when it's yours, and new game windows
+  open at the size you last gave one, cascaded.
 
 ### Changed
 

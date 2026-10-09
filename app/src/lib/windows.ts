@@ -41,11 +41,12 @@ export async function openGameWindow(prepare?: (a: Api) => Promise<void>, handOf
     const url = `index.html?session=${id}`;
     if (inTauri) {
       const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const size = savedSize();
       const w = new WebviewWindow(`game-${id}`, {
         url,
         title: 'Howdah',
-        width: 1180,
-        height: 800,
+        ...size,
+        ...(await cascadedPosition(size)),
         minWidth: 640,
         minHeight: 480,
       });
@@ -61,6 +62,73 @@ export async function openGameWindow(prepare?: (a: Api) => Promise<void>, handOf
     throw e;
   }
   return id;
+}
+
+const SIZE_KEY = 'gameWindow.size';
+
+/** The size for a new game window: the last one a game window was
+ * resized to (4steps keeps one size for all of them). */
+function savedSize(): { width: number; height: number } {
+  try {
+    const s = JSON.parse(localStorage.getItem(SIZE_KEY) ?? 'null');
+    if (typeof s?.width === 'number' && typeof s?.height === 'number') {
+      return { width: Math.max(640, s.width), height: Math.max(480, s.height) };
+    }
+  } catch {
+    /* the default */
+  }
+  return { width: 1180, height: 800 };
+}
+
+/** Where a new game window goes: down and right of the newest one, back
+ * at the top left of the screen if that would run off it; anywhere the
+ * system likes when it's the first. */
+async function cascadedPosition(size: { width: number; height: number }): Promise<{ x?: number; y?: number }> {
+  const { getAllWebviewWindows } = await import('@tauri-apps/api/webviewWindow');
+  const { currentMonitor } = await import('@tauri-apps/api/window');
+  const games = (await getAllWebviewWindows()).filter((w) => w.label.startsWith('game-'));
+  const newest = games.sort((a, b) => Number(b.label.slice(5)) - Number(a.label.slice(5)))[0];
+  if (!newest) return {};
+  try {
+    const scale = await newest.scaleFactor();
+    const at = (await newest.outerPosition()).toLogical(scale);
+    let { x, y } = { x: at.x + CASCADE, y: at.y + CASCADE };
+    const monitor = await currentMonitor();
+    if (monitor) {
+      const area = monitor.workArea;
+      const left = area.position.x / monitor.scaleFactor;
+      const top = area.position.y / monitor.scaleFactor;
+      if (x + size.width > left + area.size.width / monitor.scaleFactor) x = left + CASCADE;
+      if (y + size.height > top + area.size.height / monitor.scaleFactor) y = top + CASCADE;
+    }
+    return { x, y };
+  } catch {
+    return {};
+  }
+}
+
+/** How far each new game window is moved from the last, in logical px. */
+const CASCADE = 32;
+
+/** In a game window, saves its size whenever the user resizes it (not
+ * while maximized), for the next game window. Tauri only. */
+export async function rememberSize() {
+  if (!inTauri || !isGameWindow) return;
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  const win = getCurrentWindow();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await win.onResized(() => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (await win.isMaximized()) return;
+      const size = (await win.innerSize()).toLogical(await win.scaleFactor());
+      try {
+        localStorage.setItem(SIZE_KEY, JSON.stringify({ width: Math.round(size.width), height: Math.round(size.height) }));
+      } catch {
+        /* not kept */
+      }
+    }, 500);
+  });
 }
 
 /** What the window that opened this one handed over, once. */
