@@ -246,7 +246,12 @@ pub struct SessionView {
     pub tag_names: [Option<String>; 2],
     /// The players' ratings from the `GoldRating` and `SilverRating` tags.
     pub tag_ratings: [Option<String>; 2],
+    /// The match's live clock.
     pub clock: Option<ClockView>,
+    /// The clocks the player bars show: the live clock while the match
+    /// goes on or at its live position, otherwise the clocks after the
+    /// shown move, worked out from the move times (`ClockView.past`).
+    pub shown_clock: Option<ClockView>,
     /// The side whose engine is thinking.
     pub thinking: Option<Color>,
     /// Whether board input is accepted now: any time outside a match; in a
@@ -411,6 +416,11 @@ pub struct SideClockView {
     /// included). The UI colors the clock by it.
     #[ts(type = "number")]
     pub turn_allowance_ms: u64,
+    /// In a clock worked out for a past move, the time that move took,
+    /// on the side that made it (shown in place of the move time, as
+    /// arimaa.com's game viewer does).
+    #[ts(type = "number | null")]
+    pub last_used_ms: Option<u64>,
 }
 
 /// Clock snapshot. The UI counts down locally from `turnElapsedMs` for the
@@ -433,6 +443,9 @@ pub struct ClockView {
     /// Time left before the game time limit, if there is one.
     #[ts(type = "number | null")]
     pub game_remaining_ms: Option<u64>,
+    /// Worked out for the shown move from the move times and the time
+    /// control, rather than the live clock.
+    pub past: bool,
 }
 
 /// A player choice when starting a game.

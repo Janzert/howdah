@@ -24,6 +24,12 @@ young).
   next game waiting on your move, a game window's title names the
   players and says "Your move" when it's yours, and new game windows
   open at the size you last gave one, cascaded.
+- Clocks at each move: going through a finished game (an arimaa.com
+  game, or a record with a time control and move times), the player
+  bars show the clocks as they stood after the shown move, with the time
+  that move took and the reserve after it, as arimaa.com's game viewer
+  does. A timed game's record now keeps its time control, one per side
+  (`GoldTimeControl`, `SilverTimeControl`) when they differ.
 
 ### Changed
 

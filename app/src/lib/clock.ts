@@ -11,23 +11,27 @@ export function turnTimeLeft(clock: ClockView, sinceViewMs: number): number {
 /** A side's clock as shown: move time and reserve, counted down while
  * it runs (`sinceViewMs` after the view arrived), and how urgent it is by
  * the time left for the turn (otherwise what its next turn will have).
+ * In a past clock, the side that made the shown move shows the time it
+ * took in place of the move time (`used`), as arimaa.com's viewer does.
  * Null for an untimed side. */
 export function sideTimes(
   clock: ClockView,
   side: Color,
   sinceViewMs: number,
-): { move: number; reserve: number; running: boolean; level: ClockLevel } | null {
+): { move: number; reserve: number; running: boolean; used: boolean; level: ClockLevel } | null {
   const mine = clock[side];
   if (!mine) return null;
-  const { moveTimeMs, reserveMs, turnAllowanceMs } = mine;
+  const { moveTimeMs, reserveMs, turnAllowanceMs, lastUsedMs } = mine;
   if (clock.running !== side) {
-    return { move: moveTimeMs, reserve: reserveMs, running: false, level: clockLevel(turnAllowanceMs) };
+    const used = lastUsedMs != null;
+    const move = lastUsedMs ?? moveTimeMs;
+    return { move, reserve: reserveMs, running: false, used, level: clockLevel(turnAllowanceMs) };
   }
   const elapsed = clock.turnElapsedMs + sinceViewMs;
   const left = Math.max(0, clock.turnAllowanceMs - elapsed);
   const move = Math.min(left, Math.max(0, moveTimeMs - elapsed));
   const reserve = Math.min(left, Math.max(0, reserveMs - Math.max(0, elapsed - moveTimeMs)));
-  return { move, reserve, running: true, level: clockLevel(left) };
+  return { move, reserve, running: true, used: false, level: clockLevel(left) };
 }
 
 /** How urgent a clock looks, by the time left for the turn (move time plus

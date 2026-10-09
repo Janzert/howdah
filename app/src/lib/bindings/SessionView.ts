@@ -91,7 +91,17 @@ tagNames: [string | null, string | null],
 /**
  * The players' ratings from the `GoldRating` and `SilverRating` tags.
  */
-tagRatings: [string | null, string | null], clock: ClockView | null, 
+tagRatings: [string | null, string | null], 
+/**
+ * The match's live clock.
+ */
+clock: ClockView | null, 
+/**
+ * The clocks the player bars show: the live clock while the match
+ * goes on or at its live position, otherwise the clocks after the
+ * shown move, worked out from the move times (`ClockView.past`).
+ */
+shownClock: ClockView | null, 
 /**
  * The side whose engine is thinking.
  */

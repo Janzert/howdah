@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClockView } from './bindings/ClockView';
-import { clockLevel, formatClock, formatShort, nextTick, TICK_TIMES_MS, turnTimeLeft } from './clock';
+import { clockLevel, formatClock, formatShort, nextTick, sideTimes, TICK_TIMES_MS, turnTimeLeft } from './clock';
 
 describe('turnTimeLeft', () => {
   const clock: ClockView = {
@@ -10,12 +10,57 @@ describe('turnTimeLeft', () => {
     turnElapsedMs: 4000,
     turnAllowanceMs: 15_000,
     gameRemainingMs: null,
+    past: false,
   };
 
   it('counts on from the view and stops at zero', () => {
     expect(turnTimeLeft(clock, 0)).toBe(11_000);
     expect(turnTimeLeft(clock, 1000)).toBe(10_000);
     expect(turnTimeLeft(clock, 60_000)).toBe(0);
+  });
+});
+
+describe('sideTimes', () => {
+  const side = { timeControl: '30s/2m', moveTimeMs: 30_000, reserveMs: 120_000, turnAllowanceMs: 150_000 };
+
+  it('counts the running side down, move time first', () => {
+    const clock: ClockView = {
+      gold: { ...side, lastUsedMs: null },
+      silver: null,
+      running: 'gold',
+      turnElapsedMs: 40_000,
+      turnAllowanceMs: 150_000,
+      gameRemainingMs: null,
+      past: false,
+    };
+    expect(sideTimes(clock, 'gold', 0)).toEqual({
+      move: 0,
+      reserve: 110_000,
+      running: true,
+      used: false,
+      level: 'ok',
+    });
+    expect(sideTimes(clock, 'silver', 0)).toBeNull();
+  });
+
+  it("shows the time a past move took on the side that made it", () => {
+    const clock: ClockView = {
+      gold: { ...side, lastUsedMs: 12_000 },
+      silver: { ...side, reserveMs: 5000, turnAllowanceMs: 35_000, lastUsedMs: null },
+      running: null,
+      turnElapsedMs: 0,
+      turnAllowanceMs: 0,
+      gameRemainingMs: null,
+      past: true,
+    };
+    expect(sideTimes(clock, 'gold', 9999)).toEqual({
+      move: 12_000,
+      reserve: 120_000,
+      running: false,
+      used: true,
+      level: 'ok',
+    });
+    expect(sideTimes(clock, 'silver', 0)).toMatchObject({ move: 30_000, used: false, level: 'ok' });
   });
 });
 

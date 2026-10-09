@@ -148,6 +148,9 @@ cover it.
   table.
 - **[have] Move times in the move list**: each move's time or the time
   into the game, toggled for the list.
+- **[have] Clocks at each move (arimaa.com's viewer):** in a finished
+  game, the player bars show the clocks after the shown move, the mover's
+  with the time the move took.
 - **[P2] Move-time summaries:** arimaa.com shows average move times per
   player, and lichess has a move-time chart (`ui/chart`) under analysis.
 - **[have] "Show" replays the last move**: Forward (→) at the latest move

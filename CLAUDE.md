@@ -597,6 +597,18 @@ Howdah plays and watches games on arimaa.com.
       ghosts. It's hidden once the player takes a step.
   - `PlayerBar.svelte` shows names, clocks and captures (from
     `SessionView.captured`: the opponent's pieces, rabbits grouped as ×n).
+    Its clocks are `SessionView.shownClock`: the live `clock` while a
+    match goes on or at its live node, otherwise `Session::past_clock`,
+    the clocks after the shown move as arimaa.com's game viewer shows
+    them (`ClockView.past`): reserves worked out from the move times
+    (`%emt`) on the line and the time control (the match's, or else a
+    side's `GoldTimeControl`/`SilverTimeControl` tag or the shared
+    `TimeControl`; `start_match` writes `TimeControl` when both sides
+    share one, otherwise a tag per timed side, after cutechess's
+    `WhiteTimeControl`, which the reader maps), with the time the move took (`SideClockView.lastUsedMs`) in
+    place of the mover's move time. None if a move on the line has no
+    time. The viewer (`arimaa.js`, `buildUsedResvTimeArrays`) adds all
+    unused move time, ignoring the percentage; we follow the time control.
     The bars show in free play too, named from the record's `Gold`/`Silver`
     tags (`SessionView.tagNames`) when there's no match, and show ratings
     from `GoldRating`/`SilverRating` (`SessionView.tagRatings`).

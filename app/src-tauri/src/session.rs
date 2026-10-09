@@ -660,7 +660,19 @@ impl Session {
             clock_stopped: false,
         };
         matchup.turn_starts.insert(GameTree::ROOT, matchup.turn_start(now));
-        self.replace(GameTree::new(), Vec::new(), GameTree::ROOT, Some(matchup));
+        // The record keeps the time controls, so the clocks can be worked
+        // out again from the move times once it's loaded: `TimeControl`
+        // when both sides share one, otherwise one tag per timed side (as
+        // cutechess writes `WhiteTimeControl`).
+        let tags = match time_controls {
+            [Some(gold), Some(silver)] if gold == silver => vec![("TimeControl".into(), gold.to_string())],
+            tcs => Color::ALL
+                .into_iter()
+                .zip(tcs)
+                .filter_map(|(side, tc)| Some((format!("{side:?}TimeControl"), tc?.to_string())))
+                .collect(),
+        };
+        self.replace(GameTree::new(), tags, GameTree::ROOT, Some(matchup));
         // Analysis stays on across games, but not into an online game the
         // user plays.
         if self.plays_online() {
@@ -2164,6 +2176,7 @@ impl Session {
             tag_names: ["Gold", "Silver"].map(|name| self.tag(name)),
             tag_ratings: ["GoldRating", "SilverRating"].map(|name| self.tag(name)),
             clock: self.clock_view(),
+            shown_clock: self.shown_clock_view(),
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
             can_input: self.can_input(),
             plays_live: self.plays_live(),
@@ -2309,6 +2322,7 @@ impl Session {
                 }),
                 reserve_ms: ms(clock.reserves[side.index()]),
                 turn_allowance_ms: ms(self.allowance(side, tc, clock.reserves[side.index()])),
+                last_used_ms: None,
             })
         };
         Some(ClockView {
@@ -2318,6 +2332,93 @@ impl Session {
             turn_elapsed_ms: ms(elapsed),
             turn_allowance_ms: ms(allowance),
             game_remaining_ms: clock.game_deadline().map(|d| ms(d.saturating_duration_since(Instant::now()))),
+            past: false,
+        })
+    }
+
+    /// The clocks for the player bars: the live clock while a match goes
+    /// on or at its live position, otherwise the clocks after the shown
+    /// move ([`Self::past_clock`]).
+    fn shown_clock_view(&self) -> Option<ClockView> {
+        let cursor = self.cursor_node();
+        match &self.matchup {
+            Some(m) if self.live_result().is_none() || cursor == m.live => self.clock_view(),
+            _ => self.past_clock(cursor),
+        }
+    }
+
+    /// The time control per side for working out past clocks: the match's,
+    /// or else the record's `GoldTimeControl`/`SilverTimeControl` tag, or
+    /// its `TimeControl` for both sides. An untimed one, such as
+    /// arimaa.com's postal `0/0/0/0/0`, counts as none.
+    fn time_controls(&self) -> [Option<TimeControl>; 2] {
+        if let Some(clock) = self.matchup.as_ref().and_then(|m| m.clock.as_ref()) {
+            return clock.tcs;
+        }
+        Color::ALL.map(|side| {
+            self.tag(&format!("{side:?}TimeControl"))
+                .or_else(|| self.tag("TimeControl"))
+                .and_then(|t| t.parse::<TimeControl>().ok())
+                .filter(|t| !(t.move_time().is_zero() && t.starting_reserve().is_zero()))
+        })
+    }
+
+    /// The clocks as they stood after move `id`, as arimaa.com's game
+    /// viewer shows them: the reserves worked out from the time control
+    /// and the move times (`%emt`) on the line to it, with the time the
+    /// move took on the side that made it. `None` without a time control,
+    /// or if a move on the line has no time.
+    fn past_clock(&self, id: NodeId) -> Option<ClockView> {
+        let tcs = self.time_controls();
+        if tcs.iter().all(Option::is_none) {
+            return None;
+        }
+        let mut reserves = tcs.map(|tc| tc.map_or(Duration::ZERO, |t| t.starting_reserve()));
+        let mut mover = None;
+        let mut used = Duration::ZERO;
+        for &n in &self.tree.path(id)[1..] {
+            let node = &self.tree[n];
+            let parent = node.parent().expect("only the root has no parent");
+            let side = self.tree[parent].position().side_to_move();
+            used = node.annotation().elapsed()?;
+            mover = Some(side);
+            if let Some(tc) = tcs[side.index()] {
+                let reserve = reserves[side.index()];
+                reserves[side.index()] = if Game::is_setup_ply(node.ply() - 1) {
+                    tc.reserve_after_setup(reserve, used)
+                } else {
+                    tc.reserve_after(reserve, used)
+                };
+            }
+        }
+        let ms = |d: Duration| d.as_millis() as u64;
+        let ply = self.tree[id].ply();
+        let side_view = |side: Color| {
+            let setup = ply <= side.index();
+            let reserve = reserves[side.index()];
+            tcs[side.index()].map(|tc| SideClockView {
+                time_control: tc.to_string(),
+                move_time_ms: ms(if setup { tc.setup_move_time() } else { tc.move_time() }),
+                reserve_ms: ms(reserve),
+                turn_allowance_ms: ms(if setup {
+                    tc.setup_allowance(reserve)
+                } else {
+                    tc.turn_allowance(reserve)
+                }),
+                last_used_ms: (mover == Some(side)).then(|| ms(used)),
+            })
+        };
+        let time_limit = tcs.iter().flatten().map(|tc| tc.time_limit).filter(|&t| t > 0).min();
+        Some(ClockView {
+            gold: side_view(Color::Gold),
+            silver: side_view(Color::Silver),
+            running: None,
+            turn_elapsed_ms: 0,
+            turn_allowance_ms: 0,
+            game_remaining_ms: time_limit.and_then(|limit| {
+                Some(ms(Duration::from_secs(limit.into()).saturating_sub(self.game_time(id)?)))
+            }),
+            past: true,
         })
     }
 }
@@ -3598,6 +3699,117 @@ mod tests {
         assert!(!s.missing_move_times(g));
         let times: Vec<_> = s.view().tree.iter().map(|m| m.elapsed_ms).collect();
         assert_eq!(times, [Some(4000), Some(5000), Some(6000)]);
+    }
+
+    #[test]
+    fn a_loaded_games_clocks_follow_the_shown_move() {
+        let mut s = Session::new();
+        // 30 s a move, 2 min reserve, 50% of unused time added, 3 min cap,
+        // and a 10 min game limit.
+        let tc = "[TimeControl \"30s/2m/50/3m/10m\"]\n\n";
+        let moves = "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2 {[%emt 0:01:10]}\n\
+                     1s ra7 rb7 rc7 rd7 re7 rf7 rg7 rh7 ha8 db8 cc8 ed8 me8 cf8 dg8 hh8 {[%emt 0:00:20]}\n\
+                     2g Ee2n {[%emt 0:00:10]}\n2s ra7s {[%emt 0:01:00]}\n";
+        s.load(&format!("{tc}{moves}")).unwrap();
+        let shown = |s: &Session| {
+            let c = s.view().shown_clock.unwrap();
+            assert!(c.past && c.running.is_none());
+            let side = |v: Option<SideClockView>| {
+                let v = v.unwrap();
+                (v.move_time_ms / 1000, v.reserve_ms / 1000, v.last_used_ms.map(|t| t / 1000))
+            };
+            (side(c.gold), side(c.silver), c.game_remaining_ms.map(|t| t / 1000))
+        };
+        // The end: gold's 10 s move added half its unused 20 s, and silver's
+        // minute took 30 s.
+        assert_eq!(shown(&s), ((30, 120, None), (30, 90, Some(60)), Some(600 - 160)));
+        s.goto(3).unwrap();
+        assert_eq!(shown(&s), ((30, 120, Some(10)), (30, 120, None), Some(600 - 100)));
+        // Setups get a minute: gold's 10 s over it comes out of the reserve,
+        // silver's unused 40 s isn't added.
+        s.goto(2).unwrap();
+        assert_eq!(shown(&s), ((30, 110, None), (30, 120, Some(20)), Some(600 - 90)));
+        s.goto(1).unwrap();
+        assert_eq!(shown(&s), ((30, 110, Some(70)), (60, 120, None), Some(600 - 70)));
+        s.goto(0).unwrap();
+        assert_eq!(shown(&s), ((60, 120, None), (60, 120, None), Some(600)));
+
+        // Without a time on every move there's no clock to show.
+        s.load(&format!("{tc}1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2\n")).unwrap();
+        assert!(s.view().shown_clock.is_none());
+        // Nor without a time control, or with arimaa.com's untimed one.
+        s.load(moves).unwrap();
+        assert!(s.view().shown_clock.is_none());
+        s.load(&format!("[TimeControl \"0/0/0/0/0\"]\n\n{moves}")).unwrap();
+        assert!(s.view().shown_clock.is_none());
+    }
+
+    #[test]
+    fn a_finished_matchs_clocks_follow_the_shown_move() {
+        let mut s = Session::new();
+        let tc: TimeControl = "1m/5m".parse().unwrap();
+        s.start_match([engine("a"), engine("b")], [Some(tc); 2], false);
+        let play = |s: &mut Session, side, ply, text: &str, secs| {
+            s.matchup.as_mut().unwrap().turn_started = Instant::now() - Duration::from_secs(secs);
+            s.apply_engine_move(s.generation(), side, ply, text).unwrap();
+        };
+        play(&mut s, Color::Gold, 0, &setup_text(Color::Gold), 12);
+        play(&mut s, Color::Silver, 1, &setup_text(Color::Silver), 5);
+        // While the game goes on, the bars keep the live clock.
+        s.goto(1).unwrap();
+        assert!(!s.view().shown_clock.unwrap().past);
+        play(&mut s, Color::Gold, 2, "Ee2n Ee3n", 75);
+        s.finish(GameResult { winner: Color::Gold, reason: WinReason::Resignation }, None);
+        s.goto_live();
+        assert!(!s.view().shown_clock.unwrap().past, "the live position keeps the live clock");
+        s.goto(2).unwrap();
+        let c = s.view().shown_clock.unwrap();
+        assert!(c.past);
+        assert_eq!(c.silver.unwrap().last_used_ms.map(|t| t / 1000), Some(5));
+        assert_eq!(c.gold.unwrap().reserve_ms / 1000, 300);
+        // The record keeps the time control, to work the clocks out again.
+        assert!(s.export(false).contains("[TimeControl \"1m/5m\"]"), "{}", s.export(false));
+    }
+
+    #[test]
+    fn a_record_keeps_each_sides_time_control() {
+        let play = |s: &mut Session, side, ply, text: &str, secs| {
+            s.matchup.as_mut().unwrap().turn_started = Instant::now() - Duration::from_secs(secs);
+            s.apply_engine_move(s.generation(), side, ply, text).unwrap();
+        };
+        let reloaded = |tcs: [Option<&str>; 2]| {
+            let mut s = Session::new();
+            s.start_match([engine("a"), engine("b")], tcs.map(|t| t.map(|t| t.parse().unwrap())), false);
+            play(&mut s, Color::Gold, 0, &setup_text(Color::Gold), 70);
+            play(&mut s, Color::Silver, 1, &setup_text(Color::Silver), 90);
+            let record = s.export(false);
+            let mut loaded = Session::new();
+            loaded.load(&record).unwrap();
+            let clock = loaded.view().shown_clock.unwrap();
+            let side = |v: Option<SideClockView>| v.map(|v| (v.time_control, v.reserve_ms / 1000));
+            (record, side(clock.gold), side(clock.silver))
+        };
+        let (record, gold, silver) = reloaded([Some("1m/5m"), Some("30s/2m")]);
+        assert!(record.contains("[GoldTimeControl \"1m/5m\"]\n[SilverTimeControl \"30s/2m\"]"), "{record}");
+        assert!(!record.contains("[TimeControl"), "{record}");
+        // Each setup gets a minute: gold's 10 s and silver's 30 s over it
+        // come out of their own reserves.
+        assert_eq!((gold, silver), (Some(("1m/5m".into(), 290)), Some(("30s/2m".into(), 90))));
+
+        let (record, gold, silver) = reloaded([None, Some("30s/2m")]);
+        assert!(!record.contains("GoldTimeControl"), "{record}");
+        assert_eq!((gold, silver), (None, Some(("30s/2m".into(), 90))), "gold stays untimed");
+
+        // A side's own tag wins over `TimeControl`.
+        let mut s = Session::new();
+        s.load(
+            "[TimeControl \"1m/5m\"]\n[SilverTimeControl \"30s/2m\"]\n\n\
+             1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2 {[%emt 0:00:05]}\n",
+        )
+        .unwrap();
+        let clock = s.view().shown_clock.unwrap();
+        assert_eq!(clock.gold.unwrap().time_control, "1m/5m");
+        assert_eq!(clock.silver.unwrap().time_control, "30s/2m");
     }
 
     #[test]

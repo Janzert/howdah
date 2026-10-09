@@ -9,4 +9,10 @@ export type SideClockView = { timeControl: string, moveTimeMs: number, reserveMs
  * reserve, within the time control's turn limit (the setup's minute
  * included). The UI colors the clock by it.
  */
-turnAllowanceMs: number, };
+turnAllowanceMs: number, 
+/**
+ * In a clock worked out for a past move, the time that move took,
+ * on the side that made it (shown in place of the move time, as
+ * arimaa.com's game viewer does).
+ */
+lastUsedMs: number | null, };

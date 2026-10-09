@@ -24,7 +24,8 @@
   const name = $derived(
     player?.name ?? view.tagNames[side === 'gold' ? 0 : 1] ?? (side === 'gold' ? 'Gold' : 'Silver'),
   );
-  const clock = $derived(view.clock);
+  // The live clock, or the clocks after the shown move once the game is over.
+  const clock = $derived(view.shownClock);
   const toMove = $derived(view.result == null && view.position.sideToMove === side);
   const thinking = $derived(view.thinking === side);
   const rating = $derived(view.tagRatings[side === 'gold' ? 0 : 1]);
@@ -77,8 +78,16 @@
   {/if}
   <span class="spacer"></span>
   {#if times}
-    <span class="clock {times.level}" class:running={times.running} title="move time · reserve">
-      <span class="move">{fmt(times.move)}</span>
+    <span
+      class="clock {times.level}"
+      class:running={times.running}
+      title={times.used
+        ? 'time this move took · reserve after it'
+        : clock?.past
+          ? 'move time · reserve at this move'
+          : 'move time · reserve'}
+    >
+      <span class="move" class:used={times.used}>{fmt(times.move)}</span>
       <span class="sep">·</span>
       <span class="reserve">{fmt(times.reserve)}</span>
     </span>
@@ -206,5 +215,9 @@
   }
   .sep {
     opacity: 0.5;
+  }
+  /* The time a past move took stands out from the clocks' other times. */
+  .move.used {
+    color: var(--text);
   }
 </style>

@@ -26,4 +26,9 @@ turnAllowanceMs: number,
 /**
  * Time left before the game time limit, if there is one.
  */
-gameRemainingMs: number | null, };
+gameRemainingMs: number | null, 
+/**
+ * Worked out for the shown move from the move times and the time
+ * control, rather than the live clock.
+ */
+past: boolean, };
