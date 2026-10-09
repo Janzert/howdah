@@ -154,11 +154,11 @@ pub fn run() {
         .run(|_app, _event| {
             // The dock icon brings back a hidden lobby.
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = _event {
-                if let Some(lobby) = _app.get_webview_window("main") {
-                    let _ = lobby.show();
-                    let _ = lobby.set_focus();
-                }
+            if let tauri::RunEvent::Reopen { .. } = _event
+                && let Some(lobby) = _app.get_webview_window("main")
+            {
+                let _ = lobby.show();
+                let _ = lobby.set_focus();
             }
         });
 }
