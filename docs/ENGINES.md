@@ -67,7 +67,7 @@ Linux, macOS and Windows.
   the app), and a match player is sent `go` again and, 100 ms later,
   `stop` again (a "move now" right after `go`). Our fork answers such a
   `stop` with a move from a quick one-turn search instead (arimaasharp
-  41bf6f1, after v2026.10.6), so only older builds need this.
+  65e797e, after v2026.10.6), so only older builds need this.
 - **`setposition`** wants exactly `[` + 64 squares + `]`, and ignores the
   side: with `s` it still searches for gold.
 - **Clock:** it keeps its own reserve (a default of 60 s showed in its log),
