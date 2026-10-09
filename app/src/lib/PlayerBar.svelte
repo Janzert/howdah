@@ -21,6 +21,9 @@
   let { view, side, receivedAt, now, theme, away = false }: Props = $props();
 
   const player = $derived(view.players?.[side]);
+  const name = $derived(
+    player?.name ?? view.tagNames[side === 'gold' ? 0 : 1] ?? (side === 'gold' ? 'Gold' : 'Silver'),
+  );
   const clock = $derived(view.clock);
   const toMove = $derived(view.result == null && view.position.sideToMove === side);
   const thinking = $derived(view.thinking === side);
@@ -65,8 +68,8 @@
 
 <div class="bar" class:active={toMove}>
   <span class="dot {side}"></span>
-  <span class="name">
-    {player?.name ?? view.tagNames[side === 'gold' ? 0 : 1] ?? (side === 'gold' ? 'Gold' : 'Silver')}
+  <span class="name" title={name}>
+    {name}
     {#if rating}<span class="rating" title="Rating">{rating}</span>{/if}
     {#if player?.kind === 'engine'}<span class="tag">engine</span>{/if}
     {#if away}<span class="tag away" title="Not at the table on arimaa.com; the clock keeps running">away</span>{/if}
@@ -97,6 +100,8 @@
 <style>
   .bar {
     display: flex;
+    flex-wrap: wrap;
+    row-gap: 2px;
     align-items: center;
     gap: 8px;
     padding: 4px 8px;
@@ -120,8 +125,17 @@
   .dot.silver {
     background: #c9ced6;
   }
+  /* At narrow widths the name shortens (it grows from 4em up to its full
+     width, ahead of the spacer); only if that's not enough do the captures
+     and the clock wrap below, and the captures wrap among themselves only
+     when they alone are wider than the bar. */
   .name {
     font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1000 1 4em;
+    max-width: max-content;
   }
   .tag.away {
     color: var(--warn);
@@ -153,8 +167,10 @@
   }
   .captured {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 0 6px;
+    min-width: 0;
   }
   .cap {
     display: flex;
@@ -172,6 +188,11 @@
   }
   .spacer {
     flex: 1;
+  }
+  .thinking,
+  .clock {
+    white-space: nowrap;
+    flex: none;
   }
   .clock {
     font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
