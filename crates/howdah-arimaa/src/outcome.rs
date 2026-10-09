@@ -183,22 +183,39 @@ fn has_move_avoiding(
     false
 }
 
-/// Winner when a game or turn limit is reached: the side with more pieces,
-/// silver on a tie.
-// TODO(rules): the official rule (docs/RESULT-CODES.md) looks back: if the
-// counts are equal now, the side with more pieces after the most recent
-// turn where they differed wins, and silver only if they never differed.
-// This is pyrimaa's piece count on the final position.
-pub fn limit_score_winner(pos: &Position) -> Color {
-    let gold = pos.occupied_by(Color::Gold).count_ones();
-    let silver = pos.occupied_by(Color::Silver).count_ones();
-    if gold > silver { Color::Gold } else { Color::Silver }
+/// Winner when a game or turn limit is reached, from the positions after
+/// each turn since the setups, newest first (arimaa.com's match rules,
+/// `docs/RESULT-CODES.md`):
+/// the side with more pieces after the most recent turn where the counts
+/// differ, or silver if they never did. pyrimaa compares only the final
+/// counts.
+pub fn limit_score_winner<'a>(positions: impl IntoIterator<Item = &'a Position>) -> Color {
+    positions
+        .into_iter()
+        .map(|p| (p.occupied_by(Color::Gold).count_ones(), p.occupied_by(Color::Silver).count_ones()))
+        .find(|(gold, silver)| gold != silver)
+        .map_or(Color::Silver, |(gold, silver)| if gold > silver { Color::Gold } else { Color::Silver })
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::position::tests::pos;
+
+    #[test]
+    fn score_goes_by_the_latest_turn_where_the_counts_differ() {
+        let even = pos(Color::Gold, "Rd4 rd5");
+        let gold_ahead = pos(Color::Silver, "Rd4 Ra1 rd5");
+        let silver_ahead = pos(Color::Gold, "Rd4 rd5 ra8");
+        assert_eq!(limit_score_winner([&gold_ahead]), Color::Gold);
+        assert_eq!(limit_score_winner([&silver_ahead]), Color::Silver);
+        // Equal now: the most recent difference decides, not the oldest.
+        assert_eq!(limit_score_winner([&even, &even, &gold_ahead, &silver_ahead]), Color::Gold);
+        assert_eq!(limit_score_winner([&even, &silver_ahead, &gold_ahead]), Color::Silver);
+        // Never different: silver.
+        assert_eq!(limit_score_winner([&even, &even]), Color::Silver);
+        assert_eq!(limit_score_winner([]), Color::Silver);
+    }
 
     #[test]
     fn no_result_midgame() {

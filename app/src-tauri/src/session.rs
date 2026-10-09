@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 use howdah_arimaa::{
     Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position,
     Route, Square, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder, WinReason, default_setup,
-    limit_score_winner, notation,
+    notation,
 };
 
 use crate::dto::{
@@ -749,7 +749,7 @@ impl Session {
         }
         let game_limit = self.matchup.as_ref().and_then(|m| m.clock.as_ref()).and_then(Clock::game_deadline);
         if game_limit.is_some_and(|g| now >= g) {
-            let winner = limit_score_winner(self.tree[self.live()].position());
+            let winner = self.tree.score_winner(self.live());
             self.finish(
                 GameResult { winner, reason: WinReason::Score },
                 Some("game time limit reached".into()),
@@ -844,7 +844,7 @@ impl Session {
             && mover == Color::Silver
             && (ply / 2 + 1) as u32 >= limit
         {
-            let winner = limit_score_winner(self.game.current_position());
+            let winner = self.tree.score_winner(self.live());
             self.finish(
                 GameResult { winner, reason: WinReason::Score },
                 Some(format!("turn limit of {limit} reached")),

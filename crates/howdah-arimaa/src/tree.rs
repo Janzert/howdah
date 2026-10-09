@@ -11,7 +11,9 @@ use std::time::Duration;
 use crate::error::GameError;
 use crate::game::{Game, Move, build_turn};
 use crate::notation::{self, MoveBody};
-use crate::outcome::{GameResult, only_repetitions, outcome_after_turn, outcome_with_history};
+use crate::outcome::{
+    GameResult, limit_score_winner, only_repetitions, outcome_after_turn, outcome_with_history,
+};
 use crate::position::Position;
 use crate::setup::{Placement, apply_setup};
 use crate::turn::{Turn, TurnBuilder};
@@ -440,6 +442,12 @@ impl GameTree {
             .map(|n| &n.position)
     }
 
+    /// Who wins by score if a game or turn limit ends the game at `node`
+    /// ([`limit_score_winner`]).
+    pub fn score_winner(&self, node: NodeId) -> Color {
+        limit_score_winner(self.repetition_history(node))
+    }
+
     /// Whether the side to move at `node` has legal moves but every one
     /// would be a third repetition, whether or not the tree counts that as
     /// a loss (a server's game may go on with the player unable to move).
@@ -661,6 +669,20 @@ impl GameTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn score_follows_the_path_to_the_node() {
+        let g = Game::parse(
+            "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ca2 Db2 Hc2 Md2 Ee2 Hf2 Dg2 Ch2\n\
+             1s ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8 ca7 db7 hc7 ed7 me7 hf7 dg7 ch7\n\
+             2g Ee2n Ee3n\n2s hc7s hc6x\n3g Hc2n Hc3x",
+        )
+        .unwrap();
+        let (t, end) = GameTree::from_game(&g);
+        assert_eq!(t.score_winner(end), Color::Gold, "gold was ahead last");
+        let first_move = t.path(end)[3];
+        assert_eq!(t.score_winner(first_move), Color::Silver, "never different");
+    }
 
     #[test]
     fn repetition_immobilization_can_be_turned_off() {

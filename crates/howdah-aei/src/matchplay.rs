@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use howdah_arimaa::{Color, Game, GameResult, TimeControl, WinReason, limit_score_winner};
+use howdah_arimaa::{Color, Game, GameResult, TimeControl, WinReason};
 use tokio::time::Instant;
 
 use crate::engine::{Engine, EngineId};
@@ -144,10 +144,7 @@ pub async fn play_match(
             Ok(None) => {
                 let past_game_limit = game_deadline.is_some_and(|g| Instant::now() >= g);
                 let result = if past_game_limit {
-                    GameResult {
-                        winner: limit_score_winner(game.current_position()),
-                        reason: WinReason::Score,
-                    }
+                    GameResult { winner: game.score_winner(), reason: WinReason::Score }
                 } else {
                     GameResult { winner: opponent, reason: WinReason::Timeout }
                 };
@@ -188,7 +185,7 @@ pub async fn play_match(
             && side == Color::Silver
             && (ply / 2 + 1) as u32 >= tc.turn_limit
         {
-            let winner = limit_score_winner(game.current_position());
+            let winner = game.score_winner();
             game.end_game(GameResult { winner, reason: WinReason::Score }).ok();
             detail = Some(format!("turn limit of {} reached", tc.turn_limit));
         }

@@ -53,8 +53,9 @@ Notes:
   the player who has more pieces after the last completed turn wins; if
   they're equal, whoever had more pieces after the most recent turn where
   the counts differed wins; if they never differed, silver wins.
-  `howdah-arimaa` (like pyrimaa) still only compares the final counts, with
-  silver winning ties; implementing the full rule is a to-do.
+  `howdah-arimaa` follows it (`limit_score_winner`, looking back to the
+  end of the setups); pyrimaa compares only the final counts, with silver
+  winning ties.
 - The app also uses `Forfeit` when a local engine fails (crashes or
   stops answering), which is broader than arimaa.com's meaning.
 

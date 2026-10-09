@@ -6,7 +6,7 @@
 
 use crate::error::{GameError, RecordError};
 use crate::notation::{self, MoveBody, RecordStep};
-use crate::outcome::{GameResult, outcome_with_history};
+use crate::outcome::{GameResult, limit_score_winner, outcome_with_history};
 use crate::position::Position;
 use crate::setup::{Placement, apply_setup};
 use crate::step::StepEffect;
@@ -70,6 +70,12 @@ impl Game {
 
     pub fn current_position(&self) -> &Position {
         self.positions.last().expect("positions is never empty")
+    }
+
+    /// Who wins by score if a game or turn limit ends the game now
+    /// ([`limit_score_winner`]).
+    pub fn score_winner(&self) -> Color {
+        limit_score_winner(self.positions.iter().skip(2).rev())
     }
 
     /// True if the move made from `ply` is a setup move.
@@ -249,6 +255,21 @@ mod tests {
         g.play_setup(default_setup(Color::Gold)).unwrap();
         g.play_setup(default_setup(Color::Silver)).unwrap();
         g
+    }
+
+    #[test]
+    fn score_looks_back_past_equal_counts() {
+        let mut g = Game::parse(
+            "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ca2 Db2 Hc2 Md2 Ee2 Hf2 Dg2 Ch2\n\
+             1s ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8 ca7 db7 hc7 ed7 me7 hf7 dg7 ch7\n\
+             2g Ee2n Ee3n\n2s hc7s hc6x",
+        )
+        .unwrap();
+        assert_eq!(g.score_winner(), Color::Gold);
+        // Equal again, but gold was ahead last.
+        g.play_notation("Hc2n Hc3x").unwrap();
+        assert_eq!(g.score_winner(), Color::Gold);
+        assert_eq!(started().score_winner(), Color::Silver, "never different");
     }
 
     #[test]
