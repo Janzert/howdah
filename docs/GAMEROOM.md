@@ -190,7 +190,7 @@ architecture. Decided and checked against the live server in October 2026.
 ## Not built
 
 - A window per game: everything plays and watches in the main window's
-  session.
+  session (planned in `WINDOWS.md`).
 - Inviting from a list of players online, scheduled games, and an
   opponent rating range in the New game form.
 - An engine playing on arimaa.com, and a postal controller for bots (on

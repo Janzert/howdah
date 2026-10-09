@@ -294,8 +294,9 @@ The current engine panel shows depth, eval, PV and log per side.
   leaving (the server doesn't tell players about spectators).
 - **[have] Chat** under the board (arimaa.com and 4steps), at a player's
   seat; spectators don't get it from the server.
-- **[P2] Several games at once:** tabs or windows, already planned. lichess's "move on" (`moveOn.ts`) jumps to the next game where
-  it's your turn. This is essential for postal play.
+- **[P2] Several games at once:** a window per game and a lobby window,
+  planned in `WINDOWS.md`. lichess's "move on" (`moveOn.ts`) jumps to
+  the next game where it's your turn. This is essential for postal play.
 - **[P3] Postal conveniences:**
   - Conditional moves (lichess "forecast" for correspondence games).
   - A per-game notes pad.
