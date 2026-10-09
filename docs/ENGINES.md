@@ -29,6 +29,15 @@ working Python controller. Engine quirks live in one place in the code,
   the old one and waits up to 2 s for its `bestmove`, so moves never reach
   an engine mid-search. An early `bestmove` (a proven win, a single legal
   move, a setup) isn't an error.
+- **Ending engines:** `quit`, then a kill after a timeout. Engines are
+  also killed when their `Engine` is dropped, but that needs our
+  destructors to run, which they don't when the app is killed or exits
+  through `process::exit` (as Tauri does on closing). The engine then only
+  sees its stdin close: Sharp exits on that, and OpFor does since
+  2026-10-09 (before, it ran on as an orphan, even mid-search). On Linux
+  the engine also gets `PR_SET_PDEATHSIG` (SIGKILL when the thread that
+  spawned it exits, so spawn from a long-lived runtime thread); other
+  platforms rely on the engine exiting at end of input.
 - **Scores** are read from the mover's side and shown on one scale,
   centi-rabbits (a rabbit up in the opening is about +100), with proven
   wins kept apart.

@@ -180,3 +180,26 @@ async fn turn_limit_ends_by_score() {
     }
     assert!(outcome.game.ply_count() <= 6);
 }
+
+/// An engine dies with the thread that spawned it, even when no destructor
+/// runs and its stdin stays open (as if it ignored end of input).
+#[cfg(target_os = "linux")]
+#[test]
+fn engine_dies_with_its_spawning_thread() {
+    let pid = std::thread::spawn(|| {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let engine = rt.block_on(start(&[]));
+        let pid = engine.pid().expect("engine runs");
+        std::mem::forget(engine);
+        pid
+    })
+    .join()
+    .unwrap();
+    // Nobody reaps it, so it stays as a zombie.
+    let state = || std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !state().contains(") Z ") {
+        assert!(std::time::Instant::now() < deadline, "engine still running: {}", state());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

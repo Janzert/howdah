@@ -76,6 +76,33 @@ pub struct Engine {
     transcript: Option<Transcript>,
 }
 
+/// Has Linux kill the engine when we die. `kill_on_drop` needs our
+/// destructors to run, which they don't when we're killed or exit through
+/// `process::exit` (as Tauri does); the engine then only sees its stdin
+/// close, and an engine that ignores that runs on as an orphan.
+///
+/// The signal comes when the *thread* that spawned the engine exits, not the
+/// process. Engines are spawned from tokio's worker threads, which live as
+/// long as the runtime; don't start one from a short-lived thread.
+#[cfg(target_os = "linux")]
+fn kill_with_parent(cmd: &mut Command) {
+    let parent = std::process::id() as libc::pid_t;
+    // SAFETY: the closure runs in the forked child before exec and calls
+    // only async-signal-safe functions, without allocating.
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            // We may have died before the prctl.
+            if libc::getppid() != parent {
+                return Err(std::io::Error::from_raw_os_error(libc::ESRCH));
+            }
+            Ok(())
+        });
+    }
+}
+
 impl Engine {
     /// Starts the engine and performs the `aei` ... `aeiok` handshake.
     pub async fn start(config: &EngineConfig) -> Result<Engine, AeiError> {
@@ -93,6 +120,8 @@ impl Engine {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .kill_on_drop(true);
+        #[cfg(target_os = "linux")]
+        kill_with_parent(&mut cmd);
         if let Some(dir) = &config.working_dir {
             // A missing directory makes spawn fail with the same "not found"
             // error as a missing program, so check it separately.
@@ -143,6 +172,11 @@ impl Engine {
 
     pub fn id(&self) -> &EngineId {
         &self.id
+    }
+
+    /// The engine's process id, while it runs.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.id()
     }
 
     /// The engine's name, or a placeholder.
