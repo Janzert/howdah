@@ -357,6 +357,11 @@ pub async fn gameroom_games(state: State<'_, Backend>) -> Result<GameroomGames, 
 }
 
 #[tauri::command]
+pub fn gameroom_last_games(state: State<Backend>) -> Option<GameroomGames> {
+    state.gameroom_last_games()
+}
+
+#[tauri::command]
 pub async fn gameroom_postal_games(state: State<'_, Backend>) -> Result<Vec<PostalGameView>, ApiError> {
     state.gameroom_postal_games().await
 }
@@ -450,12 +455,8 @@ pub async fn create_gameroom_game(
 }
 
 #[tauri::command]
-pub async fn cancel_gameroom_game(
-    state: State<'_, Backend>,
-    session: SessionId,
-    gid: String,
-) -> Result<(), ApiError> {
-    state.cancel_gameroom_game(session, &gid).await
+pub async fn cancel_gameroom_game(state: State<'_, Backend>, gid: String) -> Result<(), ApiError> {
+    state.cancel_gameroom_game(&gid).await
 }
 
 #[tauri::command]

@@ -21,6 +21,14 @@ impl std::fmt::Display for SessionId {
     }
 }
 
+/// The sessions open now, sent as `sessions://changed` whenever one opens
+/// or closes (each is a game window's).
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export)]
+pub struct SessionsChanged {
+    pub sessions: Vec<SessionId>,
+}
+
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]

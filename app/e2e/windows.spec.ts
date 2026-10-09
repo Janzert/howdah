@@ -1,70 +1,95 @@
-// Game windows (docs/WINDOWS.md): in the browser preview a game window is
-// a tab opened with `window.open`, on its own session.
-import { expect, test } from '@playwright/test';
-import type { ArimaaHooks } from '../src/lib/devHooks';
+// The lobby and game windows (docs/WINDOWS.md): in the browser preview the
+// lobby is the page without `?session=`, and each game window a tab opened
+// with `window.open`, on its own session.
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { bridge, closeAllSessions } from './helpers';
 
-declare global {
-  interface Window {
-    __arimaa?: ArimaaHooks;
-  }
+/** Opens the lobby with no game windows. */
+async function lobby(page: Page) {
+  await closeAllSessions(page);
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Play and analyse' })).toBeVisible();
 }
 
-test('a second window plays its own game, follows settings, and closing it ends its session', async ({
-  page,
-  context,
-}) => {
-  await page.goto('/');
-  await page.waitForFunction(() => window.__arimaa?.state() != null);
-  await page.evaluate(async () => {
-    const a = window.__arimaa!;
-    await a.api.setAnalysis(null);
-    await a.api.newGame();
-    await a.idle();
-  });
+/** Clicks `button` in the lobby and returns the game window it opens. */
+async function opens(context: BrowserContext, click: () => Promise<void>): Promise<Page> {
+  const [game] = await Promise.all([context.waitForEvent('page'), click()]);
+  await game.waitForFunction(() => window.__arimaa?.state() != null);
+  return game;
+}
 
-  const [second] = await Promise.all([
-    context.waitForEvent('page'),
-    page.getByRole('button', { name: 'New window' }).click(),
-  ]);
-  await second.waitForFunction(() => window.__arimaa?.state() != null);
-  const id = Number(new URL(second.url()).searchParams.get('session'));
-  expect(id).toBeGreaterThan(1);
-  expect(await page.evaluate(() => window.__arimaa!.api.listSessions())).toContain(id);
+const sessionOf = (game: Page) => Number(new URL(game.url()).searchParams.get('session'));
+const openWindows = (page: Page) => page.getByRole('list', { name: 'Open windows' }).getByRole('listitem');
 
-  // Both setups and a move in the second window; the first stays in gold's setup.
+test('the lobby opens game windows, lists them, and closing one ends its session', async ({ page, context }) => {
+  await lobby(page);
+  await expect(page.getByText('No games are open')).toBeVisible();
+
+  // A game against the test engine: the lobby lists it as waiting on the user.
+  const engines = await bridge<{ id: string }[]>(page, 'list_engines');
+  test.skip(engines.length === 0, 'no test engine (cargo build -p howdah-aei --bin aei-test-engine)');
+  await page.getByRole('button', { name: 'New game' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New game' });
+  await dialog.locator('#ng-silver').selectOption(engines[0].id);
+  const first = await opens(context, () => dialog.getByRole('button', { name: 'Start' }).click());
+  const firstId = sessionOf(first);
+  await expect(openWindows(page)).toHaveCount(1);
+  await expect(openWindows(page).first()).toContainText('Your move');
+  await expect(openWindows(page).first()).toContainText('Against an engine');
+
+  // A second, empty window from the game window's New window.
+  const second = await opens(context, () => first.getByRole('button', { name: 'New window' }).click());
+  const secondId = sessionOf(second);
+  expect(secondId).not.toBe(firstId);
+  await expect(openWindows(page)).toHaveCount(2);
+
+  // Moves in one window don't reach the other.
   await second.evaluate(async () => {
     const a = window.__arimaa!;
     await a.api.commitSetup();
     await a.api.commitSetup();
     await a.idle();
-    await a.drag('d2', 'd4', ['d3']);
-    await a.api.commitTurn();
-    await a.idle();
   });
-  await expect(second.getByText('Silver to move')).toBeVisible();
-  await expect(page.getByText('Gold setup')).toBeVisible();
-  expect(await page.evaluate(() => window.__arimaa!.state()!.ply)).toBe(0);
-  expect(await second.evaluate(() => window.__arimaa!.state()!.ply)).toBe(3);
-
-  // A move in the first window doesn't reach the second.
-  await page.evaluate(async () => {
+  await expect(second.getByText('Gold to move')).toBeVisible();
+  expect(await first.evaluate(() => window.__arimaa!.state()!.ply)).toBe(0);
+  // The lobby follows the game: gold's setup confirmed, the engine replies.
+  await first.evaluate(async () => {
     await window.__arimaa!.api.commitSetup();
-    await window.__arimaa!.idle();
   });
-  await expect(page.getByText('Silver setup')).toBeVisible();
-  expect(await second.evaluate(() => window.__arimaa!.state()!.ply)).toBe(3);
+  await expect.poll(() => first.evaluate(() => window.__arimaa!.state()!.moves.length)).toBe(2);
+  await expect(openWindows(page).filter({ hasText: 'Your move' })).toHaveCount(1);
 
-  // A setting changed in one window applies in the other.
-  const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
-  const before = await theme();
-  const other = before === 'dark' ? 'Light' : 'Dark';
-  await second.getByRole('button', { name: 'Settings' }).click();
-  await second.getByRole('dialog', { name: 'Settings' }).getByLabel(other, { exact: true }).check();
+  // A setting changed in the lobby applies in the game windows.
+  const theme = () => second.evaluate(() => document.documentElement.dataset.theme);
+  const other = (await theme()) === 'dark' ? 'Light' : 'Dark';
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('dialog', { name: 'Settings' }).getByLabel(other, { exact: true }).check();
   await expect.poll(theme).toBe(other.toLowerCase());
-  await second.evaluate(() => localStorage.removeItem('settings'));
+  await page.evaluate(() => localStorage.removeItem('settings'));
 
-  // Closing the window closes its session.
+  // Closing a window ends its session, and the lobby drops it.
   await second.close({ runBeforeUnload: true });
-  await expect.poll(() => page.evaluate(() => window.__arimaa!.api.listSessions())).not.toContain(id);
-  expect(await page.evaluate(() => window.__arimaa!.state()!.ply)).toBe(1);
+  await expect.poll(() => bridge<number[]>(page, 'list_sessions')).toEqual([firstId]);
+  await expect(openWindows(page)).toHaveCount(1);
+});
+
+test('the lobby opens a record in a window', async ({ page, context }) => {
+  await lobby(page);
+  await page.getByRole('button', { name: 'Open record' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Open a record' });
+  await dialog.getByRole('textbox').fill('1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2\n');
+  const game = await opens(context, () => dialog.getByRole('button', { name: 'Load' }).click());
+  await expect(dialog).toBeHidden();
+  expect(await game.evaluate(() => window.__arimaa!.state()!.moves.length)).toBe(1);
+  await expect(openWindows(page)).toHaveCount(1);
+});
+
+test("a game window's Lobby button goes back to the lobby tab", async ({ page, context }) => {
+  await lobby(page);
+  const game = await opens(context, () => page.getByRole('button', { name: 'Analysis board' }).click());
+  await game.getByRole('button', { name: /^Lobby/ }).click();
+  // The lobby's tab is found by name, not opened again.
+  await game.waitForTimeout(300);
+  expect(context.pages()).toHaveLength(2);
+  await expect(page.getByRole('heading', { name: 'Play and analyse' })).toBeVisible();
 });

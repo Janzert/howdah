@@ -9,10 +9,16 @@ young).
 
 ### Added
 
-- "New window" opens another window with a game of its own, so several
-  games can be played, watched or analysed at once. Closing a window
-  ends its game; while it plays an arimaa.com game or a match is on, it
-  asks first. Settings changed in one window apply in all of them.
+- Each game has a window of its own, so several games can be played,
+  watched or analysed at once. The main window is now a lobby: new games,
+  an analysis board, opening a record, the open game windows (with a
+  small board, the clocks and "Your move"), the arimaa.com lobby that was
+  a dialog, and the Engines, Settings and Help dialogs. Invitations and
+  postal moves due are announced there, also while it's hidden (closing
+  it hides it while games are open); a game window's Lobby button brings
+  it back. Closing a game window ends its game; while it plays an
+  arimaa.com game or a match is on, it asks first. Settings changed in
+  one window apply in all of them.
 
 ### Changed
 

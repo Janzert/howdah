@@ -225,6 +225,8 @@ pub struct Gameroom {
     waiters: Mutex<std::collections::HashMap<String, tauri::async_runtime::JoinHandle<()>>>,
     /// The lobby watcher, while logged in.
     watcher: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    /// The lists as last fetched, for a window that opens between polls.
+    last_games: Mutex<Option<GameroomGames>>,
 }
 
 impl Gameroom {
@@ -238,6 +240,7 @@ impl Gameroom {
             events,
             waiters: Mutex::new(Default::default()),
             watcher: Mutex::new(None),
+            last_games: Mutex::new(None),
         }
     }
 
@@ -292,6 +295,7 @@ impl Gameroom {
         }
         let old = self.lobby.lock().await.take();
         *lock(&self.username) = None;
+        *lock(&self.last_games) = None;
         match old {
             Some(mut lobby) => lobby.logout().await.map_err(net_error),
             None => Ok(()),
@@ -323,14 +327,22 @@ impl Gameroom {
             .map(|i| invitation_view(i, true))
             .chain(games.i_invited.into_iter().map(|i| invitation_view(i, false)))
             .collect();
-        Ok(GameroomGames {
+        let games = GameroomGames {
             user: lock(&self.username).clone(),
             live: views(games.live),
             recent: games.recent.into_iter().map(recent_view).collect(),
             mine: views(games.mine),
             open: views(games.open),
             invitations,
-        })
+        };
+        *lock(&self.last_games) = Some(games.clone());
+        Ok(games)
+    }
+
+    /// The lists as [`games`](Self::games) last fetched them, while
+    /// logged in.
+    pub fn last_games(&self) -> Option<GameroomGames> {
+        lock(&self.last_games).clone().filter(|g| g.user.is_some() && g.user == *lock(&self.username))
     }
 
     /// Starts the lobby watcher: every [`LOBBY_POLL`] while logged in, the

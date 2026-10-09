@@ -30,6 +30,14 @@ impl EventSink for AppHandle {
     }
 }
 
+/// How many game windows are open, leaving out the window `except`.
+fn game_windows(app: &AppHandle, except: Option<&str>) -> usize {
+    app.webview_windows()
+        .keys()
+        .filter(|label| backend::game_window_session(label).is_some() && Some(label.as_str()) != except)
+        .count()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -43,11 +51,28 @@ pub fn run() {
             app.manage(Backend::new(registry, catalog, saved_login, Arc::new(app.handle().clone())));
             Ok(())
         })
-        // A window's session ends with the window, however it closed.
-        .on_window_event(|window, event| {
-            if let WindowEvent::Destroyed = event {
-                window.state::<Backend>().window_closed(window.label());
+        .on_window_event(|window, event| match event {
+            // Closing the lobby (the main window) only hides it while game
+            // windows are open, so its lobby poll and notifications go on;
+            // a game window's Lobby button shows it again.
+            WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
+                if game_windows(window.app_handle(), None) > 0 {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
+            // A game window's session ends with the window, however it
+            // closed. Closing the last one while the lobby is hidden quits.
+            WindowEvent::Destroyed => {
+                window.state::<Backend>().window_closed(window.label());
+                let app = window.app_handle();
+                let lobby_hidden =
+                    app.get_webview_window("main").is_some_and(|w| !w.is_visible().unwrap_or(true));
+                if lobby_hidden && game_windows(app, Some(window.label())) == 0 {
+                    app.exit(0);
+                }
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             commands::open_session,
@@ -105,6 +130,7 @@ pub fn run() {
             commands::gameroom_login,
             commands::gameroom_logout,
             commands::gameroom_games,
+            commands::gameroom_last_games,
             commands::gameroom_postal_games,
             commands::invite_gameroom_player,
             commands::accept_gameroom_invitation,
@@ -122,6 +148,16 @@ pub fn run() {
             commands::watch_status,
             commands::set_native_appearance,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, _event| {
+            // The dock icon brings back a hidden lobby.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                if let Some(lobby) = _app.get_webview_window("main") {
+                    let _ = lobby.show();
+                    let _ = lobby.set_focus();
+                }
+            }
+        });
 }

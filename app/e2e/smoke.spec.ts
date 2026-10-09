@@ -1,25 +1,12 @@
 // Smoke tests through the UI, using the board's accessible names and the dev
-// hook (`window.__arimaa`, see src/lib/devHooks.ts).
+// hook (`window.__arimaa`, see src/lib/devHooks.ts), in a game window.
 import { expect, test, type Page } from '@playwright/test';
-import type { ArimaaHooks } from '../src/lib/devHooks';
+import { openGamePage } from './helpers';
 
-declare global {
-  interface Window {
-    __arimaa?: ArimaaHooks;
-  }
-}
-
-/** Opens the app on a fresh free-play game. */
+/** Opens a game window on a fresh free-play game. */
 async function freshGame(page: Page) {
-  await page.goto('/');
-  await page.waitForFunction(() => window.__arimaa?.state() != null);
-  await page.evaluate(async () => {
-    const a = window.__arimaa!;
-    // The bridge is shared between tests; analysis stays on across games.
-    await a.api.setAnalysis(null);
-    await a.api.newGame();
-    await a.idle();
-  });
+  await openGamePage(page);
+  await page.evaluate(() => window.__arimaa!.idle());
 }
 
 const board = (page: Page) => page.getByRole('application', { name: 'Arimaa board' });
@@ -128,21 +115,25 @@ test('last move arrows and captured pieces', async ({ page }) => {
   await expect(page.locator('.last-move')).toHaveCount(0);
 });
 
-test('coordinates setting changes the board labels and persists', async ({ page }) => {
+test('coordinates setting from the lobby changes the board labels and persists', async ({ page, context }) => {
   await freshGame(page);
   await page.evaluate(() => localStorage.removeItem('settings'));
   await page.reload();
   const labels = page.locator('svg[aria-label="Arimaa board"] .coord');
   await expect(labels).toHaveText(['c3', 'f3', 'c6', 'f6']); // the default: traps
 
-  await page.getByRole('button', { name: 'Settings' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  // Settings live in the lobby; the game window follows.
+  const lobby = await context.newPage();
+  await lobby.goto('/');
+  await lobby.getByRole('button', { name: 'Settings' }).click();
+  const dialog = lobby.getByRole('dialog', { name: 'Settings' });
   await dialog.getByLabel('Files and ranks').check();
   await expect(labels).toHaveCount(16);
   await dialog.getByLabel('None').check();
   await expect(labels).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Done' }).click();
   await expect(dialog).toBeHidden();
+  await lobby.close();
 
   await page.reload();
   await page.waitForFunction(() => window.__arimaa?.state() != null);

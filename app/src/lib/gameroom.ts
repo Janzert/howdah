@@ -1,5 +1,5 @@
 // Small checks on the gameroom's lists and a followed game's state, shared
-// by the toolbar's alerts and the arimaa.com dialog.
+// by the lobby's alerts, the arimaa.com lobby and the game windows.
 import type { Color } from './bindings/Color';
 import type { LiveGameView } from './bindings/LiveGameView';
 import type { WatchView } from './bindings/WatchView';

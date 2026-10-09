@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { analysisEngine, pvMoves } from './lib/analysis';
   import AnalysisPanel from './lib/AnalysisPanel.svelte';
-  import { api, errorMessage, isGameWindow } from './lib/api';
+  import { api, errorMessage } from './lib/api';
   import type { AnalysisLine } from './lib/bindings/AnalysisLine';
   import type { AnalysisView } from './lib/bindings/AnalysisView';
   import { setAppearance } from './lib/appearance';
@@ -31,17 +31,15 @@
   import RecordDialog from './lib/RecordDialog.svelte';
   import { justEnded } from './lib/result';
   import { settings, type HoverInput } from './lib/settings.svelte';
-  import SettingsDialog from './lib/SettingsDialog.svelte';
   import { shortcutFor, type ShortcutId } from './lib/shortcuts';
   import { play, setMuted, setThemeSounds, setVolume, type SoundName, unlockOnInteraction } from './lib/sound';
   import { findTheme } from './lib/theme';
   import TurnBar from './lib/TurnBar.svelte';
   import type { GameroomGames } from './lib/bindings/GameroomGames';
   import type { WatchView } from './lib/bindings/WatchView';
-  import WatchDialog from './lib/WatchDialog.svelte';
   import WatchPanel from './lib/WatchPanel.svelte';
   import { myTurn, newOpponentChat, watchSounds } from './lib/gameroom';
-  import { guardClose, openGameWindow } from './lib/windows';
+  import { guardClose, openGameWindow, showLobby, takeHandOff } from './lib/windows';
 
   function pref(key: string): string | null {
     try {
@@ -69,20 +67,14 @@
   let record = $state<string | null>(null);
   let showNewGame = $state(false);
   let showEngines = $state(false);
-  let showSettings = $state(false);
   let showHelp = $state(false);
-  let showWatch = $state(false);
   /** The question asked before closing the window, while it's open. */
   let closing = $state<{ reason: string; confirm: string; answer: (close: boolean) => void } | null>(null);
   /** The arimaa.com game this session follows, if any. */
   let watch = $state<WatchView | null>(null);
-  /** Open invitations to the user (from the lobby watcher), and those
-   * already announced. */
-  let invitationCount = $state(0);
-  const seenInvitations = new Set<string>();
-  /** The user's postal games waiting on their move (from the lobby
-   * watcher), by gid. */
-  let postalTurns = $state<string[]>([]);
+  /** What waits in the lobby (from its poll): invitations to the user and
+   * their postal games waiting on their move, leaving out this window's. */
+  let lobbyWaiting = $state(0);
   // The game-end dialog waits for the final move's animation.
   let gameEndPending = $state(false);
   let showGameEnd = $state(false);
@@ -91,7 +83,7 @@
   // The game-end sound waits for the final move too, with the dialog.
   let gameEndSound: SoundName | null = null;
   /** The last match started from the new-game dialog, for a rematch. */
-  let lastSpec = $state<MatchSpec | null>(null);
+  let lastSpec = $state<MatchSpec | null>(takeHandOff()?.spec ?? null);
   let engines = $state<EngineSpec[]>([]);
   /** The latest analysis update. */
   let analysis = $state<AnalysisView | null>(null);
@@ -292,26 +284,6 @@
       if (chat.length > 0) requestAttention('New chat');
     });
     const unlistenLobby = on('gameroom://lobby', lobbyGames);
-    const unlistenInvitation = on('gameroom://invitation', (a) => {
-      // App-wide: the main window answers it, so the seat is taken once.
-      if (isGameWindow) return;
-      if (a.outcome.kind === 'accepted') {
-        const { gid, side } = a.outcome;
-        // Into the game, unless this window plays another one.
-        if (watch?.side != null && watch.state !== 'ended') {
-          flash(`${a.opponent} accepted your invitation: play it from Your games (arimaa.com)`);
-        } else {
-          flash(`${a.opponent} accepted your invitation`);
-          run(api.playGameroomGame(gid, side));
-        }
-        requestAttention('Invitation accepted');
-      } else if (a.outcome.kind === 'declined') {
-        flash(a.outcome.message);
-      } else {
-        flash(`Your invitation to ${a.opponent} is gone`);
-      }
-      play('notification');
-    });
     void guardClose(
       () => closeWarning?.reason ?? null,
       (reason) =>
@@ -320,46 +292,29 @@
         }),
     );
     api.watchStatus().then((w) => (watch = w));
+    api.gameroomLastGames().then((g) => g && lobbyGames(g));
     api.getState().then((v) => {
       setView(v);
       model.snap(v.position.pieces);
     });
     reloadEngines();
+    // The lobby's Engines dialog may have changed them.
+    window.addEventListener('focus', reloadEngines);
     return () => {
+      window.removeEventListener('focus', reloadEngines);
       unlisten.then((f) => f());
       unlistenAnalysis.then((f) => f());
       unlistenWatch.then((f) => f());
       unlistenLobby.then((f) => f());
-      unlistenInvitation.then((f) => f());
     };
   });
 
-  /** Counts the invitations to the user and their postal games waiting on
-   * their move in the lobby's lists, and announces new ones. */
+  /** Counts what waits in the lobby's lists, for the Lobby button. The
+   * lobby announces it; the game this window plays has its own alerts. */
   function lobbyGames(g: GameroomGames) {
-    const incoming = g.invitations.filter((i) => i.incoming);
-    const fresh = incoming.filter((i) => !seenInvitations.has(i.created));
-    invitationCount = incoming.length;
-    for (const i of incoming) seenInvitations.add(i.created);
-    // Announced in the main window only, so once (the badges show in all).
-    if (fresh.length > 0 && !showWatch && !isGameWindow) {
-      flash(`${fresh[0].opponent ?? 'Someone'} invites you to a game (arimaa.com)`);
-      play('notification');
-      requestAttention('Invitation');
-    }
-    // The game this window plays doesn't count; its own alerts cover it.
-    const turns = g.mine.filter((m) => m.postal && myTurn(m, g.user) && m.gid !== watch?.gid).map((m) => m.gid);
-    const newTurns = turns.filter((gid) => !postalTurns.includes(gid));
-    postalTurns = turns;
-    if (newTurns.length > 0 && fresh.length === 0 && !showWatch && !isGameWindow) {
-      flash(
-        newTurns.length === 1
-          ? 'A postal game waits on your move (arimaa.com)'
-          : `${newTurns.length} postal games wait on your move (arimaa.com)`,
-      );
-      play('notification');
-      requestAttention('Your postal move');
-    }
+    const invitations = g.invitations.filter((i) => i.incoming).length;
+    const turns = g.mine.filter((m) => m.postal && myTurn(m, g.user) && m.gid !== watch?.gid).length;
+    lobbyWaiting = invitations + turns;
   }
 
   /** A new open game on arimaa.com with the time control and rating of
@@ -455,7 +410,7 @@
     }
     const engine = analysisEngine(engines, settings.analysisEngine);
     if (!engine) {
-      flash('Add an engine first (Engines)');
+      flash('Add an engine first (Engines, in the lobby)');
       return;
     }
     useAnalysisEngine(engine.id);
@@ -581,7 +536,7 @@
   };
 
   function onkeydown(e: KeyboardEvent) {
-    if (!view || record != null || showNewGame || showEngines || showSettings || showGameEnd || showHelp || showWatch || closing) return;
+    if (!view || record != null || showNewGame || showEngines || showGameEnd || showHelp || closing) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, select')) return;
     const shortcut = shortcutFor(e);
@@ -700,17 +655,10 @@
       </div>
     {/if}
     <div class="tools">
-      <button onclick={() => (showNewGame = true)}>New game</button>
+      <button onclick={() => (showNewGame = true)} title="A new game in this window">New game</button>
       <button onclick={() => openGameWindow().catch((e) => flash(errorMessage(e)))} title="Open another window, with a game of its own">
         New window
       </button>
-      <button onclick={() => (showWatch = true)} title="Play or watch games on arimaa.com, or open finished ones">
-        arimaa.com{#if invitationCount > 0}<span class="badge" title="Invitations to you">{invitationCount}</span>{/if}{#if postalTurns.length > 0}<span
-            class="badge"
-            title="Postal games waiting on your move">{postalTurns.length}</span
-          >{/if}
-      </button>
-      <button onclick={() => (showEngines = true)}>Engines</button>
       <button
         onclick={toggleAnalysis}
         aria-pressed={analysisShown}
@@ -725,8 +673,14 @@
       </button>
       <button onclick={openRecord}>Record</button>
       <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
-      <button onclick={() => (showSettings = true)}>Settings</button>
-      <button onclick={() => (showHelp = true)} title="Keyboard and mouse help (?)">Help</button>
+      <button
+        onclick={() => showLobby()}
+        title="The lobby: new games, open windows, arimaa.com, engines and settings{lobbyWaiting > 0
+          ? ` (${lobbyWaiting} waiting on you)`
+          : ''}"
+      >
+        Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
+      </button>
     </div>
   </aside>
 </main>
@@ -774,12 +728,6 @@
     onAnalyse={engines.length && !analysing ? startAnalysis : undefined}
     onClose={() => (showGameEnd = false)}
   />
-{/if}
-{#if showWatch}
-  <WatchDialog onOpen={openGameroomGame} onClose={() => (showWatch = false)} onGames={lobbyGames} />
-{/if}
-{#if showSettings}
-  <SettingsDialog onClose={() => (showSettings = false)} />
 {/if}
 {#if showHelp}
   <HelpDialog onClose={() => (showHelp = false)} />

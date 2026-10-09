@@ -21,7 +21,7 @@
   const mouse: { action: string; effect: string }[] = [
     { action: 'Drag a piece', effect: 'Move it; a longer drag takes a route along the path you drag' },
     { action: 'Drag in setup', effect: 'Swap two pieces' },
-    { action: 'Click a shown step', effect: 'Take it (Settings, Hover: arrows or step mode)' },
+    { action: 'Click a shown step', effect: "Take it (the lobby's Settings, Hover: arrows or step mode)" },
     { action: 'Right-click a square', effect: 'Highlight it' },
     { action: 'Right-drag', effect: 'Draw an arrow' },
     { action: 'Shift / Ctrl or Alt', effect: 'With a right-click: red / blue instead of the usual color' },

@@ -106,8 +106,8 @@
   </div>
 {/snippet}
 
-<dialog bind:this={dialog} onclose={onClose}>
-  <h2>New game</h2>
+<dialog bind:this={dialog} onclose={onClose} aria-labelledby="new-game-title">
+  <h2 id="new-game-title">New game</h2>
   <div class="grid">
     <label for="ng-gold"><span class="dot gold"></span> Gold</label>
     {@render side('gold', 'ng-gold')}

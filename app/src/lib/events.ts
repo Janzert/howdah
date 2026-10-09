@@ -7,6 +7,7 @@ import type { EngineOutput } from './bindings/EngineOutput';
 import type { GameroomGames } from './bindings/GameroomGames';
 import type { InvitationAnswer } from './bindings/InvitationAnswer';
 import type { SessionUpdate } from './bindings/SessionUpdate';
+import type { SessionsChanged } from './bindings/SessionsChanged';
 import type { WatchView } from './bindings/WatchView';
 
 export interface EventMap {
@@ -20,6 +21,8 @@ export interface EventMap {
   'gameroom://lobby': GameroomGames;
   /** How an invitation the user sent was answered. */
   'gameroom://invitation': InvitationAnswer;
+  /** The sessions open now (one per game window), when one opens or closes. */
+  'sessions://changed': SessionsChanged;
 }
 
 /** Subscribes to an event. Events from a session carry a `session` field
@@ -31,4 +34,13 @@ export function on<K extends keyof EventMap>(
   return listen<EventMap[K] & { session?: number }>(name, (e) => {
     if (e.payload.session === undefined || e.payload.session === session) handler(e.payload);
   });
+}
+
+/** Subscribes to an event from every session, with the session it came
+ * from (null for app-wide events): for the lobby, which shows them all. */
+export function onEvery<K extends keyof EventMap>(
+  name: K,
+  handler: (payload: EventMap[K], session: number | null) => void,
+): Promise<UnlistenFn> {
+  return listen<EventMap[K] & { session?: number }>(name, (e) => handler(e.payload, e.payload.session ?? null));
 }

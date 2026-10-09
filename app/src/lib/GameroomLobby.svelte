@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { api, errorMessage } from './api';
+  // The arimaa.com lobby, a section of the lobby window: the login, the
+  // user's games and invitations, open, live, postal and finished games, a
+  // player's games, and a new game. Playing, watching or opening a game
+  // opens a game window for it (`onOpen`).
+  import { onMount } from 'svelte';
+  import { type Api, api, errorMessage } from './api';
   import type { Color } from './bindings/Color';
   import type { GameResult } from './bindings/GameResult';
   import type { LiveGameView } from './bindings/LiveGameView';
@@ -10,19 +15,19 @@
   import type { PostalGameView } from './bindings/PostalGameView';
   import type { RecentGameView } from './bindings/RecentGameView';
   import type { WinReason } from './bindings/WinReason';
+  import { on } from './events';
   import { mySide as sideIn, myTurn as turnIn } from './gameroom';
 
   interface Props {
-    /** Runs a request that makes a gameroom game the session's (opening,
-     * joining or creating one). Resolves to an error message, or null on
-     * success. */
-    onOpen: (start: () => Promise<void>) => Promise<string | null>;
-    onClose: () => void;
-    /** The lists, whenever they're fetched (for the toolbar's count of
-     * invitations). */
+    /** Opens a game window whose session `start` makes a gameroom game
+     * (opening, joining or creating one). Resolves to an error message,
+     * or null on success. */
+    onOpen: (start: (a: Api) => Promise<void>) => Promise<string | null>;
+    /** The lists, whenever they're fetched here (the lobby's poll comes
+     * as an event too). */
     onGames?: (games: GameroomGames) => void;
   }
-  let { onOpen, onClose, onGames }: Props = $props();
+  let { onOpen, onGames }: Props = $props();
 
   function pref(key: string): string {
     try {
@@ -55,7 +60,6 @@
   let gameId = $state('');
   let busy = $state(false);
   let error = $state<string | null>(null);
-  let dialog: HTMLDialogElement;
 
   /** The text typed into the player search. */
   let playerQuery = $state('');
@@ -97,12 +101,16 @@
     games ? [...games.mine].sort((a, b) => Number(myTurn(b)) - Number(myTurn(a))) : [],
   );
 
-  /** How often the open dialog refreshes the lists, as the browser lobby
-   * does. */
+  /** How often the lists are refreshed while the lobby is shown, as the
+   * browser lobby does. */
   const REFRESH_MS = 20_000;
 
-  $effect(() => {
-    dialog.showModal();
+  onMount(() => {
+    // The backend's poll, every minute while logged in.
+    const unlisten = on('gameroom://lobby', (g) => {
+      if (user && g.user === user) games = g;
+    });
+    return () => void unlisten.then((f) => f());
   });
 
   $effect(() => {
@@ -197,15 +205,14 @@
     });
   }
 
-  async function enter(start: () => Promise<void>) {
+  async function enter(start: (a: Api) => Promise<void>) {
     busy = true;
     error = await onOpen(start);
     busy = false;
-    if (!error) onClose();
   }
 
   function open(gid: string) {
-    return enter(() => api.openGameroomGame(gid.trim()));
+    return enter((a) => a.openGameroomGame(gid.trim()));
   }
 
   function openById(e: SubmitEvent) {
@@ -235,7 +242,7 @@
       });
       return;
     }
-    enter(() => api.createGameroomGame(side, newTc.trim(), newRated));
+    enter((a) => a.createGameroomGame(side, newTc.trim(), newRated));
   }
 
   const incoming = $derived(games?.invitations.filter((i) => i.incoming) ?? []);
@@ -316,23 +323,20 @@
   }
 </script>
 
-<dialog bind:this={dialog} onclose={onClose} aria-labelledby="watch-title">
-  <h2 id="watch-title">Games on arimaa.com</h2>
+<section aria-labelledby="watch-title">
+  <h2 id="watch-title">arimaa.com</h2>
   {#if user === null}
     <form onsubmit={login}>
       <div class="grid">
         <label for="gr-user">Username</label>
-        <!-- svelte-ignore a11y_autofocus -->
-        <input id="gr-user" bind:value={username} autocomplete="username" autofocus={!username} />
+        <input id="gr-user" bind:value={username} autocomplete="username" />
         <label for="gr-password">Password</label>
-        <!-- svelte-ignore a11y_autofocus -->
         <input
           id="gr-password"
           type="password"
           bind:value={password}
           autocomplete="current-password"
           placeholder={savedUser != null && username.trim() === savedUser ? 'Saved password' : ''}
-          autofocus={!!username}
         />
         <span></span>
         <label class="check">
@@ -351,7 +355,6 @@
       {#if error}<p class="error">{error}</p>{/if}
       <div class="buttons">
         <span class="spacer"></span>
-        <button type="button" onclick={onClose}>Cancel</button>
         <button class="primary" type="submit" disabled={busy || (!password && !usesSaved)}>Log in</button>
       </div>
     </form>
@@ -372,7 +375,7 @@
               </span>
               <span class="meta">{invitationMeta(i)}{i.message ? ` · “${i.message}”` : ''}</span>
             </span>
-            <button onclick={() => enter(() => api.acceptGameroomInvitation(i.otherId, i.created))} disabled={busy}
+            <button onclick={() => enter((a) => a.acceptGameroomInvitation(i.otherId, i.created))} disabled={busy}
               aria-label="Accept the invitation from {i.opponent}">Accept</button
             >
             <button onclick={() => decline(i)} disabled={busy} aria-label="Decline the invitation from {i.opponent}"
@@ -409,7 +412,7 @@
               <span class="meta">{gameMeta(g)}</span>
             </span>
             {#if side}
-              <button onclick={() => enter(() => api.playGameroomGame(g.gid, side))} disabled={busy}
+              <button onclick={() => enter((a) => a.playGameroomGame(g.gid, side))} disabled={busy}
                 aria-label="Play game {g.gid}">Play</button
               >
             {/if}
@@ -437,7 +440,7 @@
               </span>
               <span class="meta">{gameMeta(g)}</span>
             </span>
-            <button onclick={() => enter(() => api.playGameroomGame(g.gid, side))} disabled={busy}
+            <button onclick={() => enter((a) => a.playGameroomGame(g.gid, side))} disabled={busy}
               aria-label="Sit as {side} in game {g.gid}">Play as {side === 'gold' ? 'Gold' : 'Silver'}</button
             >
           </li>
@@ -473,7 +476,7 @@
     </form>
     <p class="hint">
       {#if newOpponent.trim()}
-        Invites {newOpponent.trim()}; if they accept, the game opens here.
+        Invites {newOpponent.trim()}; if they accept, the game opens in a new window.
       {:else}
         The game waits in the gameroom's open games until someone sits; your first move goes once they do.
       {/if}
@@ -609,26 +612,13 @@
     {#if error}<p class="error">{error}</p>{/if}
     <div class="buttons">
       <button onclick={() => refresh()} disabled={busy}>Refresh</button>
-      <span class="spacer"></span>
-      <button onclick={onClose}>Close</button>
     </div>
   {:else}
     <p class="hint">…</p>
   {/if}
-</dialog>
+</section>
 
 <style>
-  dialog {
-    width: min(520px, 92vw);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    color: var(--text);
-    padding: 16px;
-  }
-  dialog::backdrop {
-    background: rgba(0, 0, 0, 0.4);
-  }
   h2 {
     margin: 0 0 12px;
     font-size: 16px;

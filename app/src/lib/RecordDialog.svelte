@@ -8,8 +8,9 @@
     onClose,
   }: {
     initial: string;
-    /** The game's record again, in full or only the main line. */
-    onExport: (mainLineOnly: boolean) => Promise<string>;
+    /** The game's record again, in full or only the main line. Without
+     * it the dialog only opens a record (the lobby's Open record). */
+    onExport?: (mainLineOnly: boolean) => Promise<string>;
     onLoad: (record: string) => Promise<string | null>;
     onClose: () => void;
   } = $props();
@@ -22,7 +23,7 @@
 
   async function setMainLineOnly(on: boolean) {
     mainLineOnly = on;
-    text = await onExport(on);
+    if (onExport) text = await onExport(on);
     copied = false;
   }
   let dialog: HTMLDialogElement;
@@ -51,8 +52,8 @@
   }
 </script>
 
-<dialog bind:this={dialog} onclose={onClose}>
-  <h2>Game record</h2>
+<dialog bind:this={dialog} onclose={onClose} aria-labelledby="record-title">
+  <h2 id="record-title">{onExport ? 'Game record' : 'Open a record'}</h2>
   <p class="hint">Paste a record (one move per line, e.g. <code>2g Ed2n Ed3n</code>) or open a file.</p>
   <!-- svelte-ignore a11y_autofocus -->
   <textarea
@@ -69,11 +70,13 @@
   {#if error}<p class="error">{error}</p>{/if}
   <div class="buttons">
     <label class="file">Open file… <input type="file" accept=".txt,text/plain" onchange={openFile} /></label>
-    <button onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-    <label class="check" title="A plain record without variations, comments or tags, for tools that read only those">
-      <input type="checkbox" checked={mainLineOnly} onchange={(e) => setMainLineOnly(e.currentTarget.checked)} />
-      Main line only
-    </label>
+    {#if onExport}
+      <button onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+      <label class="check" title="A plain record without variations, comments or tags, for tools that read only those">
+        <input type="checkbox" checked={mainLineOnly} onchange={(e) => setMainLineOnly(e.currentTarget.checked)} />
+        Main line only
+      </label>
+    {/if}
     <span class="spacer"></span>
     <button onclick={onClose}>Close</button>
     <button class="primary" onclick={load} title="Load (Ctrl+Enter)">Load</button>

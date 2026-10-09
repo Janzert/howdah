@@ -268,7 +268,7 @@ The current engine panel shows depth, eval, PV and log per side.
 
 ## 7. Online play and spectating (use cases 2 and 3)
 
-- **[have] Lobby** (the arimaa.com dialog, `GAMEROOM.md`): my games,
+- **[have] Lobby** (the lobby window's arimaa.com section, `GAMEROOM.md`): my games,
   invitations, open, live and recently finished games (the ASIP 2.0
   `state` lists), postal games, a player search with their past games,
   and creating or inviting to a game (side, time control, rated).

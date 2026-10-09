@@ -44,14 +44,24 @@ async function invoke(cmd: string, args: unknown): Promise<unknown> {
 export function installDevBridge(): void {
   mockIPC((cmd, args) => invoke(cmd, args), { shouldMockEvents: true });
   const source = new EventSource(`${BASE}/events`);
-  for (const name of ['game://changed', 'engine://output', 'analysis://update', 'gameroom://watch', 'gameroom://lobby', 'gameroom://invitation']) {
+  const names = [
+    'game://changed',
+    'engine://output',
+    'analysis://update',
+    'gameroom://watch',
+    'gameroom://lobby',
+    'gameroom://invitation',
+    'sessions://changed',
+  ];
+  for (const name of names) {
     source.addEventListener(name, (e) => {
       void emit(name, JSON.parse((e as MessageEvent<string>).data));
     });
   }
   // EventSource reconnects by itself; after a bridge restart the session is
-  // new, so ask for the state again.
+  // new, so ask for the state again (the lobby has none).
   source.addEventListener('open', () => {
+    if (session == null) return;
     void invoke('get_state', { session }).then((view) =>
       emit('game://changed', { session, view, animation: [], animationBudgetMs: null }),
     );

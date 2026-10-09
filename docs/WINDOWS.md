@@ -2,8 +2,8 @@
 
 Plan for playing, watching and analysing several games at once, each in
 its own window, with a main window that works as a home screen and
-arimaa.com lobby. Written 2026-10-09; phase 1 (game windows) is built,
-the rest isn't yet.
+arimaa.com lobby. Written 2026-10-09; phases 1 (game windows) and 2 (the
+lobby window) are built, the rest isn't yet.
 
 ## What other clients do
 
@@ -48,22 +48,24 @@ Patterns worth taking:
 - A wall of running games (Cute Chess), later, for engine matches.
 - Remembering the game window's size once for all of them (4steps).
 
-## What Howdah has
+## What Howdah had
+
+Before phase 1 (as built, see below the Phases):
 
 - The backend already holds several sessions (`Backend::open_session`,
   `close_session`, `list_sessions`), each with its own controller, and
   every session command and event carries a session id. A window picks
   its session from `?session=<id>` in its URL (`lib/api.ts`), and
-  `lib/events.ts` drops other sessions' events. Before phase 1 only the
-  main window existed, on `MAIN_SESSION`.
+  `lib/events.ts` drops other sessions' events. Only the main window
+  existed, on `MAIN_SESSION`.
 - App-wide state: the arimaa.com login and its lobby poll
   (`Gameroom::watch_lobby`, `gameroom://lobby`), invitations
   (`gameroom://invitation`), the engine list and catalog. A followed
   arimaa.com game (`Watch`) belongs to its session.
-- Settings are in `localStorage`, which windows share; before phase 1 a
-  window didn't notice another one changing them.
+- Settings are in `localStorage`, which windows share, but a window
+  didn't notice another one changing them.
 - The capability file allowed only the `main` window
-  (`capabilities/default.json`) before phase 1.
+  (`capabilities/default.json`).
 - `App.svelte` is both the toolbar (New game, arimaa.com, Engines,
   Analysis, Record, Flip, Settings, Help) and the game view.
   `WatchDialog.svelte` is the arimaa.com lobby, as a dialog.
@@ -179,37 +181,70 @@ the client has to trust the user and community norms (Brian,
    their windows, the capability, settings kept in step, and an e2e test
    with two windows. The main window keeps today's UI, with a "New
    window" button.
-2. **The lobby window:** the main window becomes home plus the arimaa.com
-   lobby (moved out of `WatchDialog`), the open-windows list, and the
-   notifications moved there. Game windows get the smaller toolbar.
+2. **The lobby window** (done 2026-10-09): the main window becomes home
+   plus the arimaa.com lobby (moved out of `WatchDialog`), the
+   open-windows list, and the notifications moved there. Game windows
+   get the smaller toolbar.
 3. **Moving between games:** one window per arimaa.com game, Next game,
    "your move" in titles, and remembering the window size.
 4. **Later:** reopening windows after a restart, a full game wall for
    engine matches, tabs as an alternative to windows if they're wanted.
 
 **As built (phase 1)**, where it differs from or adds to the plan:
-- Both roots mount `App.svelte` for now; every window, not just the
-  main one, has the "New window" button, as the Proposal has it.
-- The close check applies to the main window too. Closing a window asks
+- The main window kept `App.svelte` until phase 2; game windows have the
+  "New window" button, as the Proposal has it.
+- Closing a game window asks
   while it plays an arimaa.com game (not one only watched) or a match
   is on (`closeWarning` in `App.svelte`), in an in-app dialog
   (`CloseWindowDialog.svelte`); confirming closes it, and the backend
   ends the session (leaving the arimaa.com game) when the window is
   destroyed. The browser preview can only offer `beforeunload`'s
   generic prompt, and only in game windows.
-- The main window being closed while game windows stay open (the app
-  goes on) gives the main session a fresh game, so a hidden game or
-  match doesn't go on with no window (`Backend::window_closed`). Phase 2
-  hides the lobby instead.
-- Until the lobby window exists, arimaa.com notifications (invitations,
-  postal moves due) are announced and invitation answers acted on in the
-  main window only, so a seat isn't taken twice; the toolbar badges show
-  in every window.
 - Browser preview: a game window's tab closes its session on `pagehide`
   with a beacon, so reloading it starts a new session (an empty game);
   Tauri windows keep their session across a reload.
 - Settings follow `storage` events; checked in the real app too
   (WebKitGTK delivers them between Tauri windows).
+
+**As built (phase 2):**
+- `Lobby.svelte` is the main window's root: "Play and analyse" (New game,
+  Analysis board, Open record), "Open windows", and the arimaa.com
+  section (`GameroomLobby.svelte`, the old dialog as a page), with
+  Engines, Settings and Help in its header. `MAIN_SESSION` is gone: the
+  backend starts with no sessions, and every session is a game window's.
+- Everything the lobby starts opens a new game window, set up before
+  the window opens (`openGameWindow(prepare)` with `apiFor(id)`), so a
+  failed start (a refused seat, a bad record) shows its error in the
+  lobby and leaves no window. A match's spec goes to the window through
+  localStorage (`takeHandOff`), so Rematch and Swap sides still work
+  there. The Analysis board opens with the last analysis engine on.
+- Open windows lists each with a `MiniBoard`, the players, the clocks
+  (move time and reserve, as the player bars) and "Your move", those
+  first; a click brings the window forward. The backend sends
+  `sessions://changed` when a session opens or closes; the lobby follows
+  every session's `game://changed` and `gameroom://watch` (`onEvery`).
+- Game windows' toolbar: New game (in that window), New window,
+  Analysis, Record, Flip and Lobby. Help stays on `?`, and the Engines
+  dialog on the New game dialog's Engines button. The Lobby button shows
+  how many invitations and postal moves due wait there; a window opened
+  between lobby polls gets them from the backend's last lists
+  (`gameroom_last_games`, no server request).
+- Notifications (flash, sound, attention request) come from the lobby
+  only, hidden or not; postal games open in a window don't count.
+  Accepting an invitation, or one of the user's being accepted, opens a
+  game window playing it.
+- Closing the lobby hides it while a game window is open (`lib.rs`,
+  `CloseRequested`); closing the last game window while it's hidden
+  quits, and so does closing the lobby with no game windows. On macOS
+  the dock icon shows a hidden lobby again (`RunEvent::Reopen`, not run
+  by hand). Checked in the real app in Xephyr on Linux.
+- `cancel_gameroom_game` no longer takes a session: a session playing
+  the cancelled game starts a new one, whichever it is.
+- In the browser preview the lobby is the tab at `/`, and tabs are
+  named, so the Lobby button and the windows list find the tab instead of
+  opening another (a browser may not switch to it).
+- Not done: the "shares the CPU" note in a game window still counts only
+  its own session's engines (Shared state, above).
 
 Windows come first; nothing in the design should rule out tabs (a game
 view that doesn't assume it owns the whole window, and a session per

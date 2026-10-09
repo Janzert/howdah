@@ -14,8 +14,8 @@
 //! The backend holds several sessions, each a game with its own engine
 //! controller (a window per game, or a gameroom game being followed). Every
 //! session command names its session, and every event from a session
-//! carries a `session` field. [`MAIN_SESSION`] always exists: it's the main
-//! window's.
+//! carries a `session` field. Each session is a game window's; the main
+//! window (the lobby) has none.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -31,7 +31,7 @@ use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames,
     GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec, PositionView,
-    PostalGameView, SessionId, SessionUpdate, SessionView, StepTarget, WatchView,
+    PostalGameView, SessionId, SessionUpdate, SessionView, SessionsChanged, StepTarget, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -51,7 +51,8 @@ pub type Events = Arc<dyn EventSink>;
 
 /// The main window's session. It's opened with the backend and can't be
 /// closed. `api.ts` has the same number.
-pub const MAIN_SESSION: SessionId = SessionId(1);
+/// Event carrying [`SessionsChanged`] when a session opens or closes.
+pub const SESSIONS_CHANGED: &str = "sessions://changed";
 
 /// The session a game window shows, from its label (`game-<session>`, as
 /// the frontend names the windows it opens; `lib/windows.ts`).
@@ -139,25 +140,22 @@ pub struct Backend {
 }
 
 impl Backend {
-    /// Creates the backend with the main session open. Needs a Tokio
-    /// runtime registered with `tauri::async_runtime`.
+    /// Creates the backend, with no sessions open. Needs a Tokio runtime
+    /// registered with `tauri::async_runtime`.
     pub fn new(
         registry: EngineRegistry,
         catalog: EngineCatalog,
         saved_login: SavedLogin,
         events: Events,
     ) -> Backend {
-        let backend = Backend {
+        Backend {
             sessions: Mutex::new(BTreeMap::new()),
-            next_session: AtomicU32::new(MAIN_SESSION.0),
+            next_session: AtomicU32::new(1),
             engines: Arc::new(Mutex::new(registry)),
             catalog: Arc::new(Mutex::new(catalog)),
             gameroom: Arc::new(Gameroom::new(saved_login, events.clone())),
             events,
-        };
-        let main = backend.open_session();
-        debug_assert_eq!(main, MAIN_SESSION);
-        backend
+        }
     }
 
     fn sessions(&self) -> MutexGuard<'_, BTreeMap<SessionId, Arc<SessionHandle>>> {
@@ -200,7 +198,13 @@ impl Backend {
     pub fn open_session(&self) -> SessionId {
         let id = SessionId(self.next_session.fetch_add(1, Ordering::Relaxed));
         self.start_session(id);
+        self.sessions_changed();
         id
+    }
+
+    /// Tells every window which sessions are open.
+    fn sessions_changed(&self) {
+        emit(&self.events, SESSIONS_CHANGED, SessionsChanged { sessions: self.list_sessions() });
     }
 
     /// Starts session `id` with an empty game.
@@ -213,32 +217,19 @@ impl Backend {
     }
 
     /// Closes a session, quitting its engines and leaving any arimaa.com
-    /// game it follows (the game goes on there). The main session stays.
+    /// game it follows (the game goes on there).
     pub fn close_session(&self, id: SessionId) -> Result<(), ApiError> {
-        if id == MAIN_SESSION {
-            return Err(ApiError::state("the main session can't be closed"));
-        }
         let handle =
             self.sessions().remove(&id).ok_or_else(|| ApiError::state(format!("no session {id}")))?;
         handle.stop_watching();
+        self.sessions_changed();
         Ok(())
     }
 
     /// A window was destroyed (`label` is its Tauri label). A game window's
     /// session ends with it, as [`close_session`](Self::close_session)
-    /// does, unless the frontend closed it already. The main window's is
-    /// replaced by a fresh one, since the main session always exists: its
-    /// engines quit and its arimaa.com game is left.
+    /// does, unless the frontend closed it already.
     pub fn window_closed(&self, label: &str) {
-        let id = if label == "main" { MAIN_SESSION } else { return self.close_game_window(label) };
-        let old = self.sessions().remove(&id);
-        if let Some(handle) = old {
-            handle.stop_watching();
-        }
-        self.start_session(id);
-    }
-
-    fn close_game_window(&self, label: &str) {
         if let Some(id) = game_window_session(label) {
             let _ = self.close_session(id);
         }
@@ -666,6 +657,11 @@ impl Backend {
         self.gameroom.games().await
     }
 
+    /// The gameroom's lists as last fetched, without asking the server.
+    pub fn gameroom_last_games(&self) -> Option<GameroomGames> {
+        self.gameroom.last_games()
+    }
+
     /// The gameroom's players whose username or real name contains `text`.
     pub async fn search_gameroom_players(&self, text: &str) -> Result<Vec<PlayerMatchView>, ApiError> {
         self.gameroom.search_players(text).await
@@ -755,14 +751,16 @@ impl Backend {
     }
 
     /// Cancels arimaa.com game `gid`, which the user created and nobody
-    /// has joined. If session `id` is playing it, the session starts a new
-    /// game, since nothing was played.
-    pub async fn cancel_gameroom_game(&self, id: SessionId, gid: &str) -> Result<(), ApiError> {
-        let handle = self.handle(id)?;
+    /// has joined. A session playing it starts a new game, since nothing
+    /// was played.
+    pub async fn cancel_gameroom_game(&self, gid: &str) -> Result<(), ApiError> {
         self.gameroom.cancel_game(gid).await?;
-        let playing = handle.watch().as_ref().is_some_and(|w| w.view().gid == gid.trim());
-        if playing {
-            self.new_game(id)?;
+        let handles: Vec<_> = self.sessions().iter().map(|(id, h)| (*id, h.clone())).collect();
+        for (id, handle) in handles {
+            let playing = handle.watch().as_ref().is_some_and(|w| w.view().gid == gid.trim());
+            if playing {
+                self.new_game(id)?;
+            }
         }
         Ok(())
     }
@@ -896,6 +894,7 @@ impl Backend {
                 .await?),
             "gameroom_logout" => ok(self.gameroom_logout().await?),
             "gameroom_games" => ok(self.gameroom_games().await?),
+            "gameroom_last_games" => ok(self.gameroom_last_games()),
             "gameroom_postal_games" => ok(self.gameroom_postal_games().await?),
             "invite_gameroom_player" => ok(self
                 .invite_gameroom_player(
@@ -944,9 +943,7 @@ impl Backend {
                     arg(args, "rated")?,
                 )
                 .await?),
-            "cancel_gameroom_game" => {
-                ok(self.cancel_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?)
-            }
+            "cancel_gameroom_game" => ok(self.cancel_gameroom_game(&arg::<String>(args, "gid")?).await?),
             "resign_gameroom_game" => ok(self.resign_gameroom_game(sid()?).await?),
             "send_gameroom_chat" => {
                 ok(self.send_gameroom_chat(sid()?, &arg::<String>(args, "text")?).await?)
@@ -1007,40 +1004,57 @@ mod tests {
     fn sessions_are_separate_and_tag_their_events() {
         let recorder = Arc::new(Recorder::default());
         let b = backend(recorder.clone());
-        assert_eq!(b.list_sessions(), [MAIN_SESSION]);
+        assert_eq!(b.list_sessions(), []);
+        let one = b.open_session();
         let other = b.open_session();
-        assert_ne!(other, MAIN_SESSION);
+        assert_ne!(one, other);
+        recorder.0.lock().unwrap().clear();
         b.setup_swap(other, "a1".parse().unwrap(), "e2".parse().unwrap()).unwrap();
         b.commit_setup(other).unwrap();
         assert_eq!(b.get_state(other).unwrap().ply, 1);
-        assert_eq!(b.get_state(MAIN_SESSION).unwrap().ply, 0, "the main session is untouched");
+        assert_eq!(b.get_state(one).unwrap().ply, 0, "the other session is untouched");
         let events = recorder.0.lock().unwrap().clone();
         assert!(!events.is_empty());
         for (name, payload) in &events {
             assert_eq!(name, GAME_CHANGED);
             assert_eq!(payload["session"], other.0, "every event names its session");
         }
-        assert!(b.close_session(MAIN_SESSION).is_err());
         b.close_session(other).unwrap();
-        assert_eq!(b.list_sessions(), [MAIN_SESSION]);
+        assert_eq!(b.list_sessions(), [one]);
         let e = b.get_state(other).unwrap_err();
         assert_eq!(e.message, format!("no session {other}"));
         assert!(b.close_session(other).is_err());
     }
 
     #[test]
+    fn opening_and_closing_sessions_says_which_are_open() {
+        let recorder = Arc::new(Recorder::default());
+        let b = backend(recorder.clone());
+        let one = b.open_session();
+        let two = b.open_session();
+        b.close_session(one).unwrap();
+        let events = recorder.0.lock().unwrap().clone();
+        let lists: Vec<_> = events
+            .iter()
+            .filter(|(name, _)| name == SESSIONS_CHANGED)
+            .map(|(_, p)| p["sessions"].clone())
+            .collect();
+        assert_eq!(
+            lists,
+            [serde_json::json!([one.0]), serde_json::json!([one.0, two.0]), serde_json::json!([two.0])]
+        );
+    }
+
+    #[test]
     fn closing_a_window_ends_its_session() {
         let b = backend(Arc::new(Recorder::default()));
         let game = b.open_session();
+        let kept = b.open_session();
         b.window_closed(&format!("game-{game}"));
-        assert_eq!(b.list_sessions(), [MAIN_SESSION]);
+        assert_eq!(b.list_sessions(), [kept]);
         b.window_closed(&format!("game-{game}")); // already gone: nothing happens
-        b.commit_setup(MAIN_SESSION).unwrap();
         b.window_closed("main");
-        assert_eq!(b.list_sessions(), [MAIN_SESSION], "the main session stays");
-        assert_eq!(b.get_state(MAIN_SESSION).unwrap().ply, 0, "with a fresh game");
-        b.window_closed("other");
-        assert_eq!(b.list_sessions(), [MAIN_SESSION]);
+        assert_eq!(b.list_sessions(), [kept]);
     }
 
     #[test]
@@ -1059,8 +1073,6 @@ mod tests {
         let api = include_str!("../../src/lib/api.ts");
         let names: Vec<&str> = api.split("invoke<").skip(1).filter_map(|s| s.split('\'').nth(1)).collect();
         assert!(names.len() > 10, "found only {names:?} in api.ts");
-        let main = format!("MAIN_SESSION = {MAIN_SESSION}");
-        assert!(api.contains(&main), "api.ts should say {main}, as backend.rs does");
         for name in names {
             if let Err(e) = runtime().block_on(backend.dispatch(name, &Value::Null)) {
                 assert!(!e.message.starts_with("unknown command"), "dispatch doesn't handle {name}");

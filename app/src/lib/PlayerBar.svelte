@@ -3,7 +3,7 @@
   import type { Color } from './bindings/Color';
   import type { PieceKind } from './bindings/PieceKind';
   import type { SessionView } from './bindings/SessionView';
-  import { clockLevel, formatClock } from './clock';
+  import { formatClock, sideTimes } from './clock';
   import { SQ } from './geometry';
   import type { Theme } from './theme';
 
@@ -51,19 +51,7 @@
 
   // Colored by the time left for the turn, reserve included: counting
   // down while running, otherwise what the side's next turn will have.
-  const times = $derived.by(() => {
-    const mine = clock?.[side];
-    if (!clock || !mine) return null;
-    const { moveTimeMs, reserveMs, turnAllowanceMs } = mine;
-    if (clock.running !== side) {
-      return { move: moveTimeMs, reserve: reserveMs, running: false, level: clockLevel(turnAllowanceMs) };
-    }
-    const elapsed = clock.turnElapsedMs + (now - receivedAt);
-    const left = Math.max(0, clock.turnAllowanceMs - elapsed);
-    const move = Math.min(left, Math.max(0, moveTimeMs - elapsed));
-    const reserveLeft = Math.min(left, Math.max(0, reserveMs - Math.max(0, elapsed - moveTimeMs)));
-    return { move, reserve: reserveLeft, running: true, level: clockLevel(left) };
-  });
+  const times = $derived(clock ? sideTimes(clock, side, now - receivedAt) : null);
 </script>
 
 <div class="bar" class:active={toMove}>

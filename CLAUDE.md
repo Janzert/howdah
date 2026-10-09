@@ -374,13 +374,16 @@ Howdah plays and watches games on arimaa.com.
   - `backend.rs`: `Backend` holds the command logic, free of Tauri types.
     It holds several sessions keyed by `SessionId`, each with its own
     controller (`open_session`, `close_session`, `list_sessions`).
-    `MAIN_SESSION` (1) is the main window's: it always exists, and
-    `api.ts` has the same number (a test checks). A game window (plan in
-    `docs/WINDOWS.md`) has its own session and the Tauri label
-    `game-<session>` (`game_window_session`); `window_closed`, called from
-    `lib.rs` when Tauri destroys a window, closes a game window's session
-    and replaces the main window's with a fresh one. `close_session` also
-    leaves the session's arimaa.com game (`stop_watching`). Every session command
+    Each session is a game window's (plan in `docs/WINDOWS.md`); the main
+    window, the lobby, has none, and the backend starts with none. A game
+    window's Tauri label is `game-<session>` (`game_window_session`);
+    `window_closed`, called from `lib.rs` when Tauri destroys a window,
+    closes its session. `close_session` also leaves the session's
+    arimaa.com game (`stop_watching`). Opening or closing a session sends
+    `sessions://changed` (`SessionsChanged`, the open ones) for the
+    lobby's list. `lib.rs` also hides the lobby instead of closing it
+    while a game window is open (`CloseRequested`), and quits when the
+    last game window goes while the lobby is hidden. Every session command
     takes a `session` argument, and a session's events carry a `session`
     field (`SessionEvents` adds it).
     Commands are **intents**. Mutating commands return
@@ -394,20 +397,40 @@ Howdah plays and watches games on arimaa.com.
   - `commands.rs`: thin `#[tauri::command]` wrappers over `Backend`.
   - `src/bin/dev-bridge.rs` (feature `dev-bridge`): serves `Backend` over
     HTTP on 127.0.0.1:1421 (`POST /invoke/<cmd>` with JSON arguments,
-    including `"session": 1` for session commands; SSE `GET /events`), so the
+    including `"session": <id>` for session commands; SSE `GET /events`), so the
     frontend can run in a plain browser against the real session and
     engines. Its engine list lives in `target/debug/dev-bridge-config/`.
 - `app/src`: Svelte 5 (runes) + Vite, no SvelteKit.
   - `main.ts` is the one entry page for every window: a game window
-    (`?session=<id>`) and the main window both mount `App.svelte` for now
-    (the main window becomes the lobby later; `docs/WINDOWS.md`).
+    (`?session=<id>`) mounts `App.svelte`, the main window `Lobby.svelte`.
   - `lib/api.ts`: typed invoke wrappers. `session` is the window's
-    session: `?session=<id>` in its URL, otherwise `MAIN_SESSION`
-    (`isGameWindow` when it isn't); every session command passes it.
-  - `lib/windows.ts`: game windows. `openGameWindow` (toolbar button "New
-    window") calls `open_session` and opens `index.html?session=<id>`: a
-    `WebviewWindow` labelled `game-<id>` in Tauri, `window.open` in the
-    browser preview. `guardClose` asks before a window closes while App's
+    session, `?session=<id>` in its URL (null in the lobby;
+    `isGameWindow`); every session command of `api` passes it, and
+    `apiFor(id)` gives the same commands on another session (the lobby
+    setting up a game window's).
+  - `Lobby.svelte`, the main window: Play and analyse (New game, Analysis
+    board with the last analysis engine, Open record), Open windows (each
+    game window's `MiniBoard`, players from `lib/windowList.ts`'s
+    `gameTitle`, clocks, and "Your move" from `waitsOnUser`, those first;
+    a click brings the window forward), the arimaa.com section
+    (`GameroomLobby.svelte`), and the Engines, Settings and Help dialogs.
+    It follows every session's `game://changed` and `gameroom://watch`
+    (`onEvery` in `lib/events.ts`) and `sessions://changed`. It owns the
+    app-wide notifications: invitations and postal moves due (flash,
+    sound, attention, leaving out games open in a window), and an
+    accepted invitation opens a game window playing it. Everything it
+    starts opens a new game window.
+  - `lib/windows.ts`: windows. `openGameWindow(prepare, handOff)` calls
+    `open_session`, runs `prepare` on the new session (start a match, load
+    a record, take an arimaa.com seat; a failure closes it and opens no
+    window), and opens `index.html?session=<id>`: a `WebviewWindow`
+    labelled `game-<id>` in Tauri, `window.open` in the browser preview
+    (tabs are named, `nameTab`, so `showLobby` and `focusGameWindow` find
+    them). The hand-off (the match spec, for a rematch) goes through
+    localStorage, read once by the window (`takeHandOff`). Game windows
+    also have "New window" (an empty one) and a Lobby button, with what
+    waits there (invitations and postal moves due, from
+    `gameroom_last_games` and `gameroom://lobby`). `guardClose` asks before a window closes while App's
     `closeWarning` says it would leave the user's arimaa.com game or stop
     a match (`CloseWindowDialog.svelte`, from Tauri's `onCloseRequested`;
     the browser preview gets only `beforeunload`'s prompt, in game
@@ -416,10 +439,8 @@ Howdah plays and watches games on arimaa.com.
     `pagehide` (`closeSessionWithPage`, a beacon), and a reloaded tab
     whose session is gone gets a new one (`useSession`). The capability
     file (`capabilities/default.json`) covers `main` and `game-*`,
-    including creating windows and `destroy` (which `onCloseRequested`
-    needs). Until the lobby window exists, app-wide arimaa.com news is
-    announced (flash, sound, attention) and invitation answers acted on
-    only in the main window; every window shows the badges.
+    including creating windows, `destroy` (which `onCloseRequested`
+    needs), and showing and focusing them.
   - `lib/devBridge.ts`: in dev outside Tauri (`main.ts` checks), `mockIPC`
     forwards every `invoke` to the dev bridge (Vite proxies `/bridge`) and
     replays its event stream as Tauri events.
@@ -454,7 +475,7 @@ Howdah plays and watches games on arimaa.com.
   - `CommentBox.svelte`, under the move list (folded away until opened),
     edits the shown move's comment (the game comment at the start; saved on blur or Ctrl+Enter,
     Esc reverts) and toggles its move glyphs.
-  - `WatchDialog.svelte` (toolbar button "arimaa.com"): the gameroom
+  - `GameroomLobby.svelte` (the lobby's arimaa.com section): the gameroom
     login (with "Remember password"; a saved login fills the username, and
     the password field says "Saved password"), then the live games with a
     Watch button each, the recently finished ones with Open, a player
@@ -473,17 +494,19 @@ Howdah plays and watches games on arimaa.com.
     day or more read `Nd h:mm` (`formatClock`). Invitations: the New
     game form's Opponent field invites that player instead
     (`invite_gameroom_player`; a task waits for the answer and sends it
-    as `gameroom://invitation`; accepted, App plays the game unless the
-    window plays another), and an Invitations section lists them with
+    as `gameroom://invitation`; accepted, the lobby opens a window playing
+    it), and an Invitations section lists them with
     Accept (`accept_gameroom_invitation`, which also takes the seat),
-    Decline and Cancel. While logged in, `Gameroom::watch_lobby` polls
+    Decline and Cancel. Play, Watch, Open and Accept each open a game
+    window (`onOpen`). While logged in, `Gameroom::watch_lobby` polls
     `state` every minute and sends `gameroom://lobby` (with the `user`
-    the lists are for): App counts invitations to the user and their
-    postal games waiting on their move (`lib/gameroom.ts`'s `myTurn`,
-    leaving out the game the window plays) on the toolbar's arimaa.com
-    button, and announces new ones. It refreshes the lists every 20 s while
-    open, and after an error checks the login, showing the login form if
-    it has expired. `WatchPanel.svelte` under the comment box
+    the lists are for; `Gameroom::games` keeps the last lists,
+    `gameroom_last_games`): the lobby counts invitations to the user and
+    their postal games waiting on their move (`lib/gameroom.ts`'s
+    `myTurn`) and announces new ones, and game windows show the count on
+    their Lobby button. The section takes the poll's lists too, refreshes
+    them every 20 s while the lobby is shown, and after an error checks
+    the login, showing the login form if it has expired. `WatchPanel.svelte` under the comment box
     shows the followed game's state (spectators don't get the chat),
     "<Side>'s time is up; waiting for arimaa.com to end the game" while
     a clock shows zero and the server hasn't flagged it yet (it checks
@@ -510,8 +533,10 @@ Howdah plays and watches games on arimaa.com.
     closes the chat and puts a note in place of the box); App shows it at a player's seat, or when a
     watched game has chat.
   - `RecordDialog.svelte` exports the full record or, with "Main line
-    only", a plain record (`export_game(mainLineOnly)`).
-  - `lib/events.ts`: typed `on()`. It drops events from other sessions.
+    only", a plain record (`export_game(mainLineOnly)`); without
+    `onExport` it only opens one (the lobby's Open record).
+  - `lib/events.ts`: typed `on()`. It drops events from other sessions;
+    `onEvery()` (the lobby's) passes every session's, with its id.
   - `lib/board/`: SVG board. `BoardModel` plays `AnimStep`s: slide, then
     fade out on capture, with fade-in for restored pieces going backward.
     Frozen marks stay on through an animation: each step, or a push's or
@@ -637,7 +662,8 @@ Howdah plays and watches games on arimaa.com.
     with one human side starts) as one reactive `settings` object,
     saved to localStorage as JSON (`parse` validates and reads the older
     `theme`/`muted` keys).
-    `SettingsDialog.svelte` binds to it directly; add new options to both.
+    `SettingsDialog.svelte` (in the lobby) binds to it directly; add new
+    options to both.
     A `storage` event (another window saved) reloads it, so changes apply
     in every window; App's effects reapply the appearance and sound.
 
@@ -688,11 +714,13 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
 - **Checking UI changes:** run `npm run bridge` and `npm run dev -- --port 1430`
   (not 1420, which `tauri dev` needs for its own Vite), then use
   a browser: the accessibility tree reads the board, and `window.__arimaa`
-  drives it. Use the full Tauri app only for what differs in the webview
+  drives it. `/` is the lobby; a game window is `/?session=<id>` with an
+  open session (`POST /invoke/open_session` on the bridge). Use the full Tauri app only for what differs in the webview
   (WebKitGTK rendering, sound, window behavior).
 - Playwright uses a system Chromium when it finds one (`CHROMIUM_PATH`
   overrides); otherwise run `npx playwright install chromium`. The bridge
-  holds one session, so tests run serially and start with `newGame`.
+  is shared, so tests run serially; each starts by closing every session
+  (`e2e/helpers.ts`), and the game tests open a game window on a new one.
 
 - CI (`.github/workflows/ci.yml`, Linux, Windows and macOS) runs the
   checks above with clippy's warnings as errors, builds the frontend

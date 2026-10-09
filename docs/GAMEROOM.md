@@ -33,15 +33,17 @@ architecture. Decided and checked against the live server in October 2026.
 - Logging out ends every login of the account, so logging in again as the
   same user drops the old session without logging it out.
 - An expired login is renewed with the saved one, or else the user is
-  logged out and the dialog shows the login form.
+  logged out and the lobby shows the login form.
 
 ## The lobby
 
 - One ASIP 2.0 `state` request gives the live games, the last few
   finished, the user's games, the open games and the invitations. The
-  dialog asks every 20 s while it's open (as the browser lobby does), and
-  a lobby watcher asks every minute while the user is logged in: it counts
-  invitations to the user and keeps the login alive.
+  lobby window asks every 20 s while it's shown (as the browser lobby
+  does), and a lobby watcher asks every minute while the user is logged
+  in, also while the lobby is hidden: it counts invitations to the user
+  and keeps the login alive. The backend keeps the last lists, so a game
+  window opened between polls shows the counts at once.
 - Postal games aren't in the live list; "Show postal games" fetches the
   gameroom's postal page, only when asked.
 - A player's finished games come from the gameroom's search and past-games
@@ -125,15 +127,15 @@ architecture. Decided and checked against the live server in October 2026.
 - **Invitations.** ASIP has none, so they use the browser lobby's pages:
   the New game form's Opponent field invites a player, a background wait
   on the inviter's waiting page brings the answer (accepted, the game
-  opens; declined, with the reason), and the dialog lists invitations
+  opens in a new window; declined, with the reason), and the lobby lists invitations
   both ways with Accept, Decline and Cancel.
 - **Postal games** are postal because of their time control (days per
   move, or the gameroom's "No time limit", `0/0/0/0/0`, which is played
   untimed). The New game form offers the gameroom's postal time controls,
   clocks of a day or more read `Nd h:mm`, and the user's games show which
   wait on the user's move. While logged in, the lobby check every minute
-  counts those on the arimaa.com button and announces new ones (the
-  window's own game aside). The lobby's list has no turn before the first
+  counts those in the lobby and on the game windows' Lobby button, and the
+  lobby announces new ones (games open in a window aside). The lobby's list has no turn before the first
   move, which is taken as gold's setup.
 - **After a game** players often stay at the table to chat, so the
   game-end dialog offers only analysis and review, and the seat keeps
@@ -189,8 +191,9 @@ architecture. Decided and checked against the live server in October 2026.
 
 ## Not built
 
-- A window per game: everything plays and watches in the main window's
-  session (planned in `WINDOWS.md`).
+- One window per arimaa.com game: each Play, Watch or Open opens a new
+  game window, even for a game that already has one (`WINDOWS.md`,
+  phase 3).
 - Inviting from a list of players online, scheduled games, and an
   opponent rating range in the New game form.
 - An engine playing on arimaa.com, and a postal controller for bots (on

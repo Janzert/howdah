@@ -4,7 +4,8 @@ import './app.css';
 import { api, isGameWindow, session, useSession } from './lib/api';
 import { setAppearance } from './lib/appearance';
 import { settings } from './lib/settings.svelte';
-import { closeSessionWithPage, inTauri } from './lib/windows';
+import Lobby from './Lobby.svelte';
+import { closeSessionWithPage, inTauri, nameTab } from './lib/windows';
 
 // Before the first paint, so a dark window doesn't flash light.
 setAppearance(settings.appearance);
@@ -16,12 +17,11 @@ if (import.meta.env.DEV && !inTauri) {
   installDevBridge();
   // A game window's tab closes its session as it goes, so a reload finds
   // it gone (or the bridge restarted): carry on with a new one.
-  if (isGameWindow && !(await api.listSessions()).includes(session)) useSession(await api.openSession());
+  if (session != null && !(await api.listSessions()).includes(session)) useSession(await api.openSession());
+  nameTab();
   await closeSessionWithPage();
 }
 
 // One entry page, two roots (docs/WINDOWS.md): a game window
-// (`?session=<id>`) mounts the game view, and the main window its own UI,
-// which for now is the same game view on the main session; the lobby
-// replaces it later.
-export default mount(App, { target: document.getElementById('app')! });
+// (`?session=<id>`) shows its game, the main window the lobby.
+export default mount(isGameWindow ? App : Lobby, { target: document.getElementById('app')! });
