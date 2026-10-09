@@ -20,10 +20,6 @@ delayed: boolean,
  */
 finishedId: string | null, 
 /**
- * The server's name for the game ("Casual game", a tournament round).
- */
-event: string | null, 
-/**
  * The user's side, when they play the game rather than watch it.
  */
 side: Color | null, 

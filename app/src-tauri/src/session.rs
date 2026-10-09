@@ -1127,7 +1127,7 @@ impl Session {
             return Some("takebacks are asked only in a game you play on a server");
         };
         if !m.takeback_requests {
-            Some("takebacks aren't asked in rated games")
+            Some("arimaa.com doesn't allow takebacks in rated games")
         } else if self.live_result().is_some() {
             Some("the game is over")
         } else if m.takeback.is_some() {
@@ -2135,7 +2135,7 @@ impl Session {
                     _ => None,
                 },
             }),
-            can_ask_takeback: self.takeback_blocker().is_none(),
+            takeback_blocker: self.takeback_blocker().map(str::to_string),
             ply: self.cursor,
             phase: self.phase(),
             position: position_view(&position, &ids),
@@ -3117,16 +3117,16 @@ mod tests {
     #[test]
     fn the_user_asks_for_a_takeback() {
         let (mut s, g) = human_vs_remote();
-        assert!(!s.view().can_ask_takeback, "only setups so far");
+        assert!(s.view().takeback_blocker.is_some(), "only setups so far");
         assert!(s.request_takeback().is_err());
         let (mut s, g2) = human_vs_remote_with_moves();
         assert_eq!(g, g2);
-        assert!(s.view().can_ask_takeback);
+        assert!(s.view().takeback_blocker.is_none());
         s.request_takeback().unwrap();
         let v = s.view();
         let t = v.takeback.unwrap();
         assert_eq!((t.by, t.shown, t.answer), (Color::Gold, false, None));
-        assert!(!v.can_ask_takeback, "one request at a time");
+        assert!(v.takeback_blocker.is_some(), "one request at a time");
         assert!(s.request_takeback().is_err());
         let out = s.outgoing_takeback().unwrap();
         assert_eq!(out, OutgoingTakeback { generation: g, action: TakebackAction::Request });
@@ -3152,7 +3152,7 @@ mod tests {
     fn rated_games_have_no_takeback_requests() {
         let (mut s, g) = human_vs_remote_with_moves();
         s.forbid_takeback_requests();
-        assert!(!s.view().can_ask_takeback);
+        assert!(s.view().takeback_blocker.is_some());
         assert!(s.request_takeback().unwrap_err().message.contains("rated"));
         s.sync_takeback(g, Some(Color::Silver)).unwrap();
         s.answer_takeback(false).unwrap();
@@ -3167,7 +3167,7 @@ mod tests {
         assert_eq!(s.sync_takeback(g, None).unwrap(), Some(TakebackEnd::Declined));
         let v = s.view();
         assert_eq!((v.takeback, v.live_ply), (None, Some(4)));
-        assert!(v.can_ask_takeback, "the user can ask again");
+        assert!(v.takeback_blocker.is_none(), "the user can ask again");
         // One the server never shows, or refuses, is dropped.
         s.request_takeback().unwrap();
         assert!(s.takeback_failed(g + 1, TakebackAction::Request).is_err(), "old game");
@@ -3178,7 +3178,7 @@ mod tests {
         let result = GameResult { winner: Color::Silver, reason: WinReason::Resignation };
         s.finish_remote(g, result, None).unwrap();
         let v = s.view();
-        assert_eq!((v.takeback, v.can_ask_takeback), (None, false));
+        assert_eq!((v.takeback, v.takeback_blocker.is_none()), (None, false));
     }
 
     #[test]
@@ -3189,7 +3189,7 @@ mod tests {
         let v = s.view();
         let t = v.takeback.unwrap();
         assert_eq!((t.by, t.shown, t.answer), (Color::Silver, true, None));
-        assert!(!v.can_ask_takeback, "answer first");
+        assert!(v.takeback_blocker.is_some(), "answer first");
         assert_eq!(s.outgoing_takeback(), None, "nothing to send until the user answers");
         s.answer_takeback(false).unwrap();
         assert_eq!(s.outgoing_takeback().unwrap().action, TakebackAction::Reply(false));
@@ -3215,7 +3215,7 @@ mod tests {
         s.start_match([remote("a"), remote("b")], [None, None], false);
         let g = s.generation();
         s.sync_remote(g, &sample_moves(4), None).unwrap();
-        assert!(!s.view().can_ask_takeback);
+        assert!(s.view().takeback_blocker.is_some());
         assert!(s.request_takeback().is_err());
         s.sync_takeback(g, Some(Color::Gold)).unwrap();
         assert_eq!(s.view().takeback.unwrap().by, Color::Gold);

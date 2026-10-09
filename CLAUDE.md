@@ -220,7 +220,8 @@ Howdah plays and watches games on arimaa.com.
       `sync_takeback` follows the server's `takeback` field (after
       `sync_remote`, whose going back settles an accepted request; a
       shown request of the user's that disappears without that was
-      declined). `SessionView.takeback` and `canAskTakeback` show it.
+      declined). `SessionView.takeback` and `takebackBlocker` (why the
+      user can't ask now, the disabled button's tooltip) show it.
   - `controller.rs`: a background coordinator task per session, plus one
     actor task per engine process. `Controller::shutdown` ends it when its
     session closes, which quits its engines.

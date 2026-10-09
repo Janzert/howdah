@@ -210,9 +210,9 @@ pub struct SessionView {
     pub sent: Option<NodeId>,
     /// In a game with a remote side, an open takeback request.
     pub takeback: Option<TakebackView>,
-    /// Whether the user can ask for a takeback now (a game they play on a
-    /// server, with a move of theirs to take back).
-    pub can_ask_takeback: bool,
+    /// Why the user can't ask for a takeback now, or `None` if they can (a
+    /// game they play on a server, with a move of theirs to take back).
+    pub takeback_blocker: Option<String>,
     /// Ply being shown (0 = empty board, `moves.len()` = latest).
     pub ply: usize,
     pub phase: Phase,
@@ -932,8 +932,6 @@ pub struct WatchView {
     /// The game's permanent arimaa.com id, once it has ended and the
     /// server has given one.
     pub finished_id: Option<String>,
-    /// The server's name for the game ("Casual game", a tournament round).
-    pub event: Option<String>,
     /// The user's side, when they play the game rather than watch it.
     pub side: Option<Color>,
     /// Whether it's a postal game (moves days apart).

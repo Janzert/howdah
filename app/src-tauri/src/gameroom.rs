@@ -804,7 +804,6 @@ async fn begin(
         detail: None,
         delayed: false,
         finished_id: None,
-        event: state.raw.nonempty("event"),
         side: None,
         postal: state.postal,
         time_control: state.time_control.clone(),

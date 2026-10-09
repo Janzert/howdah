@@ -46,10 +46,10 @@ sent: NodeId | null,
  */
 takeback: TakebackView | null, 
 /**
- * Whether the user can ask for a takeback now (a game they play on a
- * server, with a move of theirs to take back).
+ * Why the user can't ask for a takeback now, or `None` if they can (a
+ * game they play on a server, with a move of theirs to take back).
  */
-canAskTakeback: boolean, 
+takebackBlocker: string | null, 
 /**
  * Ply being shown (0 = empty board, `moves.len()` = latest).
  */

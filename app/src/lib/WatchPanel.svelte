@@ -26,6 +26,7 @@
   });
 
   const sideName = (c: 'gold' | 'silver') => (c === 'gold' ? 'Gold' : 'Silver');
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   let takeback = $derived(view.takeback);
   let playing = $derived(watch.side != null && watch.state !== 'ended' && !watch.waiting);
   /** Resign was clicked once; the second click resigns. */
@@ -58,7 +59,7 @@
         >{/if}
     </span>
   </div>
-  {#if watch.event}<div class="note">{watch.event}</div>{/if}
+  <div class="note">{watch.rated ? 'Rated' : 'Unrated'}{#if watch.timeControl}&nbsp;· {watch.timeControl}{/if}</div>
   {#if watch.detail}<div class="note">{watch.detail}</div>{/if}
   {#if playing && watch.side && watch.away[watch.side === 'gold' ? 1 : 0]}
     <div class="note" role="status">Your opponent isn't at the table; their clock keeps running.</div>
@@ -125,8 +126,10 @@
       {:else}
         {#if !takeback}
           <button
-            disabled={!view.canAskTakeback}
-            title="Ask your opponent to take back your last move"
+            disabled={view.takebackBlocker != null}
+            title={view.takebackBlocker == null
+              ? 'Ask your opponent to take back your last move'
+              : capitalize(view.takebackBlocker)}
             onclick={() => run(api.requestTakeback())}>Ask for takeback</button
           >
         {/if}
