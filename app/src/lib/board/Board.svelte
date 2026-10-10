@@ -44,6 +44,14 @@
     legalTargets: (from: Square) => Promise<StepTarget[]>;
     /** Squares a drop on `to` would walk the piece through, or null. */
     planRoute: (from: Square, to: Square, path: Square[]) => Promise<Square[] | null>;
+    /** The position editor's: a piece dragged off the board. Without it, the piece slides back. */
+    onDropOff?: (from: Square) => void;
+    /** The position editor's: a left (0) or right (2) button press on a
+     * square, before anything else; return true to take it (no drag, no
+     * board annotation). */
+    onSquareDown?: (sq: Square, button: number) => boolean;
+    /** Squares to mark, such as the editor's problems. */
+    marked?: Square[];
   }
 
   let {
@@ -61,7 +69,19 @@
     onDrop,
     legalTargets,
     planRoute,
+    onDropOff,
+    onSquareDown,
+    marked = [],
   }: Props = $props();
+
+  /** The square under a point in client (CSS pixel) coordinates, or null
+   * off the board: where a piece dragged from outside the board lands. */
+  export function squareAtClient(x: number, y: number): Square | null {
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const p = new DOMPoint(x, y).matrixTransform(ctm.inverse());
+    return squareAt(p.x, p.y, flipped);
+  }
 
   const annotations = new Annotations();
   const uid = $props.id();
@@ -196,6 +216,10 @@
 
   async function onpointerdown(e: PointerEvent) {
     const sq = squareFor(e);
+    if (sq != null && onSquareDown?.(sq, e.button)) {
+      e.preventDefault();
+      return;
+    }
     if (e.button === 2) {
       if (sq == null) return;
       rightStart = { square: sq, color: colorFor(e) };
@@ -297,7 +321,11 @@
       onStep(clicked.from, clicked.to);
       return;
     }
-    if (sq == null || sq === d.from) return;
+    if (sq == null) {
+      onDropOff?.(d.from);
+      return;
+    }
+    if (sq === d.from) return;
     model.dropAt(d.id, sq);
     if (!(await onDrop(d.from, sq, hint))) model.revert(d.id, d.from);
   }
@@ -383,6 +411,10 @@
     {/if}
 
     <g class="hints">
+      {#each marked as sq (sq)}
+        {@const p = squareXY(sq, flipped)}
+        <rect class="marked" data-marked={squareName(sq)} x={p.x + 4} y={p.y + 4} width={SQ - 8} height={SQ - 8} rx="10" />
+      {/each}
       {#if pushPending != null}
         {@const p = squareXY(pushPending, flipped)}
         <rect class="push" x={p.x + 5} y={p.y + 5} width={SQ - 10} height={SQ - 10} rx="10" />
@@ -586,6 +618,11 @@
     fill: none;
     stroke: rgba(20, 140, 110, 0.8);
     stroke-width: 5;
+  }
+  .marked {
+    fill: none;
+    stroke: var(--push);
+    stroke-width: 6;
   }
   .push {
     fill: none;

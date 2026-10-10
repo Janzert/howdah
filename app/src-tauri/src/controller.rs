@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use howdah_aei::{AeiError, Engine, EngineMessage, Info, Profile, Score, SearchLog};
-use howdah_arimaa::{Color, Game, TimeControl, notation};
+use howdah_arimaa::{Color, Game, Position, TimeControl};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::backend::{Events, emit, emit_session};
@@ -124,6 +124,8 @@ enum ActorEvent {
 enum ActorCmd {
     Think {
         request: u64,
+        /// A set position the moves start from (sent with `setposition`).
+        start: Option<Position>,
         moves: Vec<String>,
         tc: Option<TimeControl>,
         reserves: Option<[Duration; 2]>,
@@ -301,6 +303,7 @@ impl Coordinator {
             });
             let cmd = ActorCmd::Think {
                 request,
+                start: turn.start,
                 moves: turn.moves,
                 tc: turn.time_control,
                 reserves: turn.reserves,
@@ -652,7 +655,13 @@ impl Analysis {
     /// Has the engine search `target` as request `request`, from scratch.
     fn search(&mut self, target: AnalysisTarget, request: u64) {
         self.request = request;
-        let cmd = ActorCmd::Think { request, moves: target.moves.clone(), tc: None, reserves: None };
+        let cmd = ActorCmd::Think {
+            request,
+            start: target.start.clone(),
+            moves: target.moves.clone(),
+            tc: None,
+            reserves: None,
+        };
         // If the actor is gone, its failure report is on the way.
         let _ = self.cmd.send(cmd);
         self.state = if self.started { AnalysisState::Searching } else { AnalysisState::Starting };
@@ -760,7 +769,7 @@ fn validate_pv(game: &Game, turns: &[String]) -> (Vec<PvTurn>, Option<String>) {
             Ok(result) => {
                 let mv = &game.moves()[ply];
                 out.push(PvTurn {
-                    label: notation::move_label(ply),
+                    label: game.move_label(ply),
                     notation: mv.notation(),
                     steps: steps_view(mover, mv),
                 });
@@ -821,8 +830,8 @@ async fn run_actor(
         }
     }
     report(0, ActorEvent::Started { name: engine.name().to_string(), profile });
-    // Moves the engine has been told, or None before its first `newgame`.
-    let mut told: Option<Vec<String>> = None;
+    // What the engine has been told, or None before its first `newgame`.
+    let mut told: Option<Told> = None;
     let mut thinking: Option<u64> = None;
     let mut stop_sent = false;
     // Options for this game waiting for the search to end.
@@ -890,7 +899,7 @@ async fn run_actor(
         for (i, cmd) in queue.into_iter().enumerate() {
             match cmd {
                 ActorCmd::Think { .. } if Some(i) != newest => {}
-                ActorCmd::Think { request, moves, tc, reserves } => {
+                ActorCmd::Think { request, start, moves, tc, reserves } => {
                     let mut ready = Ok(());
                     if let Some(old) = thinking.take() {
                         ready = finish_search(&mut engine, profile, old, stop_sent, &report).await;
@@ -901,7 +910,7 @@ async fn run_actor(
                         ready = apply_options(&mut engine, &mut applied, options, &report).await;
                     }
                     if ready.is_ok() {
-                        ready = prepare(&mut engine, &mut told, moves, tc, reserves).await;
+                        ready = prepare(&mut engine, &mut told, Told { start, moves }, tc, reserves).await;
                     }
                     if ready.is_ok() {
                         ready = engine.go().await;
@@ -1038,31 +1047,42 @@ async fn finish_search(
     }
 }
 
-/// Brings the engine up to date: a fresh `newgame` (with the time control)
-/// if the move list isn't an extension of what it was told, then any new
-/// moves, then the current clock.
+/// A game as the engine was told it: a set position (or the empty board),
+/// then moves.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Told {
+    start: Option<Position>,
+    moves: Vec<String>,
+}
+
+/// Brings the engine up to date: a fresh `newgame` (with the time control,
+/// and `setposition` for a set position) if the game isn't an extension of
+/// what it was told, then any new moves, then the current clock.
 async fn prepare(
     engine: &mut Engine,
-    told: &mut Option<Vec<String>>,
-    moves: Vec<String>,
+    told: &mut Option<Told>,
+    game: Told,
     tc: Option<TimeControl>,
     reserves: Option<[Duration; 2]>,
 ) -> Result<(), AeiError> {
     let known = match told {
-        Some(t) if moves.starts_with(t) => t.len(),
+        Some(t) if t.start == game.start && game.moves.starts_with(&t.moves) => t.moves.len(),
         _ => {
             if let Some(tc) = &tc {
                 engine.set_time_control(tc).await?;
             }
             engine.new_game().await?;
+            if let Some(p) = &game.start {
+                engine.set_position(p).await?;
+            }
             engine.is_ready(Duration::from_secs(30)).await?;
             0
         }
     };
-    for m in &moves[known..] {
+    for m in &game.moves[known..] {
         engine.make_move(m).await?;
     }
-    *told = Some(moves);
+    *told = Some(game);
     if let Some(r) = reserves {
         engine.set_clock(r).await?;
     }
@@ -1195,6 +1215,7 @@ mod tests {
     use super::*;
     use crate::backend::EventSink;
     use crate::dto::EngineOption;
+    use howdah_arimaa::{Piece, PieceKind};
     use serde_json::Value;
 
     #[test]
@@ -1333,7 +1354,8 @@ mod tests {
     async fn a_player_whose_stop_was_lost_searches_again_and_moves() {
         let (cmds, mut rx) = start_lost_stop(Purpose::Play);
         collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
-        cmds.send(ActorCmd::Think { request: 1, moves: vec![], tc: None, reserves: None }).unwrap();
+        cmds.send(ActorCmd::Think { request: 1, start: None, moves: vec![], tc: None, reserves: None })
+            .unwrap();
         cmds.send(ActorCmd::Stop).unwrap();
         let seen =
             collect(&mut rx, |_, e| matches!(e, ActorEvent::BestMove(_) | ActorEvent::Failed(_))).await;
@@ -1342,10 +1364,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_set_position_goes_with_setposition() {
+        let (cmds, mut rx) = start(Purpose::Play);
+        collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
+        let rabbit = |color| Piece::new(color, PieceKind::Rabbit);
+        let pieces = [(rabbit(Color::Gold), "a1"), (rabbit(Color::Silver), "h8")];
+        let start =
+            Position::from_pieces(Color::Silver, pieces.map(|(p, sq)| (p, sq.parse().unwrap()))).unwrap();
+        let think = |request, moves: Vec<String>| ActorCmd::Think {
+            request,
+            start: Some(start.clone()),
+            moves,
+            tc: None,
+            reserves: None,
+        };
+        cmds.send(think(1, vec![])).unwrap();
+        cmds.send(ActorCmd::Stop).unwrap();
+        let seen =
+            collect(&mut rx, |_, e| matches!(e, ActorEvent::BestMove(_) | ActorEvent::Failed(_))).await;
+        let Some((1, ActorEvent::BestMove(first))) = seen.last() else { panic!("{:?}", logs(&seen)) };
+        assert!(first.starts_with("rh8"), "silver moves from the set position: {first}");
+        // The same game one move on: gold's turn, from the same start.
+        cmds.send(think(2, vec![first.clone()])).unwrap();
+        cmds.send(ActorCmd::Stop).unwrap();
+        let seen =
+            collect(&mut rx, |_, e| matches!(e, ActorEvent::BestMove(_) | ActorEvent::Failed(_))).await;
+        let Some((2, ActorEvent::BestMove(second))) = seen.last() else { panic!("{:?}", logs(&seen)) };
+        assert!(second.starts_with("Ra1"), "then gold: {second}");
+        assert!(!logs(&seen).iter().any(|l| l.contains("Error")), "{:?}", logs(&seen));
+    }
+
+    #[tokio::test]
     async fn analysis_whose_stop_was_lost_is_over() {
         let (cmds, mut rx) = start_lost_stop(Purpose::Analysis);
         collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
-        let think = |request| ActorCmd::Think { request, moves: vec![], tc: None, reserves: None };
+        let think =
+            |request| ActorCmd::Think { request, start: None, moves: vec![], tc: None, reserves: None };
         cmds.send(think(1)).unwrap();
         cmds.send(ActorCmd::Stop).unwrap();
         collect(
@@ -1369,7 +1423,8 @@ mod tests {
         let (cmds, mut rx) = start_with(Purpose::Play, vec![option("threads", "4"), option("hash", "64")]);
         let seen = collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
         assert_eq!(logs(&seen), ["option threads=4", "option hash=64"]);
-        let think = |request| ActorCmd::Think { request, moves: vec![], tc: None, reserves: None };
+        let think =
+            |request| ActorCmd::Think { request, start: None, moves: vec![], tc: None, reserves: None };
         let is_pv = |e: &ActorEvent| matches!(e, ActorEvent::Line(EngineMessage::Info(Info::Pv(_))));
         let is_best = |e: &ActorEvent| matches!(e, ActorEvent::BestMove(_));
         // Idle: sent at once, only what changed.
@@ -1395,7 +1450,8 @@ mod tests {
     async fn buttons_are_pressed_at_once_even_mid_search() {
         let (cmds, mut rx) = start(Purpose::Play);
         collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
-        let think = |request| ActorCmd::Think { request, moves: vec![], tc: None, reserves: None };
+        let think =
+            |request| ActorCmd::Think { request, start: None, moves: vec![], tc: None, reserves: None };
         let is_pv = |e: &ActorEvent| matches!(e, ActorEvent::Line(EngineMessage::Info(Info::Pv(_))));
         // Idle: at once, with no value.
         cmds.send(ActorCmd::Press("clear_hash".into())).unwrap();
@@ -1425,6 +1481,7 @@ mod tests {
         collect(&mut rx, |_, e| matches!(e, ActorEvent::Started { .. })).await;
         let moves: Vec<String> = SETUPS.iter().map(|s| s.to_string()).collect();
         let think = |request, n: usize| ActorCmd::Think {
+            start: None,
             request,
             moves: moves[..n].to_vec(),
             tc: None,

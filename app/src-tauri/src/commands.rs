@@ -4,11 +4,12 @@
 use howdah_arimaa::{Color, Glyph, NodeId, Square};
 use tauri::State;
 
-use crate::backend::Backend;
+use crate::backend::{self, Backend};
 use crate::dto::{
     ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames,
-    GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PositionView, PostalGameView,
-    ServerBotsView, SessionId, SessionView, StartedBotView, StepTarget, WatchView,
+    GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec,
+    PositionView, PostalGameView, ServerBotsView, SessionId, SessionView, StartedBotView, StepTarget,
+    WatchView,
 };
 
 #[tauri::command]
@@ -34,6 +35,40 @@ pub fn get_state(state: State<Backend>, session: SessionId) -> Result<SessionVie
 #[tauri::command]
 pub fn new_game(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
     state.new_game(session)
+}
+
+#[tauri::command]
+pub fn new_game_from(
+    state: State<Backend>,
+    session: SessionId,
+    position: PositionSpec,
+) -> Result<(), ApiError> {
+    state.new_game_from(session, &position)
+}
+
+#[tauri::command]
+pub fn editor_position(state: State<Backend>, session: SessionId) -> Result<PositionSpec, ApiError> {
+    state.editor_position(session)
+}
+
+#[tauri::command]
+pub fn parse_position(text: String) -> Result<PositionSpec, ApiError> {
+    backend::parse_position(&text)
+}
+
+#[tauri::command]
+pub fn check_position(position: PositionSpec) -> Result<PositionCheck, ApiError> {
+    backend::check_position(&position)
+}
+
+#[tauri::command]
+pub fn edit_position(position: PositionSpec, text: String) -> Result<PositionSpec, ApiError> {
+    backend::edit_position(&position, &text)
+}
+
+#[tauri::command]
+pub fn default_position() -> PositionSpec {
+    backend::default_position()
 }
 
 #[tauri::command]

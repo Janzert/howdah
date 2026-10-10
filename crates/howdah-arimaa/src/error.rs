@@ -116,6 +116,8 @@ pub enum GameError {
     NoSuchNode,
     #[error("the start of the game can't be changed")]
     IsRoot,
+    #[error("a set position comes after the setups (move 2 or later)")]
+    SetPositionInSetup,
 }
 
 /// A [`GameError`] located on a line of a game record.

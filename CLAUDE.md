@@ -42,15 +42,26 @@ Howdah plays and watches games on arimaa.com.
     never added; `setup_allowance`, `reserve_after_setup`; pyrimaa
     doesn't charge setup overtime to the reserve), `notation` (syntax only), and
     `game::Game`: moves plus cached positions per ply. It rejects third
-    repetitions (`earlier_occurrences` gives the moves the position stood
-    after, which the refusal names), and a player whose only moves would all be third
+    repetitions (`earlier_occurrences` gives the plies where the position
+    stood, which the refusal names by move, or as the start), and a player whose only moves would all be third
     repetitions is immobilized (`outcome_with_history`, from
     `Game::outcome_after`/`GameTree::outcome_after`: a depth-first search
     for one turn ending outside the positions seen twice, memoized on
     `TurnBuilder::search_key`, run only when something has been seen
     twice). It plays moves from notation (`play_notation`, used for
     engine and server moves). `end_game` records external results; `parse`
-    validates capture tokens, and `to_record` round-trips.
+    validates capture tokens, and `to_record` round-trips. A game from a
+    set position (`Game::from_position`) starts at a later absolute ply
+    (`start_ply`: 2 for `2g`, 3 for `2s`); plies in its API still count
+    from its first position, and `move_label`/`is_setup_at` add the start.
+  - `start`: set positions (the position editor). `StartPosition` (a
+    position plus the move number of its first turn) reads the short
+    format with an optional side or label (`12s [...]`) and the long
+    format's board diagram, writes both, and takes 4steps's typed edits
+    (`apply_edits`: `Ra1`, `Ra1n`, `Ra1x`, `g`/`s`).
+    `check_start_position` lists `PositionProblem`s: too many of a piece,
+    a piece alone on a trap, a rabbit on its goal row, a side without
+    rabbits, and a side to move with no legal step.
   - `tree::GameTree`: moves with variations (design in
     `docs/VARIATIONS.md`). An arena of `Node`s with stable `NodeId`s; the
     first child continues the main line. Adding a move that's already a
@@ -59,7 +70,10 @@ Howdah plays and watches games on arimaa.com.
     out; the session does that for a server's game, whose results are the
     server's, and shows a side left with only repetitions there as
     `SessionView.stuck`, from `only_repetitions`), and
-    `from_game`/`to_game`/`main_game` convert to and from `Game`. Nodes
+    `from_game`/`to_game`/`main_game` convert to and from `Game`.
+    `GameTree::from_position` roots a tree at a set position: node plies
+    count from the root, `start_ply` makes them absolute (`label_of`,
+    `label_after`, `setup_due`), and repetition counts from the root. Nodes
     carry an `Annotation` (comment, variation intro and PGN-numbered
     `Glyph`s). The session keeps its game as one. Comments can hold PGN
     commands (`[%emt 0:00:12]`): `comment_text` leaves them out, and
@@ -67,7 +81,9 @@ Howdah plays and watches games on arimaa.com.
   - `record::GameRecord`: tags plus a `GameTree`, read from and written to
     the PGN-style record format (`parse`, `parse_all`, `to_record`). The
     reader is lenient (arimaa.com `Name: value` tags, `White`/`Black`
-    names, `w`/`b` labels, `takeback` lines kept as variations);
+    names, `w`/`b` labels, `takeback` lines kept as variations; a
+    `Position` tag roots the tree at that position, numbered from the
+    first move's label, and the writer writes it from the tree);
     `Game::parse` goes through it and keeps the main line.
 - `crates/howdah-aei`: async AEI controller (tokio; no UI deps).
   - `Engine`: spawns the process (no shell), runs the handshake, and sends
@@ -214,6 +230,10 @@ Howdah plays and watches games on arimaa.com.
       The taken-back moves stay as the continuation, and become a
       variation when a different move is played. The controller stops an
       engine whose turn was taken back and ignores its reply.
+    - Games from a set position: `new_game_from` (free play) and
+      `start_match_from` (`start_match` is it with none) refuse a
+      position `check_start_position` finds problems with; `shown_start`
+      gives the shown position to the editor, with its move number.
     - Engine moves enter through `apply_engine_move`, as the live node's
       first child (a matching plan becomes the move). The board follows
       them only if you're watching the live position.
@@ -254,6 +274,10 @@ Howdah plays and watches games on arimaa.com.
       builds) is over for analysis; a player is sent `go` again and
       `stop` again 100 ms later (`RESTOP_DELAY`).
     - Commands call `Controller::poke()` after every change.
+    - A game from a set position carries it in `EngineTurn.start` and
+      `AnalysisTarget.start`: `prepare` sends `setposition` after
+      `newgame`, and keeps sending only new moves while the start and
+      the moves so far match what the engine was told (`Told`).
     - Engine output goes out as `engine://output`.
     - A game's engine player carries options for that game
       (`Player::Engine.options`, from `PlayerSpec`), sent over the
@@ -418,6 +442,12 @@ Howdah plays and watches games on arimaa.com.
     name with JSON args for the dev bridge; a test checks it covers every
     command in `api.ts`, but a new command still needs adding to both
     `dispatch` and `commands.rs`/`lib.rs`.
+    The position editor's commands need no session: `parse_position`,
+    `check_position` (`PositionCheck`: problems with their squares, both
+    formats, the first move's label, and the pieces left to place),
+    `edit_position` (typed edits) and `default_position`; `PositionSpec`
+    (short format, side to move, move number) carries a position, and
+    `MatchSpec.start` and `new_game_from` take one.
   - `commands.rs`: thin `#[tauri::command]` wrappers over `Backend`.
   - `src/bin/dev-bridge.rs` (feature `dev-bridge`): serves `Backend` over
     HTTP on 127.0.0.1:1421 (`POST /invoke/<cmd>` with JSON arguments,
@@ -475,6 +505,18 @@ Howdah plays and watches games on arimaa.com.
     file (`capabilities/default.json`) covers `main` and `game-*`,
     including creating windows, `destroy` (which `onCloseRequested`
     needs), and showing and focusing them.
+  - `lib/editor/`: the position editor (`PositionEditor.svelte`; survey
+    and decisions in `docs/UI-SURVEY.md`, section 6). A game window shows
+    it instead of its game while the window's hand-off has `editor` (the
+    lobby's "Position editor", or a game window's "Edit position", `e`,
+    which opens a new window on the shown position); Analyse
+    (`new_game_from`) or a game started from Play… (New game with
+    `start`) puts the game back. It has its own `BoardModel` and drives
+    `Board.svelte` through its editor props (`onSquareDown`,
+    `onDropOff`, `marked`, and `squareAtClient` for palette drops);
+    `editorBoard.ts` lays pieces out with stable ids and does mirror and
+    swap colors. Every change goes to `check_position`; the frontend
+    never judges a position.
   - `lib/devBridge.ts`: in dev outside Tauri (`main.ts` checks), `mockIPC`
     forwards every `invoke` to the dev bridge (Vite proxies `/bridge`) and
     replays its event stream as Tauri events.
@@ -482,7 +524,9 @@ Howdah plays and watches games on arimaa.com.
     checks: `state()`, `board()` (text diagram), `message()`, `idle()`,
     `drag('d2','d5',['d3','d4'])`, `click(sq, toward?)`, `hover(sq, toward?)` (`toward` leans the
     pointer toward a neighbour, for step mode), `hoverTargets()`,
-    `squareCenter(sq)`, `analysis()` (the latest `AnalysisView`), `api`. `idle()` also waits for pending hover arrows.
+    `squareCenter(sq)`, `analysis()` (the latest `AnalysisView`), `api`,
+    `rightClick(sq)`, and `editor()` (the position editor's short format,
+    label, problems and tool, while it's open). `idle()` also waits for pending hover arrows.
     Input goes through the board's own pointer handlers. Board pieces carry
     accessible names ("gold camel d5, frozen") and `data-square`.
   - `MoveList.svelte` shows the whole game tree from `SessionView.tree`

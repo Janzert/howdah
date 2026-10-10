@@ -24,6 +24,8 @@ use crate::error::{GameError, ParseError, RecordError};
 use crate::game::build_turn;
 use crate::notation::{self, MoveBody};
 use crate::outcome::{GameResult, WinReason};
+use crate::position::Position;
+use crate::start::StartPosition;
 use crate::tree::{GameTree, Glyph, NodeId};
 use crate::types::Color;
 
@@ -89,6 +91,10 @@ impl GameRecord {
             self.tags.iter().filter(|(n, _)| !COMPUTED_TAGS.contains(&n.as_str())).cloned().collect();
         // PlyCount only goes with other tags, so an untagged record stays
         // free of a header.
+        if let Some(p) = tree.start_position() {
+            tags.retain(|(n, _)| n != "Position");
+            tags.push(("Position".into(), position_tag(p)));
+        }
         if tree[end].ply() > 0 && !tags.is_empty() {
             tags.push(("PlyCount".into(), tree[end].ply().to_string()));
         }
@@ -154,7 +160,7 @@ impl GameRecord {
             node = main;
         }
         if let Some(marker) = tree[node].end_marker() {
-            out.push_str(&format!("{} {marker}\n", notation::move_label(tree[node].ply())));
+            out.push_str(&format!("{} {marker}\n", tree.label_after(node)));
         }
         // A variation's outside result (the rules find theirs again) goes on
         // a line of its own, unless its end word already says it.
@@ -170,7 +176,7 @@ impl GameRecord {
     fn write_move(&self, out: &mut String, id: NodeId) {
         let node = &self.tree[id];
         let mv = node.mv().expect("only the root has no move");
-        out.push_str(&notation::move_label(node.ply() - 1));
+        out.push_str(&self.tree.label_of(id).expect("only the root has no move"));
         out.push(' ');
         out.push_str(&mv.notation());
         for g in &node.annotation().glyphs {
@@ -181,6 +187,12 @@ impl GameRecord {
         }
         out.push('\n');
     }
+}
+
+/// A set position as the `Position` tag holds it: the side to move and the
+/// short format, `g [rrrrrrrr...]`.
+pub(crate) fn position_tag(position: &Position) -> String {
+    format!("{} {}", position.side_to_move().letter(), position.to_short_string())
 }
 
 /// The result an end word gives: it names the side to move as the loser
@@ -424,6 +436,9 @@ struct GameParser {
     /// A result token read inside a variation, waiting for its reason
     /// letter on the same line.
     line_result: Option<(Color, usize)>,
+    /// A `Position` tag set the start without a move number, so the first
+    /// move's label gives it.
+    renumber: bool,
 }
 
 impl GameParser {
@@ -438,6 +453,7 @@ impl GameParser {
             has_moves: false,
             result_token: None,
             line_result: None,
+            renumber: false,
         }
     }
 
@@ -447,11 +463,22 @@ impl GameParser {
 
     fn add_tag(&mut self, name: &str, value: String, line: usize) -> Result<(), RecordError> {
         let name = normalize_tag_name(name);
-        if name == "Position" && !value.trim().is_empty() {
-            return Err(parse_error(
-                line,
-                "games from a set position (the Position tag) aren't supported yet",
-            ));
+        if name == "Position" {
+            // The tree holds it; the writer writes it from there.
+            if value.trim().is_empty() {
+                return Ok(());
+            }
+            if self.has_moves || self.record.tree.len() > 1 {
+                return Err(parse_error(line, "the Position tag must come before the moves"));
+            }
+            let start = StartPosition::parse(&value).map_err(|e| parse_error(line, e.to_string()))?;
+            let comment = self.record.tree[GameTree::ROOT].annotation().clone();
+            let mut tree = GameTree::from_position(start.position, start.move_number)
+                .map_err(|error| RecordError { line, error })?;
+            *tree.annotation_mut(GameTree::ROOT).expect("root") = comment;
+            self.record.tree = tree;
+            self.renumber = true;
+            return Ok(());
         }
         self.record.set_tag(name, value);
         Ok(())
@@ -474,10 +501,18 @@ impl GameParser {
         // A variation labelled with the ply after the move before it
         // continues that move (used after a line's last move); otherwise it
         // replaces that move.
+        if std::mem::take(&mut self.renumber)
+            && self.record.tree.len() == 1
+            && color == self.record.tree[GameTree::ROOT].position().side_to_move()
+            && number >= 2
+        {
+            self.record.tree.renumber(number).map_err(at)?;
+        }
         let frame = self.stack.last().expect("main line");
         let tree = &self.record.tree;
         let label_fits = |n: NodeId| {
-            number == (tree[n].ply() / 2 + 1) as u32 && color == tree[n].position().side_to_move()
+            number == ((tree.start_ply() + tree[n].ply()) / 2 + 1) as u32
+                && color == tree[n].position().side_to_move()
         };
         if !frame.moved
             && let Some(after) = frame.after
@@ -490,7 +525,7 @@ impl GameParser {
         let frame = self.stack.last().expect("main line");
         let (parent, own_line) = (frame.current, frame.moved);
         let tree = &mut self.record.tree;
-        let ply = tree[parent].ply();
+        let ply = tree.start_ply() + tree[parent].ply();
         if number != (ply / 2 + 1) as u32 || color != tree[parent].position().side_to_move() {
             let found = format!("{number}{}", color.letter());
             return Err(at(GameError::OutOfSequence { expected: notation::move_label(ply), found }));
@@ -893,8 +928,60 @@ mod tests {
         assert_eq!(r.tree[r.tree.main_line()[3]].children().len(), 2);
     }
 
+    /// Gold to move: a rabbit on a2, a dog held on c3 by a cat, silver's
+    /// rabbit h7 and elephant h8, as the `Position` tag holds it.
+    fn set_position() -> String {
+        position_tag(&crate::position::tests::pos(Color::Gold, "Ra2 Dc3 Cc4 rh7 eh8"))
+    }
+
+    #[test]
+    fn games_from_a_set_position() {
+        let set = set_position();
+        let text = format!(
+            "[Gold \"alice\"]\n[Position \"{set}\"]\n\n{{Puzzle.}}\n2g Ra2n\n(\n2g Cc4n\n)\n2s rh7s\n"
+        );
+        let r = GameRecord::parse(&text).unwrap();
+        assert_eq!(r.tree.start_ply(), 2);
+        assert_eq!(r.tag("Position"), None, "the tree holds it");
+        let moves: Vec<String> =
+            r.tree.main_line()[1..].iter().map(|&id| r.tree[id].mv().unwrap().notation()).collect();
+        assert_eq!(moves, ["Ra2n", "rh7s"]);
+        assert_eq!(r.tree[GameTree::ROOT].annotation().comment.as_deref(), Some("Puzzle."));
+        let written = r.to_record();
+        assert!(written.starts_with(&format!("[Gold \"alice\"]\n[Position \"{set}\"]\n[PlyCount \"2\"]")));
+        assert!(written.contains("\n2g Ra2n\n(\n2g Cc4n Dc3x\n)\n2s rh7s\n"), "{written}");
+        assert_eq!(GameRecord::parse(&written).unwrap().to_record(), written);
+
+        // The first label gives the move number.
+        let late =
+            GameRecord::parse(&format!("[Position \"{set}\"]\n\n31g Ra2n\n31s rh7s\n32g Ra3n\n")).unwrap();
+        assert_eq!(late.tree.start_ply(), 60);
+        assert!(late.to_record().contains("31g Ra2n\n31s rh7s\n32g Ra3n\n"));
+        assert_eq!(late.tree.main_game().to_record().lines().nth(2), Some("31g Ra2n"));
+        // A label for the other side doesn't fit.
+        let err = GameRecord::parse(&format!("[Position \"{set}\"]\n\n2s rh7s\n")).unwrap_err();
+        assert!(matches!(err.error, GameError::OutOfSequence { .. }), "{err}");
+        // With no moves, it's move 2.
+        let bare = GameRecord::parse(&format!("[Position \"{set}\"]\n")).unwrap();
+        assert_eq!(bare.tree.start_ply(), 2);
+        assert_eq!(bare.to_record(), format!("[Position \"{set}\"]\n\n"));
+    }
+
+    #[test]
+    fn the_main_game_keeps_the_set_position() {
+        let set = set_position();
+        let r = GameRecord::parse(&format!("[Position \"{set}\"]\n\n2g Ra2n\n")).unwrap();
+        let game = r.tree.main_game();
+        assert_eq!(game.start_ply(), 2);
+        assert_eq!(game.to_record(), format!("[Position \"{set}\"]\n\n2g Ra2n\n"));
+        assert_eq!(crate::Game::parse(&game.to_record()).unwrap(), game);
+        let (tree, end) = GameTree::from_game(&game);
+        assert_eq!((tree.start_ply(), tree.label_of(end).as_deref()), (2, Some("2g")));
+    }
+
     #[test]
     fn errors_have_lines() {
+        let set = set_position();
         let base = setups();
         let cases = [
             (format!("{base}2g Ee2n\n(\n3s ee7s\n)\n"), 5, "wrong label in a variation"),
@@ -903,7 +990,8 @@ mod tests {
             (format!("(\n{base})\n"), 1, "variation before any move"),
             (format!("{base}2g Ee2n {{open\nstill\n"), 3, "unterminated comment"),
             (format!("{base}Ee2n\n"), 3, "missing label"),
-            (format!("[Position \"g [x]\"]\n\n{base}"), 1, "set positions"),
+            ("[Position \"g [x]\"]\n\n2g Ee2n\n".to_string(), 1, "a bad position"),
+            (format!("[Position \"{set}\"]\n\n{base}"), 3, "setups after a set position"),
             (format!("{base}2g Ee2n\n2s resigns\n3g Ee3n\n"), 5, "move after the end"),
         ];
         for (text, line, what) in cases {

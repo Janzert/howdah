@@ -10,6 +10,9 @@
 //! - [`Game`]: a sequence of setup and turn moves, parsed from and formatted
 //!   to the standard record format.
 //! - [`GameTree`]: moves with variations, comments and glyphs.
+//! - [`StartPosition`]: a set position to start a game from, read from the
+//!   short or long format, and [`check_start_position`] for what keeps one
+//!   from starting a game.
 //! - [`GameRecord`]: a tree with its tags, read from and written to the
 //!   record format (PGN-style tags, variations and comments).
 //!
@@ -23,6 +26,7 @@ mod outcome;
 mod position;
 mod record;
 mod setup;
+mod start;
 mod step;
 mod timecontrol;
 mod tree;
@@ -37,6 +41,7 @@ pub use outcome::{
 pub use position::Position;
 pub use record::GameRecord;
 pub use setup::{Placement, apply_setup, default_setup, validate_setup};
+pub use start::{PositionProblem, StartPosition, check_start_position, default_start};
 pub use step::{Capture, Step, StepEffect};
 pub use timecontrol::TimeControl;
 pub use tree::{Annotation, GameTree, Glyph, Node, NodeId, split_commands};

@@ -33,8 +33,8 @@ use std::time::{Duration, Instant};
 
 use howdah_arimaa::{
     Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position,
-    Route, Square, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder, WinReason, default_setup,
-    notation,
+    Route, Square, StartPosition, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder, WinReason,
+    check_start_position, default_setup,
 };
 
 use crate::dto::{
@@ -245,6 +245,8 @@ pub struct EngineTurn {
     pub side: Color,
     pub engine_id: String,
     pub ply: usize,
+    /// The set position the game starts from, if any.
+    pub start: Option<Position>,
     /// Every move so far, in notation.
     pub moves: Vec<String>,
     pub time_control: Option<TimeControl>,
@@ -269,6 +271,8 @@ pub struct AnalysisTarget {
     pub node: NodeId,
     /// The move being searched for, e.g. `12s`.
     pub label: String,
+    /// The set position the game starts from, if any.
+    pub start: Option<Position>,
     /// Every move up to the node, in notation.
     pub moves: Vec<String>,
     /// The game up to the node, open for more moves (an outside result
@@ -329,8 +333,24 @@ fn apply_ids(map: &mut IdMap, e: &StepEffect, mover: Color) -> AnimStep {
 
 /// Piece ids for every ply. Setup placements get `base + index`, and ids
 /// then follow pieces through their steps.
+/// A tree from a set position, if the position can start a game.
+fn start_tree(start: &StartPosition) -> Result<GameTree, ApiError> {
+    if let Some(problem) = check_start_position(&start.position).first() {
+        return Err(ApiError::illegal(format!("this position can't start a game: {problem}")));
+    }
+    GameTree::from_position(start.position.clone(), start.move_number)
+        .map_err(|e| ApiError::illegal(e.to_string()))
+}
+
 fn compute_ids(game: &Game) -> Vec<IdMap> {
-    let mut maps = vec![[None; 64]];
+    // A set position's pieces are numbered per side in board order.
+    let mut first = [None; 64];
+    let mut next = [0; 2];
+    for (sq, piece) in game.position_at(0).expect("a game has a first position").pieces() {
+        first[sq.index() as usize] = Some(id_base(piece.color) + next[piece.color.index()]);
+        next[piece.color.index()] += 1;
+    }
+    let mut maps = vec![first];
     for m in game.moves() {
         let mut map = *maps.last().unwrap();
         match m {
@@ -503,7 +523,7 @@ impl Session {
 
     /// Whether `side` still has its setup to make in the match.
     fn setup_pending(&self, side: Color) -> bool {
-        self.tree[self.live()].ply() <= side.index()
+        self.tree.start_ply() + self.tree[self.live()].ply() <= side.index()
     }
 
     /// Longest the side to move may take for its turn at the live node.
@@ -531,7 +551,7 @@ impl Session {
     /// entered anywhere to plan (they become variations), but a setup only
     /// on a human's turn at the live node.
     pub fn can_input(&self) -> bool {
-        self.matchup.is_none() || !Game::is_setup_ply(self.cursor) || self.plays_live()
+        self.matchup.is_none() || !self.game.is_setup_at(self.cursor) || self.plays_live()
     }
 
     fn require_input(&self) -> Result<(), ApiError> {
@@ -587,7 +607,7 @@ impl Session {
         }
         self.game = self.tree.to_game(self.line_end()).expect("the line exists");
         self.ids = compute_ids(&self.game);
-        let setup_due = Game::is_setup_ply(self.cursor)
+        let setup_due = self.game.is_setup_at(self.cursor)
             && self.tree[self.cursor_node()].result().is_none()
             && match &self.matchup {
                 None => self.cursor_node() == self.line_end(),
@@ -609,6 +629,27 @@ impl Session {
         self.replace(GameTree::new(), Vec::new(), GameTree::ROOT, None);
     }
 
+    /// A new game from a set position, refused if the position can't start
+    /// one ([`check_start_position`]).
+    pub fn new_game_from(&mut self, start: &StartPosition) -> Result<(), ApiError> {
+        let tree = start_tree(start)?;
+        self.replace(tree, Vec::new(), GameTree::ROOT, None);
+        Ok(())
+    }
+
+    /// The shown position as a set position, for the position editor:
+    /// with its move number, or gold to move at `2g` during the setups.
+    pub fn shown_start(&self) -> StartPosition {
+        let node = self.cursor_node();
+        let mut position = self.cursor_position().clone();
+        let ply = self.tree.start_ply() + self.tree[node].ply();
+        if Game::is_setup_ply(ply) {
+            position.set_side_to_move(Color::Gold);
+            return StartPosition::new(position);
+        }
+        StartPosition { position, move_number: (ply / 2 + 1) as u32 }
+    }
+
     /// Loads a record, showing the end of its main line.
     pub fn load(&mut self, record: &str) -> Result<(), ApiError> {
         self.load_record(GameRecord::parse(record)?);
@@ -626,7 +667,8 @@ impl Session {
     /// move.
     pub fn load_record_from_start(&mut self, record: GameRecord) {
         let main = record.tree.main_line();
-        let at = main[main.len().min(3) - 1];
+        let setups = 2usize.saturating_sub(record.tree.start_ply());
+        let at = main[main.len().min(setups + 1) - 1];
         self.replace(record.tree, record.tags, at, None);
     }
 
@@ -639,6 +681,22 @@ impl Session {
         time_controls: [Option<TimeControl>; 2],
         takebacks: bool,
     ) {
+        self.start_match_from(players, time_controls, takebacks, None).expect("no position to refuse");
+    }
+
+    /// [`Session::start_match`] from a set position, or from the empty board
+    /// with `None`. A position that can't start a game is refused.
+    pub fn start_match_from(
+        &mut self,
+        players: [Player; 2],
+        time_controls: [Option<TimeControl>; 2],
+        takebacks: bool,
+        start: Option<&StartPosition>,
+    ) -> Result<(), ApiError> {
+        let tree = match start {
+            Some(start) => start_tree(start)?,
+            None => GameTree::new(),
+        };
         let now = Instant::now();
         let clock = time_controls.iter().any(Option::is_some).then(|| Clock {
             tcs: time_controls,
@@ -672,12 +730,13 @@ impl Session {
                 .filter_map(|(side, tc)| Some((format!("{side:?}TimeControl"), tc?.to_string())))
                 .collect(),
         };
-        self.replace(GameTree::new(), tags, GameTree::ROOT, Some(matchup));
+        self.replace(tree, tags, GameTree::ROOT, Some(matchup));
         // Analysis stays on across games, but not into an online game the
         // user plays.
         if self.plays_online() {
             self.analysis = None;
         }
+        Ok(())
     }
 
     /// Stops the match: the game stays as it is, and both sides become free
@@ -724,6 +783,7 @@ impl Session {
             side,
             engine_id: id.clone(),
             ply: self.tree[m.live].ply(),
+            start: self.tree.start_position().cloned(),
             moves: path[1..].iter().filter_map(|&id| self.tree[id].mv().map(Move::notation)).collect(),
             time_control: m.clock.as_ref().and_then(|c| c.tc(side)),
             reserves: m.clock.as_ref().map(|c| c.reserves),
@@ -815,7 +875,7 @@ impl Session {
     /// it's added. Returns false (and ends the game) if the move came too
     /// late. A server keeping the clock sets the reserves itself.
     fn clock_move(&mut self, now: Instant) -> bool {
-        let setup = Game::is_setup_ply(self.tree[self.live()].ply());
+        let setup = self.tree.setup_due(self.live());
         let side = self.live_side();
         let Some(m) = self.matchup.as_mut() else { return true };
         let used = now.saturating_duration_since(m.turn_started);
@@ -1496,7 +1556,8 @@ impl Session {
         Some(AnalysisTarget {
             generation: self.generation,
             node,
-            label: notation::move_label(self.tree[node].ply()),
+            label: self.tree.label_after(node),
+            start: self.tree.start_position().cloned(),
             moves: game.moves().iter().map(Move::notation).collect(),
             game,
         })
@@ -1533,7 +1594,7 @@ impl Session {
         let mut tree = self.tree.clone();
         let mut at = from;
         for m in moves {
-            if self.matchup.is_some() && Game::is_setup_ply(tree[at].ply()) {
+            if self.matchup.is_some() && tree.setup_due(at) {
                 return Err(ApiError::state("a setup can't be planned during a match"));
             }
             at = tree.add_notation(at, m).map_err(|e| ApiError::illegal(format!("{m}: {e}")))?;
@@ -1672,7 +1733,7 @@ impl Session {
         if let Some(tb) = &self.turn {
             return Ok(tb.clone());
         }
-        if Game::is_setup_ply(self.cursor) {
+        if self.game.is_setup_at(self.cursor) {
             return Err(ApiError::state("the setup must be made first"));
         }
         if self.tree[self.cursor_node()].is_terminal() {
@@ -1851,8 +1912,11 @@ impl Session {
     fn back_to_human(&self, m: &Match) -> Option<usize> {
         let live_ply = self.tree[m.live].ply();
         let human = m.players.contains(&Player::Human);
-        let side = |ply: usize| if ply.is_multiple_of(2) { Color::Gold } else { Color::Silver };
-        (2..live_ply).rev().find(|&p| !human || *self.player(side(p)) == Player::Human)
+        let start = self.tree.start_ply();
+        let side = |ply: usize| if (start + ply).is_multiple_of(2) { Color::Gold } else { Color::Silver };
+        (2usize.saturating_sub(start)..live_ply)
+            .rev()
+            .find(|&p| !human || *self.player(side(p)) == Player::Human)
     }
 
     fn check_take_back(&self) -> Result<usize, ApiError> {
@@ -1961,7 +2025,7 @@ impl Session {
         let ply = self.tree[live].ply();
         if self.matchup.as_ref().is_none_or(|m| m.outgoing.is_some())
             || self.cursor <= ply
-            || Game::is_setup_ply(ply)
+            || self.tree.setup_due(live)
             || self.live_result().is_some()
             || *self.player(self.live_side()) != Player::Human
         {
@@ -2079,13 +2143,19 @@ impl Session {
     fn repetition(&self, end: &Position) -> Option<String> {
         let earlier = self.game.earlier_occurrences(self.cursor, end);
         (earlier.len() >= 2).then(|| {
-            let labels: Vec<String> = earlier.into_iter().map(notation::move_label).collect();
+            let labels: Vec<String> = earlier
+                .into_iter()
+                .map(|ply| match ply {
+                    0 => "the start".to_string(),
+                    _ => self.game.move_label(ply - 1),
+                })
+                .collect();
             format!("{} (as after {})", GameError::Repetition, labels.join(" and "))
         })
     }
 
     fn phase(&self) -> Phase {
-        if Game::is_setup_ply(self.cursor) {
+        if self.game.is_setup_at(self.cursor) {
             Phase::Setup
         } else if self.tree[self.cursor_node()].is_terminal() {
             Phase::Over
@@ -2102,7 +2172,7 @@ impl Session {
             .enumerate()
             .map(|(ply, m)| MoveView {
                 ply: ply + 1,
-                label: notation::move_label(ply),
+                label: self.game.move_label(ply),
                 notation: m.notation(),
             })
             .collect();
@@ -2182,13 +2252,13 @@ impl Session {
             plays_live: self.plays_live(),
             live_move: self.matchup.as_ref().and_then(|m| {
                 let n = &self.tree[m.live];
-                Some(format!("{} {}", notation::move_label(n.ply().checked_sub(1)?), n.mv()?.notation()))
+                Some(format!("{} {}", self.tree.label_of(m.live)?, n.mv()?.notation()))
             }),
             can_undo: self.can_undo(),
             can_take_back: self.take_back_target().is_some(),
             plan_move: self.plan_to_play().and_then(|n| {
                 let mv = self.tree[n].mv()?;
-                Some(format!("{} {}", notation::move_label(self.tree[n].ply() - 1), mv.notation()))
+                Some(format!("{} {}", self.tree.label_of(n)?, mv.notation()))
             }),
             live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
             analysis_engine: self.analysis.as_ref().map(|a| a.id.clone()),
@@ -2260,7 +2330,7 @@ impl Session {
             depth,
             starts_variation: false,
             closes: 0,
-            label: notation::move_label(node.ply() - 1),
+            label: self.tree.label_of(id).unwrap_or_default(),
             notation: node.mv().map(Move::notation).unwrap_or_default(),
             elapsed_ms: annotation.elapsed().map(|t| t.as_millis() as u64),
             game_time_ms: self.game_time(id).map(|t| t.as_millis() as u64),
@@ -2384,7 +2454,7 @@ impl Session {
             mover = Some(side);
             if let Some(tc) = tcs[side.index()] {
                 let reserve = reserves[side.index()];
-                reserves[side.index()] = if Game::is_setup_ply(node.ply() - 1) {
+                reserves[side.index()] = if Game::is_setup_ply(self.tree.start_ply() + node.ply() - 1) {
                     tc.reserve_after_setup(reserve, used)
                 } else {
                     tc.reserve_after(reserve, used)
@@ -2394,7 +2464,7 @@ impl Session {
         let ms = |d: Duration| d.as_millis() as u64;
         let ply = self.tree[id].ply();
         let side_view = |side: Color| {
-            let setup = ply <= side.index();
+            let setup = self.tree.start_ply() + ply <= side.index();
             let reserve = reserves[side.index()];
             tcs[side.index()].map(|tc| SideClockView {
                 time_control: tc.to_string(),
@@ -2550,6 +2620,70 @@ mod tests {
         let why = "the move repeats a position for the third time (as after 1s and 3s)";
         assert_eq!(s.view().turn.unwrap().commit_blocker.as_deref(), Some(why));
         assert_eq!(s.commit_turn(false).unwrap_err().message, why);
+    }
+
+    fn set_start(spec: &str, side: Color, move_number: u32) -> StartPosition {
+        let pieces = spec
+            .split_whitespace()
+            .map(|w| (howdah_arimaa::Piece::from_letter(w.chars().next().unwrap()).unwrap(), sq(&w[1..])));
+        StartPosition { position: Position::from_pieces(side, pieces).unwrap(), move_number }
+    }
+
+    #[test]
+    fn games_from_a_set_position() {
+        let mut s = Session::new();
+        let bad = set_start("Ra2 Dc3 rh7", Color::Gold, 2);
+        let err = s.new_game_from(&bad).unwrap_err();
+        assert!(err.message.contains("Gold dog alone on trap c3"), "{}", err.message);
+        s.new_game_from(&set_start("Ra2 Hb2 hg7 rh7", Color::Silver, 12)).unwrap();
+        let v = s.view();
+        assert_eq!((v.phase, v.position.pieces.len()), (Phase::Play, 4));
+        assert_eq!(s.tree.label_after(GameTree::ROOT), "12s");
+        s.try_step(sq("g7"), sq("f7")).unwrap();
+        s.commit_turn(false).unwrap();
+        s.try_step(sq("b2"), sq("c2")).unwrap();
+        s.commit_turn(false).unwrap();
+        let v = s.view();
+        assert_eq!(v.moves.iter().map(|m| m.label.as_str()).collect::<Vec<_>>(), ["12s", "13g"]);
+        assert_eq!(v.tree[0].label, "12s");
+        assert!(s.export(false).starts_with("[Position \"s ["), "{}", s.export(false));
+        assert!(s.export(true).contains("\n12s hg7w\n13g Hb2e\n"), "{}", s.export(true));
+        // The editor gets the shown position back, with its move number.
+        let shown = s.shown_start();
+        assert_eq!((shown.move_number, shown.position.side_to_move()), (13, Color::Silver));
+        // A third repetition names the start.
+        for (from, to) in [("f7", "g7"), ("c2", "b2"), ("g7", "f7"), ("b2", "c2"), ("f7", "g7"), ("c2", "b2")]
+        {
+            s.try_step(sq(from), sq(to)).unwrap();
+            if s.view().turn.is_some_and(|t| t.commit_blocker.is_none()) {
+                s.commit_turn(false).unwrap();
+            }
+        }
+        let blocker = s.view().turn.and_then(|t| t.commit_blocker);
+        assert_eq!(
+            blocker.as_deref(),
+            Some("the move repeats a position for the third time (as after the start and 14g)")
+        );
+        // Records from a set position load and open at the start.
+        let mut t = Session::new();
+        t.load_record_from_start(GameRecord::parse(&s.export(false)).unwrap());
+        assert_eq!((t.view().ply, t.view().moves.len()), (0, s.tree.main_line().len() - 1));
+    }
+
+    #[test]
+    fn a_match_from_a_set_position() {
+        let mut s = Session::new();
+        let start = set_start("Ra2 Hb2 hg7 rh7", Color::Gold, 2);
+        s.start_match_from([Player::Human, engine("e")], [None, None], false, Some(&start)).unwrap();
+        assert_eq!(s.engine_turn(), None, "gold, a human, moves first");
+        s.try_step(sq("b2"), sq("c2")).unwrap();
+        s.commit_turn(false).unwrap();
+        let turn = s.engine_turn().unwrap();
+        assert_eq!((turn.ply, turn.moves.as_slice()), (1, ["Hb2e".to_string()].as_slice()));
+        assert_eq!(turn.start.as_ref(), Some(&start.position));
+        let g = turn.generation;
+        s.apply_engine_move(g, Color::Silver, 1, "hg7w").unwrap();
+        assert_eq!(s.view().moves.len(), 2);
     }
 
     #[test]
@@ -2911,7 +3045,7 @@ mod tests {
     }
 
     fn setup_text(color: Color) -> String {
-        notation::format_placements(&default_setup(color))
+        howdah_arimaa::notation::format_placements(&default_setup(color))
     }
 
     #[test]

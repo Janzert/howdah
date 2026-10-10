@@ -405,9 +405,11 @@ names: records say Gold and Silver, as the game does.
 - **`Position`** holds the starting position in the short format
   (`Position: g [rrrrrrrr...]`, which `Position::to_short_string` already
   writes; the side letter is the side to move). Without it a game starts
-  from the empty board with setups. Not supported yet: the reader
-  refuses a record with a `Position` tag, since `GameTree` always starts
-  from the empty board.
+  from the empty board with setups. With it the tree's root is that
+  position (`GameTree::from_position`), and the moves are numbered on
+  from it: the first move's label gives the move number (`2g` when the
+  record has no moves). The writer puts it after the stored tags. Built
+  2026-10-10 with the position editor (`UI-SURVEY.md`, section 6).
 - **Result**, as AEI writes it: `Result` is `1-0` (gold won) or `0-1`,
   `ResultCode` is the reason letter `WinReason` already uses (`g` goal,
   `e` elimination, `m` immobilization, `t` timeout, `r` resignation, ...,

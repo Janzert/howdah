@@ -1,7 +1,9 @@
 //! A game tree: moves with variations.
 //!
 //! Each node is the position after a move, and the root is the empty board
-//! with gold to set up (ply 0). A node's first child continues the main
+//! with gold to set up (ply 0), or a set position after the setups (see
+//! [`GameTree::from_position`]). Node plies count from the root; the
+//! tree's [`GameTree::start_ply`] makes them absolute, for move labels. A node's first child continues the main
 //! line; the others are variations, in the order they're shown. Node ids
 //! are stable for the life of the tree and never reused, so the UI can
 //! refer to a move by id. See `docs/VARIATIONS.md` for the design.
@@ -249,7 +251,9 @@ impl Node {
         &self.position
     }
 
-    /// Moves from the root: 0 at the root, 2 once both sides have set up.
+    /// Moves from the root: 0 at the root, 2 once both sides have set up
+    /// (from the empty board). Add [`GameTree::start_ply`] for the
+    /// absolute ply.
     pub fn ply(&self) -> usize {
         self.ply
     }
@@ -289,6 +293,8 @@ pub struct GameTree {
     /// [`outcome_with_history`]). On unless someone else decides the
     /// results, as a game server does.
     repetition_immobilization: bool,
+    /// The absolute ply of the root: 0 from the empty board.
+    start: usize,
 }
 
 impl Default for GameTree {
@@ -311,11 +317,24 @@ impl GameTree {
     pub const ROOT: NodeId = NodeId(0);
 
     pub fn new() -> GameTree {
+        GameTree::rooted(Position::empty(Color::Gold), 0)
+    }
+
+    /// A tree from a set position, standing before move `move_number` of
+    /// its side to move (`2g` is the first turn after the setups). The
+    /// position isn't checked; [`crate::check_start_position`] does that.
+    /// Repetition counts from the set position, which knows no history.
+    pub fn from_position(position: Position, move_number: u32) -> Result<GameTree, GameError> {
+        let start = crate::game::start_ply(move_number, position.side_to_move())?;
+        Ok(GameTree::rooted(position, start))
+    }
+
+    fn rooted(position: Position, start: usize) -> GameTree {
         GameTree {
             nodes: vec![Some(Node {
                 parent: None,
                 mv: None,
-                position: Position::empty(Color::Gold),
+                position,
                 ply: 0,
                 children: Vec::new(),
                 result: None,
@@ -323,7 +342,43 @@ impl GameTree {
                 annotation: Annotation::default(),
             })],
             repetition_immobilization: true,
+            start,
         }
+    }
+
+    /// Moves a set position's start to move `move_number`, before any move
+    /// is added (a record's first label gives it).
+    pub(crate) fn renumber(&mut self, move_number: u32) -> Result<(), GameError> {
+        let side = self[GameTree::ROOT].position.side_to_move();
+        self.start = crate::game::start_ply(move_number, side)?;
+        Ok(())
+    }
+
+    /// The absolute ply of the root: 0 from the empty board, 2 from a set
+    /// position with gold to move at `2g`.
+    pub fn start_ply(&self) -> usize {
+        self.start
+    }
+
+    /// The set position the tree starts from, or `None` from the empty board.
+    pub fn start_position(&self) -> Option<&Position> {
+        (self.start > 0).then(|| &self[GameTree::ROOT].position)
+    }
+
+    /// The label of the move made from `node`, such as `2g`.
+    pub fn label_after(&self, node: NodeId) -> String {
+        notation::move_label(self.start + self[node].ply)
+    }
+
+    /// The label of the move that led to `node`; `None` at the root.
+    pub fn label_of(&self, node: NodeId) -> Option<String> {
+        let n = self.node(node)?;
+        (n.ply > 0).then(|| notation::move_label(self.start + n.ply - 1))
+    }
+
+    /// True if the move made from `node` is a setup.
+    pub fn setup_due(&self, node: NodeId) -> bool {
+        self.node(node).is_some_and(|n| Game::is_setup_ply(self.start + n.ply))
     }
 
     /// Turns off (or back on) the loss for a player left with only third
@@ -411,7 +466,7 @@ impl GameTree {
 
     pub fn add_setup(&mut self, parent: NodeId, placements: Vec<Placement>) -> Result<NodeId, GameError> {
         let node = self.check_can_move(parent)?;
-        if !Game::is_setup_ply(node.ply) {
+        if !Game::is_setup_ply(self.start + node.ply) {
             return Err(GameError::ExpectedTurn);
         }
         let next = apply_setup(&node.position, &placements)?;
@@ -421,7 +476,7 @@ impl GameTree {
     /// Starts a turn from the position at `parent`.
     pub fn begin_turn(&self, parent: NodeId) -> Result<TurnBuilder, GameError> {
         let node = self.check_can_move(parent)?;
-        if Game::is_setup_ply(node.ply) {
+        if Game::is_setup_ply(self.start + node.ply) {
             return Err(GameError::ExpectedSetup);
         }
         Ok(TurnBuilder::new(&node.position))
@@ -438,7 +493,7 @@ impl GameTree {
     /// path back from it, after the setups.
     fn repetition_history(&self, node: NodeId) -> impl Iterator<Item = &Position> {
         std::iter::successors(self.node(node), |n| n.parent.and_then(|p| self.node(p)))
-            .take_while(|n| n.ply >= 2)
+            .take_while(|n| self.start + n.ply >= 2)
             .map(|n| &n.position)
     }
 
@@ -452,8 +507,9 @@ impl GameTree {
     /// would be a third repetition, whether or not the tree counts that as
     /// a loss (a server's game may go on with the player unable to move).
     pub fn only_repetitions(&self, node: NodeId) -> bool {
-        self.node(node)
-            .is_some_and(|n| n.ply >= 2 && only_repetitions(&n.position, self.repetition_history(node)))
+        self.node(node).is_some_and(|n| {
+            self.start + n.ply >= 2 && only_repetitions(&n.position, self.repetition_history(node))
+        })
     }
 
     /// How the game ends after `turn` from `parent`, if it does: the
@@ -471,7 +527,7 @@ impl GameTree {
     /// Adds a turn built with [`GameTree::begin_turn`].
     pub fn add_turn(&mut self, parent: NodeId, turn: Turn) -> Result<NodeId, GameError> {
         let node = self.check_can_move(parent)?;
-        if Game::is_setup_ply(node.ply) {
+        if Game::is_setup_ply(self.start + node.ply) {
             return Err(GameError::ExpectedSetup);
         }
         if turn.start != node.position {
@@ -580,7 +636,7 @@ impl GameTree {
         let path = self.path(node);
         let moves = path[1..].iter().map(|&id| self[id].mv.clone().expect("only the root has no move"));
         let positions = path.iter().map(|&id| self[id].position.clone()).collect();
-        Ok(Game::from_parts(moves.collect(), positions, end.result, end.end_marker.clone()))
+        Ok(Game::from_parts(moves.collect(), positions, self.start, end.result, end.end_marker.clone()))
     }
 
     /// True if the tree is one line with no comments or glyphs, so a plain
@@ -600,7 +656,8 @@ impl GameTree {
     /// A tree holding `game` as its main line. Returns the tree and the id
     /// of the game's last move.
     pub fn from_game(game: &Game) -> (GameTree, NodeId) {
-        let mut tree = GameTree::new();
+        let first = game.position_at(0).expect("a game has a first position").clone();
+        let mut tree = GameTree::rooted(first, game.start_ply());
         let mut at = GameTree::ROOT;
         for (ply, mv) in game.moves().iter().enumerate() {
             let position = game.position_at(ply + 1).expect("a position per ply").clone();
@@ -682,6 +739,25 @@ mod tests {
         assert_eq!(t.score_winner(end), Color::Gold, "gold was ahead last");
         let first_move = t.path(end)[3];
         assert_eq!(t.score_winner(first_move), Color::Silver, "never different");
+    }
+
+    #[test]
+    fn a_set_position_counts_for_repetition() {
+        use crate::position::tests::pos;
+        let mut t = GameTree::from_position(pos(Color::Gold, "Ra1 Hb2 hg7 rh8"), 2).unwrap();
+        assert_eq!((t.start_ply(), t.label_after(GameTree::ROOT)), (2, "2g".to_string()));
+        assert!(!t.setup_due(GameTree::ROOT));
+        assert!(t.add_notation(GameTree::ROOT, "Ra1n").is_ok());
+        let mut at = GameTree::ROOT;
+        for m in ["Hb2e", "hg7w", "Hc2w", "hf7e", "Hb2e", "hg7w", "Hc2w"] {
+            at = t.add_notation(at, m).unwrap();
+        }
+        assert_eq!(t.label_of(at).as_deref(), Some("5g"));
+        // Back at the start for the third time.
+        assert_eq!(t.add_notation(at, "hf7e"), Err(GameError::Repetition));
+        assert!(GameTree::from_position(pos(Color::Silver, "Ra1 rh8"), 1).is_err(), "move 1 is the setups");
+        let silver = GameTree::from_position(pos(Color::Silver, "Ra1 rh8"), 7).unwrap();
+        assert_eq!(silver.label_after(GameTree::ROOT), "7s");
     }
 
     #[test]

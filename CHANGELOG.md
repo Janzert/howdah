@@ -9,6 +9,22 @@ young).
 
 ### Added
 
+- A position editor, from the lobby or from a game window ("Edit
+  position", `e`, which opens the shown position in a new window): place
+  pieces from a palette per side (it counts what's left), drag them
+  around or off the board, set the side to move and the move number, and
+  start from both default setups, clear, flip, mirror or swap colors.
+  Positions can be typed as 4steps takes them (`Ed4 Ra2x Hb2n s`), pasted
+  in the short format or as a board diagram, and copied in either. It
+  says what keeps a position from starting a game (too many of a piece,
+  a piece alone on a trap, a rabbit on its goal row, no rabbits, no legal
+  move) and marks the squares. Analyse starts free play from the
+  position, with analysis on; Play… starts a game from it against an
+  engine or with clocks.
+- Games from a set position: records keep it in a `Position` tag, and
+  such records now load (they were refused). Engines are given the
+  position with `setposition`.
+
 - Playing arimaa.com's server bots, as 4steps's bot launcher does: the
   lobby lists the official bot ladder (with your place on it) or every
   bot, with your record against each, shows a chosen

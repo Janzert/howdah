@@ -1,8 +1,12 @@
-//! A game: the sequence of moves from the empty board, with positions cached
-//! per ply.
+//! A game: the sequence of moves from the empty board, or from a set
+//! position, with positions cached per ply.
 //!
 //! Ply `n` is the position after `n` moves. Ply 0 is the empty board with
 //! gold to set up, and ply 2 is the first position with both sides placed.
+//! A game from a set position starts at a later ply (2 for `2g`, 3 for
+//! `2s`, and so on), its [`Game::start_ply`]: plies passed to and returned
+//! by its methods still count from its first position, and only move
+//! labels and the setup rule use the absolute ply.
 
 use crate::error::{GameError, RecordError};
 use crate::notation::{self, MoveBody, RecordStep};
@@ -34,6 +38,8 @@ pub struct Game {
     moves: Vec<Move>,
     /// `positions[n]` is the position at ply `n`; always `moves.len() + 1` long.
     positions: Vec<Position>,
+    /// The absolute ply of `positions[0]`: 0 from the empty board.
+    start: usize,
     result: Option<GameResult>,
     /// End marker from a loaded record, such as `resigns`. Not interpreted.
     end_marker: Option<String>,
@@ -50,9 +56,45 @@ impl Game {
         Game {
             moves: Vec::new(),
             positions: vec![Position::empty(Color::Gold)],
+            start: 0,
             result: None,
             end_marker: None,
         }
+    }
+
+    /// A game from a set position, `position` standing before move
+    /// `move_number` of its side to move (see [`start_ply`]). The position
+    /// isn't checked; [`crate::check_start_position`] does that.
+    pub fn from_position(position: Position, move_number: u32) -> Result<Game, GameError> {
+        let start = start_ply(move_number, position.side_to_move())?;
+        Ok(Game { moves: Vec::new(), positions: vec![position], start, result: None, end_marker: None })
+    }
+
+    /// The absolute ply of the first position: 0 from the empty board.
+    pub fn start_ply(&self) -> usize {
+        self.start
+    }
+
+    /// The set position the game starts from, or `None` from the empty board.
+    pub fn start_position(&self) -> Option<&Position> {
+        (self.start > 0).then(|| &self.positions[0])
+    }
+
+    /// The label of the move made from `ply`, such as `2g`.
+    pub fn move_label(&self, ply: usize) -> String {
+        notation::move_label(self.start + ply)
+    }
+
+    /// True if the move made from `ply` (counted from the first position)
+    /// is a setup.
+    pub fn is_setup_at(&self, ply: usize) -> bool {
+        Game::is_setup_ply(self.start + ply)
+    }
+
+    /// The first ply whose position counts for repetition: the first with
+    /// both sides placed.
+    fn first_counted(&self) -> usize {
+        2usize.saturating_sub(self.start)
     }
 
     pub fn moves(&self) -> &[Move] {
@@ -75,10 +117,10 @@ impl Game {
     /// Who wins by score if a game or turn limit ends the game now
     /// ([`limit_score_winner`]).
     pub fn score_winner(&self) -> Color {
-        limit_score_winner(self.positions.iter().skip(2).rev())
+        limit_score_winner(self.positions.iter().skip(self.first_counted()).rev())
     }
 
-    /// True if the move made from `ply` is a setup move.
+    /// True if the move made from absolute ply `ply` is a setup move.
     pub fn is_setup_ply(ply: usize) -> bool {
         ply < 2
     }
@@ -116,7 +158,7 @@ impl Game {
 
     pub fn play_setup(&mut self, placements: Vec<Placement>) -> Result<(), GameError> {
         self.check_can_move()?;
-        if !Game::is_setup_ply(self.ply_count()) {
+        if !self.is_setup_at(self.ply_count()) {
             return Err(GameError::ExpectedTurn);
         }
         let next = apply_setup(self.current_position(), &placements)?;
@@ -128,7 +170,7 @@ impl Game {
     /// Starts a turn from the current position.
     pub fn begin_turn(&self) -> Result<TurnBuilder, GameError> {
         self.check_can_move()?;
-        if Game::is_setup_ply(self.ply_count()) {
+        if self.is_setup_at(self.ply_count()) {
             return Err(GameError::ExpectedSetup);
         }
         Ok(TurnBuilder::new(self.current_position()))
@@ -142,10 +184,12 @@ impl Game {
         self.earlier_occurrences(ply, end).len() >= 2
     }
 
-    /// The moves (as plies, 0 = `1g`) after which `end` already stood,
-    /// counted as [`Game::is_third_repetition`] does.
+    /// The plies (counted from the first position) at which `end` already
+    /// stood, counted as [`Game::is_third_repetition`] does. Ply `n > 0`
+    /// is the position after the move labelled `move_label(n - 1)`; ply 0
+    /// is a set starting position.
     pub fn earlier_occurrences(&self, ply: usize, end: &Position) -> Vec<usize> {
-        (2..=ply).filter(|&i| self.positions.get(i) == Some(end)).map(|i| i - 1).collect()
+        (self.first_counted()..=ply).filter(|&i| self.positions.get(i) == Some(end)).collect()
     }
 
     /// How the game ends after `turn` from the position at `ply`, if it
@@ -153,14 +197,14 @@ impl Game {
     /// repetitions. Like [`Game::is_third_repetition`], only positions from
     /// `ply` back count.
     pub fn outcome_after(&self, ply: usize, turn: &Turn) -> Option<GameResult> {
-        let history = self.positions.get(2..=ply).unwrap_or(&[]).iter().chain([&turn.end]);
+        let history = self.positions.get(self.first_counted()..=ply).unwrap_or(&[]).iter().chain([&turn.end]);
         outcome_with_history(&turn.end, turn.start.side_to_move(), history)
     }
 
     /// Adds a turn built with [`Game::begin_turn`].
     pub fn play_turn(&mut self, turn: Turn) -> Result<Option<GameResult>, GameError> {
         self.check_can_move()?;
-        if Game::is_setup_ply(self.ply_count()) {
+        if self.is_setup_at(self.ply_count()) {
             return Err(GameError::ExpectedSetup);
         }
         if &turn.start != self.current_position() {
@@ -213,24 +257,39 @@ impl Game {
     pub(crate) fn from_parts(
         moves: Vec<Move>,
         positions: Vec<Position>,
+        start: usize,
         result: Option<GameResult>,
         end_marker: Option<String>,
     ) -> Game {
         debug_assert_eq!(positions.len(), moves.len() + 1);
-        Game { moves, positions, result, end_marker }
+        Game { moves, positions, start, result, end_marker }
     }
 
     /// Formats the game as a record, one move per line, each ending in `\n`.
+    /// A game from a set position starts with its `Position` tag.
     pub fn to_record(&self) -> String {
         let mut out = String::new();
+        if let Some(p) = self.start_position() {
+            out.push_str(&format!("[Position \"{}\"]\n\n", crate::record::position_tag(p)));
+        }
         for (ply, m) in self.moves.iter().enumerate() {
-            out.push_str(&notation::move_label(ply));
+            out.push_str(&self.move_label(ply));
             out.push(' ');
             out.push_str(&m.notation());
             out.push('\n');
         }
         out
     }
+}
+
+/// The absolute ply of a set position before move `move_number` of `side`
+/// (`2g` is ply 2). Set positions come after the setups, so the move number
+/// is at least 2.
+pub fn start_ply(move_number: u32, side: Color) -> Result<usize, GameError> {
+    if move_number < 2 {
+        return Err(GameError::SetPositionInSetup);
+    }
+    Ok(2 * (move_number as usize - 1) + side.index())
 }
 
 /// Plays record steps on `tb` and finishes the turn. Missing capture
@@ -303,7 +362,7 @@ mod tests {
         positions.extend(ends.iter().chain(&ends).cloned());
         positions.push(start.clone());
         let moves = vec![Move::Setup(Vec::new()); positions.len() - 1];
-        let mut g = Game::from_parts(moves, positions, None, None);
+        let mut g = Game::from_parts(moves, positions, 0, None, None);
         let mut tb = g.begin_turn().unwrap();
         tb.try_step(step("Ec1w")).unwrap();
         let turn = tb.finish().unwrap();
@@ -332,7 +391,7 @@ mod tests {
         }
         let before = g.ply_count();
         let start = g.position_at(2).unwrap().clone();
-        assert_eq!(g.earlier_occurrences(before, &start), [1, 5], "after 1s and 3s");
+        assert_eq!(g.earlier_occurrences(before, &start), [2, 6], "after 1s and 3s");
         assert_eq!(g.play_notation("ha6n"), Err(GameError::Repetition));
         assert_eq!(g.ply_count(), before, "rejected move isn't added");
         // A different move is fine.

@@ -8,6 +8,7 @@
 // closes its session itself on `pagehide`.
 import { type Api, api, apiFor, isGameWindow, session } from './api';
 import type { MatchSpec } from './bindings/MatchSpec';
+import type { PositionSpec } from './bindings/PositionSpec';
 import type { SessionId } from './bindings/SessionId';
 
 export const inTauri = '__TAURI_INTERNALS__' in window;
@@ -20,6 +21,8 @@ const gameTab = (id: SessionId) => `howdah-game-${id}`;
 export interface HandOff {
   /** The match it starts with, for a rematch. */
   spec: MatchSpec | null;
+  /** Opens the position editor on this position. */
+  editor?: PositionSpec;
 }
 
 const handOffKey = (id: SessionId) => `handoff.${id}`;

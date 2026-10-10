@@ -16,6 +16,8 @@ import type { MoveReplay } from './bindings/MoveReplay';
 import type { NodeId } from './bindings/NodeId';
 import type { PlayerGamesView } from './bindings/PlayerGamesView';
 import type { PlayerMatchView } from './bindings/PlayerMatchView';
+import type { PositionCheck } from './bindings/PositionCheck';
+import type { PositionSpec } from './bindings/PositionSpec';
 import type { PostalGameView } from './bindings/PostalGameView';
 import type { PositionView } from './bindings/PositionView';
 import type { ServerBotsView } from './bindings/ServerBotsView';
@@ -53,6 +55,18 @@ function makeApi(sid: () => SessionId | null) {
     getState: () => invoke<SessionView>('get_state', { session: sid() }),
     newGame: () => invoke<void>('new_game', { session: sid() }),
     loadGame: (record: string) => invoke<void>('load_game', { session: sid(), record }),
+    /** A new game from a set position (refused if it can't start one). */
+    newGameFrom: (position: PositionSpec) => invoke<void>('new_game_from', { session: sid(), position }),
+    /** The shown position, for the position editor. */
+    editorPosition: () => invoke<PositionSpec>('editor_position', { session: sid() }),
+    /** Reads a position in the short (`g [...]`) or long (board diagram) format. */
+    parsePosition: (text: string) => invoke<PositionSpec>('parse_position', { text }),
+    /** What keeps a position from starting a game, and the position written out. */
+    checkPosition: (position: PositionSpec) => invoke<PositionCheck>('check_position', { position }),
+    /** Applies typed edits: `Ra1` places, `Ra1n` moves, `Ra1x` removes, `g`/`s` side to move. */
+    editPosition: (position: PositionSpec, text: string) => invoke<PositionSpec>('edit_position', { position, text }),
+    /** Both default setups, gold to move. */
+    defaultPosition: () => invoke<PositionSpec>('default_position'),
     /** The game as a record: in full, or only its main line as a plain record. */
     exportGame: (mainLineOnly = false) => invoke<string>('export_game', { session: sid(), mainLineOnly }),
     gotoPly: (ply: number) => invoke<void>('goto_ply', { session: sid(), ply }),

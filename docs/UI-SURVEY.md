@@ -207,7 +207,7 @@ cover it.
   a plan, never sent, and Play sends the plan's first move. The
   exploration tint isn't done.
 - **[P2] Copy and paste everywhere (4steps context menu):**
-  - Copy the position (short format)
+  - Copy the position (short format; the position editor has it)
   - Copy the move sequence up to the current ply (done, in the move
     list's menu)
   - Paste a move or record anywhere (a record can be pasted in the Record
@@ -253,14 +253,96 @@ The current engine panel shows depth, eval, PV and log per side.
 
 ## 6. Position editor and puzzles
 
-- **[P2] Board editor (lichess `ui/editor`, 4steps "Set up custom
-  position"):**
-  - A palette of pieces; drag onto or off the board.
-  - Side to move, clear, and the starting setup.
-  - Validation that 4steps does in its puzzle loader: no unsupported piece
-    on a trap, no rabbit on its own goal row, piece counts within limits.
-  - Import and export of the short position format.
-  - "Start from this position" for play or analysis.
+- **[have] Board (position) editor** (2026-10-10; surveyed below): opened
+  from the lobby ("Position editor", both default setups) or from a game
+  window ("Edit position", `e`, the shown position), each time in a
+  window of its own, so the game it came from stays as it was. A palette
+  per side (with how many of each piece are left to place), drag on, off
+  and around the board, a click tool and a remove tool, right click to
+  take a piece off; side to move and move number; starting setup, clear,
+  flip, mirror and swap colors; typed placements; the short format kept
+  in step with the board, and the long format read and copied; problems
+  listed and their squares marked. Analyse starts free play from the
+  position (with analysis on, as the lobby's Analysis board), and Play…
+  opens New game with it, so a match against an engine or with clocks
+  starts there (a rematch starts there again). Records keep the start in
+  a `Position` tag. Still open:
+  - A position link or file (lichess's URL; we have no link scheme),
+    and an image of the position.
+  - Dragging a piece between windows, and pasting a position anywhere
+    in a game window (only the editor's box and New game's record dialog
+    read text).
+  - Editing the set position of a game already started (En Croissant
+    rebuilds the tree; we start a new one).
+  - Setups other than the two defaults (presets, see HANDOFF) and
+    positions in the setup phase.
+
+### What the position editor takes from each (2026-10-10)
+
+- **4steps** ("Set up custom position", `Ctrl+C`, a new game window, and
+  "Start custom setup with current position" in a game's menu, which
+  opens one on that position): pieces dragged around the board, a
+  right-click palette of the twelve pieces at a square, the off-board
+  docks (`offboard.cpp`) showing each side's missing pieces, and typed
+  input (`customizedTurnState` in `io.hpp`): `Ra1` places, `Ra1n` moves,
+  `Ra1x` removes, `g`/`s` sets the side. Finishing (a click off the
+  pieces) refuses unsupported pieces on traps and positions where the game
+  is already over. Its puzzle loader checks piece counts ("Too many of"),
+  a rabbit on the row it's heading for ("on goal square"), a missing
+  rabbit and unsupported trap pieces. **Taken:** a new window from the
+  current position, typed placements with the same syntax, the counts
+  of pieces left (as numbers on the palette rather than docks), and
+  every one of those checks. Right click removes instead of opening a
+  palette, since our palette is always shown.
+- **lichess** (`ui/editor`): spare pieces above and below the board with
+  pointer and trash tools (a click places the selected piece; a spare
+  dragged onto the board places one and goes back to the pointer), the side to move, "Starting
+  position", "Clear board", flip, a FEN box that follows the board and
+  applies on Enter (blur restores it), a position URL, and "Continue
+  from here" (play the computer or a friend), "Analysis board" and
+  "Study", enabled only for a legal, unfinished position (`chessops`
+  decides). **Taken:** the palettes and tools, the buttons, the short
+  format box kept in step (Enter applies, Escape restores), and the
+  actions, gated on the backend's check: Analyse and Play… (New game,
+  with an engine or a human, clocks or none). Not taken: castling and en
+  passant (no Arimaa counterpart), the URL and image export, studies.
+- **En Croissant** (Tauri + React): editing is a card on the analysis
+  board (`EditingCard`: a FEN input and `PiecesGrid`, its spare pieces
+  as a click-to-select grid); each change calls the tree store's
+  `setFen`, which replaces the whole tree with a new root. **Taken:** the
+  idea that a set position is the root of an ordinary game tree, so
+  analysis, variations, comments and records all work from it. Not taken:
+  editing in place, which throws the game away; ours starts in a new
+  window.
+- **Desktop chess GUIs** (ChessBase's and SCID's setup dialogs, Cute
+  Chess's board editor): typed piece lists, symmetry tools (flip, swap
+  colors) and material counts. **Taken:** mirror (Arimaa is symmetric
+  left to right) and swap colors (colors swapped and the board turned
+  over, with the other side to move: the same position for the other
+  side), and the counts on the palette. Nibbler has no editor beyond
+  pasting a FEN.
+
+**Arimaa-specific decisions:**
+- A set position stands at the start of a turn after both setups: a side
+  to move and a move number (`2g` unless given; the long format's label
+  or a record's first move gives one), no steps taken. Setup-phase
+  positions aren't offered: a game from the empty board already has the
+  setup UI, and a record keeps the setups as moves.
+- **Validation** (`check_start_position`): at most the starting number of
+  each piece, no piece alone on a trap, no rabbit on the row it's heading
+  for, both sides with a rabbit, and the side to move with a legal step.
+  An immobilized side or a missing rabbit would end the game at once.
+- **Repetition:** the set position knows no history, so it counts as the
+  first occurrence of itself and repetition counts from there. A position
+  from the middle of a game loses the earlier occurrences; "Edit
+  position" says nothing about that, as 4steps doesn't.
+- **Engines** get `newgame` and `setposition` before the moves. Sharp
+  ignored the side in `setposition`; our fork honors it (arimaasharp,
+  after v2026.10.10), so silver-to-move positions need a Sharp built
+  after that. OpFor and pyrimaa's engines already did.
+- **Records** write the start as `[Position "g [...]"]` (short format with
+  the side to move), with moves numbered from its move number.
+
 - **[P3] Puzzles (4steps `puzzles.cpp`, lichess `ui/puzzle`):**
   - 4steps loads puzzle files and has reshuffle, hint (highlights a square
     the solution changes), answer, auto-advance, auto-undo and

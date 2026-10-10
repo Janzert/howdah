@@ -25,6 +25,8 @@
   import MoveList from './lib/MoveList.svelte';
   import CommentBox from './lib/CommentBox.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
+  import PositionEditor from './lib/editor/PositionEditor.svelte';
+  import type { PositionSpec } from './lib/bindings/PositionSpec';
   import ChatPanel from './lib/ChatPanel.svelte';
   import CloseWindowDialog from './lib/CloseWindowDialog.svelte';
   import PlayerBar from './lib/PlayerBar.svelte';
@@ -97,8 +99,14 @@
   let yourTurnPending = $state(false);
   // The game-end sound waits for the final move too, with the dialog.
   let gameEndSound: SoundName | null = null;
+  const handOff = takeHandOff();
   /** The last match started from the new-game dialog, for a rematch. */
-  let lastSpec = $state<MatchSpec | null>(takeHandOff()?.spec ?? null);
+  let lastSpec = $state<MatchSpec | null>(handOff?.spec ?? null);
+  /** The position editor's starting position while it's open: the window
+   * shows the editor instead of its game until a game starts from it. */
+  let editing = $state<PositionSpec | null>(handOff?.editor ?? null);
+  /** The edited position the new-game dialog starts from. */
+  let playFrom = $state<PositionSpec | null>(null);
   let engines = $state<EngineSpec[]>([]);
   /** The latest analysis update. */
   let analysis = $state<AnalysisView | null>(null);
@@ -148,9 +156,10 @@
     try {
       const free =
         spec.gold.kind === 'human' && spec.silver.kind === 'human' && !spec.goldTimeControl && !spec.silverTimeControl;
-      await (free ? api.newGame() : api.startMatch(spec));
+      await (free ? (spec.start ? api.newGameFrom(spec.start) : api.newGame()) : api.startMatch(spec));
       lastSpec = free ? null : spec;
       if (!free) play('gameStart');
+      editing = null;
       return null;
     } catch (e) {
       return errorMessage(e);
@@ -173,6 +182,7 @@
       goldTimeControl: s.silverTimeControl,
       silverTimeControl: s.goldTimeControl,
       takebacks: s.takebacks,
+      start: s.start,
     };
     return JSON.stringify(swapped) === JSON.stringify(s) ? null : swapped;
   });
@@ -351,6 +361,10 @@
 
   // The title names the game, and says when it waits on the user.
   $effect(() => {
+    if (editing) {
+      void setTitle('Position editor – Howdah');
+      return;
+    }
     if (!view) return;
     const name = gameTitle(view) ?? 'Untitled game';
     void setTitle(`${waitsOnUser(view) ? 'Your move · ' : ''}${name} – Howdah`);
@@ -427,6 +441,36 @@
     if (remote === 0) return { reason: 'A match is being played. Closing the window stops it.', confirm: 'Stop match and close' };
     return null;
   });
+
+  /** Opens the position editor on the shown position, in a new window
+   * (as 4steps does), so this game stays as it is. */
+  async function editPosition() {
+    try {
+      const position = await api.editorPosition();
+      await openGameWindow(undefined, { spec: null, editor: position });
+    } catch (e) {
+      flash(errorMessage(e));
+    }
+  }
+
+  /** The editor's Analyse: free play from the position, with analysis on
+   * when there's an engine (as the lobby's Analysis board). */
+  async function analyseFrom(position: PositionSpec): Promise<string | null> {
+    try {
+      await api.newGameFrom(position);
+    } catch (e) {
+      return errorMessage(e);
+    }
+    editing = null;
+    lastSpec = null;
+    if (!analysing && analysisEngine(engines, settings.analysisEngine)) startAnalysis();
+    return null;
+  }
+
+  function closeEditor() {
+    editing = null;
+    if (view) model.snap(view.position.pieces);
+  }
 
   /** The analysis panel is showing: analysis is on, or it failed. */
   const analysisShown = $derived(analysing || analysis?.state === 'failed');
@@ -573,10 +617,11 @@
     },
     help: () => (showHelp = true),
     nextGame: () => void nextGame(),
+    editPosition: () => void editPosition(),
   };
 
   function onkeydown(e: KeyboardEvent) {
-    if (!view || record != null || showNewGame || showEngines || showGameEnd || showHelp || closing) return;
+    if (!view || editing || record != null || showNewGame || showEngines || showGameEnd || showHelp || closing) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, select')) return;
     const shortcut = shortcutFor(e);
@@ -590,147 +635,162 @@
 
 <svelte:window {onkeydown} />
 
-<main>
-  <section class="board-area">
-    {#if view}
-      <PlayerBar
-        {view}
-        side={flipped ? 'gold' : 'silver'}
-        {receivedAt}
-        {now}
-        {theme}
-        away={watch?.away[flipped ? 0 : 1] ?? false}
-      />
-    {/if}
-    <div class="board-wrap" class:with-bar={analysing}>
-      {#if analysing}
-        <div class="eval-box">
-          <EvalBar evaluation={shown.line?.eval ?? null} {flipped} />
+{#if editing}
+  <PositionEditor
+    initial={editing}
+    {theme}
+    bind:flipped
+    onAnalyse={analyseFrom}
+    onPlay={(position) => {
+      playFrom = position;
+      showNewGame = true;
+    }}
+    onClose={closeEditor}
+  />
+{:else}
+  <main>
+    <section class="board-area">
+      {#if view}
+        <PlayerBar
+          {view}
+          side={flipped ? 'gold' : 'silver'}
+          {receivedAt}
+          {now}
+          {theme}
+          away={watch?.away[flipped ? 0 : 1] ?? false}
+        />
+      {/if}
+      <div class="board-wrap" class:with-bar={analysing}>
+        {#if analysing}
+          <div class="eval-box">
+            <EvalBar evaluation={shown.line?.eval ?? null} {flipped} />
+          </div>
+        {/if}
+        {#if missedMove && view?.players}
+          {@const mover = liveMover(view)}
+          <button class="live-alert" onclick={gotoEnd} aria-live="polite">
+            <span class="dot {mover}"></span>
+            <span>{view.players[mover].name} played <code>{missedMove}</code></span>
+            <strong>Back to live game</strong> <kbd>End</kbd>
+          </button>
+        {/if}
+        <div class="board-box">
+          <Board
+            {model}
+            {theme}
+            {flipped}
+            {interactive}
+            pushPending={view?.turn?.pushPending ?? null}
+            lastMove={view?.turn?.steps.length ? null : (view?.lastMove ?? null)}
+            {pvMove}
+            coordinates={settings.coordinates}
+            hoverInput={settings.hoverInput}
+            positionKey={view ? `${view.ply}|${view.position.short}|${view.canInput}|${view.turn?.steps.length ?? 0}` : ''}
+            onStep={(from, to) => run(api.tryStep(from, to))}
+            {onDrop}
+            legalTargets={(from) => api.legalTargets(from)}
+            planRoute={(from, to, path) => (view?.phase === 'setup' ? Promise.resolve(null) : api.planRoute(from, to, path))}
+          />
+        </div>
+      </div>
+      {#if view}
+        <PlayerBar
+          {view}
+          side={flipped ? 'silver' : 'gold'}
+          {receivedAt}
+          {now}
+          {theme}
+          away={watch?.away[flipped ? 1 : 0] ?? false}
+        />
+      {/if}
+      <!-- The game's chat, below the board as in the arimaa.com web client. -->
+      {#if view && watch && (watch.side != null || watch.chat.length > 0)}
+        <ChatPanel {watch} {view} />
+      {/if}
+      {#if message}<div class="message" role="status">{message}</div>{/if}
+    </section>
+
+    <aside class="panel">
+      {#if view}
+        <TurnBar
+          {view}
+          onCommit={commit}
+          onUndo={() => run(api.undoStep())}
+          onTakeBack={() => run(api.takeBack())}
+          onGotoLive={gotoEnd}
+          onCancel={() => run(api.cancelTurn())}
+          onMoveNow={() => run(api.engineMoveNow())}
+          onEndMatch={() => run(api.endMatch())}
+        />
+        <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
+        <CommentBox {view} {run} />
+        {#if watch}
+          <WatchPanel {watch} {view} {run} {receivedAt} {now} onNewGame={newOnlineGame} />
+        {/if}
+        {#if hasEngine && view.players}
+          <EnginePanel players={view.players} resetKey={matchKey} {engines} />
+        {/if}
+        {#if analysisShown}
+          <AnalysisPanel
+            {view}
+            {analysis}
+            line={shown.line}
+            stored={shown.stored}
+            {engines}
+            {theme}
+            {flipped}
+            sharesCpu={matchRunning}
+            onEngine={useAnalysisEngine}
+            onAdd={addPv}
+            preview={(line, i) => api.previewLine(line.node, pvMoves(line, i))}
+          />
+        {/if}
+        <div class="nav">
+          <button aria-label="Start" onclick={() => goto(0)} title="Start (Home or 0)">⏮</button>
+          <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (← or k)">◀</button>
+          <button aria-label="Forward" onclick={() => goto(view!.ply + 1)} title="Forward (→ or j); at the latest move, replays it">▶</button>
+          <button aria-label="End" onclick={gotoEnd} title="End (End or $)">⏭</button>
         </div>
       {/if}
-      {#if missedMove && view?.players}
-        {@const mover = liveMover(view)}
-        <button class="live-alert" onclick={gotoEnd} aria-live="polite">
-          <span class="dot {mover}"></span>
-          <span>{view.players[mover].name} played <code>{missedMove}</code></span>
-          <strong>Back to live game</strong> <kbd>End</kbd>
+      <div class="tools">
+        <button onclick={() => (showNewGame = true)} title="A new game in this window">New game</button>
+        <button onclick={() => openGameWindow().catch((e) => flash(errorMessage(e)))} title="Open another window, with a game of its own">
+          New window
         </button>
-      {/if}
-      <div class="board-box">
-        <Board
-          {model}
-          {theme}
-          {flipped}
-          {interactive}
-          pushPending={view?.turn?.pushPending ?? null}
-          lastMove={view?.turn?.steps.length ? null : (view?.lastMove ?? null)}
-          {pvMove}
-          coordinates={settings.coordinates}
-          hoverInput={settings.hoverInput}
-          positionKey={view ? `${view.ply}|${view.position.short}|${view.canInput}|${view.turn?.steps.length ?? 0}` : ''}
-          onStep={(from, to) => run(api.tryStep(from, to))}
-          {onDrop}
-          legalTargets={(from) => api.legalTargets(from)}
-          planRoute={(from, to, path) => (view?.phase === 'setup' ? Promise.resolve(null) : api.planRoute(from, to, path))}
-        />
+        <button
+          onclick={toggleAnalysis}
+          aria-pressed={analysisShown}
+          disabled={!analysisShown && view != null && !view.analysisAllowed}
+          title={view && !view.analysisAllowed
+            ? 'No analysis during your arimaa.com game (after leaving one mid-game, load another game first)'
+            : analysisShown
+              ? 'Turn analysis off (l)'
+              : 'Analyse the shown position with an engine (l)'}
+        >
+          Analysis
+        </button>
+        <button onclick={openRecord}>Record</button>
+        <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
+        <button onclick={editPosition} title="Set up a position from the shown one, in a new window (e)">Edit position</button>
+        <button
+          onclick={nextGame}
+          disabled={nextCount === 0}
+          title={nextCount > 0 ? 'The next game waiting on your move (n)' : 'No other game waits on your move (n)'}
+        >
+          Next game{#if nextCount > 0}<span class="badge">{nextCount}</span>{/if}
+        </button>
+        <button
+          onclick={() => showLobby()}
+          title="The lobby: new games, open windows, arimaa.com, engines and settings{lobbyWaiting > 0
+            ? ` (${lobbyWaiting} waiting on you)`
+            : ''}"
+        >
+          Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
+        </button>
       </div>
-    </div>
-    {#if view}
-      <PlayerBar
-        {view}
-        side={flipped ? 'silver' : 'gold'}
-        {receivedAt}
-        {now}
-        {theme}
-        away={watch?.away[flipped ? 1 : 0] ?? false}
-      />
-    {/if}
-    <!-- The game's chat, below the board as in the arimaa.com web client. -->
-    {#if view && watch && (watch.side != null || watch.chat.length > 0)}
-      <ChatPanel {watch} {view} />
-    {/if}
-    {#if message}<div class="message" role="status">{message}</div>{/if}
-  </section>
-
-  <aside class="panel">
-    {#if view}
-      <TurnBar
-        {view}
-        onCommit={commit}
-        onUndo={() => run(api.undoStep())}
-        onTakeBack={() => run(api.takeBack())}
-        onGotoLive={gotoEnd}
-        onCancel={() => run(api.cancelTurn())}
-        onMoveNow={() => run(api.engineMoveNow())}
-        onEndMatch={() => run(api.endMatch())}
-      />
-      <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
-      <CommentBox {view} {run} />
-      {#if watch}
-        <WatchPanel {watch} {view} {run} {receivedAt} {now} onNewGame={newOnlineGame} />
-      {/if}
-      {#if hasEngine && view.players}
-        <EnginePanel players={view.players} resetKey={matchKey} {engines} />
-      {/if}
-      {#if analysisShown}
-        <AnalysisPanel
-          {view}
-          {analysis}
-          line={shown.line}
-          stored={shown.stored}
-          {engines}
-          {theme}
-          {flipped}
-          sharesCpu={matchRunning}
-          onEngine={useAnalysisEngine}
-          onAdd={addPv}
-          preview={(line, i) => api.previewLine(line.node, pvMoves(line, i))}
-        />
-      {/if}
-      <div class="nav">
-        <button aria-label="Start" onclick={() => goto(0)} title="Start (Home or 0)">⏮</button>
-        <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (← or k)">◀</button>
-        <button aria-label="Forward" onclick={() => goto(view!.ply + 1)} title="Forward (→ or j); at the latest move, replays it">▶</button>
-        <button aria-label="End" onclick={gotoEnd} title="End (End or $)">⏭</button>
-      </div>
-    {/if}
-    <div class="tools">
-      <button onclick={() => (showNewGame = true)} title="A new game in this window">New game</button>
-      <button onclick={() => openGameWindow().catch((e) => flash(errorMessage(e)))} title="Open another window, with a game of its own">
-        New window
-      </button>
-      <button
-        onclick={toggleAnalysis}
-        aria-pressed={analysisShown}
-        disabled={!analysisShown && view != null && !view.analysisAllowed}
-        title={view && !view.analysisAllowed
-          ? 'No analysis during your arimaa.com game (after leaving one mid-game, load another game first)'
-          : analysisShown
-            ? 'Turn analysis off (l)'
-            : 'Analyse the shown position with an engine (l)'}
-      >
-        Analysis
-      </button>
-      <button onclick={openRecord}>Record</button>
-      <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
-      <button
-        onclick={nextGame}
-        disabled={nextCount === 0}
-        title={nextCount > 0 ? 'The next game waiting on your move (n)' : 'No other game waits on your move (n)'}
-      >
-        Next game{#if nextCount > 0}<span class="badge">{nextCount}</span>{/if}
-      </button>
-      <button
-        onclick={() => showLobby()}
-        title="The lobby: new games, open windows, arimaa.com, engines and settings{lobbyWaiting > 0
-          ? ` (${lobbyWaiting} waiting on you)`
-          : ''}"
-      >
-        Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
-      </button>
-    </div>
-  </aside>
-</main>
+    </aside>
+  </main>
+{/if}
 
 {#if closing}
   <CloseWindowDialog
@@ -753,8 +813,12 @@
 {#if showNewGame}
   <NewGameDialog
     {engines}
+    start={playFrom}
     onStart={startGame}
-    onClose={() => (showNewGame = false)}
+    onClose={() => {
+      showNewGame = false;
+      playFrom = null;
+    }}
     onManageEngines={() => {
       showNewGame = false;
       showEngines = true;

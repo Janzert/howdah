@@ -31,8 +31,8 @@ use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec,
     GameroomGames, GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec,
-    PositionView, PostalGameView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
-    StartedBotView, StepTarget, WatchView,
+    PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView, ServerBotsView,
+    SessionId, SessionUpdate, SessionView, SessionsChanged, StartedBotView, StepTarget, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -252,6 +252,21 @@ impl Backend {
         })
     }
 
+    /// A new game in the session from a set position (the position
+    /// editor's Analyse).
+    pub fn new_game_from(&self, id: SessionId, position: &PositionSpec) -> Result<(), ApiError> {
+        let start = position.to_start()?;
+        self.handle(id)?.stop_watching();
+        self.mutate(id, |s| s.new_game_from(&start).map(|_| Vec::new()))
+    }
+
+    /// The position the session shows (before any turn being entered), for
+    /// the position editor. During the setups it's the pieces placed so
+    /// far, with gold to move at `2g`.
+    pub fn editor_position(&self, id: SessionId) -> Result<PositionSpec, ApiError> {
+        self.read(id, |s| PositionSpec::from_start(&s.shown_start()))
+    }
+
     pub fn load_game(&self, id: SessionId, record: &str) -> Result<(), ApiError> {
         self.handle(id)?.stop_watching();
         self.mutate(id, |s| s.load(record).map(|_| Vec::new()))
@@ -417,10 +432,10 @@ impl Backend {
             }
         };
         let tcs = [parse(&spec.gold_time_control)?, parse(&spec.silver_time_control)?];
+        let start = spec.start.as_ref().map(PositionSpec::to_start).transpose()?;
         self.handle(id)?.stop_watching();
         self.mutate(id, |s| {
-            s.start_match(players, tcs, spec.takebacks);
-            Ok(Vec::new())
+            s.start_match_from(players, tcs, spec.takebacks, start.as_ref()).map(|_| Vec::new())
         })
     }
 
@@ -852,6 +867,12 @@ impl Backend {
             "get_state" => ok(self.get_state(sid()?)?),
             "new_game" => ok(self.new_game(sid()?)?),
             "load_game" => ok(self.load_game(sid()?, &arg::<String>(args, "record")?)?),
+            "new_game_from" => ok(self.new_game_from(sid()?, &arg(args, "position")?)?),
+            "editor_position" => ok(self.editor_position(sid()?)?),
+            "parse_position" => ok(parse_position(&arg::<String>(args, "text")?)?),
+            "check_position" => ok(check_position(&arg(args, "position")?)?),
+            "edit_position" => ok(edit_position(&arg(args, "position")?, &arg::<String>(args, "text")?)?),
+            "default_position" => ok(default_position()),
             "export_game" => ok(self.export_game(sid()?, arg(args, "mainLineOnly")?)?),
             "goto_ply" => ok(self.goto_ply(sid()?, arg(args, "ply")?)?),
             "goto_live" => ok(self.goto_live(sid()?)?),
@@ -1015,6 +1036,48 @@ impl Backend {
 }
 
 /// Reads one named argument, as Tauri does for a command parameter.
+/// Reads a position in the short or long format (position editor import).
+pub fn parse_position(text: &str) -> Result<PositionSpec, ApiError> {
+    let start = howdah_arimaa::StartPosition::parse(text).map_err(|e| ApiError::illegal(e.to_string()))?;
+    Ok(PositionSpec::from_start(&start))
+}
+
+/// What keeps a position from starting a game, and the position written
+/// out, for the position editor.
+pub fn check_position(position: &PositionSpec) -> Result<PositionCheck, ApiError> {
+    use howdah_arimaa::{Piece, PieceKind, check_start_position};
+    let start = position.to_start()?;
+    let p = &start.position;
+    let problems = check_start_position(p)
+        .iter()
+        .map(|problem| PositionProblemView { message: problem.to_string(), squares: problem.squares(p) })
+        .collect();
+    let left = Color::ALL
+        .into_iter()
+        .flat_map(|color| PieceKind::ALL.into_iter().rev().map(move |kind| Piece::new(color, kind)))
+        .map(|piece| (piece.letter(), piece.kind.initial_count() as i32 - p.count(piece) as i32))
+        .collect();
+    Ok(PositionCheck {
+        problems,
+        short: start.to_short_string(),
+        long: start.to_long_string(),
+        label: start.label(),
+        left,
+    })
+}
+
+/// Applies typed edits (`Ra1 Ra1n Ra1x s`) to a position.
+pub fn edit_position(position: &PositionSpec, text: &str) -> Result<PositionSpec, ApiError> {
+    let mut start = position.to_start()?;
+    start.apply_edits(text).map_err(|e| ApiError::illegal(e.to_string()))?;
+    Ok(PositionSpec::from_start(&start))
+}
+
+/// Both default setups, gold to move at `2g`: the editor's starting position.
+pub fn default_position() -> PositionSpec {
+    PositionSpec::from_start(&howdah_arimaa::StartPosition::new(howdah_arimaa::default_start()))
+}
+
 fn arg<T: DeserializeOwned>(args: &Value, name: &str) -> Result<T, ApiError> {
     let v = args.get(name).cloned().unwrap_or(Value::Null);
     serde_json::from_value(v).map_err(|e| ApiError::state(format!("argument {name:?}: {e}")))

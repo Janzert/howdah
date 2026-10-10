@@ -477,6 +477,70 @@ pub struct MatchSpec {
     /// Whether played moves can be taken back.
     #[serde(default)]
     pub takebacks: bool,
+    /// A set position to start from instead of the empty board.
+    #[serde(default)]
+    #[ts(optional)]
+    pub start: Option<PositionSpec>,
+}
+
+/// A set position (position editor): the board in AEI's short format, the
+/// side to move and the move number, so `2g` is the first turn after the
+/// setups.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PositionSpec {
+    /// `[` + 64 squares from a8 to h1 + `]`, a space for an empty square.
+    pub short: String,
+    pub side_to_move: Color,
+    pub move_number: u32,
+}
+
+impl PositionSpec {
+    pub fn from_start(s: &howdah_arimaa::StartPosition) -> PositionSpec {
+        PositionSpec {
+            short: s.position.to_short_string(),
+            side_to_move: s.position.side_to_move(),
+            move_number: s.move_number,
+        }
+    }
+
+    pub fn to_start(&self) -> Result<howdah_arimaa::StartPosition, ApiError> {
+        let position = howdah_arimaa::Position::from_short_string(self.side_to_move, &self.short)
+            .map_err(|e| ApiError::illegal(e.to_string()))?;
+        if self.move_number < 2 {
+            return Err(ApiError::illegal("a set position comes after the setups (move 2 or later)"));
+        }
+        Ok(howdah_arimaa::StartPosition { position, move_number: self.move_number })
+    }
+}
+
+/// What the position editor shows about a position: what keeps it from
+/// starting a game, and the position in both formats.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PositionCheck {
+    pub problems: Vec<PositionProblemView>,
+    /// The short format with the side to move, `g [...]`, as the record's
+    /// `Position` tag and AEI's `setposition` take it.
+    pub short: String,
+    /// The long format: the move label, then the board diagram.
+    pub long: String,
+    /// The first move's label, e.g. `2g`.
+    pub label: String,
+    /// How many pieces of each kind each side has left to place, by
+    /// piece letter (`E`, `m`, ...); negative when there are too many.
+    pub left: Vec<(char, i32)>,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PositionProblemView {
+    pub message: String,
+    /// The squares it's about, to mark on the board.
+    pub squares: Vec<Square>,
 }
 
 /// A configured engine.

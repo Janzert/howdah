@@ -25,7 +25,18 @@ interface BoardParts {
   clientPoint: (sq: Square) => { x: number; y: number };
 }
 
+/** The position editor, while it's open. */
+export interface EditorState {
+  /** The board in the short format with the side to move, `g [...]`. */
+  short: string;
+  label: string;
+  problems: string[];
+  /** The selected palette tool: `pointer`, `delete` or a piece letter. */
+  tool: string;
+}
+
 let app: AppParts | null = null;
+let editor: (() => EditorState) | null = null;
 let board: BoardParts | null = null;
 let lastEvent = 0;
 
@@ -47,7 +58,7 @@ function need<T>(part: T | null, what: string): T {
 }
 
 /** Sends a pointer event at a square's center, or 35% of the way toward `toward`. */
-function pointer(type: string, sq: Square, buttons: number, toward?: Square) {
+function pointer(type: string, sq: Square, buttons: number, toward?: Square, button = 0) {
   const b = need(board, 'board');
   let p = b.clientPoint(sq);
   if (toward != null) {
@@ -61,7 +72,7 @@ function pointer(type: string, sq: Square, buttons: number, toward?: Square) {
       pointerId: 1,
       pointerType: 'mouse',
       isPrimary: true,
-      button: 0,
+      button,
       buttons,
       clientX: p.x,
       clientY: p.y,
@@ -143,6 +154,17 @@ const hooks = {
     pointer('pointerup', sq, 0, t);
     await idle();
   },
+  /** Presses and releases the right button on a square (the position
+   * editor takes a piece off with it). */
+  async rightClick(square: string): Promise<void> {
+    const sq = parseSquare(square);
+    pointer('pointerdown', sq, 2, undefined, 2);
+    await frame();
+    pointer('pointerup', sq, 0, undefined, 2);
+    await idle();
+  },
+  /** The position editor's state, while it's open. */
+  editor: (): EditorState => JSON.parse(JSON.stringify(need(editor, 'position editor')())),
   /** Client coordinates of a square's center, for tools that click by position. */
   squareCenter: (square: string) => need(board, 'board').clientPoint(parseSquare(square)),
   squareName,
@@ -162,6 +184,10 @@ export function registerApp(parts: AppParts): void {
     window.__arimaa = hooks;
     void on('game://changed', () => (lastEvent = performance.now()));
   }
+}
+
+export function registerEditor(state: (() => EditorState) | null): void {
+  editor = state;
 }
 
 export function registerBoard(parts: BoardParts | null): void {

@@ -50,9 +50,10 @@ From `ENGINES.md`, as they bear on analysis:
 - **Scores** are from the mover's side. OpFor's are centi-rabbits, with a
   win near ±32,650 (`WIN_SCORE` 64000 / 1.96). Sharp's are about 10 per
   centi-rabbit, with wins near ±1,000,000 (`SearchEval::Decided`).
-- **Positions:** Sharp ignores the side in `setposition`, so analysis
-  sends `newgame` plus a `makemove` per move, as matches do. That also
-  gives the engine the history it needs for repetition.
+- **Positions:** analysis sends `newgame` plus a `makemove` per move, as
+  matches do, which gives the engine the history it needs for
+  repetition (and older Sharp builds ignore the side in `setposition`).
+  A game from a set position starts with `setposition` (`ENGINES.md`).
 
 ### Engine profiles
 

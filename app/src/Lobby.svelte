@@ -116,6 +116,15 @@
     });
   }
 
+  /** The position editor in a new window, starting from both default setups. */
+  async function positionEditor() {
+    try {
+      await openGameWindow(undefined, { spec: null, editor: await api.defaultPosition() });
+    } catch (e) {
+      flash(errorMessage(e));
+    }
+  }
+
   async function analysisBoard() {
     const engine = analysisEngine(engines, settings.analysisEngine);
     const error = await openWindow(engine ? (a) => a.setAnalysis(engine.id) : undefined);
@@ -234,6 +243,7 @@
           <button onclick={() => (showRecord = true)} title="A game record from a file or pasted text">
             Open record
           </button>
+          <button onclick={positionEditor} title="Set up a position to play or analyse from">Position editor</button>
         </div>
       </section>
 

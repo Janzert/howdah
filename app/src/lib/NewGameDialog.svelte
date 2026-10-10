@@ -4,17 +4,20 @@
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { MatchSpec } from './bindings/MatchSpec';
   import type { PlayerSpec } from './bindings/PlayerSpec';
+  import type { PositionSpec } from './bindings/PositionSpec';
   import GameOptionsDialog from './GameOptionsDialog.svelte';
   import TimeControlInput from './TimeControlInput.svelte';
 
   interface Props {
     engines: EngineSpec[];
+    /** A set position to start from (the position editor's Play). */
+    start?: PositionSpec | null;
     /** Resolves to an error message, or null on success. */
     onStart: (spec: MatchSpec) => Promise<string | null>;
     onClose: () => void;
     onManageEngines: () => void;
   }
-  let { engines, onStart, onClose, onManageEngines }: Props = $props();
+  let { engines, start: from = null, onStart, onClose, onManageEngines }: Props = $props();
 
   function pref(key: string, fallback: string): string {
     try {
@@ -79,6 +82,7 @@
       goldTimeControl: g.trim() || null,
       silverTimeControl: s.trim() || null,
       takebacks,
+      ...(from ? { start: from } : {}),
     });
     if (!error) onClose();
   }
@@ -108,6 +112,11 @@
 
 <dialog bind:this={dialog} onclose={onClose} aria-labelledby="new-game-title">
   <h2 id="new-game-title">New game</h2>
+  {#if from}
+    <p class="from">
+      From the edited position: {from.sideToMove === 'gold' ? 'Gold' : 'Silver'} to move, move {from.moveNumber}
+    </p>
+  {/if}
   <div class="grid">
     <label for="ng-gold"><span class="dot gold"></span> Gold</label>
     {@render side('gold', 'ng-gold')}
@@ -182,6 +191,11 @@
   h2 {
     margin: 0 0 12px;
     font-size: 16px;
+  }
+  .from {
+    margin: -6px 0 12px;
+    font-size: 13px;
+    color: var(--muted);
   }
   .player {
     display: flex;

@@ -12,10 +12,12 @@ working Python controller. Engine quirks live in one place in the code,
   channel and the legacy 2008cc mode aren't supported; add them if an
   engine needs them.
 
-- **Positions go as `newgame` plus a `makemove` per move**, never
-  `setposition`: Sharp ignores the side to move in `setposition`, and the
-  move list gives the engine the history it needs for repetition. When the
-  new move list extends the last one, only the new moves are sent.
+- **Positions go as `newgame` plus a `makemove` per move**, and a game
+  from a set position (the position editor) starts with `setposition`
+  after `newgame`. The move list gives the engine the history it needs
+  for repetition, so `setposition` is never used for a position reached
+  by moves. When the new move list extends the last one (from the same
+  start), only the new moves are sent.
 - **Moves are sent in normal form**, with capture tokens (`Eg4s rh4x`).
   Sharp and pyrimaa's `simple_engine` both accept it.
 - **Clocks:** the time-control options (`tcmove`, `tcreserve`, ...) at
@@ -90,8 +92,10 @@ Linux, macOS and Windows.
   `stop` again (a "move now" right after `go`). Our fork answers such a
   `stop` with a move from a quick one-turn search instead (arimaasharp
   65e797e, after v2026.10.6), so only older builds need this.
-- **`setposition`** wants exactly `[` + 64 squares + `]`, and ignores the
-  side: with `s` it still searches for gold.
+- **`setposition`** wants exactly `[` + 64 squares + `]`. Up to v2026.10.10
+  it ignored the side (with `s` it still searched for gold); our fork
+  honors it since arimaasharp d9f8171 (2026-10-10), so a set position
+  with silver to move needs a newer build.
 - **Clock:** it keeps its own reserve (a default of 60 s showed in its log),
   so it needs `greserve`/`sreserve` as well as the time control.
 - `threads` and `hash` work.
