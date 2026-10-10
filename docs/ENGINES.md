@@ -68,9 +68,19 @@ Linux, macOS and Windows.
   lines.
 - **No `go infinite`.** `setoption name ignoretc value true` (allowed in
   release builds) makes `go` search until `stop`, which it answers at once.
-- **`depth`** stops the search at that many steps (raised to at least 4;
-  0 or less is no limit in release builds). The time control still
-  applies, so a fixed-depth search also needs `ignoretc`.
+- **`depth`** stops the search at that many steps (raised to at least 4,
+  capped at 96, `AUTO_DEPTH`; 0 or less is no limit in release builds).
+  The time control still applies, and Sharp keeps its own reserve
+  without one, so a fixed-depth search also needs `ignoretc`. Iterations
+  start at the steps left in the turn (4 at its start) and go up a step
+  at a time. At a depth of 8 or less (outside dev builds) Sharp adds a
+  brief last iteration one step deeper over only the best root moves
+  (about 10, `numMoves/500 + 10`), and the move comes from it: `depth 6`
+  logs `ID Depth` 4 to 7 and ends with `Depth 7`, and `depth 8` and
+  `depth 9` both end at 9 (`searchID` and `genFSearchMoves` in
+  `search/search.cpp`, unchanged from upstream). The `Depth` in its logs
+  is the last iteration plus the fraction of its root moves finished,
+  so `12.0233+` is 2% of the way through iteration 13.
 - **A `stop` right after `go`** (within a few ms, before its search thread
   starts) gets no `bestmove`: the search reports a null move, which Sharp
   logs as `Error: Bot tried to make illegal move:` before waiting for
