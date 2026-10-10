@@ -858,6 +858,55 @@ pub struct PlayerGamesView {
     pub next: Option<u32>,
 }
 
+/// A bot arimaa.com runs, which anyone can start a game against.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ServerBotView {
+    /// Its username (`bot_…`).
+    pub name: String,
+    pub rating: Option<u32>,
+    /// The rating's uncertainty (30 the most accurate, 120 the least).
+    pub rating_uncertainty: Option<u32>,
+    /// Its control page, which `start_gameroom_bot` takes.
+    pub page: String,
+    /// Whether the user has yet to beat it (the bot ladder's "To be won").
+    pub to_be_won: bool,
+    /// The user's games against it, won and lost, once they've played it.
+    pub games: Option<u32>,
+    pub won: Option<u32>,
+    pub lost: Option<u32>,
+}
+
+/// What a server bot's page says about it.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct BotInfoView {
+    pub about: Option<String>,
+    /// Whether it runs, and how many may at once, as its page says.
+    pub status: Option<String>,
+    /// The time control of the games it opens.
+    pub time_control: Option<String>,
+    pub rated: Option<bool>,
+    /// Whether players may start it.
+    pub can_start: bool,
+}
+
+/// A server bot started: what the server answered, and the game the bot
+/// opened, once it shows in the open games.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StartedBotView {
+    /// The text of the server's answer.
+    pub message: String,
+    /// The game's gameroom id; none if it didn't show in time.
+    pub gid: Option<String>,
+    /// Whether that game is rated.
+    pub rated: bool,
+}
+
 /// The gameroom's game lists.
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

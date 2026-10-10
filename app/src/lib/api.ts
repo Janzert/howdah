@@ -3,6 +3,7 @@
 // `game://changed` event (see events.ts).
 import { invoke } from '@tauri-apps/api/core';
 import type { ApiError } from './bindings/ApiError';
+import type { BotInfoView } from './bindings/BotInfoView';
 import type { Color } from './bindings/Color';
 import type { EngineCatalogView } from './bindings/EngineCatalogView';
 import type { EngineIdentity } from './bindings/EngineIdentity';
@@ -17,9 +18,11 @@ import type { PlayerGamesView } from './bindings/PlayerGamesView';
 import type { PlayerMatchView } from './bindings/PlayerMatchView';
 import type { PostalGameView } from './bindings/PostalGameView';
 import type { PositionView } from './bindings/PositionView';
+import type { ServerBotView } from './bindings/ServerBotView';
 import type { SessionId } from './bindings/SessionId';
 import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
+import type { StartedBotView } from './bindings/StartedBotView';
 import type { StepTarget } from './bindings/StepTarget';
 import type { WatchView } from './bindings/WatchView';
 
@@ -178,9 +181,20 @@ function makeApi(sid: () => SessionId | null) {
     openGameroomGame: (gid: string) => invoke<void>('open_gameroom_game', { session: sid(), gid }),
     /** Plays live arimaa.com game `gid` (its gameroom id) as `side`: this
      * session becomes the game, and the user's moves are sent to the
-     * server. */
-    playGameroomGame: (gid: string, side: Color) =>
-      invoke<void>('play_gameroom_game', { session: sid(), gid, side }),
+     * server. `unrated` sits in the gameroom's unrated mode, which makes
+     * a rated game against a bot unrated. */
+    playGameroomGame: (gid: string, side: Color, unrated = false) =>
+      invoke<void>('play_gameroom_game', { session: sid(), gid, side, unrated }),
+    /** The bots arimaa.com runs, with the user's record against each (one
+     * page fetch, so only when asked). */
+    gameroomServerBots: () => invoke<ServerBotView[]>('gameroom_server_bots'),
+    /** What a server bot's page (`ServerBotView.page`) says about it: its
+     * time control, and whether it runs. */
+    gameroomBotInfo: (page: string) => invoke<BotInfoView>('gameroom_bot_info', { page }),
+    /** Starts a server bot playing `botSide`, and waits (up to ~40 s) for
+     * the game it opens; the user joins it with `playGameroomGame`. */
+    startGameroomBot: (page: string, name: string, botSide: Color) =>
+      invoke<StartedBotView>('start_gameroom_bot', { page, name, botSide }),
     /** Creates an arimaa.com game with the user as `side` and plays it as
      * `playGameroomGame` does. `timeControl` is in the gameroom's format
      * (`2m/5m/100/0/30m`). The user's first move waits for an opponent

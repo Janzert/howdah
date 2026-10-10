@@ -18,7 +18,9 @@
 //!   ([`FinishedGame`], read from the viewer page), and [`Lobby::games`]
 //!   lists the live and recently finished games.
 //!   [`Lobby::search_players`] and [`Lobby::player_games`] find a
-//!   player's past games ([`PastGames`]).
+//!   player's past games ([`PastGames`]). [`Lobby::server_bots`] lists the
+//!   server's bots ([`ServerBot`]), and [`Lobby::start_bot`] starts one,
+//!   which opens a game against the user.
 //! - [`GameServer`]: sit, `gamestate`, and the `updategamestate` long poll
 //!   (keeping the moves and chat received so far).
 //! - Requests carry a Referer (the server refuses requests under the
@@ -28,6 +30,7 @@
 //!
 //! `examples/probe.rs` runs these against the live server by hand.
 
+pub mod bots;
 pub mod client;
 pub mod clock_sync;
 pub mod finished;
@@ -36,6 +39,7 @@ pub mod players;
 pub mod state;
 pub mod wire;
 
+pub use bots::{BotInfo, ServerBot};
 pub use client::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog,
     Opened, Seat, ViewerSeat,

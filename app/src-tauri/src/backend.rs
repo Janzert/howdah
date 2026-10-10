@@ -29,9 +29,10 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames,
-    GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec, PositionView,
-    PostalGameView, SessionId, SessionUpdate, SessionView, SessionsChanged, StepTarget, WatchView,
+    AnimStep, ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec,
+    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec,
+    PositionView, PostalGameView, ServerBotView, SessionId, SessionUpdate, SessionView, SessionsChanged,
+    StartedBotView, StepTarget, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -672,6 +673,28 @@ impl Backend {
         self.gameroom.postal_games().await
     }
 
+    /// The bots arimaa.com runs, with the user's record against each.
+    pub async fn gameroom_server_bots(&self) -> Result<Vec<ServerBotView>, ApiError> {
+        self.gameroom.server_bots().await
+    }
+
+    /// What a server bot's page (`ServerBotView.page`) says about it.
+    pub async fn gameroom_bot_info(&self, page: &str) -> Result<BotInfoView, ApiError> {
+        self.gameroom.bot_info(page).await
+    }
+
+    /// Starts server bot `name` (its page `page`) playing `bot_side`, and
+    /// waits for the game it opens (see `Gameroom::start_bot`). The user
+    /// joins it with [`Backend::play_gameroom_game`].
+    pub async fn start_gameroom_bot(
+        &self,
+        page: &str,
+        name: &str,
+        bot_side: Color,
+    ) -> Result<StartedBotView, ApiError> {
+        self.gameroom.start_bot(page, name, bot_side).await
+    }
+
     /// A gameroom player's finished games, newest first, 50 from `offset`.
     pub async fn gameroom_player_games(
         &self,
@@ -714,15 +737,23 @@ impl Backend {
     /// Plays live arimaa.com game `gid` (its gameroom id) in session `id`
     /// as `side`: the user's seat is taken, the session becomes that game
     /// with the user as `side`'s human player, and the moves played there
-    /// are sent to the server (see `gameroom.rs`).
-    pub async fn play_gameroom_game(&self, id: SessionId, gid: &str, side: Color) -> Result<(), ApiError> {
+    /// are sent to the server (see `gameroom.rs`). `unrated` sits in the
+    /// gameroom's unrated mode, which makes a rated game against a bot
+    /// unrated.
+    pub async fn play_gameroom_game(
+        &self,
+        id: SessionId,
+        gid: &str,
+        side: Color,
+        unrated: bool,
+    ) -> Result<(), ApiError> {
         let handle = self.handle(id)?;
         let target = gameroom::Target {
             session: handle.session.clone(),
             controller: handle.controller.clone(),
             events: handle.events.clone(),
         };
-        let watch = gameroom::play(&self.gameroom, gid, side, target).await?;
+        let watch = gameroom::play_with(&self.gameroom, gid, side, unrated, target).await?;
         let old = handle.watch().replace(watch);
         drop(old);
         Ok(())
@@ -944,9 +975,23 @@ impl Backend {
                 .gameroom_player_games(&arg::<String>(args, "playerId")?, arg(args, "offset")?)
                 .await?),
             "open_gameroom_game" => ok(self.open_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?),
-            "play_gameroom_game" => {
-                ok(self.play_gameroom_game(sid()?, &arg::<String>(args, "gid")?, arg(args, "side")?).await?)
-            }
+            "play_gameroom_game" => ok(self
+                .play_gameroom_game(
+                    sid()?,
+                    &arg::<String>(args, "gid")?,
+                    arg(args, "side")?,
+                    arg::<Option<bool>>(args, "unrated")?.unwrap_or(false),
+                )
+                .await?),
+            "gameroom_server_bots" => ok(self.gameroom_server_bots().await?),
+            "gameroom_bot_info" => ok(self.gameroom_bot_info(&arg::<String>(args, "page")?).await?),
+            "start_gameroom_bot" => ok(self
+                .start_gameroom_bot(
+                    &arg::<String>(args, "page")?,
+                    &arg::<String>(args, "name")?,
+                    arg(args, "botSide")?,
+                )
+                .await?),
             "create_gameroom_game" => ok(self
                 .create_gameroom_game(
                     sid()?,

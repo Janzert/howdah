@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 
 use howdah_arimaa::Color;
 
+use crate::bots::{BotInfo, ServerBot, parse_bot_list, parse_bot_page, start_reply_text};
 use crate::clock_sync::ClockSync;
 use crate::finished::{FinishedGame, RecentGame};
 use crate::invitations::{Invitation, InviteOutcome, parse_wait};
@@ -529,6 +530,8 @@ pub struct LobbyGames {
     /// (`iinvitedgames`).
     pub invited_me: Vec<Invitation>,
     pub i_invited: Vec<Invitation>,
+    /// The user's player id (`me`).
+    pub user_id: Option<String>,
 }
 
 impl LobbyGames {
@@ -554,6 +557,7 @@ impl LobbyGames {
             open,
             invited_me: invitations("invitedmegames"),
             i_invited: invitations("iinvitedgames"),
+            user_id: r.object("me").and_then(|me| me.nonempty("id")),
         }
     }
 }
@@ -741,7 +745,23 @@ impl Lobby {
     /// way (`opengamewin.cgi` with that role), followed on the browser
     /// client's game server.
     pub async fn play(&self, gid: &str, side: Color) -> Result<GameServer, Error> {
-        match self.browser_open_as(gid, Role::Player(side), side).await? {
+        match self.browser_open_as(gid, Role::Player(side), side, None).await? {
+            Opened::Live(server, _) => Ok(server),
+            Opened::Finished(_) => Err(Error::Server(format!("game {gid} has ended"))),
+        }
+    }
+
+    /// [`Lobby::play`] in the gameroom's unrated mode: sitting at a rated
+    /// game against a bot makes it unrated. The browser lobby keeps the
+    /// mode in a cookie, `unrated<player id>=1`, which `opengamewin.cgi`
+    /// reads (as 4steps does when "Keep joined bot games rated" is off).
+    /// `user_id` is the user's player id ([`LobbyGames::user_id`]).
+    pub async fn play_unrated(&self, gid: &str, side: Color, user_id: &str) -> Result<GameServer, Error> {
+        if user_id.is_empty() || !user_id.chars().all(|c| c.is_ascii_digit()) {
+            return Err(Error::Server(format!("not a player id: {user_id:?}")));
+        }
+        let cookie = format!("unrated{user_id}=1");
+        match self.browser_open_as(gid, Role::Player(side), side, Some(&cookie)).await? {
             Opened::Live(server, _) => Ok(server),
             Opened::Finished(_) => Err(Error::Server(format!("game {gid} has ended"))),
         }
@@ -797,10 +817,17 @@ impl Lobby {
     /// An id the server doesn't know gets an error page (a
     /// [`Error::Server`] with its message).
     async fn browser_open(&self, gid: &str, side: Color) -> Result<Opened, Error> {
-        self.browser_open_as(gid, Role::Viewer, side).await
+        self.browser_open_as(gid, Role::Viewer, side, None).await
     }
 
-    async fn browser_open_as(&self, gid: &str, role: Role, side: Color) -> Result<Opened, Error> {
+    /// `extra_cookie` goes with the session's cookies.
+    async fn browser_open_as(
+        &self,
+        gid: &str,
+        role: Role,
+        side: Color,
+        extra_cookie: Option<&str>,
+    ) -> Result<Opened, Error> {
         if gid.is_empty() || !gid.chars().all(|c| c.is_ascii_digit()) {
             return Err(Error::Server(format!("not a game id: {gid:?}")));
         }
@@ -808,7 +835,10 @@ impl Lobby {
         let side = if side == Color::Gold { 'w' } else { 'b' };
         let role = role.letter();
         let url = format!("{}opengamewin.cgi?client=1&gameid={gid}&role={role}&side={side}", self.base);
-        let cookies = self.cookies.clone().unwrap_or_else(|| format!("sid={sid}"));
+        let mut cookies = self.cookies.clone().unwrap_or_else(|| format!("sid={sid}"));
+        if let Some(extra) = extra_cookie {
+            cookies = format!("{cookies}; {extra}");
+        }
         let page = self.http.get_page(&url, Some(&cookies)).await?;
         if let Some(game) = FinishedGame::from_page(gid, &page) {
             return Ok(Opened::Finished(game));
@@ -866,6 +896,56 @@ impl Lobby {
             return Err(if is_expired(&e) { Error::Expired } else { Error::Server(e) });
         }
         Ok(parse_postal_games(&page))
+    }
+
+    /// The server bots, from the bot ladder's page of them all
+    /// (`botLadderAll.cgi`), with `user`'s record against each when given.
+    /// It needs no session.
+    pub async fn server_bots(&self, user: Option<&str>) -> Result<Vec<ServerBot>, Error> {
+        let mut url = format!("{}botLadderAll.cgi", self.base);
+        // Usernames are letters, digits and underscores; anything else
+        // would need encoding, so it's left out (the record is extra).
+        if let Some(user) =
+            user.filter(|u| !u.is_empty() && u.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        {
+            url.push_str(&format!("?u={user}"));
+        }
+        let page = self.http.get_page(&url, None).await?;
+        Ok(parse_bot_list(&page, &url))
+    }
+
+    /// What server bot `page` (its control page, [`ServerBot::page`]) says
+    /// about itself: its time control, and whether it runs.
+    pub async fn bot_info(&self, page: &str) -> Result<BotInfo, Error> {
+        let url = self.bot_page(page)?;
+        Ok(parse_bot_page(&self.http.get_page(&url, None).await?))
+    }
+
+    /// Starts server bot `page` (its control page) playing `bot_side`, as
+    /// its page's player form does. The bot opens a game in the gameroom
+    /// with itself at that side (in the open games, once it has started);
+    /// the user then sits at the other. Returns the text of the page that
+    /// answers, which says how it went.
+    pub async fn start_bot(&self, page: &str, bot_side: Color) -> Result<String, Error> {
+        let url = self.bot_page(page)?;
+        let form = [
+            ("action", "player".to_string()),
+            ("side", Role::Player(bot_side).letter().to_string()),
+            ("newgame", "Start Bot".to_string()),
+        ];
+        Ok(start_reply_text(&self.http.post_page(&url, None, &form).await?))
+    }
+
+    /// `page` if it's a bot's page on this server (`…/arimaa/bots/`), so
+    /// that a page from elsewhere is never posted to.
+    fn bot_page(&self, page: &str) -> Result<String, Error> {
+        let bots = format!("{}bots/", self.root());
+        match page.strip_prefix(&bots) {
+            Some(rest) if !rest.is_empty() && !rest.contains("..") && !rest.contains(['?', '#']) => {
+                Ok(page.to_string())
+            }
+            _ => Err(Error::Server(format!("not a server bot's page: {page}"))),
+        }
     }
 
     /// The lobby session as a `Cookie` header.
@@ -1299,6 +1379,23 @@ mod tests {
     }
 
     #[test]
+    fn only_server_bot_pages_are_used() {
+        let http = Http::new("test", None).unwrap();
+        let lobby = Lobby::new(http, DEFAULT_GAMEROOM, Asip::V2);
+        let page = "http://arimaa.com/arimaa/bots/bot_ShallowBlue/index.cgi";
+        assert_eq!(lobby.bot_page(page).unwrap(), page);
+        for bad in [
+            "http://example.com/arimaa/bots/x/index.cgi",
+            "http://arimaa.com/arimaa/gameroom/voidGame.cgi",
+            "http://arimaa.com/arimaa/bots/../gameroom/x.cgi",
+            "http://arimaa.com/arimaa/bots/",
+            "http://arimaa.com/arimaa/bots/x/index.cgi?stop=1",
+        ] {
+            assert!(lobby.bot_page(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn network_errors_name_their_causes() {
         #[derive(Debug)]
         struct E(&'static str, Option<Box<E>>);
@@ -1328,7 +1425,7 @@ mod tests {
     #[test]
     fn lobby_lists() {
         let r = Record::decode(
-            r#"{"time":1000,
+            r#"{"time":1000,"me":{"id":"21","username":"me"},
               "mygames":[{"id":"7","wusername":"me","busername":null,"timecontrol":"2m/5m","rated":"0","turn":"w"}],
               "opengames":[{"id":"7","wusername":"me","busername":""},
                            {"id":"8","wusername":"","busername":"them","timecontrol":"1m/2m","rated":"1","schts":"0"},
@@ -1340,6 +1437,7 @@ mod tests {
         assert_eq!(games.live.len(), 1);
         assert_eq!(games.mine.len(), 1);
         assert_eq!(games.mine[0].players, [Some("me".into()), None]);
+        assert_eq!(games.user_id.as_deref(), Some("21"));
         assert_eq!(games.mine[0].turn, Some(Color::Gold));
         assert_eq!(games.open.len(), 1);
         let open = &games.open[0];

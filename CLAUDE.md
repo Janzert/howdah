@@ -155,6 +155,18 @@ Howdah plays and watches games on arimaa.com.
     app sets the computer's), labelled "YLT", which is dropped. `Lobby::search_players` and
     `Lobby::player_games` fetch them. `Error::Expired` is a lobby session
     that's gone (an ASIP error or the "Session Expired" page).
+  - `bots`: the server's bots (4steps's bot launcher). `parse_bot_list`
+    reads the bot ladder's page of them all (`botLadderAll.cgi?u=`, no
+    session; `ServerBot`, by the table's header names), `parse_bot_page`
+    a bot's control page (`BotInfo`: time control, rated, status, and
+    whether players may start it, from its player section only).
+    `Lobby::server_bots`, `bot_info` and `start_bot` (posting the page's
+    player form, `side` being the bot's; only to pages under
+    `/arimaa/bots/`, `Lobby::bot_page`). The bot then opens a game in
+    the open games. `Lobby::play_unrated` sits as `play` does with the
+    browser lobby's unrated-mode cookie (`unrated<player id>=1`,
+    `LobbyGames::user_id` from `state`'s `me`), which makes a rated bot
+    game unrated.
   - `examples/probe.rs` runs it against the live server by hand (see the
     parent repo's notes on probing first; `probe play` takes seats and
     plays from commands on stdin). Never in tests or CI.
@@ -322,6 +334,12 @@ Howdah plays and watches games on arimaa.com.
     record's tag) rather than "Human". The same task sends takeback requests and answers
     (`send_takeback`); a request the server hasn't shown after
     `CONFIRM_WAIT` is checked with a `gamestate` and dropped if missing. A player's reseat takes the same side again.
+    `Gameroom::start_bot` (command `start_gameroom_bot`) starts a server
+    bot and polls the lobby (`BOT_POLL`, up to `BOT_WAIT`) for the game
+    it opens (`new_bot_game`: the newest open game with the bot at its
+    side that wasn't there before); `play_with` (command
+    `play_gameroom_game` with `unrated`) sits in the gameroom's unrated
+    mode, with the player id kept from the lobby's lists.
     `create` (command `create_gameroom_game`) makes a game with `newgame`
     and sits as `play` does (the browser's way; `newgame`'s own seat goes
     unused); `cancel_gameroom_game` cancels an open one, and starts a new
@@ -507,7 +525,13 @@ Howdah plays and watches games on arimaa.com.
     as `gameroom://invitation`; accepted, the lobby opens a window playing
     it), and an Invitations section lists them with
     Accept (`accept_gameroom_invitation`, which also takes the seat),
-    Decline and Cancel. Play, Watch, Open and Accept each open a game
+    Decline and Cancel. "Show server bots" lists the server's bots
+    (`gameroom_server_bots`, one page fetch, only when asked; filter and
+    order); Choose reads the bot's page (`gameroom_bot_info`), and Start
+    (`start_gameroom_bot`, the user's side, "Join on creation" and "Keep
+    rated", kept in localStorage) starts it and, joining, plays the game
+    it opens with `playGameroomGame(gid, side, unrated)`; the server's
+    answer shows under the form. Play, Watch, Open and Accept each open a game
     window (`onOpen`). While logged in, `Gameroom::watch_lobby` polls
     `state` every minute and sends `gameroom://lobby` (with the `user`
     the lists are for; `Gameroom::games` keeps the last lists,

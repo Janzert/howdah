@@ -274,10 +274,10 @@ The current engine panel shows depth, eval, PV and log per side.
 - **[have] Lobby** (the lobby window's arimaa.com section, `GAMEROOM.md`): my games,
   invitations, open, live and recently finished games (the ASIP 2.0
   `state` lists), postal games, a player search with their past games,
-  and creating or inviting to a game (side, time control, rated).
+  and creating or inviting to a game (side, time control, rated), and
+  the 4steps bot launcher: a game against one of the server's bots, with
+  "join on creation" and "keep rated" (unrated mode).
   Still open:
-  - The 4steps bot launcher: create a game against a server bot, with
-    "join on creation".
   - A "Last updated" time, and "last server response" age in the corner as
     a connection-health cue (4steps).
 - **[have] Game header like arimaa.com:** the panel shows the game id

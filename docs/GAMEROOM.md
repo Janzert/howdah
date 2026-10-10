@@ -55,7 +55,8 @@ architecture. Decided and checked against the live server in October 2026.
   page), and follow the game on the browser's game server with its long
   poll (`maxwait` 300 s), which answers as soon as something changes. An
   ASIP viewer seat is the fallback; the server answers those only every
-  ~10 s.
+  ~10 s. A player's seat can be taken in the gameroom's unrated mode
+  (see Server bots under Playing).
 - If the game server drops a seat, the watch takes a new one (up to three
   in a row), or gets the final state if the game ended meanwhile.
 
@@ -129,6 +130,20 @@ architecture. Decided and checked against the live server in October 2026.
   on the inviter's waiting page brings the answer (accepted, the game
   opens in a new window; declined, with the reason), and the lobby lists invitations
   both ways with Accept, Decline and Cancel.
+- **Server bots** (4steps's bot launcher): the lobby's "Show server
+  bots" fetches the bot ladder's page of every bot arimaa.com runs, with
+  the user's record against each, only when asked. Choosing one reads
+  its page (its time control, whether it's rated and running, and
+  whether players may start it). Start posts the page's own form, which
+  has the bot open a game with itself at the side the user didn't pick;
+  the backend notes the bot's open games first (some bots keep one open)
+  and checks the lobby every 4 s, for up to 40 s, for the new one. With
+  "Join on creation" (on by default, as in 4steps) the user sits at it
+  at once in a new window; without, it waits in the open games. "Keep
+  rated" off (4steps's "Keep joined bot games rated") sits in the
+  gameroom's unrated mode, which the browser lobby keeps as a cookie
+  per player: a rated game against a bot becomes unrated. The server's
+  answer to the start ("Bot started.") is shown under the form.
 - **Postal games** are postal because of their time control (days per
   move, or the gameroom's "No time limit", `0/0/0/0/0`, which is played
   untimed). The New game form offers the gameroom's postal time controls,
@@ -198,4 +213,5 @@ architecture. Decided and checked against the live server in October 2026.
   opponent rating range in the New game form.
 - An engine playing on arimaa.com, and a postal controller for bots (on
   hold). An engine would use the gameroom's bot API, as `gameroom.py`
-  does, or ASIP as 4steps's bot launcher does.
+  does, or ASIP. (4steps's bot launcher, now built, starts arimaa.com's
+  own bots; it doesn't run engines.)

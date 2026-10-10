@@ -6,9 +6,9 @@ use tauri::State;
 
 use crate::backend::Backend;
 use crate::dto::{
-    ApiError, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames, GameroomStatus,
-    MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PositionView, PostalGameView, SessionId,
-    SessionView, StepTarget, WatchView,
+    ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames,
+    GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PositionView, PostalGameView,
+    ServerBotView, SessionId, SessionView, StartedBotView, StepTarget, WatchView,
 };
 
 #[tauri::command]
@@ -444,8 +444,29 @@ pub async fn play_gameroom_game(
     session: SessionId,
     gid: String,
     side: Color,
+    unrated: Option<bool>,
 ) -> Result<(), ApiError> {
-    state.play_gameroom_game(session, &gid, side).await
+    state.play_gameroom_game(session, &gid, side, unrated.unwrap_or(false)).await
+}
+
+#[tauri::command]
+pub async fn gameroom_server_bots(state: State<'_, Backend>) -> Result<Vec<ServerBotView>, ApiError> {
+    state.gameroom_server_bots().await
+}
+
+#[tauri::command]
+pub async fn gameroom_bot_info(state: State<'_, Backend>, page: String) -> Result<BotInfoView, ApiError> {
+    state.gameroom_bot_info(&page).await
+}
+
+#[tauri::command]
+pub async fn start_gameroom_bot(
+    state: State<'_, Backend>,
+    page: String,
+    name: String,
+    bot_side: Color,
+) -> Result<StartedBotView, ApiError> {
+    state.start_gameroom_bot(&page, &name, bot_side).await
 }
 
 #[tauri::command]

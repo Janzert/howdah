@@ -50,16 +50,16 @@ use std::time::{Duration, Instant};
 use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http, Invitation, InviteOutcome,
-    Lobby, Opened, PastGame, RecentGame, Role, ViewerSeat, parse_chat, parse_result,
+    Lobby, LobbyGames, Opened, PastGame, RecentGame, Role, ViewerSeat, parse_chat, parse_result,
 };
 use tokio::sync::Notify;
 
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, ChatLineView, GameroomGames, GameroomStatus, InvitationAnswer, InvitationOutcome,
-    InvitationView, LiveGameView, PastGameView, PlayerGamesView, PlayerMatchView, PostalGameView,
-    RecentGameView, WatchState, WatchView,
+    AnimStep, ApiError, BotInfoView, ChatLineView, GameroomGames, GameroomStatus, InvitationAnswer,
+    InvitationOutcome, InvitationView, LiveGameView, PastGameView, PlayerGamesView, PlayerMatchView,
+    PostalGameView, RecentGameView, ServerBotView, StartedBotView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -78,6 +78,12 @@ pub const LOBBY_UPDATE: &str = "gameroom://lobby";
 /// lobby asks every 20 s while it's open). It also keeps the login from
 /// expiring while idle.
 const LOBBY_POLL: Duration = Duration::from_secs(60);
+
+/// How long a started server bot has to open its game, and how often
+/// the open games are checked meanwhile. A bot starts as a new process,
+/// which logs in and then opens the game.
+const BOT_WAIT: Duration = Duration::from_secs(40);
+const BOT_POLL: Duration = Duration::from_secs(4);
 
 /// How long the server may hold a long poll; the browser client asks for
 /// the same.
@@ -227,6 +233,8 @@ pub struct Gameroom {
     watcher: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     /// The lists as last fetched, for a window that opens between polls.
     last_games: Mutex<Option<GameroomGames>>,
+    /// The user's player id, from the lobby's lists (for unrated mode).
+    user_id: Mutex<Option<String>>,
 }
 
 impl Gameroom {
@@ -241,6 +249,7 @@ impl Gameroom {
             waiters: Mutex::new(Default::default()),
             watcher: Mutex::new(None),
             last_games: Mutex::new(None),
+            user_id: Mutex::new(None),
         }
     }
 
@@ -270,6 +279,7 @@ impl Gameroom {
         lobby.login(username, &password).await.map_err(net_error)?;
         let mut slot = self.lobby.lock().await;
         let old_user = lock(&self.username).clone();
+        *lock(&self.user_id) = None;
         if let Some(mut old) = slot.replace(lobby)
             && ends_old_login(old_user.as_deref(), username)
         {
@@ -296,6 +306,7 @@ impl Gameroom {
         let old = self.lobby.lock().await.take();
         *lock(&self.username) = None;
         *lock(&self.last_games) = None;
+        *lock(&self.user_id) = None;
         match old {
             Some(mut lobby) => lobby.logout().await.map_err(net_error),
             None => Ok(()),
@@ -319,7 +330,7 @@ impl Gameroom {
 
     /// The live games and the last few finished ones.
     pub async fn games(&self) -> Result<GameroomGames, ApiError> {
-        let games = with_lobby!(self, |l| l.games())?;
+        let games = self.lobby_games().await?;
         let views = |list: Vec<GameInfo>| list.into_iter().map(game_view).collect();
         let invitations = games
             .invited_me
@@ -336,6 +347,15 @@ impl Gameroom {
             invitations,
         };
         *lock(&self.last_games) = Some(games.clone());
+        Ok(games)
+    }
+
+    /// The lobby's lists as the server gives them (one `state`).
+    async fn lobby_games(&self) -> Result<LobbyGames, ApiError> {
+        let games = with_lobby!(self, |l| l.games())?;
+        if games.user_id.is_some() {
+            lock(&self.user_id).clone_from(&games.user_id);
+        }
         Ok(games)
     }
 
@@ -495,9 +515,80 @@ impl Gameroom {
         with_lobby!(self, |l| l.open(gid, Color::Gold))
     }
 
-    /// Takes the user's seat as `side` at game `gid`.
-    async fn sit(&self, gid: &str, side: Color) -> Result<GameServer, ApiError> {
-        with_lobby!(self, |l| l.play(gid, side))
+    /// Takes the user's seat as `side` at game `gid`. `unrated` sits in
+    /// the gameroom's unrated mode, which makes a rated game against a bot
+    /// unrated.
+    async fn sit(&self, gid: &str, side: Color, unrated: bool) -> Result<GameServer, ApiError> {
+        if !unrated {
+            return with_lobby!(self, |l| l.play(gid, side));
+        }
+        let known = lock(&self.user_id).clone();
+        let user_id = match known {
+            Some(id) => id,
+            None => self
+                .lobby_games()
+                .await?
+                .user_id
+                .ok_or_else(|| ApiError::state("arimaa.com didn't say your player id"))?,
+        };
+        with_lobby!(self, |l| l.play_unrated(gid, side, &user_id))
+    }
+
+    /// The bots arimaa.com runs, with the user's record against each.
+    pub async fn server_bots(&self) -> Result<Vec<ServerBotView>, ApiError> {
+        let user = lock(&self.username).clone();
+        let bots = with_lobby!(self, |l| l.server_bots(user.as_deref()))?;
+        Ok(bots
+            .into_iter()
+            .map(|b| ServerBotView {
+                name: b.name,
+                rating: b.rating,
+                rating_uncertainty: b.rating_uncertainty,
+                page: b.page,
+                to_be_won: b.to_be_won,
+                games: b.games,
+                won: b.won,
+                lost: b.lost,
+            })
+            .collect())
+    }
+
+    /// What server bot `page` (its control page) says about itself.
+    pub async fn bot_info(&self, page: &str) -> Result<BotInfoView, ApiError> {
+        let info = with_lobby!(self, |l| l.bot_info(page))?;
+        Ok(BotInfoView {
+            about: info.about,
+            status: info.status,
+            time_control: info.time_control,
+            rated: info.rated,
+            can_start: info.can_start,
+        })
+    }
+
+    /// Starts server bot `name` (its control page `page`) playing
+    /// `bot_side`, and waits up to [`BOT_WAIT`] for the game it opens to
+    /// show in the open games: a game with the bot at that side that wasn't
+    /// there before (bots that keep a game open have one already).
+    pub async fn start_bot(
+        &self,
+        page: &str,
+        name: &str,
+        bot_side: Color,
+    ) -> Result<StartedBotView, ApiError> {
+        let before: Vec<String> =
+            bot_games(&self.lobby_games().await?, name, bot_side).map(|g| g.gid.clone()).collect();
+        let message = with_lobby!(self, |l| l.start_bot(page, bot_side))?;
+        let deadline = Instant::now() + BOT_WAIT;
+        loop {
+            let games = self.lobby_games().await?;
+            if let Some(game) = new_bot_game(&games, name, bot_side, &before) {
+                return Ok(StartedBotView { message, gid: Some(game.gid.clone()), rated: game.rated });
+            }
+            if Instant::now() + BOT_POLL > deadline {
+                return Ok(StartedBotView { message, gid: None, rated: false });
+            }
+            tokio::time::sleep(BOT_POLL).await;
+        }
     }
 
     /// The players whose username or real name contains `text`.
@@ -538,6 +629,27 @@ impl Gameroom {
         let page = with_lobby!(self, |l| l.player_games(player_id, offset))?;
         Ok(PlayerGamesView { games: page.games.into_iter().map(past_view).collect(), next: page.next })
     }
+}
+
+/// The open games with bot `name` at `bot_side`.
+fn bot_games<'a>(games: &'a LobbyGames, name: &str, bot_side: Color) -> impl Iterator<Item = &'a GameInfo> {
+    games
+        .open
+        .iter()
+        .filter(move |g| g.players[bot_side.index()].as_deref().is_some_and(|p| p.eq_ignore_ascii_case(name)))
+}
+
+/// The game a just started bot opened: the newest of its open games at
+/// `bot_side` that isn't one of `before`.
+fn new_bot_game<'a>(
+    games: &'a LobbyGames,
+    name: &str,
+    bot_side: Color,
+    before: &[String],
+) -> Option<&'a GameInfo> {
+    bot_games(games, name, bot_side)
+        .filter(|g| !before.contains(&g.gid))
+        .max_by_key(|g| g.gid.parse::<u64>().unwrap_or(0))
 }
 
 fn invitation_view(i: Invitation, incoming: bool) -> InvitationView {
@@ -751,8 +863,20 @@ pub async fn play(
     side: Color,
     target: Target,
 ) -> Result<Watch, ApiError> {
+    play_with(gameroom, gid, side, false, target).await
+}
+
+/// [`play`], `unrated` sitting in the gameroom's unrated mode (a rated
+/// game against a bot becomes unrated).
+pub async fn play_with(
+    gameroom: &Arc<Gameroom>,
+    gid: &str,
+    side: Color,
+    unrated: bool,
+    target: Target,
+) -> Result<Watch, ApiError> {
     let gid = gid.trim();
-    let server = gameroom.sit(gid, side).await?;
+    let server = gameroom.sit(gid, side, unrated).await?;
     begin(gameroom, gid, server, Seat::Player(side), target).await
 }
 
@@ -1379,7 +1503,7 @@ async fn reseat(gameroom: &Gameroom, gid: &str, seat: &Seat) -> Result<Reseat, A
         };
     }
     if let Seat::Player(side) = seat {
-        return Ok(Reseat::Live(gameroom.sit(gid, *side).await?, seat.clone()));
+        return Ok(Reseat::Live(gameroom.sit(gid, *side, false).await?, seat.clone()));
     }
     match gameroom.open(gid).await? {
         Opened::Live(server, how) => Ok(Reseat::Live(server, Seat::Viewer(how))),
@@ -1614,6 +1738,31 @@ mod tests {
 
     const SETUPS: &str = "1w Ra1 Rb1 Rc1 Dd1 Re1 Rf1 Dg1 Rh1 Ra2 Mb2 Cc2 Hd2 Ee2 Cf2 Hg2 Rh2%13\
         1b rh7 ra7 rh8 rg8 rf8 rc8 rb8 ra8 cf7 cc7 de8 dd8 hg7 hb7 me7 ed7%13";
+
+    #[test]
+    fn a_started_bots_game_is_found() {
+        let r = Record::decode(
+            r#"{"time":1000,"opengames":[
+              {"id":"90","wusername":"bot_Kept","busername":""},
+              {"id":"100","wusername":"","busername":"bot_ShallowBlue","rated":"1"},
+              {"id":"101","wusername":"bot_ShallowBlue","busername":""},
+              {"id":"102","wusername":"","busername":"bot_shallowblue","rated":"1"},
+              {"id":"103","wusername":"","busername":"bot_Other"}]}"#,
+        )
+        .unwrap();
+        let games = LobbyGames::from_state(&r);
+        let before: Vec<String> =
+            bot_games(&games, "bot_ShallowBlue", Color::Silver).map(|g| g.gid.clone()).collect();
+        assert_eq!(before, ["100", "102"]);
+        // The newest at the bot's side, names matched without case.
+        let found = new_bot_game(&games, "bot_ShallowBlue", Color::Silver, &[]).unwrap();
+        assert_eq!((found.gid.as_str(), found.rated), ("102", true));
+        // Games it had open before it was started don't count.
+        assert!(new_bot_game(&games, "bot_ShallowBlue", Color::Silver, &before).is_none());
+        let gold = new_bot_game(&games, "bot_ShallowBlue", Color::Gold, &[]).unwrap();
+        assert_eq!(gold.gid, "101");
+        assert!(new_bot_game(&games, "bot_Missing", Color::Gold, &[]).is_none());
+    }
 
     #[test]
     fn chat_history_survives_a_state_without_it() {

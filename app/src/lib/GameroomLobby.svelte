@@ -5,6 +5,7 @@
   // opens a game window for it (`onOpen`).
   import { onMount } from 'svelte';
   import { type Api, api, errorMessage } from './api';
+  import type { BotInfoView } from './bindings/BotInfoView';
   import type { Color } from './bindings/Color';
   import type { GameResult } from './bindings/GameResult';
   import type { LiveGameView } from './bindings/LiveGameView';
@@ -14,6 +15,7 @@
   import type { PlayerMatchView } from './bindings/PlayerMatchView';
   import type { PostalGameView } from './bindings/PostalGameView';
   import type { RecentGameView } from './bindings/RecentGameView';
+  import type { ServerBotView } from './bindings/ServerBotView';
   import type { WinReason } from './bindings/WinReason';
   import { on } from './events';
   import { mySide as sideIn, myTurn as turnIn } from './gameroom';
@@ -87,6 +89,90 @@
     ['1d/14d/100/14d/0', 'Postal: a day a move, 14 day reserve'],
     ['0/0/0/0/0', 'Postal: no time limit'],
   ];
+
+  /** The server bots, once asked for, and how the list is shown. */
+  let bots = $state<ServerBotView[] | null>(null);
+  let botFilter = $state('');
+  let botOrder = $state<'ladder' | 'rating' | 'name'>('ladder');
+  /** The bot picked to play, with what its page says once fetched. */
+  let bot = $state<{ bot: ServerBotView; info: BotInfoView | null } | null>(null);
+  /** The user's side against it, as in the New game form. */
+  let botUserSide = $state<Color | 'random'>((pref('gameroom.botSide') as Color | 'random') || 'random');
+  /** Whether to sit as soon as the bot's game opens (4steps's "Join game
+   * on creation"), and whether to keep a rated bot game rated (off: sit in
+   * the gameroom's unrated mode). */
+  let botJoin = $state(pref('gameroom.botJoin') !== '0');
+  let botRated = $state(pref('gameroom.botRated') !== '0');
+  /** What's happening with a started bot, or what the server said. */
+  let botStatus = $state<string | null>(null);
+
+  const shownBots = $derived.by(() => {
+    const words = botFilter.trim().toLowerCase();
+    const list = (bots ?? []).filter((b) => !words || b.name.toLowerCase().includes(words));
+    if (botOrder === 'rating') list.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    else if (botOrder === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
+    return list;
+  });
+
+  function loadBots() {
+    attempt(async () => {
+      bots = await api.gameroomServerBots();
+    });
+  }
+
+  function pickBot(b: ServerBotView) {
+    bot = { bot: b, info: null };
+    botStatus = null;
+    attempt(async () => {
+      const info = await api.gameroomBotInfo(b.page);
+      if (bot?.bot.name === b.name) bot = { bot: b, info };
+    });
+  }
+
+  /** "2 games, won 1" or "not beaten yet". */
+  function botRecord(b: ServerBotView): string {
+    const parts = [];
+    if (b.games) parts.push(`you: ${b.games} ${b.games === 1 ? 'game' : 'games'}, won ${b.won ?? 0}`);
+    if (b.toBeWon) parts.push('not beaten yet');
+    return parts.join(' · ');
+  }
+
+  function startBot(e: SubmitEvent) {
+    e.preventDefault();
+    const picked = bot;
+    if (!picked) return;
+    savePref('gameroom.botSide', botUserSide);
+    savePref('gameroom.botJoin', botJoin ? '1' : '0');
+    savePref('gameroom.botRated', botRated ? '1' : '0');
+    const side: Color =
+      botUserSide === 'random' ? (Math.random() < 0.5 ? 'gold' : 'silver') : botUserSide;
+    const botSide: Color = side === 'gold' ? 'silver' : 'gold';
+    const { name, page } = picked.bot;
+    const join = botJoin;
+    const unrated = !botRated;
+    botStatus = `Starting ${name}; waiting for its game to open…`;
+    attempt(async () => {
+      let started;
+      try {
+        started = await api.startGameroomBot(page, name, botSide);
+      } catch (e) {
+        botStatus = null;
+        throw e;
+      }
+      const said = started.message ? ` arimaa.com said: “${started.message}”` : '';
+      games = await api.gameroomGames();
+      const gid = started.gid;
+      if (gid == null) {
+        botStatus = `${name} didn't open a game in time.${said}`;
+        return;
+      }
+      botStatus = join
+        ? `${name} opened game ${gid}.${said}`
+        : `${name} opened game ${gid}; it's in the open games.${said}`;
+      if (!join) return;
+      await enter((a) => a.playGameroomGame(gid, side, unrated && started.rated), { gid, play: true });
+    });
+  }
 
   /** The postal games being played, once asked for. */
   let postal = $state<PostalGameView[] | null>(null);
@@ -482,6 +568,80 @@
         The game waits in the gameroom's open games until someone sits; your first move goes once they do.
       {/if}
     </p>
+    <h3>Server bots</h3>
+    {#if bots == null}
+      <button class="subtle" onclick={loadBots} disabled={busy}>Show server bots</button>
+      <p class="hint">Start a game against one of the bots arimaa.com runs, as on its bot ladder.</p>
+    {:else}
+      <div class="bot-tools">
+        <input bind:value={botFilter} placeholder="Filter by name" aria-label="Filter bots" autocomplete="off" />
+        <select bind:value={botOrder} aria-label="Order bots">
+          <option value="ladder">Ladder order</option>
+          <option value="rating">By rating</option>
+          <option value="name">By name</option>
+        </select>
+      </div>
+      {#if shownBots.length === 0}
+        <p class="hint">{bots.length === 0 ? 'arimaa.com lists no bots.' : 'No bot matches.'}</p>
+      {:else}
+        <ul class="games" aria-label="Server bots">
+          {#each shownBots as b (b.name)}
+            <li class:picked={bot?.bot.name === b.name}>
+              <span class="game">
+                <span class="players">
+                  {b.name}
+                  {#if b.rating != null}<span class="rating">{b.rating}</span>{/if}
+                </span>
+                {#if botRecord(b)}<span class="meta">{botRecord(b)}</span>{/if}
+              </span>
+              <button onclick={() => pickBot(b)} disabled={busy || bot?.bot.name === b.name}
+                aria-label="Choose {b.name}">Choose</button
+              >
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if bot}
+        {@const info = bot.info}
+        <div class="bot" aria-label="Chosen bot">
+          <div>
+            <strong>{bot.bot.name}</strong>
+            {#if bot.bot.rating != null}<span class="rating">{bot.bot.rating}</span>{/if}
+          </div>
+          {#if info}
+            <div class="meta">
+              {[info.timeControl ?? '', info.rated == null ? '' : info.rated ? 'rated' : 'unrated'].filter((s) => s).join(' · ')}
+            </div>
+            {#if info.about}<p class="about">{info.about}</p>{/if}
+            {#if info.status}<p class="meta">{info.status}</p>{/if}
+          {:else}
+            <div class="meta">…</div>
+          {/if}
+          <form class="new-game" onsubmit={startBot}>
+            <label for="gr-bot-side">You play</label>
+            <select id="gr-bot-side" bind:value={botUserSide}>
+              <option value="random">Random</option>
+              <option value="gold">Gold</option>
+              <option value="silver">Silver</option>
+            </select>
+            <label class="check"><input type="checkbox" bind:checked={botJoin} /> Join on creation</label>
+            <label class="check" title="Off: join in the gameroom's unrated mode, so a rated bot game isn't rated">
+              <input type="checkbox" bind:checked={botRated} disabled={!botJoin || info?.rated === false} /> Keep rated
+            </label>
+            <button type="submit" disabled={busy || info == null || !info.canStart}>Start {bot.bot.name}</button>
+          </form>
+          {#if info && !info.canStart}
+            <p class="hint">Players can't start this bot now.</p>
+          {:else}
+            <p class="hint">
+              The bot opens a game in the gameroom;
+              {botJoin ? 'you join it as soon as it opens, in a new window.' : 'it waits in the open games for you or anyone.'}
+            </p>
+          {/if}
+        </div>
+      {/if}
+      {#if botStatus}<p class="hint" role="status">{botStatus}</p>{/if}
+    {/if}
     <h3>Live</h3>
     {#if games && games.live.length === 0}
       <p class="hint">No games are being played right now.</p>
@@ -711,6 +871,38 @@
   .new-game input:not([type='checkbox']) {
     flex: 1;
     min-width: 8em;
+  }
+  .bot-tools {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .bot-tools input {
+    flex: 1;
+    min-width: 0;
+  }
+  .games li.picked {
+    background: var(--hover);
+  }
+  .bot {
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .bot .rating {
+    margin-left: 4px;
+  }
+  .bot .about {
+    margin: 0;
+    font-size: 12px;
+  }
+  .bot p.meta {
+    margin: 0;
   }
   .by-id {
     display: flex;
