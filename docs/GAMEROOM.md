@@ -30,8 +30,14 @@ architecture. Decided and checked against the live server in October 2026.
   would be missing on some Linux desktops, and on macOS it would prompt
   after every update without a signed app. The password never goes back
   to the frontend, and network logs redact passwords and session ids.
+- The login form takes the username or the account's email address. The
+  login asks for the lobby's lists at once (the lobby wants them next
+  anyway); their `me` gives the user's gameroom username, which the app
+  shows ("Logged in as") and finds the user's games by. The saved login
+  and logging in again after an expiry keep what was typed.
 - Logging out ends every login of the account, so logging in again as the
-  same user drops the old session without logging it out.
+  same user (by gameroom username, however they logged in) drops the old
+  session without logging it out.
 - An expired login is renewed with the saved one, or else the user is
   logged out and the lobby shows the login form.
 

@@ -56,6 +56,9 @@ young).
 
 ### Fixed
 
+- Logged in to arimaa.com with your email address, the lobby showed the
+  email as your name and didn't find your side in your own games (Play,
+  "Your move", postal moves due); it now uses your gameroom username.
 - Games ended by the game or turn limit are scored by arimaa.com's rule:
   with equal piece counts, the side ahead after the most recent turn
   where the counts differed wins (silver only if they never differed),

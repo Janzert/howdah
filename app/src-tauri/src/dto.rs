@@ -754,9 +754,10 @@ impl From<howdah_arimaa::RecordError> for ApiError {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct GameroomStatus {
-    /// Who is logged in, if anyone.
+    /// Who is logged in, if anyone: their gameroom username, also when
+    /// they logged in with their email address.
     pub username: Option<String>,
-    /// The username of the remembered login, if one is saved (its password
+    /// The name of the remembered login (a username or email address), if one is saved (its password
     /// stays in the backend).
     pub saved_username: Option<String>,
 }

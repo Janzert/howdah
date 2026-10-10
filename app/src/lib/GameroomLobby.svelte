@@ -306,7 +306,8 @@
       savedUser = s.savedUsername;
       user = s.username;
       savePref('gameroom.username', username.trim());
-      games = await api.gameroomGames();
+      // The login fetched the lists (they say who the user is).
+      games = (await api.gameroomLastGames()) ?? (await api.gameroomGames());
     });
   }
 
@@ -441,7 +442,7 @@
   {#if user === null}
     <form onsubmit={login}>
       <div class="grid">
-        <label for="gr-user">Username</label>
+        <label for="gr-user">Username or email</label>
         <input id="gr-user" bind:value={username} autocomplete="username" />
         <label for="gr-password">Password</label>
         <input

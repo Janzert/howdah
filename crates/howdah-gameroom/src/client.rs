@@ -532,8 +532,11 @@ pub struct LobbyGames {
     /// (`iinvitedgames`).
     pub invited_me: Vec<Invitation>,
     pub i_invited: Vec<Invitation>,
-    /// The user's player id (`me`).
+    /// The user's player id and username (`me`). The username is the
+    /// gameroom's name for them, which the lists use; they may have
+    /// logged in with their email address instead.
     pub user_id: Option<String>,
+    pub username: Option<String>,
 }
 
 impl LobbyGames {
@@ -560,6 +563,7 @@ impl LobbyGames {
             invited_me: invitations("invitedmegames"),
             i_invited: invitations("iinvitedgames"),
             user_id: r.object("me").and_then(|me| me.nonempty("id")),
+            username: r.object("me").and_then(|me| me.nonempty("username")),
         }
     }
 }
@@ -1452,6 +1456,7 @@ mod tests {
         assert_eq!(games.mine.len(), 1);
         assert_eq!(games.mine[0].players, [Some("me".into()), None]);
         assert_eq!(games.user_id.as_deref(), Some("21"));
+        assert_eq!(games.username.as_deref(), Some("me"));
         assert_eq!(games.mine[0].turn, Some(Color::Gold));
         assert_eq!(games.open.len(), 1);
         let open = &games.open[0];

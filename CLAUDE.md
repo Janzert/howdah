@@ -282,7 +282,10 @@ Howdah plays and watches games on arimaa.com.
       replaces the session. Watching is fine.
   - `gameroom.rs`: playing and watching arimaa.com games (use cases 2
     and 3; how and why in `docs/GAMEROOM.md`). `Gameroom`
-    holds the login and lists live and recently finished games
+    holds the login (`login`, what was typed, a username or an email
+    address; `player`, the gameroom username from `state`'s `me`, which
+    `login` asks for at once and the status, the lists' `user` and
+    `ends_old_login` use) and lists live and recently finished games
     (`gameroom_games`). `open` (command `open_gameroom_game`) opens a game
     by id: a finished one is loaded whole as a record, shown from the
     start (`Session::load_record_from_start`), a live one is watched as

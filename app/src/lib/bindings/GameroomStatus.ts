@@ -5,11 +5,12 @@
  */
 export type GameroomStatus = { 
 /**
- * Who is logged in, if anyone.
+ * Who is logged in, if anyone: their gameroom username, also when
+ * they logged in with their email address.
  */
 username: string | null, 
 /**
- * The username of the remembered login, if one is saved (its password
+ * The name of the remembered login (a username or email address), if one is saved (its password
  * stays in the backend).
  */
 savedUsername: string | null, };

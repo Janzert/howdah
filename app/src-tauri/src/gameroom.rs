@@ -223,7 +223,12 @@ macro_rules! with_lobby {
 pub struct Gameroom {
     http: Http,
     lobby: tokio::sync::Mutex<Option<Lobby>>,
-    username: Mutex<Option<String>>,
+    /// The name logged in with: the username or the account's email
+    /// address. The saved login and logging in again go by it.
+    login: Mutex<Option<String>>,
+    /// The user's gameroom username (`state`'s `me`), which the game lists
+    /// and the gameroom show; the login name until a list says.
+    player: Mutex<Option<String>>,
     saved: SavedLogin,
     /// Lobby-wide events (not a session's).
     events: Events,
@@ -243,7 +248,8 @@ impl Gameroom {
         Gameroom {
             http,
             lobby: tokio::sync::Mutex::new(None),
-            username: Mutex::new(None),
+            login: Mutex::new(None),
+            player: Mutex::new(None),
             saved,
             events,
             waiters: Mutex::new(Default::default()),
@@ -254,7 +260,12 @@ impl Gameroom {
     }
 
     pub fn status(&self) -> GameroomStatus {
-        GameroomStatus { username: lock(&self.username).clone(), saved_username: self.saved.username() }
+        GameroomStatus { username: self.player(), saved_username: self.saved.username() }
+    }
+
+    /// The user's gameroom username, while logged in.
+    fn player(&self) -> Option<String> {
+        lock(&self.player).clone().or_else(|| lock(&self.login).clone())
     }
 
     /// Logs in (the browser client's way), ending another user's earlier
@@ -277,15 +288,22 @@ impl Gameroom {
         }
         let mut lobby = new_lobby(&self.http);
         lobby.login(username, &password).await.map_err(net_error)?;
+        // The lists at once: they name the user (who may have logged in
+        // with their email address), and the lobby asks for them next
+        // anyway (`last_games`).
+        let first = lobby.games().await.ok();
+        let player = first.as_ref().and_then(|g| g.username.clone()).unwrap_or_else(|| username.to_string());
         let mut slot = self.lobby.lock().await;
-        let old_user = lock(&self.username).clone();
-        *lock(&self.user_id) = None;
+        let old_player = self.player();
         if let Some(mut old) = slot.replace(lobby)
-            && ends_old_login(old_user.as_deref(), username)
+            && ends_old_login(old_player.as_deref(), &player)
         {
             let _ = old.logout().await;
         }
-        *lock(&self.username) = Some(username.to_string());
+        *lock(&self.login) = Some(username.to_string());
+        *lock(&self.player) = Some(player);
+        *lock(&self.user_id) = first.as_ref().and_then(|g| g.user_id.clone());
+        *lock(&self.last_games) = first.map(|g| self.games_view(g));
         if remember {
             self.saved
                 .save(username, &password)
@@ -304,7 +322,8 @@ impl Gameroom {
             w.abort();
         }
         let old = self.lobby.lock().await.take();
-        *lock(&self.username) = None;
+        *lock(&self.login) = None;
+        *lock(&self.player) = None;
         *lock(&self.last_games) = None;
         *lock(&self.user_id) = None;
         match old {
@@ -317,10 +336,11 @@ impl Gameroom {
     /// expired. Without one (or if it's another user's), it's logged out,
     /// and the user has to log in again.
     async fn relogin<'a>(&self, slot: &'a mut Option<Lobby>) -> Result<&'a Lobby, ApiError> {
-        let user = lock(&self.username).clone();
+        let user = lock(&self.login).clone();
         let Some((username, password)) = self.saved.load().filter(|(u, _)| Some(u) == user.as_ref()) else {
             *slot = None;
-            *lock(&self.username) = None;
+            *lock(&self.login) = None;
+            *lock(&self.player) = None;
             return Err(ApiError::state("the arimaa.com login has expired: log in again"));
         };
         let mut lobby = new_lobby(&self.http);
@@ -331,6 +351,11 @@ impl Gameroom {
     /// The live games and the last few finished ones.
     pub async fn games(&self) -> Result<GameroomGames, ApiError> {
         let games = self.lobby_games().await?;
+        Ok(self.games_view(games))
+    }
+
+    /// The lists as the frontend sees them, kept as the last ones.
+    fn games_view(&self, games: LobbyGames) -> GameroomGames {
         let views = |list: Vec<GameInfo>| list.into_iter().map(game_view).collect();
         let invitations = games
             .invited_me
@@ -339,7 +364,7 @@ impl Gameroom {
             .chain(games.i_invited.into_iter().map(|i| invitation_view(i, false)))
             .collect();
         let games = GameroomGames {
-            user: lock(&self.username).clone(),
+            user: self.player(),
             live: views(games.live),
             recent: games.recent.into_iter().map(recent_view).collect(),
             mine: views(games.mine),
@@ -347,7 +372,7 @@ impl Gameroom {
             invitations,
         };
         *lock(&self.last_games) = Some(games.clone());
-        Ok(games)
+        games
     }
 
     /// The lobby's lists as the server gives them (one `state`).
@@ -356,13 +381,16 @@ impl Gameroom {
         if games.user_id.is_some() {
             lock(&self.user_id).clone_from(&games.user_id);
         }
+        if games.username.is_some() {
+            lock(&self.player).clone_from(&games.username);
+        }
         Ok(games)
     }
 
     /// The lists as [`games`](Self::games) last fetched them, while
     /// logged in.
     pub fn last_games(&self) -> Option<GameroomGames> {
-        lock(&self.last_games).clone().filter(|g| g.user.is_some() && g.user == *lock(&self.username))
+        lock(&self.last_games).clone().filter(|g| g.user.is_some() && g.user == self.player())
     }
 
     /// Starts the lobby watcher: every [`LOBBY_POLL`] while logged in, the
@@ -371,7 +399,7 @@ impl Gameroom {
         let gameroom = self.clone();
         let task = tauri::async_runtime::spawn(async move {
             loop {
-                if lock(&gameroom.username).is_none() {
+                if lock(&gameroom.login).is_none() {
                     return;
                 }
                 if let Ok(games) = gameroom.games().await {
@@ -738,8 +766,9 @@ fn recent_view(g: RecentGame) -> RecentGameView {
 /// Whether logging in as `new_user` should log the previous login
 /// (`old_user`'s) out. Not for the same user: an arimaa.com logout ends
 /// every lobby login of the account, so it would end the new one too. The
-/// old session is just dropped. Names are compared ignoring case, since a
-/// wrong "different user" logs the user out.
+/// old session is just dropped. These are gameroom usernames (not what was
+/// typed to log in, which may be an email address), compared ignoring
+/// case, since a wrong "different user" logs the user out.
 fn ends_old_login(old_user: Option<&str>, new_user: &str) -> bool {
     old_user.is_some_and(|old| !old.eq_ignore_ascii_case(new_user))
 }
