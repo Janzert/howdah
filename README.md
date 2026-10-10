@@ -1,4 +1,4 @@
-# Howdah
+# Howdah <img src="app/src-tauri/app-icon.svg" alt="" height="40" align="top">
 
 [![CI](https://github.com/Janzert/howdah/actions/workflows/ci.yml/badge.svg)](https://github.com/Janzert/howdah/actions/workflows/ci.yml)
 
