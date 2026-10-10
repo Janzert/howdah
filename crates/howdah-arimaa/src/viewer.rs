@@ -19,8 +19,9 @@
 //! Each variable starts a line with `&` (the first needs none); values are
 //! percent-encoded, and `movelist` holds one move per line (`%0d`, a
 //! carriage return, between them) with `w`/`b` labels. A puzzle puts its
-//! position in the two "setups", which may place any pieces anywhere, and
-//! has silver to move with `2w pass`. A puzzle can also be a whole game
+//! position in the two "setups", which may place any pieces of either
+//! color anywhere (or all of them in `1w`, then `1b pass`), and has silver
+//! to move with `2w pass`. A puzzle can also be a whole game
 //! that ends at the puzzle. `side` is the side the solver plays,
 //! `startmove` the move the puzzle starts at (the answer file goes on with
 //! the solution, both sides' moves), and `chat` the puzzle's question.
@@ -114,21 +115,24 @@ impl ViewerGame {
             movelist.split(['\r', '\n']).map(str::trim).filter(|l| !l.is_empty()).collect();
 
         // The setups: a legal pair starts an ordinary game; anything else
-        // is a puzzle's position.
-        let setups: Vec<(Color, Vec<_>)> = lines
-            .iter()
-            .take(2)
-            .map(|l| notation::parse_move_line(l))
-            .take_while(|m| m.as_ref().is_ok_and(|m| m.number == 1))
-            .map(|m| {
-                let m = m.expect("checked");
-                let placements = match m.body {
-                    MoveBody::Setup(p) => p,
-                    _ => Vec::new(),
-                };
-                (m.color, placements)
-            })
-            .collect();
+        // is a puzzle's position. A puzzle may put every piece in one of
+        // them and pass in the other (`1b pass`).
+        let setup_line = |l: &str| -> Option<(Color, Vec<_>)> {
+            let (label, rest) = l.split_once(char::is_whitespace).unwrap_or((l, ""));
+            let (number, color) = notation::parse_move_number(label).ok()?;
+            if number != 1 {
+                return None;
+            }
+            if rest.trim().eq_ignore_ascii_case("pass") {
+                return Some((color, Vec::new()));
+            }
+            match notation::parse_move_body(rest).ok()?.0 {
+                MoveBody::Setup(p) => Some((color, p)),
+                MoveBody::Empty => Some((color, Vec::new())),
+                MoveBody::Steps(_) => None,
+            }
+        };
+        let setups: Vec<(Color, Vec<_>)> = lines.iter().take(2).map_while(|l| setup_line(l)).collect();
         let legal = setups.len() == 2
             && setups[0].0 == Color::Gold
             && setups[1].0 == Color::Silver
@@ -267,6 +271,18 @@ mod tests {
         let answer = format!("{text}&startmove=3w\n");
         let g = ViewerGame::parse(&answer).unwrap();
         assert_eq!(g.record.tree.label_after(g.start), "3g");
+    }
+
+    #[test]
+    fn every_piece_in_one_setup_and_a_pass_in_the_other() {
+        let g = ViewerGame::parse("&movelist=1w Ra2 rh7 Ee1 ee8%0d1b pass%0d2w Ra2n%0d2b \n&startmove=2w\n")
+            .unwrap();
+        let start = g.record.tree.start_position().unwrap();
+        assert_eq!((start.side_to_move(), start.pieces().count()), (Color::Gold, 4));
+        assert_eq!(g.record.tree.main_line().len(), 2, "the root, then the solution's move");
+        let silver =
+            ViewerGame::parse("&movelist=1w Ra2 rh7 Ee1 ee8%0d1b pass%0d2w pass%0d2b rh7s\n").unwrap();
+        assert_eq!(silver.record.tree.start_position().unwrap().side_to_move(), Color::Silver);
     }
 
     #[test]

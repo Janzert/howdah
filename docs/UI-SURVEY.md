@@ -362,7 +362,8 @@ The current engine panel shows depth, eval, PV and log per side.
     question), `side` (the solver), `startmove` (in the answer: where the
     puzzle starts), `title`, `wplayer`/`bplayer` and `timecontrol`. A
     puzzle's position is written as two "setups" that place any pieces
-    anywhere, with `2w pass` when silver moves first; some puzzles are a
+    of either color anywhere (or every piece in `1w` and `1b pass`, as
+    p117 does), with `2w pass` when silver moves first; some puzzles are a
     whole game ending at the puzzle. The answer goes on with both sides'
     moves. The page's hint is in its `answer()` script, and the author
     under "Composed By:". `howdah_arimaa::ViewerGame` reads it into an
