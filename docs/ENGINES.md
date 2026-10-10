@@ -68,6 +68,9 @@ Linux, macOS and Windows.
   lines.
 - **No `go infinite`.** `setoption name ignoretc value true` (allowed in
   release builds) makes `go` search until `stop`, which it answers at once.
+- **`depth`** stops the search at that many steps (raised to at least 4;
+  0 or less is no limit in release builds). The time control still
+  applies, so a fixed-depth search also needs `ignoretc`.
 - **A `stop` right after `go`** (within a few ms, before its search thread
   starts) gets no `bestmove`: the search reports a null move, which Sharp
   logs as `Error: Bot tried to make illegal move:` before waiting for
@@ -101,6 +104,9 @@ LDC).
   legal move.
 - **`stop`** takes 0.2-0.3 s since its search runs in 0.1 s slices (it
   was 0.5-1.2 s with 1 s slices).
+- **`depth`** fixes the search depth in steps (at least 4) and stops it
+  using the time control; 0 or less (or `infinite`) goes back to the
+  time control. Before OpFor 615011e, `0` searched to depth 4.
 - `setposition` honors the side. On an immobilized position it answers
   with an empty `bestmove`; the app treats such positions as over anyway.
 
@@ -125,6 +131,17 @@ dialogs of a game's and of analysis's engine. Not yet: file and directory
 pickers, and using a download-less manifest with a program the
 user picks. The design:
 
+- **Where manifests come from:** each engine's repo keeps an
+  `engine.json` with everything but the release (version `dev`, no
+  downloads): name, description, arguments and options, next to the code
+  that reads those options. Its release workflow fills in the version and
+  the downloads with their digests. Without downloads it's also the
+  manifest for a developer's own build.
+- **Depth:** a fixed search depth is AEI's optional `depth` option, so
+  it's listed in each engine's manifest like any other option, with a
+  description of how that engine treats it, and Howdah doesn't treat it
+  specially. A depth-limited analysis search ends by itself and shows as
+  finished.
 - **Adding:** the Engines dialog adds a manifest from a URL or a file.
   Howdah keeps the manifest's contents and where it came from in its own
   config; the file isn't needed again. A short built-in list of known
