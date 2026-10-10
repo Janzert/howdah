@@ -131,8 +131,12 @@ architecture. Decided and checked against the live server in October 2026.
   opens in a new window; declined, with the reason), and the lobby lists invitations
   both ways with Accept, Decline and Cancel.
 - **Server bots** (4steps's bot launcher): the lobby's "Show server
-  bots" fetches the bot ladder's page of every bot arimaa.com runs, with
-  the user's record against each, only when asked. Choosing one reads
+  bots" fetches, only when asked, the official bot ladder (about 30
+  bots, ranked around the user: those above are the ones they have yet
+  to beat) and the page of every bot arimaa.com runs, with the user's
+  record against each. Both are asked for by the user's player id. The
+  ladder is shown first, with the user's place in it; "All bots" shows
+  every one. Choosing one reads
   its page (its time control, whether it's rated and running, and
   whether players may start it). Start posts the page's own form, which
   has the bot open a game with itself at the side the user didn't pick;

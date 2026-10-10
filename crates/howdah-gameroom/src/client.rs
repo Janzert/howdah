@@ -12,7 +12,9 @@ use tokio::sync::Mutex;
 
 use howdah_arimaa::Color;
 
-use crate::bots::{BotInfo, ServerBot, parse_bot_list, parse_bot_page, start_reply_text};
+use crate::bots::{
+    BotInfo, BotLadder, ServerBot, parse_bot_ladder, parse_bot_list, parse_bot_page, start_reply_text,
+};
 use crate::clock_sync::ClockSync;
 use crate::finished::{FinishedGame, RecentGame};
 use crate::invitations::{Invitation, InviteOutcome, parse_wait};
@@ -899,19 +901,23 @@ impl Lobby {
     }
 
     /// The server bots, from the bot ladder's page of them all
-    /// (`botLadderAll.cgi`), with `user`'s record against each when given.
-    /// It needs no session.
-    pub async fn server_bots(&self, user: Option<&str>) -> Result<Vec<ServerBot>, Error> {
+    /// (`botLadderAll.cgi`), with player `player_id`'s record against each
+    /// when given ([`LobbyGames::user_id`] for the user). It needs no
+    /// session.
+    pub async fn server_bots(&self, player_id: Option<&str>) -> Result<Vec<ServerBot>, Error> {
         let mut url = format!("{}botLadderAll.cgi", self.base);
-        // Usernames are letters, digits and underscores; anything else
-        // would need encoding, so it's left out (the record is extra).
-        if let Some(user) =
-            user.filter(|u| !u.is_empty() && u.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
-        {
-            url.push_str(&format!("?u={user}"));
+        if let Some(id) = player_id {
+            url.push_str(&format!("?u={}", player_query(id)?));
         }
         let page = self.http.get_page(&url, None).await?;
         Ok(parse_bot_list(&page, &url))
+    }
+
+    /// The official bot ladder as player `player_id` sees it
+    /// (`botLadder.cgi`): the bots above them and below. No session needed.
+    pub async fn bot_ladder(&self, player_id: &str) -> Result<BotLadder, Error> {
+        let url = format!("{}botLadder.cgi?u={}", self.base, player_query(player_id)?);
+        Ok(parse_bot_ladder(&self.http.get_page(&url, None).await?))
     }
 
     /// What server bot `page` (its control page, [`ServerBot::page`]) says
@@ -1084,6 +1090,14 @@ impl Lobby {
         let trimmed = self.base.trim_end_matches('/');
         trimmed.rsplit_once('/').map_or(self.base.as_str(), |(r, _)| &self.base[..r.len() + 1])
     }
+}
+
+/// A player id for a query string: digits only.
+fn player_query(id: &str) -> Result<&str, Error> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
+        return Err(Error::Server(format!("not a player id: {id:?}")));
+    }
+    Ok(id)
 }
 
 /// A seat at a game on the game server.

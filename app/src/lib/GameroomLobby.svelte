@@ -16,6 +16,7 @@
   import type { PostalGameView } from './bindings/PostalGameView';
   import type { RecentGameView } from './bindings/RecentGameView';
   import type { ServerBotView } from './bindings/ServerBotView';
+  import type { ServerBotsView } from './bindings/ServerBotsView';
   import type { WinReason } from './bindings/WinReason';
   import { on } from './events';
   import { mySide as sideIn, myTurn as turnIn } from './gameroom';
@@ -90,8 +91,10 @@
     ['0/0/0/0/0', 'Postal: no time limit'],
   ];
 
-  /** The server bots, once asked for, and how the list is shown. */
-  let bots = $state<ServerBotView[] | null>(null);
+  /** The server bots, once asked for, and how the list is shown: the
+   * official bot ladder or every bot. */
+  let bots = $state<ServerBotsView | null>(null);
+  let botSet = $state<'ladder' | 'all'>(pref('gameroom.botSet') === 'all' ? 'all' : 'ladder');
   let botFilter = $state('');
   let botOrder = $state<'ladder' | 'rating' | 'name'>('ladder');
   /** The bot picked to play, with what its page says once fetched. */
@@ -106,12 +109,33 @@
   /** What's happening with a started bot, or what the server said. */
   let botStatus = $state<string | null>(null);
 
-  const shownBots = $derived.by(() => {
+  // The bot list holds a user's record and place on the ladder, so a
+  // different login (or none) drops it.
+  $effect(() => {
+    void user;
+    bots = null;
+    bot = null;
+    botStatus = null;
+  });
+
+  /** The rows of the bot list: bots, and in the ladder's own order the
+   * user's place on it. */
+  type BotRow = { bot: ServerBotView } | { me: true };
+  const ladderShown = $derived(botSet === 'ladder' && (bots?.ladder.length ?? 0) > 0);
+  const shownBots = $derived.by((): BotRow[] => {
+    if (!bots) return [];
     const words = botFilter.trim().toLowerCase();
-    const list = (bots ?? []).filter((b) => !words || b.name.toLowerCase().includes(words));
+    const byName = new Map(bots.bots.map((b) => [b.name, b]));
+    const set = ladderShown ? bots.ladder.flatMap((n) => byName.get(n) ?? []) : [...bots.bots];
+    const list = set.filter((b) => !words || b.name.toLowerCase().includes(words));
     if (botOrder === 'rating') list.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
     else if (botOrder === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
-    return list;
+    const rows: BotRow[] = list.map((bot) => ({ bot }));
+    if (ladderShown && botOrder === 'ladder' && !words) {
+      const above = bots.ladder.slice(0, bots.ladderAbove);
+      rows.splice(list.filter((b) => above.includes(b.name)).length, 0, { me: true });
+    }
+    return rows;
   });
 
   function loadBots() {
@@ -129,11 +153,13 @@
     });
   }
 
-  /** "2 games, won 1" or "not beaten yet". */
+  /** "You: 6 games, won 1, lost 5", and "not beaten yet". */
   function botRecord(b: ServerBotView): string {
     const parts = [];
-    if (b.games) parts.push(`you: ${b.games} ${b.games === 1 ? 'game' : 'games'}, won ${b.won ?? 0}`);
-    if (b.toBeWon) parts.push('not beaten yet');
+    if (b.games) {
+      parts.push(`You: ${b.games} ${b.games === 1 ? 'game' : 'games'}, won ${b.won ?? 0}, lost ${b.lost ?? 0}`);
+    }
+    if (b.toBeWon === true) parts.push('not beaten yet');
     return parts.join(' · ');
   }
 
@@ -571,9 +597,13 @@
     <h3>Server bots</h3>
     {#if bots == null}
       <button class="subtle" onclick={loadBots} disabled={busy}>Show server bots</button>
-      <p class="hint">Start a game against one of the bots arimaa.com runs, as on its bot ladder.</p>
+      <p class="hint">Start a game against one of the bots arimaa.com runs: those on its bot ladder, or any.</p>
     {:else}
       <div class="bot-tools">
+        <select bind:value={botSet} onchange={() => savePref('gameroom.botSet', botSet)} aria-label="Which bots">
+          <option value="ladder" disabled={bots.ladder.length === 0}>Bot ladder</option>
+          <option value="all">All bots</option>
+        </select>
         <input bind:value={botFilter} placeholder="Filter by name" aria-label="Filter bots" autocomplete="off" />
         <select bind:value={botOrder} aria-label="Order bots">
           <option value="ladder">Ladder order</option>
@@ -582,10 +612,16 @@
         </select>
       </div>
       {#if shownBots.length === 0}
-        <p class="hint">{bots.length === 0 ? 'arimaa.com lists no bots.' : 'No bot matches.'}</p>
+        <p class="hint">{bots.bots.length === 0 ? 'arimaa.com lists no bots.' : 'No bot matches.'}</p>
       {:else}
         <ul class="games" aria-label="Server bots">
-          {#each shownBots as b (b.name)}
+          {#each shownBots as row ('me' in row ? '' : row.bot.name)}
+            {#if 'me' in row}
+              <li class="me">
+                <span class="players">You{bots.ladderAbove > 0 ? ': beat the bots above to climb' : ', at the top of the ladder'}</span>
+              </li>
+            {:else}
+            {@const b = row.bot}
             <li class:picked={bot?.bot.name === b.name}>
               <span class="game">
                 <span class="players">
@@ -598,6 +634,7 @@
                 aria-label="Choose {b.name}">Choose</button
               >
             </li>
+            {/if}
           {/each}
         </ul>
       {/if}
@@ -879,7 +916,12 @@
   }
   .bot-tools input {
     flex: 1;
-    min-width: 0;
+    min-width: 6em;
+  }
+  .games li.me {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 600;
   }
   .games li.picked {
     background: var(--hover);

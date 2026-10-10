@@ -2,8 +2,10 @@
 //! can start a game against, as 4steps's bot launcher does.
 //!
 //! The list is the bot ladder's page of every bot (`botLadderAll.cgi`,
-//! with `?u=<username>` for the user's record against each; no session
-//! needed). Each bot has a control page (`…/arimaa/bots/<bot>/index.cgi`)
+//! with `?u=<player id>` for the user's record against each; no session
+//! needed). The official bot ladder (`botLadder.cgi?u=<player id>`) is
+//! about 30 of them, ranked by rating around the user: the bots above
+//! them are the ones they have yet to beat. Each bot has a control page (`…/arimaa/bots/<bot>/index.cgi`)
 //! saying what it is, whether it runs, and the time control of its games.
 //! Posting that page's player form (`action=player`, `side`, the side the
 //! bot plays, and `newgame=Start Bot`) starts the bot, which opens a game
@@ -24,13 +26,30 @@ pub struct ServerBot {
     pub rating_uncertainty: Option<u32>,
     /// Its control page, the one [`crate::Lobby::start_bot`] posts to.
     pub page: String,
-    /// Whether the user has yet to beat it (the ladder's "To be won").
-    pub to_be_won: bool,
+    /// Whether the user has yet to beat it (the ladder's "To be won");
+    /// none when the page wasn't asked for a player.
+    pub to_be_won: Option<bool>,
     /// The user's games against it, and how many they won and lost; none
-    /// when the page wasn't asked for a user, or they haven't played it.
+    /// when the page wasn't asked for a player, or they haven't played it.
     pub games: Option<u32>,
     pub won: Option<u32>,
     pub lost: Option<u32>,
+}
+
+/// A bot on the official bot ladder.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LadderBot {
+    pub name: String,
+    pub player_id: String,
+    pub rating: Option<u32>,
+}
+
+/// The official bot ladder as a player sees it, each part highest first:
+/// the bots above them (not beaten yet) and below them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BotLadder {
+    pub above: Vec<LadderBot>,
+    pub below: Vec<LadderBot>,
 }
 
 /// What a bot's control page says.
@@ -62,8 +81,14 @@ pub fn parse_bot_list(page: &str, list_url: &str) -> Vec<ServerBot> {
     let (Some(name_col), Some(link_col)) = (column("Bot_name"), column("Bot_Link")) else {
         return Vec::new();
     };
-    let [rating, uncertainty, to_be_won, games, won, lost] =
-        ["Bot_rating", "Bot_RU", "To_be_won", "Total_games", "Won", "Lost"].map(column);
+    // Asked for a player, the page names them above the table; the record
+    // columns are theirs. Without one they're empty.
+    let [rating, uncertainty] = ["Bot_rating", "Bot_RU"].map(column);
+    let [to_be_won, games, won, lost] = if page.contains("statistics for player") {
+        ["To_be_won", "Total_games", "Won", "Lost"].map(column)
+    } else {
+        [None; 4]
+    };
     rows.filter_map(|row| {
         let cell = |i: Option<usize>| i.and_then(|i| row.get(i)).map(|c| text_of(c));
         let number = |i: Option<usize>| cell(i).and_then(|t| t.parse().ok());
@@ -77,13 +102,47 @@ pub fn parse_bot_list(page: &str, list_url: &str) -> Vec<ServerBot> {
             rating: number(rating),
             rating_uncertainty: number(uncertainty),
             page,
-            to_be_won: cell(to_be_won).is_some_and(|t| t.eq_ignore_ascii_case("yes")),
+            to_be_won: cell(to_be_won).filter(|t| !t.is_empty()).map(|t| t.eq_ignore_ascii_case("yes")),
             games: number(games),
             won: number(won),
             lost: number(lost),
         })
     })
     .collect()
+}
+
+/// The official bot ladder's page for a player (`botLadder.cgi?u=<id>`).
+/// Every player link on it is a ladder bot, apart from the player's own
+/// (`name='me'`), which divides the bots above them from those below.
+pub fn parse_bot_ladder(page: &str) -> BotLadder {
+    const LINK: &str = "playerPage(";
+    let mut ladder = BotLadder::default();
+    let mut below = false;
+    let mut rest = page;
+    while let Some(i) = rest.find(LINK) {
+        rest = &rest[i + LINK.len()..];
+        let player_id: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        // The script's own `playerPage(id)` has no digits.
+        if player_id.is_empty() {
+            continue;
+        }
+        let Some(close) = rest.find('>') else { break };
+        let attributes = &rest[..close];
+        let Some(end) = rest.find("</a>") else { break };
+        let name = text_of(&rest[close + 1..end]);
+        rest = &rest[end + 4..];
+        if attributes.contains("name='me'") || attributes.contains("name=\"me\"") {
+            below = true;
+            continue;
+        }
+        if !name.starts_with("bot_") {
+            continue;
+        }
+        let rating = text_of(&rest[..rest.find('<').unwrap_or(rest.len())]).parse().ok();
+        let bot = LadderBot { name, player_id, rating };
+        if below { ladder.below.push(bot) } else { ladder.above.push(bot) }
+    }
+    ladder
 }
 
 /// A bot's control page. Only its player section counts: the developer's
@@ -262,7 +321,7 @@ mod tests {
                     rating: Some(2189),
                     rating_uncertainty: Some(120),
                     page: "http://arimaa.com/arimaa/bots/bot_Bomb2005Lightning/index.cgi".into(),
-                    to_be_won: false,
+                    to_be_won: Some(false),
                     games: Some(3),
                     won: Some(1),
                     lost: Some(2),
@@ -273,7 +332,7 @@ mod tests {
                     rating: Some(1265),
                     rating_uncertainty: Some(46),
                     page: "http://arimaa.com/arimaa/bots/bot_ShallowBlue/index.cgi".into(),
-                    to_be_won: true,
+                    to_be_won: Some(true),
                     games: None,
                     won: None,
                     lost: None,
@@ -281,6 +340,61 @@ mod tests {
             ]
         );
         assert!(parse_bot_list("<html>Not Found</html>", LIST_URL).is_empty());
+        // Not asked for a player, the page has no record.
+        let anyone = LIST.replace("Bot game statistics for player:", "");
+        let bot = &parse_bot_list(&anyone, LIST_URL)[1];
+        assert_eq!((bot.to_be_won, bot.games), (None, None));
+    }
+
+    /// `botLadder.cgi?u=397` (2026-10-10), trimmed to two bots above the
+    /// player and three below.
+    const LADDER: &str = r#"<script language="JavaScript1.2">
+function playerPage(id){
+open('playerpage.cgi?id='+id,'','toolbar=no');
+}
+</script>
+<tr>
+<td>
+<p> <a href='javascript:playerPage(2320)'>bot_Bomb2005Fast</a> 1952 <p> <a href='javascript:playerPage(2649)'>bot_Bomb2005Blitz</a> 1951 
+</td>
+<td valign=bottom>
+<a href='javascript:playBot(2320)'><b>Play Now</b></a> &nbsp; &nbsp; <a href='http://arimaa.com/arimaa/gameroom/pastrecord.cgi?id=2320&r=l' target=_blank><font size=2>How to win</font></a> <br><br>
+</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td>
+<a href='javascript:playerPage(397)' name='me'>Janzert</a> 1677
+</td>
+</tr>
+<tr>
+<td></td>
+<td>
+</td>
+<td>
+<p> <a href='javascript:playerPage(8841)'>bot_OpFor2008Blitz</a> 2115 <a href='javascript:playBot(8841)'></a><p> <a href='javascript:playerPage(8853)'>bot_Clueless2007Blitz</a> 1917 <a href='javascript:playBot(8853)'></a><p> <a href='javascript:playerPage(4609)'>bot_ArimaaScoreP1</a> 1000 <a href='javascript:playBot(4609)'></a>
+</td>
+</tr>"#;
+
+    #[test]
+    fn the_ladder_is_read() {
+        let ladder = parse_bot_ladder(LADDER);
+        let names = |bots: &[LadderBot]| bots.iter().map(|b| (b.name.clone(), b.rating)).collect::<Vec<_>>();
+        assert_eq!(
+            names(&ladder.above),
+            [("bot_Bomb2005Fast".to_string(), Some(1952)), ("bot_Bomb2005Blitz".to_string(), Some(1951))]
+        );
+        assert_eq!(
+            names(&ladder.below),
+            [
+                ("bot_OpFor2008Blitz".to_string(), Some(2115)),
+                ("bot_Clueless2007Blitz".to_string(), Some(1917)),
+                ("bot_ArimaaScoreP1".to_string(), Some(1000)),
+            ]
+        );
+        assert_eq!(ladder.below[0].player_id, "8841");
+        assert_eq!(parse_bot_ladder("<h2>Need Player ID</h2>"), BotLadder::default());
     }
 
     #[test]

@@ -870,12 +870,28 @@ pub struct ServerBotView {
     pub rating_uncertainty: Option<u32>,
     /// Its control page, which `start_gameroom_bot` takes.
     pub page: String,
-    /// Whether the user has yet to beat it (the bot ladder's "To be won").
-    pub to_be_won: bool,
+    /// Whether the user has yet to beat it (the bot ladder's "To be won");
+    /// none if arimaa.com didn't give the user's record.
+    pub to_be_won: Option<bool>,
     /// The user's games against it, won and lost, once they've played it.
     pub games: Option<u32>,
     pub won: Option<u32>,
     pub lost: Option<u32>,
+}
+
+/// The server's bots, and the official bot ladder among them.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ServerBotsView {
+    /// Every bot, in the order of the server's list.
+    pub bots: Vec<ServerBotView>,
+    /// The official bot ladder's bots (`ServerBotView.name`), highest
+    /// first; empty if arimaa.com didn't give it.
+    pub ladder: Vec<String>,
+    /// How many of `ladder` are above the user (not beaten yet); the user
+    /// stands between them and the rest.
+    pub ladder_above: u32,
 }
 
 /// What a server bot's page says about it.

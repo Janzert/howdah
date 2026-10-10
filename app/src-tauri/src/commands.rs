@@ -8,7 +8,7 @@ use crate::backend::Backend;
 use crate::dto::{
     ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames,
     GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PositionView, PostalGameView,
-    ServerBotView, SessionId, SessionView, StartedBotView, StepTarget, WatchView,
+    ServerBotsView, SessionId, SessionView, StartedBotView, StepTarget, WatchView,
 };
 
 #[tauri::command]
@@ -450,7 +450,7 @@ pub async fn play_gameroom_game(
 }
 
 #[tauri::command]
-pub async fn gameroom_server_bots(state: State<'_, Backend>) -> Result<Vec<ServerBotView>, ApiError> {
+pub async fn gameroom_server_bots(state: State<'_, Backend>) -> Result<ServerBotsView, ApiError> {
     state.gameroom_server_bots().await
 }
 

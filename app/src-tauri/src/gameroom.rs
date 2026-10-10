@@ -59,7 +59,7 @@ use crate::controller::{Controller, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, BotInfoView, ChatLineView, GameroomGames, GameroomStatus, InvitationAnswer,
     InvitationOutcome, InvitationView, LiveGameView, PastGameView, PlayerGamesView, PlayerMatchView,
-    PostalGameView, RecentGameView, ServerBotView, StartedBotView, WatchState, WatchView,
+    PostalGameView, RecentGameView, ServerBotView, ServerBotsView, StartedBotView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -522,35 +522,48 @@ impl Gameroom {
         if !unrated {
             return with_lobby!(self, |l| l.play(gid, side));
         }
-        let known = lock(&self.user_id).clone();
-        let user_id = match known {
-            Some(id) => id,
-            None => self
-                .lobby_games()
-                .await?
-                .user_id
-                .ok_or_else(|| ApiError::state("arimaa.com didn't say your player id"))?,
-        };
+        let user_id =
+            self.user_id().await?.ok_or_else(|| ApiError::state("arimaa.com didn't say your player id"))?;
         with_lobby!(self, |l| l.play_unrated(gid, side, &user_id))
     }
 
-    /// The bots arimaa.com runs, with the user's record against each.
-    pub async fn server_bots(&self) -> Result<Vec<ServerBotView>, ApiError> {
-        let user = lock(&self.username).clone();
-        let bots = with_lobby!(self, |l| l.server_bots(user.as_deref()))?;
-        Ok(bots
-            .into_iter()
-            .map(|b| ServerBotView {
-                name: b.name,
-                rating: b.rating,
-                rating_uncertainty: b.rating_uncertainty,
-                page: b.page,
-                to_be_won: b.to_be_won,
-                games: b.games,
-                won: b.won,
-                lost: b.lost,
-            })
-            .collect())
+    /// The bots arimaa.com runs, with the user's record against each, and
+    /// the official bot ladder as the user sees it. Both pages are asked
+    /// for by player id, which the lobby's lists give.
+    pub async fn server_bots(&self) -> Result<ServerBotsView, ApiError> {
+        let user_id = self.user_id().await?;
+        let bots = with_lobby!(self, |l| l.server_bots(user_id.as_deref()))?;
+        let ladder = match &user_id {
+            Some(id) => with_lobby!(self, |l| l.bot_ladder(id))?,
+            None => Default::default(),
+        };
+        Ok(ServerBotsView {
+            ladder: ladder.above.iter().chain(&ladder.below).map(|b| b.name.clone()).collect(),
+            ladder_above: ladder.above.len() as u32,
+            bots: bots
+                .into_iter()
+                .map(|b| ServerBotView {
+                    name: b.name,
+                    rating: b.rating,
+                    rating_uncertainty: b.rating_uncertainty,
+                    page: b.page,
+                    to_be_won: b.to_be_won,
+                    games: b.games,
+                    won: b.won,
+                    lost: b.lost,
+                })
+                .collect(),
+        })
+    }
+
+    /// The user's player id, from the lobby's lists (asked for if they
+    /// haven't been yet).
+    async fn user_id(&self) -> Result<Option<String>, ApiError> {
+        let known = lock(&self.user_id).clone();
+        match known {
+            Some(id) => Ok(Some(id)),
+            None => Ok(self.lobby_games().await?.user_id),
+        }
     }
 
     /// What server bot `page` (its control page) says about itself.

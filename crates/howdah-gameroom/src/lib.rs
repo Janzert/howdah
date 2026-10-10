@@ -39,7 +39,7 @@ pub mod players;
 pub mod state;
 pub mod wire;
 
-pub use bots::{BotInfo, ServerBot};
+pub use bots::{BotInfo, BotLadder, LadderBot, ServerBot};
 pub use client::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog,
     Opened, Seat, ViewerSeat,

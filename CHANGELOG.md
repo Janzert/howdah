@@ -10,7 +10,8 @@ young).
 ### Added
 
 - Playing arimaa.com's server bots, as 4steps's bot launcher does: the
-  lobby lists the bots (with your record against each), shows a chosen
+  lobby lists the official bot ladder (with your place on it) or every
+  bot, with your record against each, shows a chosen
   bot's time control and whether it's running, and starts it. With "Join
   on creation" the game it opens comes up in a new window at once; with
   "Keep rated" off you join in the gameroom's unrated mode, so a rated

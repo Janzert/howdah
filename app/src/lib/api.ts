@@ -18,7 +18,7 @@ import type { PlayerGamesView } from './bindings/PlayerGamesView';
 import type { PlayerMatchView } from './bindings/PlayerMatchView';
 import type { PostalGameView } from './bindings/PostalGameView';
 import type { PositionView } from './bindings/PositionView';
-import type { ServerBotView } from './bindings/ServerBotView';
+import type { ServerBotsView } from './bindings/ServerBotsView';
 import type { SessionId } from './bindings/SessionId';
 import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
@@ -185,9 +185,9 @@ function makeApi(sid: () => SessionId | null) {
      * a rated game against a bot unrated. */
     playGameroomGame: (gid: string, side: Color, unrated = false) =>
       invoke<void>('play_gameroom_game', { session: sid(), gid, side, unrated }),
-    /** The bots arimaa.com runs, with the user's record against each (one
-     * page fetch, so only when asked). */
-    gameroomServerBots: () => invoke<ServerBotView[]>('gameroom_server_bots'),
+    /** The bots arimaa.com runs, with the user's record against each, and
+     * the official bot ladder (two page fetches, so only when asked). */
+    gameroomServerBots: () => invoke<ServerBotsView>('gameroom_server_bots'),
     /** What a server bot's page (`ServerBotView.page`) says about it: its
      * time control, and whether it runs. */
     gameroomBotInfo: (page: string) => invoke<BotInfoView>('gameroom_bot_info', { page }),

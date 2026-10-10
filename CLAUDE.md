@@ -156,11 +156,14 @@ Howdah plays and watches games on arimaa.com.
     `Lobby::player_games` fetch them. `Error::Expired` is a lobby session
     that's gone (an ASIP error or the "Session Expired" page).
   - `bots`: the server's bots (4steps's bot launcher). `parse_bot_list`
-    reads the bot ladder's page of them all (`botLadderAll.cgi?u=`, no
-    session; `ServerBot`, by the table's header names), `parse_bot_page`
+    reads the bot ladder's page of them all (`botLadderAll.cgi?u=<player
+    id>`, no session; `ServerBot`, by the table's header names; the record
+    only when the page names a player), `parse_bot_ladder` the official
+    bot ladder (`botLadder.cgi?u=<player id>`, `BotLadder`: the bots above
+    the player and below), `parse_bot_page`
     a bot's control page (`BotInfo`: time control, rated, status, and
     whether players may start it, from its player section only).
-    `Lobby::server_bots`, `bot_info` and `start_bot` (posting the page's
+    `Lobby::server_bots`, `bot_ladder`, `bot_info` and `start_bot` (posting the page's
     player form, `side` being the bot's; only to pages under
     `/arimaa/bots/`, `Lobby::bot_page`). The bot then opens a game in
     the open games. `Lobby::play_unrated` sits as `play` does with the
@@ -526,8 +529,9 @@ Howdah plays and watches games on arimaa.com.
     it), and an Invitations section lists them with
     Accept (`accept_gameroom_invitation`, which also takes the seat),
     Decline and Cancel. "Show server bots" lists the server's bots
-    (`gameroom_server_bots`, one page fetch, only when asked; filter and
-    order); Choose reads the bot's page (`gameroom_bot_info`), and Start
+    (`gameroom_server_bots`, `ServerBotsView`: every bot and the official
+    ladder, two page fetches, only when asked; "Bot ladder", with the
+    user's place in it, or "All bots"; filter and order); Choose reads the bot's page (`gameroom_bot_info`), and Start
     (`start_gameroom_bot`, the user's side, "Join on creation" and "Keep
     rated", kept in localStorage) starts it and, joining, plays the game
     it opens with `playGameroomGame(gid, side, unrated)`; the server's

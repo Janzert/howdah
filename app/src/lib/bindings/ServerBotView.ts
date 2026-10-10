@@ -17,9 +17,10 @@ ratingUncertainty: number | null,
  */
 page: string, 
 /**
- * Whether the user has yet to beat it (the bot ladder's "To be won").
+ * Whether the user has yet to beat it (the bot ladder's "To be won");
+ * none if arimaa.com didn't give the user's record.
  */
-toBeWon: boolean, 
+toBeWon: boolean | null, 
 /**
  * The user's games against it, won and lost, once they've played it.
  */

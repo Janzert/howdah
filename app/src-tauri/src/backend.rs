@@ -31,7 +31,7 @@ use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec,
     GameroomGames, GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec,
-    PositionView, PostalGameView, ServerBotView, SessionId, SessionUpdate, SessionView, SessionsChanged,
+    PositionView, PostalGameView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
     StartedBotView, StepTarget, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
@@ -674,7 +674,7 @@ impl Backend {
     }
 
     /// The bots arimaa.com runs, with the user's record against each.
-    pub async fn gameroom_server_bots(&self) -> Result<Vec<ServerBotView>, ApiError> {
+    pub async fn gameroom_server_bots(&self) -> Result<ServerBotsView, ApiError> {
         self.gameroom.server_bots().await
     }
 
