@@ -365,7 +365,12 @@ The current engine panel shows depth, eval, PV and log per side.
     of either color anywhere (or every piece in `1w` and `1b pass`, as
     p117 does), with `2w pass` when silver moves first; some puzzles are a
     whole game ending at the puzzle. The answer goes on with both sides'
-    moves. The page's hint is in its `answer()` script, and the author
+    moves. The lists are loose, and the reader takes them as the Flash
+    viewer did: a placement without a piece letter (p44) is skipped, a
+    line can carry a second label after its own (p91: `1w 1g Ha2 …`, with
+    stray `32w 32g` and `32b pass` lines and a `startmove` in the outer
+    labels), and pushed or pulled pieces can be written in the mover's
+    case (p97: `Mg1e` for a silver camel). The page's hint is in its `answer()` script, and the author
     under "Composed By:". `howdah_arimaa::ViewerGame` reads it into an
     ordinary record (a `Position` tag for a placed position).
   - Not done: hints as highlighted squares (4steps), auto-advance and

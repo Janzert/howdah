@@ -124,6 +124,9 @@
     return () => clearInterval(timer);
   });
 
+  /** Which puzzle the board was last turned for. */
+  let shownPuzzle = '';
+
   // Bumped when a new match starts, to clear the engine output panel.
   let matchKey = $state(0);
   let matchSig = '';
@@ -138,6 +141,17 @@
       }
     }
     matchSig = sig;
+    // A puzzle, as it opens (also in a new window's first view), puts the
+    // solver at the bottom.
+    const puzzleSig = v.puzzle ? `${v.puzzle.id}|${v.puzzle.title}|${v.puzzle.question}` : '';
+    if (puzzleSig && puzzleSig !== shownPuzzle) {
+      flipped = v.puzzle!.solver === 'silver';
+      // The list, for Next puzzle (the backend keeps it once fetched).
+      if (v.puzzle!.id && puzzleGroups.length === 0) {
+        api.puzzleList().then((g) => (puzzleGroups = g)).catch(() => {});
+      }
+    }
+    shownPuzzle = puzzleSig;
     view = v;
     receivedAt = performance.now();
     now = receivedAt;
@@ -455,15 +469,9 @@
   function puzzleChanged(prev: SessionView | null, v: SessionView) {
     const p = v.puzzle;
     if (!p) return;
+    // A new puzzle is set up in setView.
     const same = prev?.puzzle != null && prev.puzzle.id === p.id && prev.puzzle.title === p.title;
-    if (!same) {
-      // A new puzzle: the solver at the bottom, and the list for Next.
-      if (settings.humanAtBottom) flipped = p.solver === 'silver';
-      if (p.id && puzzleGroups.length === 0) {
-        api.puzzleList().then((g) => (puzzleGroups = g)).catch(() => {});
-      }
-      return;
-    }
+    if (!same) return;
     if (p.status !== prev.puzzle!.status) {
       if (p.status === 'solved') {
         play('win');

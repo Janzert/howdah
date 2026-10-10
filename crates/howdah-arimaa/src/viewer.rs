@@ -27,13 +27,13 @@
 //! the solution, both sides' moves), and `chat` the puzzle's question.
 
 use crate::error::{GameError, ParseError, RecordError};
-use crate::notation::{self, MoveBody};
+use crate::notation;
 use crate::position::Position;
 use crate::record::GameRecord;
-use crate::setup::validate_setup;
+use crate::setup::{Placement, validate_setup};
 use crate::start::StartPosition;
 use crate::tree::{GameTree, NodeId};
-use crate::types::Color;
+use crate::types::{Color, Piece, Square};
 
 /// A game or puzzle read from viewer variables.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,58 +111,7 @@ impl ViewerGame {
         let vars = parse_viewer_vars(text);
         let var = |name: &str| vars.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str());
         let movelist = var("movelist").ok_or_else(|| error("no movelist in the viewer variables"))?;
-        let mut lines: Vec<&str> =
-            movelist.split(['\r', '\n']).map(str::trim).filter(|l| !l.is_empty()).collect();
-
-        // The setups: a legal pair starts an ordinary game; anything else
-        // is a puzzle's position. A puzzle may put every piece in one of
-        // them and pass in the other (`1b pass`).
-        let setup_line = |l: &str| -> Option<(Color, Vec<_>)> {
-            let (label, rest) = l.split_once(char::is_whitespace).unwrap_or((l, ""));
-            let (number, color) = notation::parse_move_number(label).ok()?;
-            if number != 1 {
-                return None;
-            }
-            if rest.trim().eq_ignore_ascii_case("pass") {
-                return Some((color, Vec::new()));
-            }
-            match notation::parse_move_body(rest).ok()?.0 {
-                MoveBody::Setup(p) => Some((color, p)),
-                MoveBody::Empty => Some((color, Vec::new())),
-                MoveBody::Steps(_) => None,
-            }
-        };
-        let setups: Vec<(Color, Vec<_>)> = lines.iter().take(2).map_while(|l| setup_line(l)).collect();
-        let legal = setups.len() == 2
-            && setups[0].0 == Color::Gold
-            && setups[1].0 == Color::Silver
-            && setups.iter().all(|(c, p)| validate_setup(*c, p).is_ok());
-        let mut text = String::new();
-        if !legal && !setups.is_empty() {
-            let pieces = setups.iter().flat_map(|(_, p)| p.iter().map(|p| (p.piece, p.square)));
-            let mut position = Position::from_pieces(Color::Gold, pieces)
-                .map_err(|e| RecordError { line: 1, error: e.into() })?;
-            lines.drain(..setups.len());
-            // `2w pass`: gold passes, so silver moves first.
-            if let Some(first) = lines.first()
-                && let Some((label, rest)) = first.split_once(char::is_whitespace)
-                && rest.trim().eq_ignore_ascii_case("pass")
-            {
-                let (number, color) = notation::parse_move_number(label)
-                    .map_err(|e| RecordError { line: setups.len() + 1, error: e.into() })?;
-                if (number, color) != (2, Color::Gold) {
-                    return Err(error(format!("unexpected pass in {first:?}")));
-                }
-                position.set_side_to_move(Color::Silver);
-                lines.remove(0);
-            }
-            let start = StartPosition::new(position);
-            text.push_str(&format!("[Position \"{}\"]\n\n", start.to_short_string()));
-        }
-        for l in &lines {
-            text.push_str(l);
-            text.push('\n');
-        }
+        let (text, labels) = normalize(movelist)?;
         let mut record = GameRecord::parse(&text)?;
 
         if let Some(title) = var("title").filter(|t| !t.is_empty()) {
@@ -183,6 +132,8 @@ impl ViewerGame {
         let main = record.tree.main_line();
         let start = match var("startmove").filter(|s| !s.is_empty()) {
             Some(label) => {
+                // The label the move list's own label stood for.
+                let label = labels.iter().find(|(outer, _)| outer == label).map_or(label, |(_, inner)| inner);
                 let (number, color) = notation::parse_move_number(label)
                     .map_err(|e| RecordError { line: 0, error: e.into() })?;
                 let wanted = notation::move_label(2 * (number as usize - 1) + color.index());
@@ -196,6 +147,158 @@ impl ViewerGame {
         let solver = var("side").and_then(|s| s.chars().next()).and_then(Color::from_letter);
         Ok(ViewerGame { record, start, solver, vars })
     }
+}
+
+/// A move list line: its label (`2w`) and the rest.
+struct Line {
+    label: String,
+    number: u32,
+    color: Color,
+    body: String,
+}
+
+fn split_line(l: &str) -> Option<Line> {
+    let (label, rest) = l.split_once(char::is_whitespace).unwrap_or((l, ""));
+    let (number, color) = notation::parse_move_number(label).ok()?;
+    Some(Line { label: label.to_string(), number, color, body: rest.trim().to_string() })
+}
+
+/// Turns a viewer's move list into an ordinary record, as leniently as
+/// arimaa.com's viewer read it. Returns the record and, for each label the
+/// list wrote, the label it stood for.
+///
+/// - A line may carry a second label after its own (`1w 1g Ha2 ...`); the
+///   second one is the move's.
+/// - The leading move-1 lines are the setups: a legal pair is an ordinary
+///   game's; otherwise they place a puzzle's position, any pieces of
+///   either color anywhere (tokens without a piece letter are skipped),
+///   and either may be `pass`. `2w pass` after them means silver to move.
+/// - Lines with nothing after the label are dropped (the list ends with
+///   the next move's label), and so are passes later on (not a move in
+///   Arimaa).
+/// - Steps name pushed and pulled pieces in the mover's case at times
+///   (`Mg1e` for a silver camel on g1): each step takes the piece on its
+///   square, and capture tokens are left for the reader to work out.
+fn normalize(movelist: &str) -> Result<(String, Vec<(String, String)>), RecordError> {
+    let mut labels = Vec::new();
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, raw) in movelist.split(['\r', '\n']).map(str::trim).filter(|l| !l.is_empty()).enumerate() {
+        let mut line = split_line(raw).ok_or_else(|| RecordError {
+            line: i + 1,
+            error: ParseError::new(format!("can't read the move {raw:?}")).into(),
+        })?;
+        if let Some(inner) = split_line(&line.body)
+            && line
+                .body
+                .split_whitespace()
+                .next()
+                .is_some_and(|t| t.starts_with(|c: char| c.is_ascii_digit()))
+        {
+            labels.push((line.label.clone(), inner.label.clone()));
+            line = inner;
+        }
+        lines.push(line);
+    }
+
+    // The setups.
+    let placements = |body: &str| -> Option<Vec<(Piece, Square)>> {
+        if body.eq_ignore_ascii_case("pass") {
+            return Some(Vec::new());
+        }
+        let mut out = Vec::new();
+        for tok in body.split_whitespace() {
+            let piece = tok.chars().next().and_then(Piece::from_letter);
+            let square = tok.get(1..).and_then(|sq| sq.parse::<Square>().ok());
+            match (piece, square) {
+                (Some(p), Some(sq)) => out.push((p, sq)),
+                // A step: not a setup line.
+                (Some(_), None) if tok.len() == 4 => return None,
+                _ => {} // unreadable (`a1`): skipped
+            }
+        }
+        Some(out)
+    };
+    let setups: Vec<(Color, Vec<(Piece, Square)>)> = lines
+        .iter()
+        .take(2)
+        .map_while(|l| (l.number == 1).then(|| placements(&l.body).map(|p| (l.color, p))).flatten())
+        .collect();
+    let legal = setups.len() == 2
+        && setups[0].0 == Color::Gold
+        && setups[1].0 == Color::Silver
+        && setups.iter().all(|(c, p)| {
+            let placed: Vec<Placement> =
+                p.iter().map(|&(piece, square)| Placement { piece, square }).collect();
+            validate_setup(*c, &placed).is_ok()
+        });
+    let mut position = Position::empty(Color::Gold);
+    for (piece, sq) in setups.iter().flat_map(|(_, p)| p) {
+        if position.piece_at(*sq).is_some() {
+            return Err(RecordError {
+                line: 1,
+                error: ParseError::new(format!("{sq} is occupied twice")).into(),
+            });
+        }
+        position.set(*sq, Some(*piece));
+    }
+    let mut text = String::new();
+    let rest: &[Line];
+    if !legal && !setups.is_empty() {
+        let mut after = &lines[setups.len()..];
+        if let Some(first) = after.first()
+            && first.body.eq_ignore_ascii_case("pass")
+        {
+            if (first.number, first.color) != (2, Color::Gold) {
+                return Err(error(format!("unexpected pass in {} {}", first.label, first.body)));
+            }
+            position.set_side_to_move(Color::Silver);
+            after = &after[1..];
+        }
+        rest = after;
+        let start = StartPosition::new(position.clone());
+        text.push_str(&format!("[Position \"{}\"]\n\n", start.to_short_string()));
+    } else {
+        // An ordinary game: its setups as written.
+        for l in &lines[..setups.len().min(2)] {
+            text.push_str(&format!("{} {}\n", l.label, l.body));
+        }
+        rest = &lines[setups.len().min(2)..];
+    }
+
+    for l in rest {
+        if l.body.is_empty() || l.body.eq_ignore_ascii_case("pass") {
+            continue;
+        }
+        let mut tokens = Vec::new();
+        for tok in l.body.split_whitespace() {
+            let mut chars = tok.chars();
+            let (Some(letter), Some(square), Some(dir)) = (
+                chars.next(),
+                tok.get(1..3).and_then(|s| s.parse::<Square>().ok()),
+                tok.get(3..).filter(|d| d.len() == 1).and_then(|d| d.chars().next()),
+            ) else {
+                tokens.push(tok.to_string());
+                continue;
+            };
+            if dir == 'x' {
+                continue; // the reader works the captures out
+            }
+            let mut letter = letter;
+            if let (Some(on), Some(Some(named))) =
+                (position.piece_at(square), Some(Piece::from_letter(letter)))
+                && on.kind == named.kind
+            {
+                letter = on.letter();
+            }
+            if let (Some(piece), Some(d)) = (Piece::from_letter(letter), crate::types::Dir::from_letter(dir))
+            {
+                let _ = position.apply_step(crate::step::Step::new(piece, square, d));
+            }
+            tokens.push(format!("{letter}{square}{dir}"));
+        }
+        text.push_str(&format!("{} {}\n", l.label, tokens.join(" ")));
+    }
+    Ok((text, labels))
 }
 
 #[cfg(test)]
@@ -283,6 +386,37 @@ mod tests {
         let silver =
             ViewerGame::parse("&movelist=1w Ra2 rh7 Ee1 ee8%0d1b pass%0d2w pass%0d2b rh7s\n").unwrap();
         assert_eq!(silver.record.tree.start_position().unwrap().side_to_move(), Color::Silver);
+    }
+
+    /// The moves after the start, as `label notation`.
+    fn solution(g: &ViewerGame) -> Vec<String> {
+        let t = &g.record.tree;
+        let line = t.line_through(g.start);
+        let at = line.iter().position(|&n| n == g.start).unwrap();
+        line[at + 1..]
+            .iter()
+            .map(|&n| format!("{} {}", t.label_of(n).unwrap(), t[n].mv().unwrap().notation()))
+            .collect()
+    }
+
+    #[test]
+    fn quirks_of_arimaa_coms_move_lists() {
+        // A placement without a piece letter is skipped.
+        let g = ViewerGame::parse("&movelist=1w Ra2 a1 Ee1%0d1b rh7 ee8%0d2w Ra2n%0d2b \n").unwrap();
+        assert_eq!(g.record.tree.start_position().unwrap().pieces().count(), 4);
+
+        // Doubled labels, a stray empty line and pass, and a startmove in
+        // the outer labels.
+        let text = "&movelist=1w 1g Ra2 Ee1%0d1b 1s rh7 ee8%0d2w 2g Ra2n%0d2b 2s rh7s%0d\
+                    3w 3g%0d3b pass%0d4w 3g Ra3n%0d4b \n&startmove=4w\n";
+        let g = ViewerGame::parse(text).unwrap();
+        assert_eq!(g.record.tree.label_after(g.start), "3g");
+        assert_eq!(solution(&g), ["3g Ra3n"]);
+
+        // A pushed piece written in the mover's case.
+        let g = ViewerGame::parse("&movelist=1w Ee4 Ra2%0d1b re5 rh7%0d2w Re5n Ee4n%0d2b \n&startmove=2w\n")
+            .unwrap();
+        assert_eq!(solution(&g), ["2g re5n Ee4n"]);
     }
 
     #[test]
