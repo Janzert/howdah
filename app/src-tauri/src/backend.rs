@@ -31,13 +31,15 @@ use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec,
     GameroomGames, GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec,
-    PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView, ServerBotsView,
-    SessionId, SessionUpdate, SessionView, SessionsChanged, StartedBotView, StepTarget, WatchView,
+    PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
+    ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, StartedBotView, StepTarget,
+    WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
 use crate::gameroom::{self, Gameroom, SavedLogin, WATCH_UPDATE, Watch};
-use crate::session::{AnalysisEngine, Player, Session};
+use crate::puzzles::PuzzleBook;
+use crate::session::{AnalysisEngine, Player, PuzzleMeta, Session};
 
 /// Event carrying a [`SessionUpdate`] after every change to the session.
 pub const GAME_CHANGED: &str = "game://changed";
@@ -137,6 +139,7 @@ pub struct Backend {
     /// Engine manifests and installing from them.
     catalog: Arc<Mutex<EngineCatalog>>,
     gameroom: Arc<Gameroom>,
+    puzzles: PuzzleBook,
     events: Events,
 }
 
@@ -155,6 +158,7 @@ impl Backend {
             engines: Arc::new(Mutex::new(registry)),
             catalog: Arc::new(Mutex::new(catalog)),
             gameroom: Arc::new(Gameroom::new(saved_login, events.clone())),
+            puzzles: PuzzleBook::new(),
             events,
         }
     }
@@ -370,7 +374,8 @@ impl Backend {
     /// Ends the turn being entered: plays it in a match on the user's move
     /// (or plays the shown plan's move), unless `plan` keeps it as a plan.
     pub fn commit_turn(&self, id: SessionId, plan: bool) -> Result<(), ApiError> {
-        self.mutate(id, |s| s.commit_turn(plan).map(|_| Vec::new()))
+        // A found puzzle move brings the solution's reply, animated.
+        self.mutate(id, |s| s.commit_turn(plan).map(|_| s.take_puzzle_animation()))
     }
 
     /// Takes back played moves to the last human move (one ply between engines).
@@ -689,6 +694,42 @@ impl Backend {
     }
 
     /// The bots arimaa.com runs, with the user's record against each.
+    /// arimaa.com's puzzle list (fetched once, or again with `refresh`).
+    pub async fn puzzle_list(&self, refresh: bool) -> Result<Vec<PuzzleGroupView>, ApiError> {
+        self.puzzles.list(refresh).await
+    }
+
+    /// Opens arimaa.com puzzle `puzzle` (`p4`) in the session, from its
+    /// answer file: the position, with the solution to check moves against.
+    pub async fn open_puzzle(&self, id: SessionId, puzzle: &str) -> Result<(), ApiError> {
+        let text = self.puzzles.answer(puzzle).await?;
+        let game = howdah_arimaa::ViewerGame::parse(&text)?;
+        let meta = PuzzleMeta { id: Some(puzzle.to_string()), title: self.puzzles.title(puzzle).await };
+        self.handle(id)?.stop_watching();
+        self.mutate(id, |s| {
+            s.load_puzzle(game, meta);
+            Ok(Vec::new())
+        })
+    }
+
+    /// Fetches the puzzle's page for its hint (and author), once.
+    pub async fn puzzle_hint(&self, id: SessionId) -> Result<(), ApiError> {
+        let Some(puzzle) = self.read(id, Session::puzzle_needs_hint)? else { return Ok(()) };
+        let page = self.puzzles.page(&puzzle).await?;
+        self.mutate(id, |s| {
+            s.set_puzzle_page(page.hint, page.author);
+            Ok(Vec::new())
+        })
+    }
+
+    pub fn puzzle_answer(&self, id: SessionId) -> Result<(), ApiError> {
+        self.mutate(id, |s| s.show_puzzle_answer().map(|_| Vec::new()))
+    }
+
+    pub fn puzzle_retry(&self, id: SessionId) -> Result<(), ApiError> {
+        self.mutate(id, |s| s.puzzle_retry().map(|_| Vec::new()))
+    }
+
     pub async fn gameroom_server_bots(&self) -> Result<ServerBotsView, ApiError> {
         self.gameroom.server_bots().await
     }
@@ -1005,6 +1046,13 @@ impl Backend {
                 )
                 .await?),
             "gameroom_server_bots" => ok(self.gameroom_server_bots().await?),
+            "puzzle_list" => {
+                ok(self.puzzle_list(arg::<Option<bool>>(args, "refresh")?.unwrap_or(false)).await?)
+            }
+            "open_puzzle" => ok(self.open_puzzle(sid()?, &arg::<String>(args, "puzzle")?).await?),
+            "puzzle_hint" => ok(self.puzzle_hint(sid()?).await?),
+            "puzzle_answer" => ok(self.puzzle_answer(sid()?)?),
+            "puzzle_retry" => ok(self.puzzle_retry(sid()?)?),
             "gameroom_bot_info" => ok(self.gameroom_bot_info(&arg::<String>(args, "page")?).await?),
             "start_gameroom_bot" => ok(self
                 .start_gameroom_bot(

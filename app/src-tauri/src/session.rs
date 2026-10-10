@@ -33,15 +33,15 @@ use std::time::{Duration, Instant};
 
 use howdah_arimaa::{
     Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position,
-    Route, Square, StartPosition, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder, WinReason,
-    check_start_position, default_setup,
+    Route, Square, StartPosition, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder, ViewerGame,
+    WinReason, check_start_position, default_setup, is_viewer_vars,
 };
 
 use crate::dto::{
     AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, LastMoveView,
     LastStepView, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind,
-    PlayerView, PlayersView, PositionView, SessionView, SideClockView, StepTarget, TakebackView,
-    TurnStepView, TurnView,
+    PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView, SessionView, SideClockView, StepTarget,
+    TakebackView, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -407,6 +407,38 @@ pub struct Session {
     /// Whether a step after a full turn finishes it and starts the next
     /// side's (see [`Session::try_step`]). A preference, kept across games.
     continue_turns: bool,
+    /// The puzzle being solved, if the game is one.
+    puzzle: Option<Puzzle>,
+}
+
+/// Where a puzzle came from, and what its page says about it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PuzzleMeta {
+    /// arimaa.com's id (`p4`).
+    pub id: Option<String>,
+    pub title: Option<String>,
+}
+
+/// A puzzle being solved (`Session::load_puzzle`): its solution is kept
+/// out of the tree until found or shown, and each move the solver makes
+/// at the frontier is checked against it.
+#[derive(Clone, Debug)]
+struct Puzzle {
+    meta: PuzzleMeta,
+    question: Option<String>,
+    solver: Color,
+    /// The solution from the puzzle's start, both sides' moves, in notation.
+    solution: Vec<String>,
+    /// How many of them are in the tree (found, or played as replies).
+    progress: usize,
+    /// The node the solver's next move is expected from.
+    frontier: NodeId,
+    status: PuzzleStatus,
+    hint: Option<String>,
+    author: Option<String>,
+    wrong_move: Option<String>,
+    /// The reply's animation, for the update that follows a found move.
+    animation: Vec<AnimStep>,
 }
 
 impl Default for Session {
@@ -443,6 +475,7 @@ impl Session {
             left_online: false,
             evals: HashMap::new(),
             continue_turns: true,
+            puzzle: None,
         };
         s.refresh();
         s
@@ -652,8 +685,179 @@ impl Session {
 
     /// Loads a record, showing the end of its main line.
     pub fn load(&mut self, record: &str) -> Result<(), ApiError> {
+        if is_viewer_vars(record) {
+            self.load_puzzle(ViewerGame::parse(record)?, PuzzleMeta::default());
+            return Ok(());
+        }
         self.load_record(GameRecord::parse(record)?);
         Ok(())
+    }
+
+    /// Loads arimaa.com's viewer variables (a puzzle page's answer file,
+    /// or a game). With moves after its `startmove`, it's a puzzle: those
+    /// moves are its solution, kept out of the tree until found or shown,
+    /// and the puzzle's position is shown. Without, it's an ordinary game
+    /// shown from that position, still with its question.
+    pub fn load_puzzle(&mut self, game: ViewerGame, meta: PuzzleMeta) {
+        let ViewerGame { mut record, start, solver, .. } = game;
+        let line = record.tree.line_through(start);
+        let at = line.iter().position(|&n| n == start).expect("on its own line");
+        let solution: Vec<String> =
+            line[at + 1..].iter().filter_map(|&n| record.tree[n].mv().map(Move::notation)).collect();
+        for c in record.tree[start].children().to_vec() {
+            record.tree.delete(c).expect("a child");
+        }
+        let question = record.tree[GameTree::ROOT].annotation().comment.clone();
+        let side = record.tree[start].position().side_to_move();
+        // The answer files' own title is just "Arimaa Puzzle" (and the
+        // question pages' adds the id): then the question names it.
+        let event = record.tag("Event").filter(|e| !e.starts_with("Arimaa Puzzle")).map(str::to_string);
+        let title = meta.title.clone().or(event).or_else(|| question.clone());
+        self.replace(record.tree, record.tags, start, None);
+        self.puzzle = Some(Puzzle {
+            meta: PuzzleMeta { title, ..meta },
+            question,
+            solver: solver.unwrap_or(side),
+            status: if solution.is_empty() { PuzzleStatus::Open } else { PuzzleStatus::Solving },
+            solution,
+            progress: 0,
+            frontier: start,
+            hint: None,
+            author: None,
+            wrong_move: None,
+            animation: Vec::new(),
+        });
+    }
+
+    /// Checks a move just added from `parent`: at the puzzle's frontier, a
+    /// move reaching the solution's position (or winning outright) is
+    /// found, and the solution's reply is played after it; any other is
+    /// wrong, and stays in the tree as a variation to look at.
+    fn check_puzzle_move(&mut self, parent: NodeId, node: NodeId) {
+        let Some(p) = self.puzzle.as_ref() else { return };
+        let solving = matches!(p.status, PuzzleStatus::Solving | PuzzleStatus::Wrong);
+        if !solving || parent != p.frontier || self.tree[parent].position().side_to_move() != p.solver {
+            return;
+        }
+        let expected = p.solution.get(p.progress).cloned();
+        let solver = p.solver;
+        let mut game = self.tree.to_game(parent).expect("the node exists");
+        game.reopen();
+        let found = expected.is_some_and(|m| {
+            game.play_notation(&m).is_ok() && game.current_position() == self.tree[node].position()
+        });
+        let won = self.tree[node].result().is_some_and(|r| r.winner == solver);
+        let p = self.puzzle.as_mut().expect("checked");
+        if !found && !won {
+            p.status = PuzzleStatus::Wrong;
+            let mv = self.tree[node].mv().map(Move::notation).unwrap_or_default();
+            p.wrong_move = Some(format!("{} {mv}", self.tree.label_of(node).unwrap_or_default()));
+            return;
+        }
+        p.wrong_move = None;
+        p.progress += 1;
+        p.frontier = node;
+        if won || p.progress >= p.solution.len() {
+            p.status = PuzzleStatus::Solved;
+            return;
+        }
+        p.status = PuzzleStatus::Solving;
+        // The other side answers as the solution does.
+        let reply = p.solution[p.progress].clone();
+        let Ok(r) = self.tree.add_notation(node, &reply) else {
+            // A solution that doesn't play on from here: count it solved.
+            self.puzzle.as_mut().expect("checked").status = PuzzleStatus::Solved;
+            return;
+        };
+        self.show(r);
+        let animation = self.move_animation(self.cursor - 1);
+        let p = self.puzzle.as_mut().expect("checked");
+        p.progress += 1;
+        p.frontier = r;
+        p.animation = animation;
+        if p.progress >= p.solution.len() || self.tree[r].is_terminal() {
+            p.status = PuzzleStatus::Solved;
+        }
+    }
+
+    /// The reply played after a found puzzle move, to animate, once.
+    pub fn take_puzzle_animation(&mut self) -> Vec<AnimStep> {
+        self.puzzle.as_mut().map(|p| std::mem::take(&mut p.animation)).unwrap_or_default()
+    }
+
+    /// Adds the rest of the puzzle's solution from its frontier (as the main
+    /// line there) and shows the position it starts from.
+    pub fn show_puzzle_answer(&mut self) -> Result<(), ApiError> {
+        let p = self.puzzle.as_mut().ok_or_else(|| ApiError::state("no puzzle"))?;
+        if p.status == PuzzleStatus::Open {
+            return Err(ApiError::state("this puzzle came without its answer"));
+        }
+        let (frontier, rest) = (p.frontier, p.solution[p.progress.min(p.solution.len())..].to_vec());
+        if p.status != PuzzleStatus::Solved {
+            p.status = PuzzleStatus::Shown;
+        }
+        p.progress = p.solution.len();
+        let mut at = frontier;
+        for m in &rest {
+            at = self.tree.add_notation(at, m).map_err(|e| ApiError::illegal(format!("{m}: {e}")))?;
+        }
+        if !rest.is_empty() {
+            self.tree.make_main_line(at).map_err(ApiError::illegal)?;
+            // Stepping forward follows the answer, not a move tried before.
+            self.followed.insert(frontier, self.tree[frontier].children()[0]);
+            self.line = self.line_through(frontier);
+        }
+        self.turn = None;
+        self.show(frontier);
+        Ok(())
+    }
+
+    /// Shows the position the solver's next move is expected from, for
+    /// another try after a wrong move.
+    pub fn puzzle_retry(&mut self) -> Result<(), ApiError> {
+        let p = self.puzzle.as_mut().ok_or_else(|| ApiError::state("no puzzle"))?;
+        if p.status == PuzzleStatus::Wrong {
+            p.status = PuzzleStatus::Solving;
+            p.wrong_move = None;
+        }
+        let frontier = p.frontier;
+        self.turn = None;
+        self.show(frontier);
+        Ok(())
+    }
+
+    /// The puzzle's arimaa.com id, if it has one and no hint was fetched yet.
+    pub fn puzzle_needs_hint(&self) -> Option<String> {
+        self.puzzle.as_ref().filter(|p| p.hint.is_none()).and_then(|p| p.meta.id.clone())
+    }
+
+    /// Keeps what the puzzle's page says: its hint (empty for none) and author.
+    pub fn set_puzzle_page(&mut self, hint: String, author: Option<String>) {
+        if let Some(p) = self.puzzle.as_mut() {
+            p.hint = Some(hint);
+            p.author = p.author.take().or(author);
+        }
+    }
+
+    fn puzzle_view(&self) -> Option<PuzzleView> {
+        let p = self.puzzle.as_ref()?;
+        let left = p.solution.get(p.progress..).unwrap_or(&[]);
+        // The solver moves at the frontier, then every other move.
+        let moves_left = left.len().div_ceil(2) as u32;
+        Some(PuzzleView {
+            id: p.meta.id.clone(),
+            title: p.meta.title.clone(),
+            question: p.question.clone(),
+            solver: p.solver,
+            status: p.status,
+            has_solution: !p.solution.is_empty(),
+            moves_left,
+            at_frontier: self.cursor_node() == p.frontier && self.turn.is_none(),
+            hint: p.hint.clone(),
+            hint_available: p.meta.id.is_some() && p.hint.is_none(),
+            author: p.author.clone(),
+            wrong_move: p.wrong_move.clone(),
+        })
     }
 
     /// Makes `record` the game, showing the end of its main line.
@@ -1751,6 +1955,10 @@ impl Session {
     /// it doesn't end the game.
     fn full_turn(&self) -> Option<Turn> {
         let tb = self.turn.as_ref().filter(|tb| self.continue_turns && tb.steps_left() == 0)?;
+        // A puzzle's move is checked when it's played, not run into.
+        if self.puzzle.as_ref().is_some_and(|p| p.frontier == self.cursor_node()) {
+            return None;
+        }
         let turn = tb.clone().finish().ok()?;
         if self.game.is_third_repetition(self.cursor, &turn.end)
             || self.tree.outcome_after(self.cursor_node(), &turn).is_some()
@@ -1772,9 +1980,11 @@ impl Session {
     /// Adds a full turn to the tree before the next turn starts. It never
     /// plays a move in a match: at the live node it's a plan.
     fn finish_full_turn(&mut self, turn: Turn) -> Result<(), ApiError> {
-        let node = self.tree.add_turn(self.cursor_node(), turn).map_err(ApiError::illegal)?;
+        let parent = self.cursor_node();
+        let node = self.tree.add_turn(parent, turn).map_err(ApiError::illegal)?;
         self.turn = None;
         self.show(node);
+        self.check_puzzle_move(parent, node);
         Ok(())
     }
 
@@ -2006,6 +2216,9 @@ impl Session {
                 self.send(node);
             }
             self.show(node);
+            if !plan {
+                self.check_puzzle_move(parent, node);
+            }
             return Ok(());
         }
         if self.clock_move(Instant::now()) {
@@ -2262,6 +2475,7 @@ impl Session {
             }),
             live_ply: self.matchup.as_ref().and_then(|m| self.line.iter().position(|&n| n == m.live)),
             analysis_engine: self.analysis.as_ref().map(|a| a.id.clone()),
+            puzzle: self.puzzle_view(),
             analysis_options: self.analysis.as_ref().map(|a| a.options.clone()).unwrap_or_default(),
             analysis_allowed: self.analysis_allowed(),
             stuck: self.stuck(),
@@ -2668,6 +2882,96 @@ mod tests {
         let mut t = Session::new();
         t.load_record_from_start(GameRecord::parse(&s.export(false)).unwrap());
         assert_eq!((t.view().ply, t.view().moves.len()), (0, s.tree.main_line().len() - 1));
+    }
+
+    /// Gold to win in two: the rabbit runs up, silver steps aside, goal.
+    const PUZZLE: &str = "mode=selfPlay\n&movelist=1w Ra5 Ee1%0d1b rh7 eh8%0d2w Ra5n Ra6n%0d\
+        2b rh7w rg7w%0d3w Ra7n%0d3b \n&chat=Gold to win in two\n\n&side=w\n&startmove=2w\n";
+
+    fn puzzle(s: &Session) -> PuzzleView {
+        s.view().puzzle.expect("a puzzle")
+    }
+
+    fn play(s: &mut Session, steps: &[(&str, &str)]) {
+        for (from, to) in steps {
+            s.try_step(sq(from), sq(to)).unwrap();
+        }
+        s.commit_turn(false).unwrap();
+    }
+
+    #[test]
+    fn solving_a_puzzle() {
+        let mut s = Session::new();
+        s.load(PUZZLE).unwrap();
+        let p = puzzle(&s);
+        assert_eq!(
+            (p.status, p.solver, p.moves_left, p.at_frontier),
+            (PuzzleStatus::Solving, Color::Gold, 2, true)
+        );
+        assert_eq!(p.question.as_deref(), Some("Gold to win in two"));
+        assert_eq!(s.view().tree.len(), 0, "the solution stays hidden");
+
+        // A wrong move stays as a variation; try again goes back.
+        play(&mut s, &[("a5", "b5")]);
+        let p = puzzle(&s);
+        assert_eq!(
+            (p.status, p.wrong_move.as_deref(), p.at_frontier),
+            (PuzzleStatus::Wrong, Some("2g Ra5e"), false)
+        );
+        s.puzzle_retry().unwrap();
+        let p = puzzle(&s);
+        assert_eq!((p.at_frontier, p.status, p.wrong_move), (true, PuzzleStatus::Solving, None));
+
+        // The right move: silver's reply follows, animated.
+        play(&mut s, &[("a5", "a6"), ("a6", "a7")]);
+        assert_eq!(s.take_puzzle_animation().len(), 2, "the reply's two steps");
+        let p = puzzle(&s);
+        assert_eq!(
+            (p.status, p.moves_left, p.at_frontier, p.wrong_move),
+            (PuzzleStatus::Solving, 1, true, None)
+        );
+        assert_eq!(s.view().moves.iter().map(|m| m.label.as_str()).collect::<Vec<_>>(), ["2g", "2s"]);
+
+        play(&mut s, &[("a7", "a8")]);
+        assert_eq!(puzzle(&s).status, PuzzleStatus::Solved);
+        assert_eq!(s.view().result.map(|r| r.winner), Some(Color::Gold));
+    }
+
+    #[test]
+    fn a_win_solves_a_puzzle_and_the_answer_can_be_shown() {
+        let mut s = Session::new();
+        s.load(PUZZLE).unwrap();
+        // Goal at once, faster than the solution.
+        play(&mut s, &[("a5", "a6"), ("a6", "a7"), ("a7", "a8")]);
+        assert_eq!(puzzle(&s).status, PuzzleStatus::Solved);
+
+        let mut s = Session::new();
+        s.load(PUZZLE).unwrap();
+        play(&mut s, &[("a5", "b5")]);
+        s.show_puzzle_answer().unwrap();
+        let p = puzzle(&s);
+        assert_eq!((p.status, p.at_frontier, p.moves_left), (PuzzleStatus::Shown, true, 0));
+        // Forward follows the answer, not the wrong move.
+        s.goto(1).unwrap();
+        assert_eq!(
+            s.view().moves.iter().map(|m| m.notation.as_str()).collect::<Vec<_>>(),
+            ["Ra5n Ra6n", "rh7w rg7w", "Ra7n"]
+        );
+        // Moves after it aren't checked any more.
+        assert!(s.puzzle_needs_hint().is_none(), "no arimaa.com id");
+    }
+
+    #[test]
+    fn a_puzzle_without_its_answer_is_open() {
+        let mut s = Session::new();
+        s.load("&movelist=1w Ra5 Ee1%0d1b rh7 eh8%0d2w \n&side=w\n").unwrap();
+        let p = puzzle(&s);
+        assert_eq!((p.status, p.has_solution), (PuzzleStatus::Open, false));
+        play(&mut s, &[("a5", "b5")]);
+        assert_eq!(puzzle(&s).status, PuzzleStatus::Open, "nothing to check against");
+        assert!(s.show_puzzle_answer().is_err());
+        s.new_game();
+        assert!(s.view().puzzle.is_none(), "a new game drops the puzzle");
     }
 
     #[test]

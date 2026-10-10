@@ -62,6 +62,12 @@ Howdah plays and watches games on arimaa.com.
     `check_start_position` lists `PositionProblem`s: too many of a piece,
     a piece alone on a trap, a rabbit on its goal row, a side without
     rabbits, and a side to move with no legal step.
+  - `viewer`: arimaa.com's viewer variables, the files its old Flash
+    client loaded and its puzzle pages still serve (format in
+    `docs/UI-SURVEY.md`, section 6). `ViewerGame::parse` turns one into
+    a `GameRecord` (puzzle positions written as partial "setups" become
+    a `Position` tag; `2w pass` means silver to move), with `start` (the
+    `startmove`, else the end) and the solver's side.
   - `tree::GameTree`: moves with variations (design in
     `docs/VARIATIONS.md`). An arena of `Node`s with stable `NodeId`s; the
     first child continues the main line. Adding a move that's already a
@@ -171,6 +177,11 @@ Howdah plays and watches games on arimaa.com.
     app sets the computer's), labelled "YLT", which is dropped. `Lobby::search_players` and
     `Lobby::player_games` fetch them. `Error::Expired` is a lobby session
     that's gone (an ASIP error or the "Session Expired" page).
+  - `puzzles`: the puzzle pages (`/arimaa/puzzles/`, no login, the
+    same Referer gate as the gameroom): `parse_puzzle_list` (`list.cgi`,
+    groups by heading), `parse_puzzle_page` (`show.cgi?p=`: question,
+    hint from its `answer()` script, author), and `Puzzles` to fetch
+    them and an answer file (`show.cgi?w=`).
   - `bots`: the server's bots (4steps's bot launcher). `parse_bot_list`
     reads the bot ladder's page of them all (`botLadderAll.cgi?u=<player
     id>`, no session; `ServerBot`, by the table's header names; the record
@@ -234,6 +245,16 @@ Howdah plays and watches games on arimaa.com.
       `start_match_from` (`start_match` is it with none) refuse a
       position `check_start_position` finds problems with; `shown_start`
       gives the shown position to the editor, with its move number.
+    - Puzzles: `load_puzzle` (from `load` for viewer variables, or
+      `Backend::open_puzzle`) keeps the moves after the puzzle's start
+      as its solution, out of the tree. `check_puzzle_move` (after a
+      committed turn, and a continued one) checks a move from the
+      frontier: the solution's position or a win is found, and the
+      reply is added and animated (`take_puzzle_animation`, which
+      `Backend::commit_turn` returns); anything else is `Wrong` and stays
+      as a variation. Continuous entry stops at the frontier.
+      `show_puzzle_answer`, `puzzle_retry` and the hint
+      (`set_puzzle_page`) finish it; `SessionView.puzzle` shows it.
     - Engine moves enter through `apply_engine_move`, as the live node's
       first child (a matching plan becomes the move). The board follows
       them only if you're watching the live position.
@@ -448,6 +469,10 @@ Howdah plays and watches games on arimaa.com.
     `edit_position` (typed edits) and `default_position`; `PositionSpec`
     (short format, side to move, move number) carries a position, and
     `MatchSpec.start` and `new_game_from` take one.
+    `puzzles.rs` (`PuzzleBook`) fetches arimaa.com's puzzle list once and
+    keeps it (`puzzle_list`), an answer when a puzzle opens
+    (`open_puzzle`, one request), and its page only for a hint
+    (`puzzle_hint`).
   - `commands.rs`: thin `#[tauri::command]` wrappers over `Backend`.
   - `src/bin/dev-bridge.rs` (feature `dev-bridge`): serves `Backend` over
     HTTP on 127.0.0.1:1421 (`POST /invoke/<cmd>` with JSON arguments,
@@ -517,6 +542,12 @@ Howdah plays and watches games on arimaa.com.
     `editorBoard.ts` lays pieces out with stable ids and does mirror and
     swap colors. Every change goes to `check_position`; the frontend
     never judges a position.
+  - Puzzles: the lobby's `PuzzlesDialog.svelte` (the list, solved ones
+    ticked from `lib/puzzles.ts`'s localStorage set) opens each in a game
+    window; `PuzzlePanel.svelte` above the move list shows the question,
+    the status (`puzzleStatus`), Try again, Hint, Show answer and Next
+    puzzle. App plays win or illegal as the status changes, keeps the
+    game-end dialog away, and turns the board to the solver.
   - `lib/devBridge.ts`: in dev outside Tauri (`main.ts` checks), `mockIPC`
     forwards every `invoke` to the dev bridge (Vite proxies `/bridge`) and
     replays its event stream as Tauri events.

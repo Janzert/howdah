@@ -10,6 +10,7 @@ pub mod dto;
 pub mod engine_install;
 pub mod engines;
 pub mod gameroom;
+mod puzzles;
 pub mod session;
 
 use std::sync::Arc;
@@ -87,6 +88,11 @@ pub fn run() {
             commands::check_position,
             commands::edit_position,
             commands::default_position,
+            commands::puzzle_list,
+            commands::open_puzzle,
+            commands::puzzle_hint,
+            commands::puzzle_answer,
+            commands::puzzle_retry,
             commands::export_game,
             commands::goto_ply,
             commands::goto_live,

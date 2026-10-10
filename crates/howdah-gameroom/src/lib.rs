@@ -21,6 +21,8 @@
 //!   player's past games ([`PastGames`]). [`Lobby::server_bots`] lists the
 //!   server's bots ([`ServerBot`]), and [`Lobby::start_bot`] starts one,
 //!   which opens a game against the user.
+//! - [`Puzzles`]: the puzzle pages (the list, each puzzle's answer as
+//!   viewer variables, and its hint), no login needed.
 //! - [`GameServer`]: sit, `gamestate`, and the `updategamestate` long poll
 //!   (keeping the moves and chat received so far).
 //! - Requests carry a Referer (the server refuses requests under the
@@ -36,6 +38,7 @@ pub mod clock_sync;
 pub mod finished;
 pub mod invitations;
 pub mod players;
+pub mod puzzles;
 pub mod state;
 pub mod wire;
 
@@ -48,6 +51,7 @@ pub use clock_sync::ClockSync;
 pub use finished::{FinishedGame, RecentGame};
 pub use invitations::{Invitation, InviteOutcome};
 pub use players::{PastGame, PastGames, PlayerMatch, PostalGame};
+pub use puzzles::{DEFAULT_PUZZLES, PuzzleEntry, PuzzleGroup, PuzzlePage, Puzzles};
 pub use state::{ChatLine, GameState, Role, ServerClock, parse_chat, parse_result, split_moves};
 pub use wire::{Format, Record};
 

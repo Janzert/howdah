@@ -12,10 +12,15 @@ import type { NodeId } from "./NodeId";
 import type { Phase } from "./Phase";
 import type { PlayersView } from "./PlayersView";
 import type { PositionView } from "./PositionView";
+import type { PuzzleView } from "./PuzzleView";
 import type { TakebackView } from "./TakebackView";
 import type { TurnView } from "./TurnView";
 
 export type SessionView = { 
+/**
+ * The puzzle being solved, if the game is one.
+ */
+puzzle: PuzzleView | null, 
 /**
  * The line being shown, one entry per move.
  */

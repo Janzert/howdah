@@ -203,6 +203,8 @@ pub struct TakebackView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SessionView {
+    /// The puzzle being solved, if the game is one.
+    pub puzzle: Option<PuzzleView>,
     /// The line being shown, one entry per move.
     pub moves: Vec<MoveView>,
     /// Every move of the game tree, in display order.
@@ -513,6 +515,68 @@ impl PositionSpec {
         }
         Ok(howdah_arimaa::StartPosition { position, move_number: self.move_number })
     }
+}
+
+/// A heading of arimaa.com's puzzle list and its puzzles.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PuzzleGroupView {
+    pub name: String,
+    pub puzzles: Vec<PuzzleEntryView>,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PuzzleEntryView {
+    /// arimaa.com's id, such as `p4`.
+    pub id: String,
+    pub title: String,
+}
+
+/// A puzzle being solved: its question, and how the solving goes.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PuzzleView {
+    /// arimaa.com's puzzle id (`p4`), for one from its puzzle pages.
+    pub id: Option<String>,
+    pub title: Option<String>,
+    /// What to do, such as "Gold to move and win in two".
+    pub question: Option<String>,
+    /// The side the solver plays.
+    pub solver: Color,
+    pub status: PuzzleStatus,
+    /// Whether the puzzle came with its solution, to check moves against.
+    pub has_solution: bool,
+    /// The solver's moves left in the solution.
+    pub moves_left: u32,
+    /// The position the solver's next move is expected from is shown.
+    pub at_frontier: bool,
+    /// The hint, once asked for (empty when the puzzle has none).
+    pub hint: Option<String>,
+    /// Whether a hint can be asked for (arimaa.com's puzzles have one).
+    pub hint_available: bool,
+    pub author: Option<String>,
+    /// The last move tried that isn't the solution, as `2g Ee2n ...`.
+    pub wrong_move: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum PuzzleStatus {
+    /// Waiting for the solver's move.
+    Solving,
+    /// The last move tried wasn't the solution; try again.
+    Wrong,
+    /// Every move of the solution was found (or the game was won).
+    Solved,
+    /// The answer was shown before it was found.
+    Shown,
+    /// No solution came with the puzzle: explore freely.
+    Open,
 }
 
 /// What the position editor shows about a position: what keeps it from

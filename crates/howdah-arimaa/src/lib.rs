@@ -16,6 +16,9 @@
 //! - [`GameRecord`]: a tree with its tags, read from and written to the
 //!   record format (PGN-style tags, variations and comments).
 //!
+//! - [`ViewerGame`]: games and puzzles in arimaa.com's viewer variables
+//!   (its puzzle pages' format), read into a record.
+//!
 //! Optional features: `serde` adds serde derives to the data types; `ts` adds
 //! `ts_rs::TS` derives for generating TypeScript bindings.
 
@@ -32,6 +35,7 @@ mod timecontrol;
 mod tree;
 mod turn;
 mod types;
+mod viewer;
 
 pub use error::{CommitError, GameError, ParseError, RecordError, SetupError, StepError};
 pub use game::{Game, Move};
@@ -47,3 +51,4 @@ pub use timecontrol::TimeControl;
 pub use tree::{Annotation, GameTree, Glyph, Node, NodeId, split_commands};
 pub use turn::{MAX_STEPS, Route, StepKind, Turn, TurnBuilder, TurnStep};
 pub use types::{Color, Dir, Piece, PieceKind, Square, TRAPS};
+pub use viewer::{ViewerGame, is_viewer_vars, parse_viewer_vars};

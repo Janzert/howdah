@@ -8,8 +8,8 @@ use crate::backend::{self, Backend};
 use crate::dto::{
     ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames,
     GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec,
-    PositionView, PostalGameView, ServerBotsView, SessionId, SessionView, StartedBotView, StepTarget,
-    WatchView,
+    PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView, StartedBotView,
+    StepTarget, WatchView,
 };
 
 #[tauri::command]
@@ -482,6 +482,38 @@ pub async fn play_gameroom_game(
     unrated: Option<bool>,
 ) -> Result<(), ApiError> {
     state.play_gameroom_game(session, &gid, side, unrated.unwrap_or(false)).await
+}
+
+#[tauri::command]
+pub async fn puzzle_list(
+    state: State<'_, Backend>,
+    refresh: Option<bool>,
+) -> Result<Vec<PuzzleGroupView>, ApiError> {
+    state.puzzle_list(refresh.unwrap_or(false)).await
+}
+
+#[tauri::command]
+pub async fn open_puzzle(
+    state: State<'_, Backend>,
+    session: SessionId,
+    puzzle: String,
+) -> Result<(), ApiError> {
+    state.open_puzzle(session, &puzzle).await
+}
+
+#[tauri::command]
+pub async fn puzzle_hint(state: State<'_, Backend>, session: SessionId) -> Result<(), ApiError> {
+    state.puzzle_hint(session).await
+}
+
+#[tauri::command]
+pub fn puzzle_answer(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
+    state.puzzle_answer(session)
+}
+
+#[tauri::command]
+pub fn puzzle_retry(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
+    state.puzzle_retry(session)
 }
 
 #[tauri::command]

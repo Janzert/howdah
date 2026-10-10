@@ -21,6 +21,13 @@ young).
   move) and marks the squares. Analyse starts free play from the
   position, with analysis on; Play… starts a game from it against an
   engine or with clocks.
+- arimaa.com's puzzles: the lobby's Puzzles lists them, and each opens in
+  a window to solve. Your moves are checked against the answer, the
+  other side's replies are played, and it says when you've solved it;
+  there's a hint, Try again after a wrong move, Show answer and Next
+  puzzle, and solved puzzles are ticked in the list. Puzzle files in
+  arimaa.com's format (the variables its old Flash viewer loaded) open
+  from Open record too.
 - Games from a set position: records keep it in a `Position` tag, and
   such records now load (they were refused). Engines are given the
   position with `setposition`.

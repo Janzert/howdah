@@ -26,6 +26,9 @@
   import CommentBox from './lib/CommentBox.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
   import PositionEditor from './lib/editor/PositionEditor.svelte';
+  import PuzzlePanel from './lib/PuzzlePanel.svelte';
+  import type { PuzzleGroupView } from './lib/bindings/PuzzleGroupView';
+  import { markSolved, nextPuzzle } from './lib/puzzles';
   import type { PositionSpec } from './lib/bindings/PositionSpec';
   import ChatPanel from './lib/ChatPanel.svelte';
   import CloseWindowDialog from './lib/CloseWindowDialog.svelte';
@@ -261,7 +264,9 @@
     unlockOnInteraction();
     const unlisten = on('game://changed', (u) => {
       const prev = view;
-      const ended = justEnded(prev, u.view);
+      // A puzzle says how it went in its panel, not the game-end dialog.
+      const ended = justEnded(prev, u.view) && !u.view.puzzle;
+      puzzleChanged(prev, u.view);
       const setupCommitted = view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;
       setView(u.view);
       model.apply(u.view.position.pieces, u.animation, animHooks(u.view.turn != null), u.animationBudgetMs);
@@ -441,6 +446,37 @@
     if (remote === 0) return { reason: 'A match is being played. Closing the window stops it.', confirm: 'Stop match and close' };
     return null;
   });
+
+  /** arimaa.com's puzzle list, for Next puzzle (the backend keeps it). */
+  let puzzleGroups = $state<PuzzleGroupView[]>([]);
+  const nextPuzzleId = $derived(view?.puzzle?.id ? nextPuzzle(puzzleGroups, view.puzzle.id) : null);
+
+  /** Sounds and bookkeeping as a puzzle's solving goes. */
+  function puzzleChanged(prev: SessionView | null, v: SessionView) {
+    const p = v.puzzle;
+    if (!p) return;
+    const same = prev?.puzzle != null && prev.puzzle.id === p.id && prev.puzzle.title === p.title;
+    if (!same) {
+      // A new puzzle: the solver at the bottom, and the list for Next.
+      if (settings.humanAtBottom) flipped = p.solver === 'silver';
+      if (p.id && puzzleGroups.length === 0) {
+        api.puzzleList().then((g) => (puzzleGroups = g)).catch(() => {});
+      }
+      return;
+    }
+    if (p.status !== prev.puzzle!.status) {
+      if (p.status === 'solved') {
+        play('win');
+        if (p.id) markSolved(p.id);
+      } else if (p.status === 'wrong') {
+        play('illegal');
+      }
+    }
+  }
+
+  function openPuzzle(id: string) {
+    run(api.openPuzzle(id));
+  }
 
   /** Opens the position editor on the shown position, in a new window
    * (as 4steps does), so this game stays as it is. */
@@ -722,7 +758,10 @@
           onMoveNow={() => run(api.engineMoveNow())}
           onEndMatch={() => run(api.endMatch())}
         />
-        <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
+        {#if view.puzzle}
+        <PuzzlePanel {view} {run} next={nextPuzzleId} onNext={openPuzzle} />
+      {/if}
+      <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
         <CommentBox {view} {run} />
         {#if watch}
           <WatchPanel {watch} {view} {run} {receivedAt} {now} onNewGame={newOnlineGame} />

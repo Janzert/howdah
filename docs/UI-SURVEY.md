@@ -343,7 +343,36 @@ The current engine panel shows depth, eval, PV and log per side.
 - **Records** write the start as `[Position "g [...]"]` (short format with
   the side to move), with moves numbered from its move number.
 
-- **[P3] Puzzles (4steps `puzzles.cpp`, lichess `ui/puzzle`):**
+- **[have] arimaa.com's puzzles** (2026-10-10): the lobby's Puzzles lists
+  arimaa.com's puzzle pages (`/arimaa/puzzles/list.cgi`, 92 puzzles under
+  "1 Move Puzzles" to "6 Move Puzzles" and "More Puzzles"), and one opens
+  in a game window to solve: each move at the puzzle's position is
+  checked against its answer (the same position, or any move that wins
+  outright, counts), the answer's reply is played after a found move,
+  and the panel says "Solved!", or "Not the solution" with Try again.
+  Hint (fetched from the puzzle's page when asked), Show answer (into the
+  move list), Next puzzle, solved puzzles ticked in the list (per
+  viewer), and the solver's side at the bottom. A puzzle file pasted or
+  opened as a record (viewer variables, below) opens the same way;
+  without an answer it's a position to explore.
+  - **Their format** is the variables file arimaa.com's old Flash client
+    loaded (`show.cgi?v=<id>` for the question, `?w=<id>` for the
+    answer): `key=value` lines starting with `&`, percent-encoded, with
+    `movelist` (moves separated by `%0d`, `w`/`b` labels), `chat` (the
+    question), `side` (the solver), `startmove` (in the answer: where the
+    puzzle starts), `title`, `wplayer`/`bplayer` and `timecontrol`. A
+    puzzle's position is written as two "setups" that place any pieces
+    anywhere, with `2w pass` when silver moves first; some puzzles are a
+    whole game ending at the puzzle. The answer goes on with both sides'
+    moves. The page's hint is in its `answer()` script, and the author
+    under "Composed By:". `howdah_arimaa::ViewerGame` reads it into an
+    ordinary record (a `Position` tag for a placed position).
+  - Not done: hints as highlighted squares (4steps), auto-advance and
+    auto-undo settings, puzzle files of several puzzles (4steps's own
+    format), and creating puzzles (arimaa.com's `make.cgi`). A puzzle
+    whose answer is one of several wins is checked only against the one
+    given, or a win.
+- **[P3] More puzzles (4steps `puzzles.cpp`, lichess `ui/puzzle`):**
   - 4steps loads puzzle files and has reshuffle, hint (highlights a square
     the solution changes), answer, auto-advance, auto-undo and
     auto-explore after a miss.

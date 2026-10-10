@@ -18,6 +18,7 @@ import type { PlayerGamesView } from './bindings/PlayerGamesView';
 import type { PlayerMatchView } from './bindings/PlayerMatchView';
 import type { PositionCheck } from './bindings/PositionCheck';
 import type { PositionSpec } from './bindings/PositionSpec';
+import type { PuzzleGroupView } from './bindings/PuzzleGroupView';
 import type { PostalGameView } from './bindings/PostalGameView';
 import type { PositionView } from './bindings/PositionView';
 import type { ServerBotsView } from './bindings/ServerBotsView';
@@ -67,6 +68,16 @@ function makeApi(sid: () => SessionId | null) {
     editPosition: (position: PositionSpec, text: string) => invoke<PositionSpec>('edit_position', { position, text }),
     /** Both default setups, gold to move. */
     defaultPosition: () => invoke<PositionSpec>('default_position'),
+    /** arimaa.com's puzzle list (fetched once and kept; `refresh` fetches it again). */
+    puzzleList: (refresh = false) => invoke<PuzzleGroupView[]>('puzzle_list', { refresh }),
+    /** Opens an arimaa.com puzzle (`p4`) to solve. */
+    openPuzzle: (puzzle: string) => invoke<void>('open_puzzle', { session: sid(), puzzle }),
+    /** Fetches the puzzle's hint (once). */
+    puzzleHint: () => invoke<void>('puzzle_hint', { session: sid() }),
+    /** Adds the rest of the puzzle's solution to the move list. */
+    puzzleAnswer: () => invoke<void>('puzzle_answer', { session: sid() }),
+    /** Back to the position the solver's next move is expected from. */
+    puzzleRetry: () => invoke<void>('puzzle_retry', { session: sid() }),
     /** The game as a record: in full, or only its main line as a plain record. */
     exportGame: (mainLineOnly = false) => invoke<string>('export_game', { session: sid(), mainLineOnly }),
     gotoPly: (ply: number) => invoke<void>('goto_ply', { session: sid(), ply }),

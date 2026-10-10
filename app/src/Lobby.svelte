@@ -24,6 +24,7 @@
   import GameroomLobby from './lib/GameroomLobby.svelte';
   import HelpDialog from './lib/HelpDialog.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
+  import PuzzlesDialog from './lib/PuzzlesDialog.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
   import { settings } from './lib/settings.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
@@ -36,6 +37,7 @@
   let message = $state<string | null>(null);
   let messageTimer: ReturnType<typeof setTimeout> | undefined;
   let showNewGame = $state(false);
+  let showPuzzles = $state(false);
   let showEngines = $state(false);
   let showSettings = $state(false);
   let showHelp = $state(false);
@@ -244,6 +246,7 @@
             Open record
           </button>
           <button onclick={positionEditor} title="Set up a position to play or analyse from">Position editor</button>
+          <button onclick={() => (showPuzzles = true)} title="arimaa.com's puzzles, to solve">Puzzles</button>
         </div>
       </section>
 
@@ -296,6 +299,9 @@
   {#if message}<div class="message" role="status">{message}</div>{/if}
 </main>
 
+{#if showPuzzles}
+  <PuzzlesDialog onOpen={(id) => openWindow((a) => a.openPuzzle(id))} onClose={() => (showPuzzles = false)} />
+{/if}
 {#if showNewGame}
   <NewGameDialog
     {engines}

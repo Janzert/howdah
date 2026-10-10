@@ -24,6 +24,7 @@ export function waitsOnUser(v: SessionView): boolean {
 
 /** The players, as "Gold - Silver", or null when the game names none. */
 export function gameTitle(v: SessionView): string | null {
+  if (v.puzzle) return `Puzzle${v.puzzle.id ? ` ${v.puzzle.id}` : ''}: ${v.puzzle.title ?? v.puzzle.question ?? 'untitled'}`;
   if (v.players) return `${v.players.gold.name} - ${v.players.silver.name}`;
   const [gold, silver] = v.tagNames;
   if (gold || silver) return `${gold ?? '?'} - ${silver ?? '?'}`;
