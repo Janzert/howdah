@@ -104,9 +104,11 @@ LDC).
   legal move.
 - **`stop`** takes 0.2-0.3 s since its search runs in 0.1 s slices (it
   was 0.5-1.2 s with 1 s slices).
-- **`depth`** fixes the search depth in steps (at least 4) and stops it
-  using the time control; 0 or less (or `infinite`) goes back to the
-  time control. Before OpFor 615011e, `0` searched to depth 4.
+- **`depth`** stops the search at that many steps (at least 4); 0 or
+  less (or `infinite`) is no limit. A time control still applies, as in
+  Sharp, so a fixed-depth search is one without a time control, which
+  Howdah sends only to a timed side. Before OpFor e6c4d74 a depth turned
+  the time control off, and before 615011e `0` searched to depth 4.
 - `setposition` honors the side. On an immobilized position it answers
   with an empty `bestmove`; the app treats such positions as over anyway.
 
