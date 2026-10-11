@@ -3,8 +3,8 @@
 Plan for a long-running runner that plays engine-vs-engine games,
 mainly for bot development: answering "is this change stronger, and by
 how much?" Howdah and a command line both connect to it to queue tests,
-follow them and look at their games. Written 2026-10-11; nothing is
-built yet.
+follow them and look at their games. Written 2026-10-11; phase 1 (the
+runner library and a command line) is built.
 
 ## What others do
 
@@ -222,6 +222,45 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
    games in game windows.
 4. **More kinds of test.** Gauntlets, round robins with a crosstable,
    and ratings for a pool (BayesElo or Ordo style); then the game wall.
+
+**As built (phase 1)**, where it differs from or adds to the plan:
+- `crates/howdah-tourney`, with the command `howdah-tourney`:
+  `new SPEC.toml DIR` makes a test's directory (snapshotting the
+  engines), `run DIR [-j N]` plays its games, resuming from its log, and
+  `show DIR` prints its results. The spec's format is in `src/spec.rs`.
+  Engine 1 is the one being tested; scores, Elo and the SPRT are from its
+  side. A turn limit is the time control's `Nt` game field
+  (`1s/10s/100/0/60t`).
+- Games, not pairs, are handed out, so two slots may play both games of
+  a pair at once. Only complete pairs count in the statistics.
+- Every engine is copied, installed or not.
+- An engine that forfeits (crashes, stops answering) or loses on time
+  (it may still be searching) is restarted. A failure before the first
+  move restarts both engines and replays the game, since neither can be
+  blamed. Three failures in a row by one engine (forfeits or failed
+  starts) halt the test.
+- **SPRT details.** The variance in the LLR has one pair of each outcome
+  added; the mean is the real one. In a real run, one won pair made the
+  sample variance zero and the LLR 11, a pass after one pair. The test
+  decides at the first pair that takes the LLR past a bound, in log
+  order, so games still running when it decides are counted in the
+  results but can't undo it, and a resumed test stays decided.
+- **Ctrl-C.** The first stops new games and waits for the running ones;
+  the second quits, and those games are played again on the next run.
+  Engines run in their own process group (`EngineConfig::own_process_group`),
+  since a terminal sends Ctrl-C to the whole foreground group: before
+  that, the engines died with the first one and their games were scored
+  as forfeits.
+- Records carry `Event` (the test's name), `Round` (`pair.game`),
+  `Gold`, `Silver`, `TimeControl` and, when the game didn't end on the
+  board, `Termination`; move times are `%emt`, in whole seconds.
+- A last line of `results.jsonl` cut short by a kill is dropped when the
+  log is next opened.
+- Tested with `aei-test-engine` (pairs, records, resuming, an engine
+  crashing until the test halts, the SPRT ending a one-sided test).
+  Checked with Sharp against OpFor (4 pairs, 4 games at once, with
+  engine logs) and Sharp against itself, stopped with a group-wide
+  SIGINT and resumed.
 
 Later, if wanted: eval-based adjudication (resigning for an engine past
 a score threshold for some turns, using `Profile`'s scores), a setup

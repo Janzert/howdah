@@ -9,6 +9,12 @@ young).
 
 ### Added
 
+- `howdah-tourney`, a command line for testing engine changes: it plays
+  two engines in colour-swapped pairs, several games at once, keeps every
+  game and the results in the test's directory (with copies of the
+  engines, so rebuilding one doesn't change a running test), resumes
+  where it stopped, and reports score, Elo, LOS and an SPRT that ends the
+  test once it decides.
 - A position editor, from the lobby or from a game window ("Edit
   position", `e`, which opens the shown position in a new window): place
   pieces from a palette per side (it counts what's left), drag them

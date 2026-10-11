@@ -204,6 +204,19 @@ plans the engine test and tournament runner.
   - `examples/probe.rs` runs it against the live server by hand (see the
     parent repo's notes on probing first; `probe play` takes seats and
     plays from commands on stdin). Never in tests or CI.
+- `crates/howdah-tourney`: engine tests (plan in `docs/TOURNAMENTS.md`;
+  no UI deps). A `TestSpec` (`test.toml`: two engines, time control,
+  `max_pairs`, `sprt`) and a `TestDir` holding it, engine snapshots
+  (`engines/`, with source and SHA-256), `results.jsonl` (`GameEntry`
+  per game, appended and synced as it ends; the state of a test is the
+  spec plus this log) and `games/`. `run` plays the games not yet
+  logged, in colour-swapped pairs (engine 1 gold in game 1), across
+  `concurrency` slots that each keep a process per engine, and reports
+  `RunEvent`s; `StopHandle` starts no more games. `summarize` counts
+  complete pairs: Elo, LOS, and the SPRT (variance with one pseudo-pair
+  per outcome, decided at the first crossing in log order). The
+  `howdah-tourney` binary (`new`, `run`, `show`) is its command line;
+  engines run in their own process group so Ctrl-C reaches only it.
 - `app/src-tauri`: thin shell.
   - `session.rs` has the pure state logic: a `GameTree`, the line being
     shown (`line`, root to a leaf) with a cursor ply on it, the in-progress
@@ -829,6 +842,7 @@ plans the engine test and tournament runner.
 ```bash
 cargo test --workspace            # all Rust tests (test profile uses opt-level 1)
 cargo run -p howdah-aei --example match -- --gold "CMD" --silver "CMD" [--tc 2s/10s] [--transcript]
+cargo run -p howdah-tourney -- new SPEC.toml DIR   # then: run DIR [-j N], show DIR
 cargo run -p howdah-gameroom --example probe -- live   # live server; ARIMAA_USERNAME/ARIMAA_PASSWORD
 cargo clippy --workspace --all-targets
 cd app && npm install

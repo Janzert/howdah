@@ -1412,6 +1412,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "howdah-tourney"
+version = "0.1.0"
+dependencies = [
+ "howdah-aei",
+ "howdah-arimaa",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml 1.1.6+spec-1.1.0",
+]
+
+[[package]]
 name = "html5ever"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
