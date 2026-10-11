@@ -67,7 +67,9 @@ Howdah plays and watches games on arimaa.com.
     `docs/UI-SURVEY.md`, section 6). `ViewerGame::parse` turns one into
     a `GameRecord` (puzzle positions written as partial "setups" become
     a `Position` tag; `2w pass` means silver to move), with `start` (the
-    `startmove`, else the end) and the solver's side.
+    `startmove`, else the end) and the solver's side. It reads only what
+    the format plainly means; mistakes in particular files are mended by
+    errata where they're fetched (`howdah_gameroom::puzzles::ERRATA`).
   - `tree::GameTree`: moves with variations (design in
     `docs/VARIATIONS.md`). An arena of `Node`s with stable `NodeId`s; the
     first child continues the main line. Adding a move that's already a
@@ -181,7 +183,8 @@ Howdah plays and watches games on arimaa.com.
     same Referer gate as the gameroom): `parse_puzzle_list` (`list.cgi`,
     groups by heading), `parse_puzzle_page` (`show.cgi?p=`: question,
     hint from its `answer()` script, author), and `Puzzles` to fetch
-    them and an answer file (`show.cgi?w=`).
+    them and an answer file (`show.cgi?w=`), with `ERRATA` (per-puzzle
+    find-and-replace fixes for files with mistakes) applied.
   - `bots`: the server's bots (4steps's bot launcher). `parse_bot_list`
     reads the bot ladder's page of them all (`botLadderAll.cgi?u=<player
     id>`, no session; `ServerBot`, by the table's header names; the record

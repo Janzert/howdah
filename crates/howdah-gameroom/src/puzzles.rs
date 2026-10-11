@@ -37,6 +37,63 @@ pub struct PuzzlePage {
     pub author: Option<String>,
 }
 
+/// Corrections to answer files with mistakes in them, by puzzle id, as
+/// `(find, replace)` pairs on the file's text (percent-encoded, so moves
+/// are separated by `%0d`). Each applies only if its text is found, so a
+/// puzzle mended on the server is read as it is. The reader
+/// (`howdah_arimaa::ViewerGame`) reads only what the format plainly
+/// means; these fix the rest one file at a time rather than with general
+/// guesses that could misread other files.
+pub const ERRATA: &[(&str, &[(&str, &str)])] = &[
+    // A placement without a piece letter among silver's pieces.
+    ("p44", &[(" ra7 a1 eg5", " ra7 eg5")]),
+    // From 32g on, empty and pass lines, and the outer labels run a move
+    // ahead of the moves' own; the puzzle starts at the real 32g.
+    (
+        "p91",
+        &[
+            (
+                "%0d32w 32g%0d32b pass%0d33w 32g Hg4w Eg3w Ha3e Hb3e%0d33b ",
+                "%0d32w 32g Hg4w Eg3w Ha3e Hb3e%0d32b ",
+            ),
+            ("&startmove=33w", "&startmove=32w"),
+        ],
+    ),
+    // The silver camel and cat pushed and pulled in the solution are
+    // written in gold's case.
+    ("p97", &[("2w Eh1n Mg1e Mc2e Cc1n", "2w Eh1n mg1e Mc2e cc1n")]),
+    // A second label of 26s on move 25s.
+    ("p81", &[("%0d25b 26s Cb5w", "%0d25b 25s Cb5w")]),
+    // After gold's pass the outer labels run a ply ahead of the moves'
+    // own, with a pass for silver as well; silver moves first, at 2s.
+    (
+        "p102",
+        &[(
+            "%0d2w pass%0d2b 2g pass%0d3w 2s ee3s ee2s rb7s rb6s%0d3b 3g Ef5w De4s Ee5w Ed5w\
+             %0d4w 3s dc2w ee1w Cc1n ed1w%0d4b 4g rb5n Ec5w rb4w Eb5s%0d5w 4s hb3w db2n Rb1n\
+             %0d5b 5g Hc4n Dc3n db3e Eb4s%0d6w 5s ec1w eb1e Ra1e ra2s%0d6b ",
+            "%0d2w pass%0d2b ee3s ee2s rb7s rb6s%0d3w Ef5w De4s Ee5w Ed5w\
+             %0d3b dc2w ee1w Cc1n ed1w%0d4w rb5n Ec5w rb4w Eb5s%0d4b hb3w db2n Rb1n\
+             %0d5w Hc4n Dc3n db3e Eb4s%0d5b ec1w eb1e Ra1e ra2s%0d6w ",
+        )],
+    ),
+    // Silver's horse can't step north from f5 (another horse is on f6);
+    // down and back up, pulling the cat into f4, fits the rest of the
+    // move. A guess at what was meant.
+    ("p107", &[("%0d20b hf5n hf4n Cg4w", "%0d20b hf5s hf4n Cg4w")]),
+];
+
+/// An answer file with the errata for puzzle `id` applied.
+pub fn apply_errata(id: &str, text: &str) -> String {
+    let mut text = text.to_string();
+    for (_, fixes) in ERRATA.iter().filter(|(p, _)| *p == id) {
+        for (find, replace) in fixes.iter() {
+            text = text.replacen(find, replace, 1);
+        }
+    }
+    text
+}
+
 /// Whether `id` is a puzzle id as the list uses them: `p` and digits.
 pub fn valid_id(id: &str) -> bool {
     id.strip_prefix('p').is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
@@ -168,9 +225,9 @@ impl Puzzles {
     }
 
     /// A puzzle's answer: viewer variables with its position, `startmove`
-    /// and solution.
+    /// and solution, with any errata applied.
     pub async fn answer(&self, id: &str) -> Result<String, Error> {
-        self.http.get_page(&self.url(id, 'w')?, None).await
+        Ok(apply_errata(id, &self.http.get_page(&self.url(id, 'w')?, None).await?))
     }
 
     /// A puzzle's page: question, hint and author.
@@ -225,6 +282,19 @@ mod tests {
         assert_eq!(p.author.as_deref(), Some("Someone"));
         let none = parse_puzzle_page("function answer(){\n  alert(\"\");\n}");
         assert_eq!((none.hint.as_str(), none.author), ("", None));
+    }
+
+    #[test]
+    fn errata_apply_only_where_their_text_is_found() {
+        let text = "&movelist=1w Eh1 mg1%0d1b pass%0d2w Eh1n Mg1e Mc2e Cc1n%0d2b \n";
+        assert!(apply_errata("p97", text).contains("2w Eh1n mg1e Mc2e cc1n%0d"));
+        assert_eq!(apply_errata("p4", text), text, "no errata for p4");
+        let fixed = "&movelist=1w Eh1 mg1%0d1b pass%0d2w Eh1n mg1e Mc2e cc1n%0d2b \n";
+        assert_eq!(apply_errata("p97", fixed), fixed, "already mended");
+        for (id, fixes) in ERRATA {
+            assert!(valid_id(id) && !fixes.is_empty(), "{id}");
+            assert!(fixes.iter().all(|(f, r)| f != r && !f.is_empty()), "{id}");
+        }
     }
 
     #[test]
