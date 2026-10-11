@@ -445,7 +445,8 @@ The current engine panel shows depth, eval, PV and log per side.
 
 ## 8. Engine matches and tournaments (bot tooling)
 
-From Cute Chess. Our `play_match` plus the app's BvB are the seed.
+From Cute Chess. Our `play_match` plus the app's BvB are the seed. The
+plan is in `TOURNAMENTS.md`.
 
 - **[P2] Match runner:**
   - N games with sides alternating.

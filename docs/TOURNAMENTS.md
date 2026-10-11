@@ -1,0 +1,251 @@
+# Engine tests and tournaments
+
+Plan for a long-running runner that plays engine-vs-engine games,
+mainly for bot development: answering "is this change stronger, and by
+how much?" Howdah and a command line both connect to it to queue tests,
+follow them and look at their games. Written 2026-10-11; nothing is
+built yet.
+
+## What others do
+
+- **cutechess-cli** (chess): one run from the command line plays a
+  round robin, gauntlet or knockout at a set concurrency, with an
+  opening book (`-repeat` plays each opening twice with colours
+  swapped), draw and resign adjudication, SPRT, and PGN output.
+  `-recover` restarts crashed engines. A run can't be watched from
+  outside or resumed; the Cute Chess GUI is a separate program, with a
+  game wall of running games.
+- **fastchess** (chess): the same command-line style with lower
+  overhead and much higher concurrency. It counts results by pentanomial
+  statistics (a colour-swapped pair is one unit) and can pause, save its
+  state and resume. It's now the usual tool for local SPRT tests.
+- **fishtest** (Stockfish) and **OpenBench** (many engines): distributed
+  testing. A test is a dev branch against a base branch; workers build
+  both, take chunks of game pairs, and report back. A web page shows each
+  test's log-likelihood ratio (LLR), Elo with error bars and pair counts,
+  and a queue of tests with priorities sharing the workers. OpenBench
+  measures each machine with a "bench" run and scales time controls.
+- **gomill's ringmaster** (Go): a control file defines a competition and
+  its output goes next to it. Games run in parallel; a stopped
+  competition continues where it left off; `show` and `report` read its
+  state from another process while it runs. Besides tournaments it runs
+  parameter tuning (Monte Carlo and cross-entropy). Every game is kept
+  as SGF.
+- **AEI's `roundrobin.py`** (Arimaa): a config file, one game at a time,
+  records out.
+- **BayesElo** and **Ordo**: ratings for a pool of players from all
+  their results.
+
+Patterns worth taking:
+- A queue of tests sharing the machine (fishtest, OpenBench).
+- Colour-swapped pairs as the unit of work and of counting.
+- State that survives a crash or a stop, and that another process can
+  read while games run (ringmaster, fastchess).
+- SPRT as the normal way to end a test, with Elo and its error alongside.
+- A wall of running games (Cute Chess), later.
+- Tuning, much later.
+
+## How Arimaa differs from chess and Go
+
+From Brian (2026-10-11):
+- **No draws.** Under modern rules a draw can't happen, so every game is
+  a win or a loss.
+- **Games diverge fast.** With Arimaa's branching factor, bot games have
+  historically gone their own way within a few moves, and no opening
+  book or fixed setups have been used. A setup book may be wanted one
+  day, but it isn't needed to start.
+- **No colour advantage** has been shown: silver's second setup seems to
+  cancel gold's first move.
+- **Colour-paired games are still wanted**, without fixed setups.
+
+## What Howdah has
+
+- `howdah_aei::play_match` plays one game between two engines that have
+  done the handshake, with clocks, following pyrimaa's `game.py`. Every
+  move is checked by `howdah-arimaa`; an illegal move, a crash, a timeout
+  or a resignation loses, and a turn limit is scored by
+  `limit_score_winner`. It reports `MatchEvent`s and leaves the engines
+  running, so they can be reused.
+- `examples/match.rs` plays one game from the command line.
+- The app plays engine-vs-engine games in a game window (`start_match`).
+- Engines: the app's engine list (`engines.json`) and installed engines
+  in versioned directories (`<app local data>/engines/<id>/<version>/`).
+  `Profile` reads each engine's scores from its side.
+- The dev bridge already serves `Backend` over local HTTP
+  (`POST /invoke/<cmd>`, SSE `GET /events`), a pattern the runner's API
+  can follow.
+
+## Proposal
+
+### Pieces
+
+- **`crates/howdah-tourney`**: the runner as a library (tests, the
+  scheduler, statistics, the results log), with no UI dependencies. It
+  builds on `howdah-aei`.
+- **A daemon**, one per user, running a queue of tests. It keeps running
+  when Howdah closes. It can be started from a terminal or by Howdah.
+- **A command line** that talks to the daemon: submit a test, list
+  tests, show one (stats and recent games), pause, resume, stop, change
+  concurrency. A foreground mode runs a single test without a daemon,
+  using the same library, for scripts and CI.
+- **Howdah** connects to the same daemon (below).
+
+### Tests
+
+A test is a spec plus its results. The first kind is two engines in
+colour-swapped pairs, ended by SPRT or a game count. Gauntlets (one
+engine against several) and round robins come later as more kinds.
+
+The spec, in `test.toml`:
+- Each engine: a name, the program and its arguments, AEI options,
+  and whether to restart it for every game (default: reuse it, sending
+  `newgame`).
+- The time control (the AEI `M/R/P/L/G/T` format), including the turn
+  limit.
+- The stopping rule: SPRT bounds (`elo0`, `elo1`, `alpha`, `beta`), a
+  maximum number of pairs, or both.
+- Its priority in the queue.
+
+**Engine snapshots.** When a test is submitted, each engine's program is
+copied into the test's directory and run from there, and its SHA-256 is
+recorded. Rebuilding a bot while a test runs then doesn't change the
+test, and the result always says exactly which binaries were tested. An
+installed engine (a versioned directory that doesn't change) can be
+recorded instead of copied. An engine needing files beside its program
+copies its directory.
+
+### Storage
+
+One directory per test, under the daemon's data directory
+(`<app local data>/tourney/tests/<id>/`):
+- `test.toml`: the spec, as submitted. Changes later (more pairs, a new
+  priority) are appended to an events file rather than rewriting it.
+- `engines/`: the snapshots.
+- `results.jsonl`: one line per finished game, appended when it ends:
+  pair number, colours, engines, result and reason, plies, time used,
+  the record's file name, and a hash of the move list.
+- `games/`: a record per game (`howdah-arimaa`'s record format, with
+  engine names, time control and `Event` set to the test).
+- `logs/`: engine logs per game, when the test asks for them.
+
+The state of a test is its spec plus `results.jsonl`, so resuming after
+a crash or a stop is just reading them: pairs with both games logged are
+done, and anything else is played again. Nothing else holds state that
+needs saving. Howdah can read a test's directory to show it even with no
+daemon running.
+
+### Scheduling
+
+- The unit of work is a **pair**: one game each way round. Pairs are
+  numbered, and game 1 of pair n has the first engine as gold.
+- The daemon has a number of **game slots** (concurrency). Free slots go
+  to running tests by priority, and evenly among tests with the same
+  priority.
+- A slot keeps its engine processes while it plays the same test's
+  games, and quits them when it moves to another test or the test ends.
+- An engine that crashes loses that game (as `play_match` does already)
+  and is restarted. If an engine keeps failing (say three games in a
+  row), the test is paused with the reason shown, rather than piling up
+  losses.
+- When a test's SPRT decides or it reaches its pair limit, games already
+  running finish and are counted, and no more start.
+
+### Statistics
+
+Every game is a win or a loss, so the statistics are simpler than in
+chess.
+- **Counted by pair.** A pair scores 0, ½ or 1 for the first engine (the
+  mean of its two games). With fast divergence and no colour advantage,
+  the two games of a pair are close to independent, and counting by
+  pair gives nearly the same answer as counting by game. It stays right
+  if they aren't, e.g. two bots that set up the same way every game,
+  and it costs at most half a pair.
+- **Elo** is logistic Elo from the mean pair score, with a 95% interval
+  from the variance of the pair scores, plus the likelihood of
+  superiority (LOS).
+- **SPRT** is the generalized SPRT used by fishtest and fastchess, on
+  pair scores: with `s0` and `s1` the expected scores at `elo0` and
+  `elo1`, `n` pairs, mean `m` and variance `v`,
+  `LLR ≈ n (s1 − s0) (2m − s0 − s1) / (2v)`, stopping when it crosses
+  `ln(β / (1 − α))` or `ln((1 − β) / α)`. Bounds are in plain logistic
+  Elo; there are no draws to normalize away.
+- **Repeated games.** Varied games depend on the engines not being
+  deterministic, which time-based search usually gives. The runner
+  compares the move-list hashes in `results.jsonl` and flags a test with
+  repeated games, since repeats make the error bars look smaller than
+  they are. It's also the evidence for whether a setup book is ever
+  worth adding.
+- Also shown: results by reason (goal, elimination, immobilization,
+  timeout, illegal move, crash, turn limit), by colour, and average game
+  length and time used, so a broken engine stands out.
+
+### The daemon's API
+
+Local HTTP with JSON and server-sent events, as the dev bridge does:
+- Commands: submit, list, get a test (spec, state, stats), list a test's
+  games, pause, resume, stop, change pairs or priority, set
+  concurrency, shut down.
+- Events: a test added or changed state, stats updated, a game started
+  or finished. A running game's `MatchEvent`s (moves, clocks, engine
+  info) are sent only to clients following that game.
+- It listens on 127.0.0.1 and writes its port and a random token to a
+  file readable only by the user, in its data directory; clients send
+  the token, so other users on the machine can't drive it. Howdah and
+  the command line find it through that file.
+
+### In Howdah
+
+- A **Tests** page in the lobby window: the queue and finished tests,
+  each with its engines, games played, Elo with its interval and an LLR
+  bar between the SPRT bounds. Buttons to pause, resume, stop and add a
+  test (picking engines from the engine list, which the daemon then
+  snapshots).
+- A **test page**: the stats above, the list of games (open one in a
+  game window to replay it), and the running games.
+- A **running game** opens in a game window as a read-only session that
+  follows its `MatchEvent`s, as a followed arimaa.com game does. The
+  game wall from `WINDOWS.md` phase 4 shows them all at once.
+- If no daemon is running, Howdah offers to start one, and can still
+  show finished tests from their directories.
+
+## Phases
+
+1. **The runner library and a foreground command.** `howdah-tourney`
+   with a two-engine SPRT test: the spec, snapshots, pairs, concurrency,
+   engine reuse and restart, `results.jsonl` and records, resuming, the
+   statistics and the repeated-games check. A command runs one test in
+   the foreground and prints progress. Tested with `aei-test-engine` and
+   checked with Sharp and OpFor.
+2. **The daemon.** The queue, priorities and shared slots, the HTTP and
+   SSE API, the token file, and the command line as its client.
+3. **Howdah.** The Tests page, the test page, and following running
+   games in game windows.
+4. **More kinds of test.** Gauntlets, round robins with a crosstable,
+   and ratings for a pool (BayesElo or Ordo style); then the game wall.
+
+Later, if wanted: eval-based adjudication (resigning for an engine past
+a score threshold for some turns, using `Profile`'s scores), a setup
+book, tests naming git commits that the daemon builds, remote workers
+taking pairs from the daemon, and parameter tuning.
+
+## Decided
+
+Brian, 2026-10-11:
+- One daemon running a queue of tests, rather than a process per test.
+- Engine processes are reused between games, with an option to restart
+  them for every game.
+- Two-engine SPRT tests come first.
+- No setup book to start with, and maybe never.
+
+## Open questions
+
+- How a test names its engines: a program path that's snapshotted (the
+  proposal above), or a git commit the daemon builds, as fishtest and
+  OpenBench do. Commits are nicer for development but need a build
+  recipe per bot. Paths first; commits could come later.
+- Default SPRT bounds and time controls, once real tests show how many
+  games a test takes.
+- Whether the command line is its own binary or a subcommand of a
+  future `howdah` CLI.
+- Whether the daemon should exit when its queue is empty, or stay until
+  told to stop.

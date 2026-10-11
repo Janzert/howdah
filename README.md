@@ -164,7 +164,7 @@ CI runs these on Linux, Windows and macOS and builds the installers.
 - `app/`: the Tauri application. `src-tauri/` is the Rust shell and `src/`
   is the Svelte frontend.
 - `docs/`: design notes (analysis, variations, engines, the gameroom,
-  result codes).
+  result codes, engine tests and tournaments).
 
 ## Acknowledgements
 

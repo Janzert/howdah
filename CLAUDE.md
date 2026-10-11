@@ -6,8 +6,9 @@ analysis, tournaments, postal games and bot tooling.
 
 Design notes live in `docs/`. `docs/UI-SURVEY.md` collects UI and feature
 ideas from other Arimaa and chess clients, `docs/ENGINES.md` records how
-Sharp, OpFor and other AEI engines behave, and `docs/GAMEROOM.md` how
-Howdah plays and watches games on arimaa.com.
+Sharp, OpFor and other AEI engines behave, `docs/GAMEROOM.md` how
+Howdah plays and watches games on arimaa.com, and `docs/TOURNAMENTS.md`
+plans the engine test and tournament runner.
 
 ## Architecture
 
