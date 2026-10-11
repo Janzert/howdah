@@ -881,6 +881,7 @@ npm test                          # vitest (frontend unit tests, e.g. BoardModel
 npm run bindings                  # regenerate TS types
 npm run tauri dev                 # run the app
 npm run bridge                    # dev bridge for the browser preview (port 1421)
+npm run sidecar                   # howdah-tourney for a release build (see Releases)
 npm run dev -- --port 1430        # Vite for a browser; it uses the bridge (1420 is for tauri dev)
 npm run e2e                       # Playwright smoke tests (starts both if needed)
 npm run bridge -- -- --port 1422  # a second bridge, when 1421 is taken
@@ -911,6 +912,15 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
   run stops if the tag doesn't match them all. Run by hand, it only
   keeps the installers as artifacts. No code signing (macOS is signed ad
   hoc, `bundle.macOS.signingIdentity`) and no auto-updater yet.
+  Installers bundle `howdah-tourney` as a sidecar: `npm run sidecar`
+  (`app/scripts/sidecar.mjs`) builds it into `src-tauri/binaries/`
+  (gitignored) with the target triple in its name, and `tauri build
+  --config src-tauri/tauri.sidecar.conf.json` adds the `externalBin`.
+  It's only in that overlay because `tauri-build` needs the file for
+  every build of the app crate and copies it over
+  `target/<profile>/howdah-tourney`. Installed, it sits beside the app's
+  program, where `tourney.rs` looks for it; on Windows and in an
+  AppImage the app runs a copy in the data directory's `bin/` instead.
 - To release: bump the version (not needed for the first, `v0.1.0`),
   push a `v*` tag, look over the draft and publish it.
 - App icon: the master is `app/src-tauri/app-icon.svg` (an elephant

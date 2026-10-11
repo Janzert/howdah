@@ -142,6 +142,13 @@ npm run tauri dev      # run the app with hot reload
 npm run tauri build    # installers, in target/release/bundle/
 ```
 
+Release installers also carry `howdah-tourney`, the engine test daemon:
+
+```bash
+npm run sidecar        # builds it into src-tauri/binaries/
+npm run tauri build -- --config src-tauri/tauri.sidecar.conf.json
+```
+
 ### Test
 
 ```bash

@@ -155,6 +155,8 @@ impl Tourney {
             ))
         })?;
         std::fs::create_dir_all(&dir).map_err(|e| ApiError::state(format!("{}: {e}", dir.display())))?;
+        let needs_copy = cfg!(windows) || std::env::var_os("APPIMAGE").is_some();
+        let program = if needs_copy { runnable_copy(&program, &dir)? } else { program };
         let log_path = dir.join("daemon.log");
         let log = std::fs::File::create(&log_path)
             .map_err(|e| ApiError::state(format!("{}: {e}", log_path.display())))?;
@@ -303,7 +305,34 @@ impl Tourney {
     }
 }
 
-/// `howdah-tourney` beside the app's own program.
+/// A copy of the daemon's program to run, for the two installs that
+/// can't run it in place, kept in the data directory's `bin/`: an
+/// AppImage (its files go away when the app exits, and the daemon goes on)
+/// and Windows (a running program can't be replaced, so a daemon would
+/// block updating the app). The copy is refreshed when the app's is newer.
+fn runnable_copy(program: &Path, data_dir: &Path) -> Result<PathBuf, ApiError> {
+    let copy = data_dir.join("bin").join(DAEMON_PROGRAM);
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let stale = match (modified(program), modified(&copy)) {
+        (Some(app), Some(ours)) => app > ours,
+        (_, None) => true,
+        (None, Some(_)) => false,
+    };
+    if stale {
+        let io = |e: std::io::Error| ApiError::state(format!("couldn't copy {}: {e}", program.display()));
+        std::fs::create_dir_all(copy.parent().expect("in bin/")).map_err(io)?;
+        if let Err(e) = std::fs::copy(program, &copy) {
+            // A daemon still running from the copy holds it; use it as it is.
+            if !copy.is_file() {
+                return Err(io(e));
+            }
+        }
+    }
+    Ok(copy)
+}
+
+/// `howdah-tourney` beside the app's own program (a release bundles it as
+/// a sidecar; in development `cargo build -p howdah-tourney` puts it there).
 fn daemon_program() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let program = exe.parent()?.join(DAEMON_PROGRAM);
@@ -550,6 +579,28 @@ mod tests {
             test_spec(new_test(false, Some(10)), [engine("Sharp", false), engine("Sharp", false)]).unwrap();
         assert_eq!(spec.engines[0].name, "Sharp (1)");
         assert_eq!(spec.engines[1].name, "Sharp (2)");
+    }
+
+    #[test]
+    fn the_daemon_runs_from_a_copy_refreshed_when_the_app_is_newer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let program = tmp.path().join("app").join(DAEMON_PROGRAM);
+        std::fs::create_dir_all(program.parent().unwrap()).unwrap();
+        std::fs::write(&program, b"v1").unwrap();
+        let data = tmp.path().join("data");
+        let copy = runnable_copy(&program, &data).unwrap();
+        assert_eq!(copy, data.join("bin").join(DAEMON_PROGRAM));
+        assert_eq!(std::fs::read(&copy).unwrap(), b"v1");
+
+        // An older app program leaves the copy alone; a newer one replaces it.
+        std::fs::write(&copy, b"kept").unwrap();
+        runnable_copy(&program, &data).unwrap();
+        assert_eq!(std::fs::read(&copy).unwrap(), b"kept");
+        let later = std::time::SystemTime::now() + Duration::from_secs(60);
+        std::fs::write(&program, b"v2").unwrap();
+        std::fs::File::options().write(true).open(&program).unwrap().set_modified(later).unwrap();
+        runnable_copy(&program, &data).unwrap();
+        assert_eq!(std::fs::read(&copy).unwrap(), b"v2");
     }
 
     #[test]

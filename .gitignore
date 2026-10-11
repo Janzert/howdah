@@ -2,4 +2,6 @@
 node_modules/
 /app/dist/
 /app/src-tauri/gen/
+# Built by `npm run sidecar` for release builds.
+/app/src-tauri/binaries/
 *.log

@@ -9,7 +9,8 @@
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "bindings": "cargo test -p howdah --lib export_bindings",
-    "bridge": "cargo build -p howdah-aei --bin aei-test-engine && cargo run -p howdah --features dev-bridge --bin dev-bridge",
+    "bridge": "cargo build -p howdah-aei --bin aei-test-engine && cargo build -p howdah-tourney && cargo run -p howdah --features dev-bridge --bin dev-bridge",
+    "sidecar": "node scripts/sidecar.mjs",
     "tauri": "tauri",
     "test": "vitest run",
     "e2e": "playwright test"

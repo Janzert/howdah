@@ -339,14 +339,19 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   daemon when the game ends. It stops following when the window closes
   or shows another game.
 - Without a daemon, the section offers to start one when
-  `howdah-tourney` sits beside the app's program (dev builds: `cargo
-  build -p howdah-tourney`), with its output in `daemon.log` in the data
-  directory; otherwise it gives the command. The dev bridge uses its own
+  `howdah-tourney` sits beside the app's program, with its output in
+  `daemon.log` in the data directory; otherwise it gives the command.
+  Installers bundle it there as a Tauri sidecar (`npm run sidecar`, then
+  `tauri build --config src-tauri/tauri.sidecar.conf.json`, as the
+  release workflow does); in development `cargo build -p howdah-tourney`
+  (or `npm run bridge`) puts it there. An AppImage's files go away when
+  the app exits, and on Windows a running daemon would block replacing
+  its program in an update, so there the app runs a copy kept in the
+  data directory's `bin/`, refreshed when the app's is newer. The dev bridge uses its own
   data directory (`dev-bridge-config/tourney`), so a daemon started from
   the browser preview is separate from the user's.
-- Not built yet: bundling `howdah-tourney` with the installers (a Tauri
-  sidecar), so a release build can start a daemon; showing tests from
-  their directories with no daemon; and the game wall (phase 4).
+- Not built yet: showing tests from their directories with no daemon,
+  and the game wall (phase 4).
 - Checked in the browser preview against the dev bridge: starting the
   daemon, a Sharp vs OpFor test from New test, its dialog with the games
   playing, following a running game to its end (moves, clocks and the

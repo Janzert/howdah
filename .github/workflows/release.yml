@@ -102,9 +102,15 @@ jobs:
         working-directory: app
         run: npm ci
 
+      # The engine test daemon, bundled as a sidecar beside the app's
+      # program (src-tauri/tauri.sidecar.conf.json adds it to the bundle).
+      - name: howdah-tourney sidecar
+        working-directory: app
+        run: npm run sidecar
+
       - name: Tauri build
         working-directory: app
-        run: npm run tauri build -- --ci
+        run: npm run tauri build -- --ci --config src-tauri/tauri.sidecar.conf.json
 
       - name: Collect the installers
         run: |
