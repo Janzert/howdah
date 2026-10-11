@@ -20,6 +20,11 @@ pub struct EngineConfig {
     pub working_dir: Option<PathBuf>,
     /// How long to wait for `aeiok` after sending `aei`.
     pub handshake_timeout: Duration,
+    /// Starts the engine in a process group of its own, so a Ctrl-C in our
+    /// terminal (which goes to the whole foreground group) doesn't reach
+    /// it and the controller decides when it stops. Our own death still
+    /// ends it as before (`kill_on_drop`, and on Linux `kill_with_parent`).
+    pub own_process_group: bool,
 }
 
 impl EngineConfig {
@@ -29,6 +34,7 @@ impl EngineConfig {
             args: Vec::new(),
             working_dir: None,
             handshake_timeout: Duration::from_secs(10),
+            own_process_group: false,
         }
     }
 
@@ -43,6 +49,11 @@ impl EngineConfig {
 
     pub fn working_dir(mut self, dir: impl Into<PathBuf>) -> EngineConfig {
         self.working_dir = Some(dir.into());
+        self
+    }
+
+    pub fn own_process_group(mut self) -> EngineConfig {
+        self.own_process_group = true;
         self
     }
 }
@@ -122,6 +133,13 @@ impl Engine {
             .kill_on_drop(true);
         #[cfg(target_os = "linux")]
         kill_with_parent(&mut cmd);
+        if config.own_process_group {
+            #[cfg(unix)]
+            cmd.process_group(0);
+            // CREATE_NEW_PROCESS_GROUP, which also turns Ctrl-C off in it.
+            #[cfg(windows)]
+            cmd.creation_flags(0x0000_0200);
+        }
         if let Some(dir) = &config.working_dir {
             // A missing directory makes spawn fail with the same "not found"
             // error as a missing program, so check it separately.
