@@ -168,15 +168,44 @@ impl StartPosition {
         format!("{}\n{}", self.label(), self.position.to_board_string())
     }
 
+    /// The position as two setup moves, as arimaa.com's puzzle viewer
+    /// writes positions: `1g` places gold's pieces and `1s` silver's,
+    /// anywhere on the board, and `2g pass` follows when silver is to
+    /// move. Not legal setups, and the move number is lost (the first turn
+    /// is always move 2); for exchange with tools that read positions so.
+    pub fn to_setup_moves(&self) -> String {
+        let mut out = String::new();
+        for (color, label) in [(Color::Gold, "1g"), (Color::Silver, "1s")] {
+            let mut pieces: Vec<(Square, Piece)> =
+                self.position.pieces().filter(|(_, p)| p.color == color).collect();
+            // Strongest first, then in board order, as setups are written.
+            pieces.sort_by_key(|&(sq, p)| (std::cmp::Reverse(p.kind), sq));
+            let words: Vec<String> = pieces.iter().map(|(sq, p)| format!("{p}{sq}")).collect();
+            let body = if words.is_empty() { "pass".to_string() } else { words.join(" ") };
+            out.push_str(&format!("{label} {body}\n"));
+        }
+        if self.position.side_to_move() == Color::Silver {
+            out.push_str("2g pass\n");
+        }
+        out
+    }
+
     /// Reads a position in the short format (`[` + 64 squares + `]`,
     /// optionally after a side letter or a move label: `s [...]`,
-    /// `12s [...]`) or the long format (the board diagram, optionally after
-    /// its move label line). Without a side, gold is to move; without a
-    /// move number, it's move 2. `w` and `b` are read as gold and silver.
+    /// `12s [...]`), the long format (the board diagram, optionally after
+    /// its move label line), or as setup moves (see
+    /// [`StartPosition::to_setup_moves`]; either may be `pass`). Without a
+    /// side, gold is to move; without a move number, it's move 2. `w` and
+    /// `b` are read as gold and silver.
     pub fn parse(text: &str) -> Result<StartPosition, ParseError> {
         let text = text.trim();
         if text.is_empty() {
             return Err(ParseError::new("no position given"));
+        }
+        if let Some(first) = text.split_whitespace().next()
+            && crate::notation::parse_move_number(first).is_ok_and(|(n, _)| n == 1)
+        {
+            return parse_setup_moves(text);
         }
         let (label, rest) = match text.find(['[', '\n', '|', '+']) {
             Some(i) => (text[..i].trim(), &text[i..]),
@@ -237,6 +266,43 @@ impl StartPosition {
         self.position = edited;
         Ok(())
     }
+}
+
+/// Setup moves as a position: `1g`, then `1s`, placing any pieces
+/// anywhere (or `pass`), then `2g pass` for silver to move.
+fn parse_setup_moves(text: &str) -> Result<StartPosition, ParseError> {
+    let mut pieces = Vec::new();
+    let mut side = Color::Gold;
+    let mut seen = Vec::new();
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let (label, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+        let (number, color) = crate::notation::parse_move_number(label)?;
+        let rest = rest.trim();
+        match (number, color) {
+            (1, c) if !seen.contains(&c) => {
+                seen.push(c);
+                if rest.eq_ignore_ascii_case("pass") || rest.is_empty() {
+                    continue;
+                }
+                for word in rest.split_whitespace() {
+                    let bad = || {
+                        ParseError::new(format!(
+                            "{label}: can't read {word:?} (a piece and square, such as Ra1)"
+                        ))
+                    };
+                    let piece = word.chars().next().and_then(Piece::from_letter).ok_or_else(bad)?;
+                    let square: Square = word.get(1..).ok_or_else(bad)?.parse().map_err(|_| bad())?;
+                    if piece.color != c {
+                        return Err(ParseError::new(format!("{label}: {word} is the other side's piece")));
+                    }
+                    pieces.push((piece, square));
+                }
+            }
+            (2, Color::Gold) if rest.eq_ignore_ascii_case("pass") && seen.len() == 2 => side = Color::Silver,
+            _ => return Err(ParseError::new(format!("{line:?}: expected 1g, 1s and maybe 2g pass"))),
+        }
+    }
+    Ok(StartPosition::new(Position::from_pieces(side, pieces)?))
 }
 
 /// A move label or a side letter: `12s`, `g`, or nothing.
@@ -388,6 +454,22 @@ mod tests {
         for bad in ["Ra1x", "Zd4", "Md4q", "Md9", "Ma3n", "rg7n Ra3w Ra3w"] {
             assert!(s.apply_edits(bad).is_err(), "{bad}");
             assert_eq!(s, before, "{bad} changed nothing");
+        }
+    }
+
+    #[test]
+    fn setup_moves_both_ways() {
+        let s = StartPosition::new(pos(Color::Silver, "Ra2 Dc3 Cc4 Ed4 rh7 eh8"));
+        let text = s.to_setup_moves();
+        assert_eq!(text, "1g Ed4 Dc3 Cc4 Ra2\n1s eh8 rh7\n2g pass\n");
+        assert_eq!(StartPosition::parse(&text).unwrap(), s);
+        let gold = StartPosition::new(pos(Color::Gold, "Ra2 rh7"));
+        assert_eq!(gold.to_setup_moves(), "1g Ra2\n1s rh7\n");
+        // arimaa.com's labels, and a pass in place of a side's pieces.
+        let read = StartPosition::parse("1w Ra2 Ee1\n1b pass\n").unwrap();
+        assert_eq!(read.position.pieces().count(), 2);
+        for bad in ["1g Ra2\n1s Rh7", "1g Ra2\n2g Ra2n", "1g Ra2 a1", "1g Ra2\n1g Rb2", "1g Ra2\n2g pass"] {
+            assert!(StartPosition::parse(bad).is_err(), "{bad}");
         }
     }
 

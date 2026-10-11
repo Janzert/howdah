@@ -61,6 +61,18 @@ test('the lobby opens the editor; pieces go on and off, and Analyse starts from 
   expect(short.startsWith('s [')).toBe(true);
   await expect(board(win).getByRole('img', { name: 'silver elephant e5' })).toBeVisible();
 
+  // Setup moves, as arimaa.com's puzzle pages write positions, read back
+  // the same (but for the move number, which they don't keep).
+  const setup = await bridge<{ setup: string }>(page, 'check_position', {
+    position: { short: short.slice(2), sideToMove: 'silver', moveNumber: 7 },
+  });
+  expect(setup.setup).toBe('1g Ed4 Ra2\n1s ee5 rh7\n2g pass\n');
+  const box = win.getByLabel('Position (short format)');
+  await box.fill(setup.setup);
+  await box.press('Enter');
+  await expect.poll(async () => (await editor(win)).label).toBe('2s');
+  expect((await editor(win)).short).toBe(short);
+
   await win.getByRole('button', { name: 'Analyse' }).click();
   await expect(win.getByRole('main', { name: 'Position editor' })).toBeHidden();
   await expect(win.getByText('Silver to move')).toBeVisible();
@@ -71,7 +83,7 @@ test('the lobby opens the editor; pieces go on and off, and Analyse starts from 
     await a.idle();
   });
   const moves = await win.evaluate(() => window.__arimaa!.state()!.moves.map((m) => `${m.label} ${m.notation}`));
-  expect(moves).toEqual(['7s ee5n']);
+  expect(moves).toEqual(['2s ee5n']);
   const record = await win.evaluate(() => window.__arimaa!.api.exportGame());
   expect(record).toContain(`[Position "${short}"]`);
 });

@@ -352,8 +352,17 @@
     <div class="tools-row">
       <button onclick={() => copy(check?.short)} title="Copy the short format, as AEI's setposition and the record's Position tag take it">Copy</button>
       <button onclick={() => copy(check?.long)} title="Copy the board diagram (the long format)">Copy diagram</button>
+      <button
+        onclick={() => copy(check?.setup)}
+        title="Copy as two setup moves placing every piece (and 2g pass when silver moves first), as arimaa.com's puzzle pages write positions. The move number isn't kept."
+      >
+        Copy as setup moves
+      </button>
     </div>
-    <p class="hint">Paste a short position (<code>g [rrrrrrrr…]</code>) or a board diagram, then press Enter.</p>
+    <p class="hint">
+      Paste a short position (<code>g [rrrrrrrr…]</code>), a board diagram or setup moves (<code>1g …</code>, <code>1s …</code>),
+      then press Enter.
+    </p>
 
     <label class="field">
       Type pieces

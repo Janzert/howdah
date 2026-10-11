@@ -1109,6 +1109,7 @@ pub fn check_position(position: &PositionSpec) -> Result<PositionCheck, ApiError
         problems,
         short: start.to_short_string(),
         long: start.to_long_string(),
+        setup: start.to_setup_moves(),
         label: start.label(),
         left,
     })

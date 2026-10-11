@@ -342,6 +342,14 @@ The current engine panel shows depth, eval, PV and log per side.
   after that. OpFor and pyrimaa's engines already did.
 - **Records** write the start as `[Position "g [...]"]` (short format with
   the side to move), with moves numbered from its move number.
+- **Setup moves** (`1g …`, `1s …`, `2g pass` for silver to move), the way
+  arimaa.com's puzzle viewer writes a position, are an export ("Copy as
+  setup moves") and are read back in the editor's box, but not the
+  default (2026-10-10, open to Brian's call): they need a pass, which
+  isn't an Arimaa move, for silver to move; they lose the move number;
+  they aren't legal setups, so a game recorded that way breaks the rules
+  in its first two moves; and engines would have to accept them through
+  `makemove`, where `setposition` is what AEI has for this.
 
 - **[have] arimaa.com's puzzles** (2026-10-10): the lobby's Puzzles lists
   arimaa.com's puzzle pages (`/arimaa/puzzles/list.cgi`, 92 puzzles under

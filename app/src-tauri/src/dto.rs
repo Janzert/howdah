@@ -591,6 +591,9 @@ pub struct PositionCheck {
     pub short: String,
     /// The long format: the move label, then the board diagram.
     pub long: String,
+    /// As two setup moves (`1g ...`, `1s ...`, and `2g pass` for silver to
+    /// move), as arimaa.com's puzzle viewer writes positions.
+    pub setup: String,
     /// The first move's label, e.g. `2g`.
     pub label: String,
     /// How many pieces of each kind each side has left to place, by

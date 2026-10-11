@@ -16,6 +16,11 @@ short: string,
  */
 long: string, 
 /**
+ * As two setup moves (`1g ...`, `1s ...`, and `2g pass` for silver to
+ * move), as arimaa.com's puzzle viewer writes positions.
+ */
+setup: string, 
+/**
  * The first move's label, e.g. `2g`.
  */
 label: string, 
