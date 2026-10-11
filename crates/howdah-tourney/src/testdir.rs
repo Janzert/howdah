@@ -129,7 +129,7 @@ fn absolute(path: &Path) -> Result<PathBuf, TourneyError> {
 }
 
 /// A name made safe for a file name.
-fn slug(name: &str) -> String {
+pub(crate) fn slug(name: &str) -> String {
     let s: String =
         name.chars().map(|c| if c.is_ascii_alphanumeric() || "-_.".contains(c) { c } else { '_' }).collect();
     if s.trim_matches('.').is_empty() { "engine".into() } else { s }

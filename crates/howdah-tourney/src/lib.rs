@@ -9,9 +9,14 @@
 //! - [`summarize`]: score, Elo, LOS and the SPRT from the results.
 //! - [`run`]: plays a test's remaining games, resuming from its results.
 //!
+//! - [`Daemon`]: a queue of tests sharing game slots, kept in a data
+//!   directory; [`server`] serves it over HTTP and [`client`] talks to it.
+//!
 //! No UI dependencies; the command line (`howdah-tourney`), and later the
-//! daemon and the app, share this crate.
+//! app, share this crate. The `server` and `client` features (both on by
+//! default) add the HTTP side.
 
+mod daemon;
 mod error;
 mod results;
 mod runner;
@@ -19,6 +24,15 @@ mod spec;
 mod stats;
 mod testdir;
 
+#[cfg(feature = "client")]
+pub mod client;
+#[cfg(feature = "server")]
+pub mod server;
+
+pub use daemon::{
+    DATA_DIR_ENV, Daemon, DaemonEvent, DaemonInfo, DaemonStatus, INFO_FILE, RunningGame, TestInfo,
+    TestStatus, default_data_dir,
+};
 pub use error::TourneyError;
 pub use results::{GameEntry, ResultsLog, moves_hash, read_results};
 pub use runner::{RunEnd, RunEvent, RunOptions, StopHandle, run};

@@ -3,8 +3,8 @@
 Plan for a long-running runner that plays engine-vs-engine games,
 mainly for bot development: answering "is this change stronger, and by
 how much?" Howdah and a command line both connect to it to queue tests,
-follow them and look at their games. Written 2026-10-11; phase 1 (the
-runner library and a command line) is built.
+follow them and look at their games. Written 2026-10-11; phases 1 and 2
+(the runner library and command line, and the daemon) are built.
 
 ## What others do
 
@@ -261,6 +261,52 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   Checked with Sharp against OpFor (4 pairs, 4 games at once, with
   engine logs) and Sharp against itself, stopped with a group-wide
   SIGINT and resumed.
+
+**As built (phase 2):**
+- The queue is `Daemon` in the library, with no HTTP in it; `server`
+  (axum) and `client` (reqwest) are modules behind features of the same
+  names, both on by default, so the app can take the client alone.
+- The data directory is `$HOWDAH_TOURNEY_DIR`, else `tourney/` in the
+  app's local data directory (beside `engines/`), or `--data-dir`.
+  Tests are `tests/<NNNN>-<name>/`. Instead of an events file, each
+  test's changes (status, priority, pair limit, end) go in `state.json`
+  beside `test.toml`, rewritten whole (written to a temporary file and
+  renamed).
+- Statuses are active, paused and finished, a finished test saying why:
+  passed or failed (the SPRT), done (all pairs played), stopped or
+  halted. Resuming clears a halt and its failure counts; a decided test
+  can't be resumed, and one that has played all its pairs is resumed by
+  raising its pair limit.
+- A test's `concurrency` caps its games at once in the daemon too. A
+  free slot takes the active test with the highest priority, then the
+  one it holds engines for, then the one with the fewest games running,
+  then the oldest; it quits its engines when it moves to another test.
+  The daemon starts with half the cores as slots unless told
+  (`--slots`).
+- Submitting needs absolute program paths; the command line resolves a
+  spec's paths from the spec file's directory before sending it.
+- The API is in `src/server.rs`'s doc comment. The port is random
+  unless `--port` sets one. `daemon.json` (port, token, pid) is mode 600
+  on Unix; on Windows it relies on the local app data directory being
+  the user's own. A second daemon on the same directory is refused while
+  the first answers. Clients that fall more than 1024 events behind miss
+  events (they can list the tests again).
+- Shutting down waits for running games; `--now` (or a second Ctrl-C)
+  abandons them, killing their engines, and they're played again when a
+  daemon next starts. Event streams close when the daemon is done.
+- Command line: `daemon`, `submit`, `list`, `status`, `watch [ID]`,
+  `pause`, `resume`, `stop`, `priority`, `max-pairs`, `slots`,
+  `shutdown [--now]`, and `show` takes a test's id as well as a
+  directory.
+- Not built yet: a running game's moves over the API (phase 3 needs it
+  to follow games), removing a test, and Howdah starting a daemon.
+- Tested with `aei-test-engine` (priorities, pausing across a restart,
+  resuming a halted test, extending a finished one, refusals, and the
+  HTTP API with its token). Checked on Linux with Sharp and OpFor: two
+  tests queued with priorities, pause and resume, `shutdown --now`
+  leaving no engines running, a restart keeping a paused test paused
+  and carrying on the active one, a raised pair limit, and a graceful
+  shutdown.
 
 Later, if wanted: eval-based adjudication (resigning for an engine past
 a score threshold for some turns, using `Profile`'s scores), a setup

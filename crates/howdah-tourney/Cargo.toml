@@ -15,6 +15,26 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 toml = "1"
 sha2 = "0.11.0"
+dirs = "7"
+# The daemon's HTTP API (`server`) and its client (`client`); the library
+# alone needs neither.
+axum = { version = "0.8", optional = true }
+tokio-stream = { version = "0.1", features = ["sync"], optional = true }
+getrandom = { version = "0.3", optional = true }
+reqwest = { version = "0.13", default-features = false, optional = true }
+
+[features]
+default = ["server", "client"]
+server = ["dep:axum", "dep:tokio-stream", "dep:getrandom", "tokio/net"]
+client = ["dep:reqwest"]
+
+[[bin]]
+name = "howdah-tourney"
+required-features = ["server", "client"]
+
+[[test]]
+name = "server"
+required-features = ["server", "client"]
 
 [dev-dependencies]
 tempfile = "3.27.0"

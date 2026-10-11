@@ -215,8 +215,21 @@ plans the engine test and tournament runner.
   `RunEvent`s; `StopHandle` starts no more games. `summarize` counts
   complete pairs: Elo, LOS, and the SPRT (variance with one pseudo-pair
   per outcome, decided at the first crossing in log order). The
-  `howdah-tourney` binary (`new`, `run`, `show`) is its command line;
-  engines run in their own process group so Ctrl-C reaches only it.
+  `howdah-tourney` binary is its command line (`new`, `run`, `show`
+  here; the rest through the daemon); engines run in their own process
+  group so Ctrl-C reaches only it.
+  - `Daemon` (`daemon.rs`): a queue of tests in a data directory
+    (`default_data_dir`: `$HOWDAH_TOURNEY_DIR`, else `tourney/` in the
+    app's local data dir), each with a `state.json` (`TestStatus`,
+    priority, pair limit, end), sharing `slots`. Slots run `play_slot`
+    with the daemon as its `Picker` (highest priority first; a test's
+    `concurrency` caps it); `run` uses the same slots with a one-test
+    picker. `TestRun` (`runner.rs`) is one test in play. Clients see
+    `TestInfo`s and `DaemonEvent`s (a broadcast).
+  - `server` (feature `server`): the HTTP API on 127.0.0.1, with a
+    bearer token from `daemon.json` (`DaemonInfo`, mode 600), and
+    server-sent events; routes in its doc comment. `client` (feature
+    `client`): `Client` and its `EventStream`.
 - `app/src-tauri`: thin shell.
   - `session.rs` has the pure state logic: a `GameTree`, the line being
     shown (`line`, root to a leaf) with a cursor ply on it, the in-progress
@@ -843,6 +856,7 @@ plans the engine test and tournament runner.
 cargo test --workspace            # all Rust tests (test profile uses opt-level 1)
 cargo run -p howdah-aei --example match -- --gold "CMD" --silver "CMD" [--tc 2s/10s] [--transcript]
 cargo run -p howdah-tourney -- new SPEC.toml DIR   # then: run DIR [-j N], show DIR
+cargo run -p howdah-tourney -- daemon              # then: submit SPEC.toml, list, watch, ... (--data-dir DIR)
 cargo run -p howdah-gameroom --example probe -- live   # live server; ARIMAA_USERNAME/ARIMAA_PASSWORD
 cargo clippy --workspace --all-targets
 cd app && npm install

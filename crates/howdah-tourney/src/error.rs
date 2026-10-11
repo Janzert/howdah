@@ -12,6 +12,11 @@ pub enum TourneyError {
     Spec(String),
     #[error("{path}: {message}")]
     Parse { path: PathBuf, message: String },
+    #[error("no test {0:?}")]
+    NoTest(String),
+    /// A request the daemon won't carry out, and why.
+    #[error("{0}")]
+    Refused(String),
 }
 
 impl TourneyError {

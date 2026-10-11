@@ -1,13 +1,16 @@
 //! Playing a test's games.
 //!
-//! Each of `concurrency` slots holds a process per engine, reused from game
-//! to game, and takes the next game not yet in the results log. A game
-//! that ends is written as a record and appended to the log before the
-//! next starts, so a run stopped or killed at any point resumes by playing
-//! whatever isn't logged.
+//! A [`TestRun`] is one test's games in play: which are done, which are
+//! running, its engines' failures and its end. Slots play the games: each
+//! holds a process per engine, reused from game to game while it stays on
+//! the same test, and asks a picker for its next game: for [`run`] the one
+//! test, for the daemon its queue. A game that ends is written as a record
+//! and appended to the log before the slot moves on, so a run stopped or
+//! killed at any point resumes by playing whatever isn't logged.
 
 use std::collections::{HashSet, VecDeque};
 use std::fs::File;
+use std::future::Future;
 use std::io::{BufWriter, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,6 +18,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use howdah_aei::{Direction, Engine, MatchConfig, MatchEvent, MatchOutcome, play_match};
 use howdah_arimaa::{GameRecord, GameTree, WinReason};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinSet;
 
@@ -59,7 +63,8 @@ pub enum RunEvent {
 }
 
 /// Why a run ended.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind", content = "detail")]
 pub enum RunEnd {
     /// The SPRT decided.
     Decided(Decision),
@@ -68,7 +73,7 @@ pub enum RunEnd {
     /// [`StopHandle::stop`] was called; running games were finished.
     Stopped,
     /// Something went wrong that needs a person (an engine failing again
-    /// and again).
+    /// and again, a file that couldn't be written).
     Halted(String),
 }
 
@@ -85,103 +90,156 @@ impl StopHandle {
     pub fn is_stopped(&self) -> bool {
         self.0.load(Ordering::SeqCst)
     }
+
+    pub(crate) fn clear(&self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
+
+pub(crate) type EventFn = Box<dyn Fn(RunEvent) + Send + Sync>;
 
 struct State {
     entries: Vec<GameEntry>,
     done: HashSet<(u32, u8)>,
+    /// Games being played.
+    running: Vec<(u32, u8)>,
     /// Games handed out that couldn't be played, to hand out again first.
     retry: VecDeque<(u32, u8)>,
     /// The next game in order to consider.
     cursor: (u32, u8),
+    max_pairs: Option<u32>,
     /// Games each engine has failed in a row.
     failures: [u32; 2],
     end: Option<RunEnd>,
     log: ResultsLog,
 }
 
-struct Ctx {
-    dir: TestDir,
+/// One test's games in play.
+pub(crate) struct TestRun {
+    pub(crate) dir: TestDir,
     config: MatchConfig,
-    max_pairs: Option<u32>,
+    /// Games at once at most.
+    concurrency: u32,
     state: Mutex<State>,
-    stop: StopHandle,
-    events: UnboundedSender<RunEvent>,
+    /// Set while the test should start no more games.
+    pub(crate) hold: StopHandle,
+    on_event: EventFn,
 }
 
-/// Plays a test's remaining games and says why it stopped. Progress goes
-/// to `events`. Errors are failures to read or write the test's files.
-pub async fn run(
-    dir: TestDir,
-    options: RunOptions,
-    stop: StopHandle,
-    events: UnboundedSender<RunEvent>,
-) -> Result<RunEnd, TourneyError> {
-    let entries = dir.results()?;
-    if let Some(decision) = summarize(dir.spec.sprt, &entries).decision {
-        return Ok(RunEnd::Decided(decision));
-    }
-    std::fs::create_dir_all(dir.path.join("games")).map_err(TourneyError::io(dir.path.join("games")))?;
-    if dir.spec.engine_logs {
-        std::fs::create_dir_all(dir.path.join("logs")).map_err(TourneyError::io(dir.path.join("logs")))?;
-    }
-    let log = ResultsLog::open(&dir.results_path())?;
-    let concurrency = options.concurrency.unwrap_or(dir.spec.concurrency).max(1);
-    let ctx = Arc::new(Ctx {
-        config: MatchConfig { time_control: dir.spec.time_control(), ..MatchConfig::default() },
-        max_pairs: dir.spec.max_pairs,
-        state: Mutex::new(State {
-            done: entries.iter().map(|e| (e.pair, e.game)).collect(),
-            entries,
-            retry: VecDeque::new(),
-            cursor: (1, 1),
-            failures: [0; 2],
-            end: None,
-            log,
-        }),
-        dir,
-        stop,
-        events,
-    });
-
-    let mut slots = JoinSet::new();
-    for _ in 0..concurrency {
-        slots.spawn(play_slot(ctx.clone()));
-    }
-    let mut error = None;
-    while let Some(joined) = slots.join_next().await {
-        let result = joined.unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
-        if let Err(e) = result {
-            ctx.state.lock().unwrap().end.get_or_insert(RunEnd::Halted(e.to_string()));
-            error.get_or_insert(e);
+impl TestRun {
+    pub(crate) fn open(dir: TestDir, concurrency: u32, on_event: EventFn) -> Result<TestRun, TourneyError> {
+        let entries = dir.results()?;
+        std::fs::create_dir_all(dir.path.join("games")).map_err(TourneyError::io(dir.path.join("games")))?;
+        if dir.spec.engine_logs {
+            std::fs::create_dir_all(dir.path.join("logs"))
+                .map_err(TourneyError::io(dir.path.join("logs")))?;
         }
+        let log = ResultsLog::open(&dir.results_path())?;
+        let end = summarize(dir.spec.sprt, &entries).decision.map(RunEnd::Decided);
+        Ok(TestRun {
+            config: MatchConfig { time_control: dir.spec.time_control(), ..MatchConfig::default() },
+            concurrency: concurrency.max(1),
+            state: Mutex::new(State {
+                done: entries.iter().map(|e| (e.pair, e.game)).collect(),
+                entries,
+                running: Vec::new(),
+                retry: VecDeque::new(),
+                cursor: (1, 1),
+                max_pairs: dir.spec.max_pairs,
+                failures: [0; 2],
+                end,
+                log,
+            }),
+            dir,
+            hold: StopHandle::default(),
+            on_event,
+        })
     }
-    if let Some(e) = error {
-        return Err(e);
-    }
-    let end = ctx.state.lock().unwrap().end.clone();
-    Ok(end.unwrap_or(if ctx.stop.is_stopped() { RunEnd::Stopped } else { RunEnd::MaxPairs }))
-}
 
-impl Ctx {
-    fn next_game(&self) -> Option<(u32, u8)> {
+    /// Takes the next game to play, if the test has one to start now.
+    pub(crate) fn next_game(&self) -> Option<(u32, u8)> {
         let mut st = self.state.lock().unwrap();
-        if st.end.is_some() || self.stop.is_stopped() {
+        if st.end.is_some() || self.hold.is_stopped() || st.running.len() as u32 >= self.concurrency {
             return None;
         }
-        if let Some(g) = st.retry.pop_front() {
-            return Some(g);
+        let g = match st.retry.pop_front() {
+            Some(g) => g,
+            None => loop {
+                let g = st.cursor;
+                if st.max_pairs.is_some_and(|m| g.0 > m) {
+                    return None;
+                }
+                st.cursor = if g.1 == 1 { (g.0, 2) } else { (g.0 + 1, 1) };
+                if !st.done.contains(&g) {
+                    break g;
+                }
+            },
+        };
+        st.running.push(g);
+        Some(g)
+    }
+
+    /// How the test ended, once it has and its last games are done: None
+    /// while it has games running or still to play (held or not).
+    pub(crate) fn outcome(&self) -> Option<RunEnd> {
+        let st = self.state.lock().unwrap();
+        if !st.running.is_empty() {
+            return None;
         }
-        loop {
-            let g = st.cursor;
-            if self.max_pairs.is_some_and(|m| g.0 > m) {
-                return None;
-            }
-            st.cursor = if g.1 == 1 { (g.0, 2) } else { (g.0 + 1, 1) };
-            if !st.done.contains(&g) {
-                return Some(g);
-            }
+        if let Some(end) = &st.end {
+            return Some(end.clone());
         }
+        let more = !st.retry.is_empty() || st.max_pairs.is_none_or(|m| self.next_unplayed(&st).0 <= m);
+        if !more { Some(RunEnd::MaxPairs) } else { None }
+    }
+
+    fn next_unplayed(&self, st: &State) -> (u32, u8) {
+        let mut g = st.cursor;
+        while st.done.contains(&g) {
+            g = if g.1 == 1 { (g.0, 2) } else { (g.0 + 1, 1) };
+        }
+        g
+    }
+
+    pub(crate) fn running(&self) -> Vec<(u32, u8)> {
+        self.state.lock().unwrap().running.clone()
+    }
+
+    pub(crate) fn entries(&self) -> Vec<GameEntry> {
+        self.state.lock().unwrap().entries.clone()
+    }
+
+    pub(crate) fn summary(&self) -> Summary {
+        summarize(self.dir.spec.sprt, &self.state.lock().unwrap().entries)
+    }
+
+    pub(crate) fn set_max_pairs(&self, max_pairs: Option<u32>) {
+        let mut st = self.state.lock().unwrap();
+        st.max_pairs = max_pairs;
+        // Games handed back beyond a lowered limit aren't wanted any more.
+        st.retry.retain(|g| max_pairs.is_none_or(|m| g.0 <= m));
+    }
+
+    /// Clears a halt, so a test can be resumed after its engines are fixed.
+    /// A decided test stays decided.
+    pub(crate) fn clear_halt(&self) -> bool {
+        let mut st = self.state.lock().unwrap();
+        if matches!(st.end, Some(RunEnd::Decided(_))) {
+            return false;
+        }
+        st.end = None;
+        st.failures = [0; 2];
+        true
+    }
+
+    pub(crate) fn halt(&self, why: String) {
+        self.state.lock().unwrap().end.get_or_insert(RunEnd::Halted(why));
+    }
+
+    /// Marks a game handed out by [`TestRun::next_game`] as no longer
+    /// running (finished, or handed back).
+    fn not_running(&self, game: (u32, u8)) {
+        self.state.lock().unwrap().running.retain(|g| *g != game);
     }
 
     /// Puts back a game that couldn't be played, counting a failure for
@@ -226,100 +284,200 @@ impl Ctx {
     }
 
     fn send(&self, event: RunEvent) {
-        let _ = self.events.send(event);
+        (self.on_event)(event);
     }
+}
+
+/// Where slots get their games.
+pub(crate) trait Picker: Send + Sync + 'static {
+    /// The next game for slot `slot`, which holds engines for `current`.
+    /// None ends the slot.
+    fn next(
+        &self,
+        slot: usize,
+        current: Option<&Arc<TestRun>>,
+    ) -> impl Future<Output = Option<(Arc<TestRun>, (u32, u8))>> + Send;
+
+    /// Called after each game a slot took, played or handed back.
+    fn after_game(&self, run: &Arc<TestRun>);
+
+    /// A game's files couldn't be written. The test is halted already;
+    /// returning the error ends the slot with it.
+    fn failed(&self, run: &Arc<TestRun>, error: TourneyError) -> Option<TourneyError>;
+}
+
+struct OneTest(Arc<TestRun>);
+
+impl Picker for OneTest {
+    async fn next(&self, _slot: usize, _current: Option<&Arc<TestRun>>) -> Option<(Arc<TestRun>, (u32, u8))> {
+        self.0.next_game().map(|g| (self.0.clone(), g))
+    }
+
+    fn after_game(&self, _run: &Arc<TestRun>) {}
+
+    fn failed(&self, _run: &Arc<TestRun>, error: TourneyError) -> Option<TourneyError> {
+        Some(error)
+    }
+}
+
+/// Plays a test's remaining games and says why it stopped. Progress goes
+/// to `events`. Errors are failures to read or write the test's files.
+pub async fn run(
+    dir: TestDir,
+    options: RunOptions,
+    stop: StopHandle,
+    events: UnboundedSender<RunEvent>,
+) -> Result<RunEnd, TourneyError> {
+    let concurrency = options.concurrency.unwrap_or(dir.spec.concurrency).max(1);
+    let on_event: EventFn = Box::new(move |e| {
+        let _ = events.send(e);
+    });
+    let test = TestRun::open(dir, concurrency, on_event)?;
+    if let Some(end @ RunEnd::Decided(_)) = test.outcome() {
+        return Ok(end);
+    }
+    let test = Arc::new(TestRun { hold: stop.clone(), ..test });
+    let picker = Arc::new(OneTest(test.clone()));
+    let mut slots = JoinSet::new();
+    for slot in 0..concurrency as usize {
+        slots.spawn(play_slot(picker.clone(), slot));
+    }
+    let mut error = None;
+    while let Some(joined) = slots.join_next().await {
+        if let Err(e) = joined.unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic())) {
+            error.get_or_insert(e);
+        }
+    }
+    if let Some(e) = error {
+        return Err(e);
+    }
+    Ok(test.outcome().unwrap_or(RunEnd::Stopped))
 }
 
 /// The transcript file an engine is writing to, swapped for each game.
 type LogSink = Arc<Mutex<Option<BufWriter<File>>>>;
 
-async fn play_slot(ctx: Arc<Ctx>) -> Result<(), TourneyError> {
-    let mut engines: [Option<Engine>; 2] = [None, None];
-    let sinks: [LogSink; 2] = Default::default();
-    let result = play_games(&ctx, &mut engines, &sinks).await;
+/// A slot's engines, for the test it's on.
+struct Held {
+    run: Arc<TestRun>,
+    engines: [Option<Engine>; 2],
+    sinks: [LogSink; 2],
+}
+
+async fn quit_all(engines: [Option<Engine>; 2]) {
     for engine in engines.into_iter().flatten() {
         let _ = engine.quit(Duration::from_secs(5)).await;
+    }
+}
+
+pub(crate) async fn play_slot(picker: Arc<impl Picker>, slot: usize) -> Result<(), TourneyError> {
+    let mut held: Option<Held> = None;
+    let mut result = Ok(());
+    while let Some((run, game)) = picker.next(slot, held.as_ref().map(|h| &h.run)).await {
+        if held.as_ref().is_some_and(|h| !Arc::ptr_eq(&h.run, &run))
+            && let Some(old) = held.take()
+        {
+            quit_all(old.engines).await;
+        }
+        let h = held.get_or_insert_with(|| Held {
+            run: run.clone(),
+            engines: [None, None],
+            sinks: Default::default(),
+        });
+        let played = play_game(&run, game, &mut h.engines, &h.sinks).await;
+        run.not_running(game);
+        if let Err(e) = played {
+            run.halt(e.to_string());
+            if let Some(e) = picker.failed(&run, e) {
+                result = Err(e);
+                picker.after_game(&run);
+                break;
+            }
+        }
+        picker.after_game(&run);
+    }
+    if let Some(h) = held {
+        quit_all(h.engines).await;
     }
     result
 }
 
-async fn play_games(
-    ctx: &Ctx,
+async fn play_game(
+    ctx: &TestRun,
+    (pair, game): (u32, u8),
     engines: &mut [Option<Engine>; 2],
     sinks: &[LogSink; 2],
 ) -> Result<(), TourneyError> {
-    while let Some((pair, game)) = ctx.next_game() {
-        let mut failed = Vec::new();
-        for i in 0..2 {
-            if engines[i].is_none() {
-                match start_engine(ctx, i, sinks[i].clone()).await {
-                    Ok(e) => engines[i] = Some(e),
-                    Err(error) => {
-                        ctx.send(RunEvent::EngineFailedToStart { engine: i, error: error.clone() });
-                        failed.push((i, error));
-                    }
+    let mut failed = Vec::new();
+    for i in 0..2 {
+        if engines[i].is_none() {
+            match start_engine(ctx, i, sinks[i].clone()).await {
+                Ok(e) => engines[i] = Some(e),
+                Err(error) => {
+                    ctx.send(RunEvent::EngineFailedToStart { engine: i, error: error.clone() });
+                    failed.push((i, error));
                 }
             }
         }
-        if !failed.is_empty() {
-            let blame: Vec<usize> = failed.iter().map(|f| f.0).collect();
-            ctx.give_back((pair, game), &blame, &format!("didn't start: {}", failed[0].1));
-            tokio::time::sleep(RETRY_DELAY).await;
-            continue;
+    }
+    if !failed.is_empty() {
+        let blame: Vec<usize> = failed.iter().map(|f| f.0).collect();
+        ctx.give_back((pair, game), &blame, &format!("didn't start: {}", failed[0].1));
+        tokio::time::sleep(RETRY_DELAY).await;
+        return Ok(());
+    }
+    if ctx.dir.spec.engine_logs {
+        for (i, sink) in sinks.iter().enumerate() {
+            let path = ctx.dir.log_path(pair, game, i);
+            let file = File::create(&path).map_err(TourneyError::io(&path))?;
+            *sink.lock().unwrap() = Some(BufWriter::new(file));
         }
-        if ctx.dir.spec.engine_logs {
-            for (i, sink) in sinks.iter().enumerate() {
-                let path = ctx.dir.log_path(pair, game, i);
-                let file = File::create(&path).map_err(TourneyError::io(&path))?;
-                *sink.lock().unwrap() = Some(BufWriter::new(file));
-            }
-        }
+    }
 
-        ctx.send(RunEvent::GameStarted { pair, game });
-        let gold = GameEntry::gold_of(game);
-        let [a, b] = engines;
-        let (a, b) = (a.as_mut().expect("started"), b.as_mut().expect("started"));
-        let (g, s) = if gold == 0 { (a, b) } else { (b, a) };
-        let mut used = Vec::new();
-        let played = play_match(g, s, &ctx.config, |event| {
-            if let MatchEvent::MovePlayed { used: u, .. } = event {
-                used.push(u);
-            }
-        })
-        .await;
-        for sink in sinks {
-            if let Some(mut w) = sink.lock().unwrap().take() {
-                let _ = w.flush();
-            }
+    ctx.send(RunEvent::GameStarted { pair, game });
+    let gold = GameEntry::gold_of(game);
+    let [a, b] = engines;
+    let (a, b) = (a.as_mut().expect("started"), b.as_mut().expect("started"));
+    let (g, s) = if gold == 0 { (a, b) } else { (b, a) };
+    let mut used = Vec::new();
+    let played = play_match(g, s, &ctx.config, |event| {
+        if let MatchEvent::MovePlayed { used: u, .. } = event {
+            used.push(u);
         }
+    })
+    .await;
+    for sink in sinks {
+        if let Some(mut w) = sink.lock().unwrap().take() {
+            let _ = w.flush();
+        }
+    }
 
-        match played {
-            Err(e) => {
-                // It failed before the first move, so it isn't a game. We
-                // can't tell which engine to blame: start both afresh.
-                let why = format!("failed before the first move: {e}");
-                for i in 0..2 {
-                    restart(ctx, engines, i, &why).await;
-                }
-                ctx.give_back((pair, game), &[0, 1], &why);
+    match played {
+        Err(e) => {
+            // It failed before the first move, so it isn't a game. We
+            // can't tell which engine to blame: start both afresh.
+            let why = format!("failed before the first move: {e}");
+            for i in 0..2 {
+                restart(ctx, engines, i, &why).await;
             }
-            Ok(outcome) => {
-                let entry = write_game(ctx, pair, game, &outcome, &used)?;
-                let loser = 1 - entry.winner;
-                let reason = outcome.result.reason;
-                let failed = (reason == WinReason::Forfeit).then_some(loser);
-                let detail = outcome.detail.clone().unwrap_or_default();
-                let summary = ctx.finish(entry.clone(), failed)?;
-                ctx.send(RunEvent::GameFinished { entry, summary: Box::new(summary) });
-                if matches!(reason, WinReason::Forfeit | WinReason::Timeout) {
-                    restart(ctx, engines, loser, &detail).await;
-                }
-                for (slot, spec) in engines.iter_mut().zip(&ctx.dir.spec.engines) {
-                    if spec.restart_each_game
-                        && let Some(e) = slot.take()
-                    {
-                        let _ = e.quit(Duration::from_secs(5)).await;
-                    }
+            ctx.give_back((pair, game), &[0, 1], &why);
+        }
+        Ok(outcome) => {
+            let entry = write_game(ctx, pair, game, &outcome, &used)?;
+            let loser = 1 - entry.winner;
+            let reason = outcome.result.reason;
+            let failed = (reason == WinReason::Forfeit).then_some(loser);
+            let detail = outcome.detail.clone().unwrap_or_default();
+            let summary = ctx.finish(entry.clone(), failed)?;
+            ctx.send(RunEvent::GameFinished { entry, summary: Box::new(summary) });
+            if matches!(reason, WinReason::Forfeit | WinReason::Timeout) {
+                restart(ctx, engines, loser, &detail).await;
+            }
+            for (slot, spec) in engines.iter_mut().zip(&ctx.dir.spec.engines) {
+                if spec.restart_each_game
+                    && let Some(e) = slot.take()
+                {
+                    let _ = e.quit(Duration::from_secs(5)).await;
                 }
             }
         }
@@ -328,14 +486,14 @@ async fn play_games(
 }
 
 /// Quits engine `i` (it starts again before the next game).
-async fn restart(ctx: &Ctx, engines: &mut [Option<Engine>; 2], i: usize, reason: &str) {
+async fn restart(ctx: &TestRun, engines: &mut [Option<Engine>; 2], i: usize, reason: &str) {
     if let Some(e) = engines[i].take() {
         let _ = e.quit(Duration::from_secs(2)).await;
         ctx.send(RunEvent::EngineRestarted { engine: i, reason: reason.to_string() });
     }
 }
 
-async fn start_engine(ctx: &Ctx, i: usize, sink: LogSink) -> Result<Engine, String> {
+async fn start_engine(ctx: &TestRun, i: usize, sink: LogSink) -> Result<Engine, String> {
     let config = ctx.dir.engine_config(i);
     let transcript = ctx.dir.spec.engine_logs.then(|| {
         Box::new(move |d: Direction, line: &str| {
@@ -354,7 +512,7 @@ async fn start_engine(ctx: &Ctx, i: usize, sink: LogSink) -> Result<Engine, Stri
 
 /// Writes a game's record and makes its log entry.
 fn write_game(
-    ctx: &Ctx,
+    ctx: &TestRun,
     pair: u32,
     game: u8,
     outcome: &MatchOutcome,

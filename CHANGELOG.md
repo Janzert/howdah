@@ -15,6 +15,10 @@ young).
   engines, so rebuilding one doesn't change a running test), resumes
   where it stopped, and reports score, Elo, LOS and an SPRT that ends the
   test once it decides.
+- `howdah-tourney daemon`: a long-running queue of engine tests sharing
+  a number of game slots, highest priority first, that carries on after
+  a restart. The same command submits, lists, watches, pauses, resumes,
+  stops and reprioritizes tests, over a local HTTP API with a token.
 - A position editor, from the lobby or from a game window ("Edit
   position", `e`, which opens the shown position in a new window): place
   pieces from a palette per side (it counts what's left), drag them

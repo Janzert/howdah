@@ -16,13 +16,13 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::results::GameEntry;
 use crate::spec::SprtSpec;
 
 /// The SPRT's verdict on engine 1.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Decision {
     /// At least `elo1` stronger, more likely than at most `elo0`.
@@ -31,7 +31,7 @@ pub enum Decision {
     Fail,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
     /// Complete pairs.
@@ -46,9 +46,11 @@ pub struct Summary {
     pub pair_counts: [u32; 3],
     /// Engine 1's mean pair score (0 to 1).
     pub score: Option<f64>,
+    #[serde(with = "infinite")]
     pub elo: Option<f64>,
     /// 95% interval of the Elo difference; None while every pair has
     /// scored the same.
+    #[serde(with = "infinite_pair")]
     pub elo_interval: Option<(f64, f64)>,
     /// Likelihood of superiority: the chance engine 1 is the stronger.
     pub los: Option<f64>,
@@ -62,6 +64,61 @@ pub struct Summary {
     pub reasons: BTreeMap<String, u32>,
     /// Games whose moves are the same as an earlier game's.
     pub repeated: u32,
+}
+
+/// Elo can be infinite (every game won), which JSON can't hold: these
+/// write it as `"+inf"` or `"-inf"`.
+mod infinite {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(untagged)]
+    pub(super) enum Number {
+        Finite(f64),
+        Text(String),
+    }
+
+    pub(super) fn to_number(x: f64) -> Number {
+        match x {
+            f64::INFINITY => Number::Text("+inf".into()),
+            f64::NEG_INFINITY => Number::Text("-inf".into()),
+            x => Number::Finite(x),
+        }
+    }
+
+    pub(super) fn from_number<E: serde::de::Error>(n: Number) -> Result<f64, E> {
+        match n {
+            Number::Finite(x) => Ok(x),
+            Number::Text(t) if t == "+inf" => Ok(f64::INFINITY),
+            Number::Text(t) if t == "-inf" => Ok(f64::NEG_INFINITY),
+            Number::Text(t) => Err(E::custom(format!("not a number: {t:?}"))),
+        }
+    }
+
+    pub fn serialize<S: Serializer>(x: &Option<f64>, s: S) -> Result<S::Ok, S::Error> {
+        x.map(to_number).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error> {
+        Option::<Number>::deserialize(d)?.map(from_number).transpose()
+    }
+}
+
+mod infinite_pair {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::infinite::{Number, from_number, to_number};
+
+    pub fn serialize<S: Serializer>(x: &Option<(f64, f64)>, s: S) -> Result<S::Ok, S::Error> {
+        x.map(|(a, b)| (to_number(a), to_number(b))).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<(f64, f64)>, D::Error> {
+        match Option::<(Number, Number)>::deserialize(d)? {
+            Some((a, b)) => Ok(Some((from_number(a)?, from_number(b)?))),
+            None => Ok(None),
+        }
+    }
 }
 
 /// The Elo difference a score (0 to 1) means; infinite at 0 and 1.
@@ -320,6 +377,17 @@ mod tests {
         let s = summarize(Some(SPRT), &games);
         assert!(s.llr.unwrap() < s.llr_bounds.unwrap().1);
         assert_eq!(s.decision, Some(Decision::Pass), "decided at pair {crossed}");
+    }
+
+    #[test]
+    fn a_summary_survives_json_with_infinite_elo() {
+        let sweep = summarize(Some(SPRT), &pairs([0, 0, 3]));
+        let mut half = summarize(None, &pairs([2, 2, 1]));
+        half.elo_interval = Some((f64::NEG_INFINITY, 12.5));
+        for s in [sweep, half] {
+            let json = serde_json::to_string(&s).unwrap();
+            assert_eq!(serde_json::from_str::<Summary>(&json).unwrap(), s, "{json}");
+        }
     }
 
     #[test]
