@@ -441,6 +441,18 @@ plans the engine test and tournament runner.
     the final state's `finishedId`, or else `find_id` asks `findgameid` up
     to four times, 2, 4, 6 and 8 s apart, since the server may not know it
     right after the end.
+  - `tourney.rs`: engine tests, as a client of howdah-tourney's daemon
+    (plan in `docs/TOURNAMENTS.md`; data dir `howdah_tourney::default_data_dir`,
+    or `Backend::with_tourney_dir`, which the dev bridge points at
+    `dev-bridge-config/tourney`). `Tourney::status` starts a task passing
+    the daemon's events on as `tourney://changed` (`TourneyUpdate`),
+    reconnecting every 3 s. `test_spec` turns two engine-list entries into
+    a `TestSpec`. `open_game` loads a finished game's record, or follows a
+    running one in the session: a match of two `Player::Remote`s fed by
+    `sync_remote`, `set_remote_clock` and `finish_remote` from the
+    daemon's `movePlayed` and `gameFinished` events (`Follow`, ending when
+    the session's generation changes or it closes). `start_daemon` runs
+    `howdah-tourney` from beside the app, detached.
   - `engines.rs`: the engine list (`engines.json` in the app config dir).
     It defaults to the bundled `aei-test-engine` when that sits next to the
     app binary (`cargo build -p howdah-aei --bin aei-test-engine`). An
@@ -517,6 +529,10 @@ plans the engine test and tournament runner.
     `isGameWindow`); every session command of `api` passes it, and
     `apiFor(id)` gives the same commands on another session (the lobby
     setting up a game window's).
+  - `lib/TestsSection.svelte` (the lobby's Engine tests, under Open
+    windows), `TestDialog.svelte` (one test: results, controls, games to
+    watch or open) and `NewTestDialog.svelte`; `lib/tests.ts` words a
+    test's state and SPRT.
   - `Lobby.svelte`, the main window: Play and analyse (New game, Analysis
     board with the last analysis engine, Open record), Open windows (each
     game window's `MiniBoard`, players from `lib/windowList.ts`'s
@@ -830,7 +846,7 @@ plans the engine test and tournament runner.
 - **The frontend never decides legality.** It renders state and sends intents.
   Drag hints come from `legal_targets` and `plan_route`, but `try_route`
   (or `try_step`) is authoritative.
-- Event names are `domain://event`. Planned: `tournament://progress`.
+- Event names are `domain://event`.
   The dev bridge's frontend (`devBridge.ts`) forwards a fixed list of
   event names; add new ones there. Analysis uses an event
   (`analysis://update`, throttled to 10 Hz) rather than a Tauri

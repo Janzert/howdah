@@ -1,4 +1,5 @@
-//! Tauri shell over `howdah-arimaa`, `howdah-aei` and `howdah-gameroom`:
+//! Tauri shell over `howdah-arimaa`, `howdah-aei`, `howdah-gameroom` and
+//! `howdah-tourney`'s client:
 //! session state, the engine controller, followed gameroom games, commands
 //! and events. Game logic lives in the core crates; this crate only adapts
 //! it for the UI.
@@ -12,6 +13,7 @@ pub mod engines;
 pub mod gameroom;
 mod puzzles;
 pub mod session;
+pub mod tourney;
 
 use std::sync::Arc;
 
@@ -152,6 +154,17 @@ pub fn run() {
             commands::search_gameroom_players,
             commands::gameroom_player_games,
             commands::open_gameroom_game,
+            commands::tourney_status,
+            commands::tourney_tests,
+            commands::tourney_test,
+            commands::tourney_submit,
+            commands::tourney_control,
+            commands::tourney_set_priority,
+            commands::tourney_set_max_pairs,
+            commands::tourney_set_slots,
+            commands::tourney_start_daemon,
+            commands::tourney_shutdown,
+            commands::open_tourney_game,
             commands::play_gameroom_game,
             commands::gameroom_server_bots,
             commands::gameroom_bot_info,

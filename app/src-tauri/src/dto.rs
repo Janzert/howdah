@@ -1186,3 +1186,138 @@ pub struct ChatLineView {
     pub label: Option<String>,
     pub text: String,
 }
+
+/// The engine test daemon (howdah-tourney), as far as the app can tell.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TourneyStatusView {
+    /// Whether a daemon answers.
+    pub connected: bool,
+    /// Its data directory, where tests are kept.
+    pub data_dir: Option<String>,
+    pub slots: Option<u32>,
+    /// Games being played now.
+    pub running: u32,
+    /// Whether the app can start a daemon (it found `howdah-tourney`
+    /// beside itself).
+    pub can_start: bool,
+}
+
+/// An SPRT's Elo bounds.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SprtView {
+    pub elo0: f64,
+    pub elo1: f64,
+}
+
+/// A game of a test, by its pair and game number (game 1 has engine 1 as
+/// gold).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TestGameRef {
+    pub pair: u32,
+    pub game: u8,
+}
+
+/// An engine test, with its results so far, from engine 1's side.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TestView {
+    pub id: String,
+    pub name: String,
+    /// Engine 1 (the one being tested) and engine 2.
+    pub engines: [String; 2],
+    pub time_control: Option<String>,
+    /// `active`, `paused` or `finished`.
+    pub status: String,
+    /// How a finished test ended: `passed`, `failed` (the SPRT), `done`
+    /// (all pairs played), `stopped` or `halted`.
+    pub outcome: Option<String>,
+    /// Why a halted test stopped.
+    pub halted: Option<String>,
+    pub priority: i32,
+    pub max_pairs: Option<u32>,
+    pub concurrency: u32,
+    pub sprt: Option<SprtView>,
+    pub running: Vec<TestGameRef>,
+    pub games: u32,
+    /// Complete pairs.
+    pub pairs: u32,
+    /// Games won by each engine.
+    pub wins: [u32; 2],
+    /// Pairs in which engine 1 won none, one and both games.
+    pub pair_counts: [u32; 3],
+    /// Engine 1's score (0 to 1), by pairs.
+    pub score: Option<f64>,
+    /// The Elo difference with its 95% interval, as text (`+12.3 [-4.0,
+    /// +28.9]`; Elo can be infinite).
+    pub elo: Option<String>,
+    /// The chance engine 1 is the stronger.
+    pub los: Option<f64>,
+    pub llr: Option<f64>,
+    pub llr_bounds: Option<(f64, f64)>,
+    /// Games whose moves repeat an earlier game's.
+    pub repeated: u32,
+    pub path: String,
+}
+
+/// A finished game of a test.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TestGameView {
+    pub test: String,
+    pub pair: u32,
+    pub game: u8,
+    pub gold: String,
+    pub silver: String,
+    pub winner: Color,
+    /// How it ended (`goal`, `timeout`, ...).
+    pub reason: String,
+    pub plies: u32,
+    pub detail: Option<String>,
+}
+
+/// A test with its finished games, newest first.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TestDetailView {
+    pub test: TestView,
+    pub games: Vec<TestGameView>,
+}
+
+/// A new engine test from the lobby: two engines from the engine list.
+#[derive(Clone, Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct NewTestSpec {
+    pub name: String,
+    /// The ids of engine 1 (being tested) and engine 2.
+    pub engines: [String; 2],
+    pub time_control: Option<String>,
+    pub max_pairs: Option<u32>,
+    pub sprt: Option<SprtView>,
+    pub concurrency: u32,
+    pub priority: i32,
+}
+
+/// What changed at the test daemon (`tourney://changed`).
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TourneyUpdate {
+    /// Whether the app is connected to a daemon.
+    pub connected: bool,
+    /// A test that changed (added, changed state, or finished a game).
+    pub test: Option<TestView>,
+    /// A game that finished.
+    pub game: Option<TestGameView>,
+    /// The daemon's slots, when they changed.
+    pub slots: Option<u32>,
+}

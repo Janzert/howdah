@@ -3,8 +3,9 @@
 Plan for a long-running runner that plays engine-vs-engine games,
 mainly for bot development: answering "is this change stronger, and by
 how much?" Howdah and a command line both connect to it to queue tests,
-follow them and look at their games. Written 2026-10-11; phases 1 and 2
-(the runner library and command line, and the daemon) are built.
+follow them and look at their games. Written 2026-10-11; phases 1 to 3
+(the runner library and command line, the daemon, and the lobby's Engine
+tests) are built.
 
 ## What others do
 
@@ -298,8 +299,8 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   `pause`, `resume`, `stop`, `priority`, `max-pairs`, `slots`,
   `shutdown [--now]`, and `show` takes a test's id as well as a
   directory.
-- Not built yet: a running game's moves over the API (phase 3 needs it
-  to follow games), removing a test, and Howdah starting a daemon.
+- Not built in phase 2: a running game's moves over the API and Howdah
+  starting a daemon (both came with phase 3), and removing a test.
 - Tested with `aei-test-engine` (priorities, pausing across a restart,
   resuming a halted test, extending a finished one, refusals, and the
   HTTP API with its token). Checked on Linux with Sharp and OpFor: two
@@ -307,6 +308,52 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   leaving no engines running, a restart keeping a paused test paused
   and carrying on the active one, a raised pair limit, and a graceful
   shutdown.
+
+**As built (phase 3):**
+- The daemon reports a running game's moves (`movePlayed` events, with
+  the time each took and both reserves after it) and serves a snapshot
+  for a viewer joining mid-game (`GET /tests/{id}/live/{pair}/{game}`:
+  the moves so far, the reserves and the time spent on the turn being
+  played).
+- The app is a client (`app/src-tauri/src/tourney.rs`, using
+  `howdah-tourney` with only its `client` feature). The lobby's
+  **Engine tests** section, below Open windows rather than on a page of
+  its own, shows the daemon's slots (with − and +), its tests (name,
+  engines, score, Elo, and the LLR as a bar between its bounds, with
+  the state) and Shut down. A click on a test opens its dialog: results,
+  Pause, Resume, Stop, priority and pair limit, the games playing now
+  (Watch) and the finished ones, newest first (Open). New test picks two
+  engines from the engine list (one tested against itself gets "(1)"
+  and "(2)" after its name), a time control with a turn limit, the SPRT
+  bounds and/or a pair limit, games at once and priority. Installed
+  engines are copied with their directory.
+- The daemon's events reach the lobby as `tourney://changed`. The first
+  `tourney_status` starts a task that connects to the daemon, passes
+  its events on, and looks for a daemon again every 3 seconds once it's
+  gone.
+- A test's game opens in a game window. A finished one loads as its
+  record. A running one is followed as a watched arimaa.com game is: a
+  match between two remote players (the engines' names), with the moves
+  and clocks from the daemon (its own event stream, opened before the
+  snapshot is read so no move falls between), and the result from the
+  daemon when the game ends. It stops following when the window closes
+  or shows another game.
+- Without a daemon, the section offers to start one when
+  `howdah-tourney` sits beside the app's program (dev builds: `cargo
+  build -p howdah-tourney`), with its output in `daemon.log` in the data
+  directory; otherwise it gives the command. The dev bridge uses its own
+  data directory (`dev-bridge-config/tourney`), so a daemon started from
+  the browser preview is separate from the user's.
+- Not built yet: bundling `howdah-tourney` with the installers (a Tauri
+  sidecar), so a release build can start a daemon; showing tests from
+  their directories with no daemon; and the game wall (phase 4).
+- Checked in the browser preview against the dev bridge: starting the
+  daemon, a Sharp vs OpFor test from New test, its dialog with the games
+  playing, following a running game to its end (moves, clocks and the
+  result matching the daemon's record), opening a finished game, and the
+  list updating as a test is added and finishes. The browser preview
+  opens a game window in the lobby's own tab with a new session, so the
+  followed game was opened on a session made through the bridge.
 
 Later, if wanted: eval-based adjudication (resigning for an engine past
 a score threshold for some turns, using `Profile`'s scores), a setup

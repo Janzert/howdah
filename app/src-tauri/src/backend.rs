@@ -18,6 +18,7 @@
 //! window (the lobby) has none.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -30,16 +31,17 @@ use serde_json::Value;
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec,
-    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PlayerSpec,
-    PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
-    ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, StartedBotView, StepTarget,
-    WatchView,
+    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView,
+    PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView,
+    PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, StartedBotView,
+    StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
 use crate::gameroom::{self, Gameroom, SavedLogin, WATCH_UPDATE, Watch};
 use crate::puzzles::PuzzleBook;
 use crate::session::{AnalysisEngine, Player, PuzzleMeta, Session};
+use crate::tourney::{self, Tourney};
 
 /// Event carrying a [`SessionUpdate`] after every change to the session.
 pub const GAME_CHANGED: &str = "game://changed";
@@ -140,6 +142,8 @@ pub struct Backend {
     catalog: Arc<Mutex<EngineCatalog>>,
     gameroom: Arc<Gameroom>,
     puzzles: PuzzleBook,
+    /// The engine test daemon, as a client.
+    tourney: Arc<Tourney>,
     events: Events,
 }
 
@@ -159,8 +163,16 @@ impl Backend {
             catalog: Arc::new(Mutex::new(catalog)),
             gameroom: Arc::new(Gameroom::new(saved_login, events.clone())),
             puzzles: PuzzleBook::new(),
+            tourney: Arc::new(Tourney::new(howdah_tourney::default_data_dir(), events.clone())),
             events,
         }
+    }
+
+    /// Uses `dir` as the engine test daemon's data directory instead of the
+    /// default (None: no engine tests).
+    pub fn with_tourney_dir(mut self, dir: Option<PathBuf>) -> Backend {
+        self.tourney = Arc::new(Tourney::new(dir, self.events.clone()));
+        self
     }
 
     fn sessions(&self) -> MutexGuard<'_, BTreeMap<SessionId, Arc<SessionHandle>>> {
@@ -760,6 +772,90 @@ impl Backend {
         self.gameroom.player_games(player_id, offset).await
     }
 
+    /// The engine test daemon's state; the first call starts passing on
+    /// its events (`tourney://changed`).
+    pub async fn tourney_status(&self) -> TourneyStatusView {
+        self.tourney.status().await
+    }
+
+    pub async fn tourney_tests(&self) -> Result<Vec<TestView>, ApiError> {
+        self.tourney.tests().await
+    }
+
+    pub async fn tourney_test(&self, id: &str) -> Result<TestDetailView, ApiError> {
+        self.tourney.test(id).await
+    }
+
+    /// Adds a test of two engines from the engine list to the daemon's queue.
+    pub async fn tourney_submit(&self, spec: NewTestSpec) -> Result<TestView, ApiError> {
+        let engines = {
+            let registry = self.engines();
+            let find = |id: &str| registry.get(id).ok_or_else(|| ApiError::state(format!("no engine {id}")));
+            [find(&spec.engines[0])?, find(&spec.engines[1])?]
+        };
+        self.tourney.submit(spec, engines).await
+    }
+
+    /// Pauses, resumes or stops a test (`action`).
+    pub async fn tourney_control(&self, id: &str, action: &str) -> Result<TestView, ApiError> {
+        self.tourney.control(id, action).await
+    }
+
+    pub async fn tourney_set_priority(&self, id: &str, priority: i32) -> Result<TestView, ApiError> {
+        self.tourney.set_priority(id, priority).await
+    }
+
+    pub async fn tourney_set_max_pairs(
+        &self,
+        id: &str,
+        max_pairs: Option<u32>,
+    ) -> Result<TestView, ApiError> {
+        self.tourney.set_max_pairs(id, max_pairs).await
+    }
+
+    pub async fn tourney_set_slots(&self, slots: u32) -> Result<(), ApiError> {
+        self.tourney.set_slots(slots).await
+    }
+
+    pub async fn tourney_start_daemon(&self, slots: u32) -> Result<(), ApiError> {
+        self.tourney.start_daemon(slots).await
+    }
+
+    pub async fn tourney_shutdown(&self, now: bool) -> Result<(), ApiError> {
+        self.tourney.shutdown(now).await
+    }
+
+    /// Opens a test's game in session `id`: a running one is followed
+    /// (moves and clocks from the daemon), a finished one loaded whole.
+    pub async fn open_tourney_game(
+        &self,
+        id: SessionId,
+        test: &str,
+        pair: u32,
+        game: u8,
+    ) -> Result<(), ApiError> {
+        let handle = self.handle(id)?;
+        handle.stop_watching();
+        let opened = self
+            .tourney
+            .open_game(
+                handle.session.clone(),
+                handle.controller.clone(),
+                handle.events.clone(),
+                test,
+                pair,
+                game,
+            )
+            .await?;
+        match opened {
+            tourney::Opened::Following => Ok(()),
+            tourney::Opened::Finished(record) => self.mutate(id, |s| {
+                s.load_record_from_start(record);
+                Ok(Vec::new())
+            }),
+        }
+    }
+
     /// Opens arimaa.com game `gid` in session `id`. A live game (its
     /// gameroom id) is followed as a viewer: the session becomes that game,
     /// and moves, clocks and the result arrive as the server reports them
@@ -1036,6 +1132,30 @@ impl Backend {
             "gameroom_player_games" => ok(self
                 .gameroom_player_games(&arg::<String>(args, "playerId")?, arg(args, "offset")?)
                 .await?),
+            "tourney_status" => ok(self.tourney_status().await),
+            "tourney_tests" => ok(self.tourney_tests().await?),
+            "tourney_test" => ok(self.tourney_test(&arg::<String>(args, "id")?).await?),
+            "tourney_submit" => ok(self.tourney_submit(arg(args, "spec")?).await?),
+            "tourney_control" => {
+                ok(self.tourney_control(&arg::<String>(args, "id")?, &arg::<String>(args, "action")?).await?)
+            }
+            "tourney_set_priority" => {
+                ok(self.tourney_set_priority(&arg::<String>(args, "id")?, arg(args, "priority")?).await?)
+            }
+            "tourney_set_max_pairs" => {
+                ok(self.tourney_set_max_pairs(&arg::<String>(args, "id")?, arg(args, "maxPairs")?).await?)
+            }
+            "tourney_set_slots" => ok(self.tourney_set_slots(arg(args, "slots")?).await?),
+            "tourney_start_daemon" => ok(self.tourney_start_daemon(arg(args, "slots")?).await?),
+            "tourney_shutdown" => ok(self.tourney_shutdown(arg(args, "now")?).await?),
+            "open_tourney_game" => ok(self
+                .open_tourney_game(
+                    sid()?,
+                    &arg::<String>(args, "test")?,
+                    arg(args, "pair")?,
+                    arg(args, "game")?,
+                )
+                .await?),
             "open_gameroom_game" => ok(self.open_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?),
             "play_gameroom_game" => ok(self
                 .play_gameroom_game(
@@ -1167,6 +1287,7 @@ mod tests {
         let catalog =
             EngineCatalog::load(path.with_extension("manifests.json"), path.with_extension("engines"));
         Backend::new(EngineRegistry::load(path), catalog, SavedLogin::new(None), events)
+            .with_tourney_dir(None)
     }
 
     #[test]

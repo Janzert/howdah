@@ -2,7 +2,8 @@
   // The main window: home (new games, an analysis board, opening a
   // record, and the app-wide dialogs), the open game windows, and the
   // arimaa.com lobby. It has no board or session of its own; every game
-  // opens in a game window (docs/WINDOWS.md). Notifications about
+  // opens in a game window (docs/WINDOWS.md). Engine tests run in their
+  // own daemon; the lobby lists them (docs/TOURNAMENTS.md). Notifications about
   // arimaa.com (invitations, postal moves due) live here, so they come
   // once, also while it's hidden.
   import { onMount } from 'svelte';
@@ -28,6 +29,7 @@
   import RecordDialog from './lib/RecordDialog.svelte';
   import { settings } from './lib/settings.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
+  import TestsSection from './lib/TestsSection.svelte';
   import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
   import { findTheme } from './lib/theme';
   import { gameTitle, waitsOnUser } from './lib/windowList';
@@ -289,6 +291,8 @@
           </ul>
         {/if}
       </section>
+
+      <TestsSection {engines} onOpenGame={(test, pair, game) => openWindow((a) => a.openTourneyGame(test, pair, game))} />
     </div>
 
     <div class="column">

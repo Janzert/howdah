@@ -1,5 +1,4 @@
 // Typed event subscription. Event names follow `domain://event`.
-// Planned: 'tournament://progress'.
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { session } from './api';
 import type { AnalysisView } from './bindings/AnalysisView';
@@ -8,6 +7,7 @@ import type { GameroomGames } from './bindings/GameroomGames';
 import type { InvitationAnswer } from './bindings/InvitationAnswer';
 import type { SessionUpdate } from './bindings/SessionUpdate';
 import type { SessionsChanged } from './bindings/SessionsChanged';
+import type { TourneyUpdate } from './bindings/TourneyUpdate';
 import type { WatchView } from './bindings/WatchView';
 
 export interface EventMap {
@@ -23,6 +23,9 @@ export interface EventMap {
   'gameroom://invitation': InvitationAnswer;
   /** The sessions open now (one per game window), when one opens or closes. */
   'sessions://changed': SessionsChanged;
+  /** The engine test daemon: a test changed or finished a game, the
+   * connection came or went, or its slots changed. */
+  'tourney://changed': TourneyUpdate;
 }
 
 /** Subscribes to an event. Events from a session carry a `session` field

@@ -13,6 +13,7 @@ import type { GameroomGames } from './bindings/GameroomGames';
 import type { GameroomStatus } from './bindings/GameroomStatus';
 import type { MatchSpec } from './bindings/MatchSpec';
 import type { MoveReplay } from './bindings/MoveReplay';
+import type { NewTestSpec } from './bindings/NewTestSpec';
 import type { NodeId } from './bindings/NodeId';
 import type { PlayerGamesView } from './bindings/PlayerGamesView';
 import type { PlayerMatchView } from './bindings/PlayerMatchView';
@@ -27,6 +28,9 @@ import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
 import type { StartedBotView } from './bindings/StartedBotView';
 import type { StepTarget } from './bindings/StepTarget';
+import type { TestDetailView } from './bindings/TestDetailView';
+import type { TestView } from './bindings/TestView';
+import type { TourneyStatusView } from './bindings/TourneyStatusView';
 import type { WatchView } from './bindings/WatchView';
 
 /** The session this window shows, from `?session=<id>` in its URL: a
@@ -239,6 +243,31 @@ function makeApi(sid: () => SessionId | null) {
     stopWatching: () => invoke<void>('stop_watching', { session: sid() }),
     /** The game this session follows, if any. */
     watchStatus: () => invoke<WatchView | null>('watch_status', { session: sid() }),
+    /** The engine test daemon (howdah-tourney): whether one answers, and
+     * whether the app can start one. The first call starts passing on its
+     * events as `tourney://changed`. */
+    tourneyStatus: () => invoke<TourneyStatusView>('tourney_status'),
+    /** Starts a test daemon with `slots` game slots; it outlives the app. */
+    tourneyStartDaemon: (slots: number) => invoke<void>('tourney_start_daemon', { slots }),
+    /** Shuts the daemon down: after its running games, or `now`. */
+    tourneyShutdown: (now: boolean) => invoke<void>('tourney_shutdown', { now }),
+    tourneySetSlots: (slots: number) => invoke<void>('tourney_set_slots', { slots }),
+    /** The daemon's tests, oldest first. */
+    tourneyTests: () => invoke<TestView[]>('tourney_tests'),
+    /** A test with its finished games, newest first. */
+    tourneyTest: (id: string) => invoke<TestDetailView>('tourney_test', { id }),
+    /** Adds a test of two engines from the engine list. */
+    tourneySubmit: (spec: NewTestSpec) => invoke<TestView>('tourney_submit', { spec }),
+    tourneyControl: (id: string, action: 'pause' | 'resume' | 'stop') =>
+      invoke<TestView>('tourney_control', { id, action }),
+    tourneySetPriority: (id: string, priority: number) => invoke<TestView>('tourney_set_priority', { id, priority }),
+    /** Changes a test's pair limit (null: until the SPRT decides). */
+    tourneySetMaxPairs: (id: string, maxPairs: number | null) =>
+      invoke<TestView>('tourney_set_max_pairs', { id, maxPairs }),
+    /** Opens a test's game in this session: a running one is followed, a
+     * finished one loaded. */
+    openTourneyGame: (test: string, pair: number, game: number) =>
+      invoke<void>('open_tourney_game', { session: sid(), test, pair, game }),
     /** Matches native widgets (GTK's `<select>` popups and tooltips) to the
      * page's colors. */
     setNativeAppearance: (dark: boolean) => invoke<void>('set_native_appearance', { dark }),

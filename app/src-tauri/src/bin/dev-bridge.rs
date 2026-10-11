@@ -77,7 +77,12 @@ async fn main() {
     let catalog =
         EngineCatalog::load(config_dir.join("engine-manifests.json"), config_dir.join("installed-engines"));
     let saved_login = SavedLogin::new(Some(config_dir.join("gameroom-login.json")));
-    let backend = Arc::new(Backend::new(registry, catalog, saved_login, Arc::new(Broadcast(tx.clone()))));
+    // Its own test daemon directory, so a daemon started from the browser
+    // preview is separate from the user's.
+    let backend = Arc::new(
+        Backend::new(registry, catalog, saved_login, Arc::new(Broadcast(tx.clone())))
+            .with_tourney_dir(Some(config_dir.join("tourney"))),
+    );
     let app = App { backend, events: tx };
 
     let router =

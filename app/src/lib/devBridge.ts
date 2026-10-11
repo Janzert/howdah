@@ -52,6 +52,7 @@ export function installDevBridge(): void {
     'gameroom://lobby',
     'gameroom://invitation',
     'sessions://changed',
+    'tourney://changed',
   ];
   for (const name of names) {
     source.addEventListener(name, (e) => {

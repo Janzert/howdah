@@ -15,6 +15,12 @@ young).
   engines, so rebuilding one doesn't change a running test), resumes
   where it stopped, and reports score, Elo, LOS and an SPRT that ends the
   test once it decides.
+- Engine tests in the lobby: start the test daemon, start a test of two
+  engines from the engine list, and follow its results (score, Elo and
+  the SPRT) as games finish. Each test's games open in a game window: a
+  running one follows the game live with its clocks, a finished one
+  opens as a record. Tests can be paused, resumed, stopped and
+  reprioritized, and the daemon given more or fewer games at once.
 - `howdah-tourney daemon`: a long-running queue of engine tests sharing
   a number of game slots, highest priority first, that carries on after
   a restart. The same command submits, lists, watches, pauses, resumes,

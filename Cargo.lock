@@ -1364,6 +1364,7 @@ dependencies = [
  "howdah-aei",
  "howdah-arimaa",
  "howdah-gameroom",
+ "howdah-tourney",
  "reqwest",
  "serde",
  "serde_json",

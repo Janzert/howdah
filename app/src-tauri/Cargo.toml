@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 howdah-arimaa = { workspace = true, features = ["ts"] }
 howdah-aei.workspace = true
 howdah-gameroom.workspace = true
+howdah-tourney = { workspace = true, default-features = false, features = ["client"] }
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true

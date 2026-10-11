@@ -7,9 +7,9 @@ use tauri::State;
 use crate::backend::{self, Backend};
 use crate::dto::{
     ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames,
-    GameroomStatus, MatchSpec, MoveReplay, PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec,
-    PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView, StartedBotView,
-    StepTarget, WatchView,
+    GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PositionCheck,
+    PositionSpec, PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView,
+    StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
 };
 
 #[tauri::command]
@@ -628,4 +628,77 @@ fn gtk_appearance(dark: bool) {
             eprintln!("couldn't load the GTK stylesheet: {e}");
         }
     });
+}
+
+#[tauri::command]
+pub async fn tourney_status(state: State<'_, Backend>) -> Result<TourneyStatusView, ApiError> {
+    Ok(state.tourney_status().await)
+}
+
+#[tauri::command]
+pub async fn tourney_tests(state: State<'_, Backend>) -> Result<Vec<TestView>, ApiError> {
+    state.tourney_tests().await
+}
+
+#[tauri::command]
+pub async fn tourney_test(state: State<'_, Backend>, id: String) -> Result<TestDetailView, ApiError> {
+    state.tourney_test(&id).await
+}
+
+#[tauri::command]
+pub async fn tourney_submit(state: State<'_, Backend>, spec: NewTestSpec) -> Result<TestView, ApiError> {
+    state.tourney_submit(spec).await
+}
+
+#[tauri::command]
+pub async fn tourney_control(
+    state: State<'_, Backend>,
+    id: String,
+    action: String,
+) -> Result<TestView, ApiError> {
+    state.tourney_control(&id, &action).await
+}
+
+#[tauri::command]
+pub async fn tourney_set_priority(
+    state: State<'_, Backend>,
+    id: String,
+    priority: i32,
+) -> Result<TestView, ApiError> {
+    state.tourney_set_priority(&id, priority).await
+}
+
+#[tauri::command]
+pub async fn tourney_set_max_pairs(
+    state: State<'_, Backend>,
+    id: String,
+    max_pairs: Option<u32>,
+) -> Result<TestView, ApiError> {
+    state.tourney_set_max_pairs(&id, max_pairs).await
+}
+
+#[tauri::command]
+pub async fn tourney_set_slots(state: State<'_, Backend>, slots: u32) -> Result<(), ApiError> {
+    state.tourney_set_slots(slots).await
+}
+
+#[tauri::command]
+pub async fn tourney_start_daemon(state: State<'_, Backend>, slots: u32) -> Result<(), ApiError> {
+    state.tourney_start_daemon(slots).await
+}
+
+#[tauri::command]
+pub async fn tourney_shutdown(state: State<'_, Backend>, now: bool) -> Result<(), ApiError> {
+    state.tourney_shutdown(now).await
+}
+
+#[tauri::command]
+pub async fn open_tourney_game(
+    state: State<'_, Backend>,
+    session: SessionId,
+    test: String,
+    pair: u32,
+    game: u8,
+) -> Result<(), ApiError> {
+    state.open_tourney_game(session, &test, pair, game).await
 }
