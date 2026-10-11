@@ -6,7 +6,9 @@
 //! - `POST /tests` `{"spec": TestSpec, "priority": 0}`: adds a test
 //!   (programs as absolute paths).
 //! - `GET /tests/{id}/games`: its [`GameEntry`]s; `GET
-//!   /tests/{id}/games/{pair}/{game}`: a game's record, as text.
+//!   /tests/{id}/games/{pair}/{game}`: a game's record, as text; `GET
+//!   /tests/{id}/live/{pair}/{game}`: a running game so far, a
+//!   [`LiveGame`] (later moves come as `movePlayed` events).
 //! - `POST /tests/{id}/pause`, `/resume`, `/stop`; `POST
 //!   /tests/{id}/priority` `{"priority": n}`; `POST /tests/{id}/max-pairs`
 //!   `{"maxPairs": n | null}`.
@@ -39,7 +41,7 @@ use crate::error::TourneyError;
 use crate::spec::TestSpec;
 
 #[cfg(doc)]
-use crate::{daemon::DaemonStatus, daemon::TestInfo, results::GameEntry};
+use crate::{daemon::DaemonStatus, daemon::TestInfo, results::GameEntry, runner::LiveGame};
 
 #[derive(Clone)]
 struct AppState {
@@ -111,6 +113,7 @@ pub async fn serve(daemon: Daemon, listener: TcpListener, info: DaemonInfo) -> R
         .route("/tests/{id}", get(test_info))
         .route("/tests/{id}/games", get(games))
         .route("/tests/{id}/games/{pair}/{game}", get(record))
+        .route("/tests/{id}/live/{pair}/{game}", get(live))
         .route("/tests/{id}/pause", post(pause))
         .route("/tests/{id}/resume", post(resume))
         .route("/tests/{id}/stop", post(stop))
@@ -195,6 +198,13 @@ async fn record(
     UrlPath((id, pair, game)): UrlPath<(String, u32, u8)>,
 ) -> Result<String, ApiError> {
     Ok(s.daemon.record(&id, pair, game)?)
+}
+
+async fn live(
+    State(s): State<AppState>,
+    UrlPath((id, pair, game)): UrlPath<(String, u32, u8)>,
+) -> ApiResult<crate::runner::LiveGame> {
+    Ok(Json(s.daemon.live(&id, pair, game)?))
 }
 
 async fn pause(

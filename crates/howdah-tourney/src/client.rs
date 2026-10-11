@@ -9,6 +9,7 @@ use serde_json::json;
 
 use crate::daemon::{DaemonEvent, DaemonInfo, DaemonStatus, INFO_FILE, TestInfo};
 use crate::results::GameEntry;
+use crate::runner::LiveGame;
 use crate::spec::TestSpec;
 
 #[derive(Debug, thiserror::Error)]
@@ -92,6 +93,11 @@ impl Client {
 
     pub async fn games(&self, id: &str) -> Result<Vec<GameEntry>, ClientError> {
         self.get(&format!("/tests/{id}/games")).await
+    }
+
+    /// A running game's moves and clocks so far.
+    pub async fn live(&self, id: &str, pair: u32, game: u8) -> Result<LiveGame, ClientError> {
+        self.get(&format!("/tests/{id}/live/{pair}/{game}")).await
     }
 
     pub async fn record(&self, id: &str, pair: u32, game: u8) -> Result<String, ClientError> {

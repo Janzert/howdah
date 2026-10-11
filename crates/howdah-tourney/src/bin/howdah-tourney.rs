@@ -239,7 +239,7 @@ fn show(dir: &Path) -> Result<(), String> {
 
 fn print_event(names: &[String; 2], event: &RunEvent) {
     match event {
-        RunEvent::GameStarted { .. } => {}
+        RunEvent::GameStarted { .. } | RunEvent::MovePlayed { .. } => {}
         RunEvent::GameFinished { entry, summary } => print_game("", names, entry, Some(summary)),
         RunEvent::EngineRestarted { engine, reason } => {
             println!("       restarting {} ({reason})", names[*engine]);
@@ -409,7 +409,7 @@ fn print_daemon_event(
                 println!("{}", list_line(test));
             }
         }
-        DaemonEvent::GameStarted { .. } => {}
+        DaemonEvent::GameStarted { .. } | DaemonEvent::MovePlayed { .. } => {}
         DaemonEvent::GameFinished { test, entry } => {
             print_game(&format!("{test} "), &names_of(test), entry, None)
         }
@@ -517,6 +517,7 @@ async fn watch(data: &Path, only: Option<&str>) -> Result<(), String> {
         let test = match &event {
             DaemonEvent::TestChanged { test } => Some(test.id.as_str()),
             DaemonEvent::GameStarted { test, .. }
+            | DaemonEvent::MovePlayed { test, .. }
             | DaemonEvent::GameFinished { test, .. }
             | DaemonEvent::EngineRestarted { test, .. }
             | DaemonEvent::EngineFailedToStart { test, .. } => Some(test.as_str()),

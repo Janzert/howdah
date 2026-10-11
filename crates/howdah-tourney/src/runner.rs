@@ -8,13 +8,13 @@
 //! and appended to the log before the slot moves on, so a run stopped or
 //! killed at any point resumes by playing whatever isn't logged.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::future::Future;
 use std::io::{BufWriter, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use howdah_aei::{Direction, Engine, MatchConfig, MatchEvent, MatchOutcome, play_match};
 use howdah_arimaa::{GameRecord, GameTree, WinReason};
@@ -45,6 +45,18 @@ pub enum RunEvent {
     GameStarted {
         pair: u32,
         game: u8,
+    },
+    /// A move in a running game.
+    MovePlayed {
+        pair: u32,
+        game: u8,
+        /// The move's ply (0 is gold's setup).
+        ply: usize,
+        notation: String,
+        used: Duration,
+        /// Both reserves after the move (gold, silver), if the game has
+        /// clocks.
+        reserves: Option<[Duration; 2]>,
     },
     GameFinished {
         entry: GameEntry,
@@ -112,6 +124,36 @@ struct State {
     failures: [u32; 2],
     end: Option<RunEnd>,
     log: ResultsLog,
+    /// The moves and clocks of the games being played.
+    live: HashMap<(u32, u8), Live>,
+}
+
+/// A running game as far as it has got.
+struct Live {
+    moves: Vec<String>,
+    used: Vec<Duration>,
+    reserves: Option<[Duration; 2]>,
+    /// When the side to move's turn started.
+    turn_started: Instant,
+}
+
+/// A running game as far as it has got, for a viewer joining it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveGame {
+    pub pair: u32,
+    pub game: u8,
+    pub gold: String,
+    pub silver: String,
+    pub time_control: Option<String>,
+    pub moves: Vec<String>,
+    /// Milliseconds each move took.
+    pub used_ms: Vec<u64>,
+    /// Both reserves (gold, silver) in milliseconds, as the turn being
+    /// played started, if the game has clocks.
+    pub reserves_ms: Option<[u64; 2]>,
+    /// Milliseconds the side to move has spent on this turn.
+    pub turn_elapsed_ms: u64,
 }
 
 /// One test's games in play.
@@ -149,6 +191,7 @@ impl TestRun {
                 failures: [0; 2],
                 end,
                 log,
+                live: HashMap::new(),
             }),
             dir,
             hold: StopHandle::default(),
@@ -239,7 +282,55 @@ impl TestRun {
     /// Marks a game handed out by [`TestRun::next_game`] as no longer
     /// running (finished, or handed back).
     fn not_running(&self, game: (u32, u8)) {
-        self.state.lock().unwrap().running.retain(|g| *g != game);
+        let mut st = self.state.lock().unwrap();
+        st.running.retain(|g| *g != game);
+        st.live.remove(&game);
+    }
+
+    /// A running game's moves and clocks so far.
+    pub(crate) fn live(&self, game: (u32, u8)) -> Option<LiveGame> {
+        let st = self.state.lock().unwrap();
+        let live = st.live.get(&game)?;
+        let spec = &self.dir.spec;
+        let gold = GameEntry::gold_of(game.1);
+        let ms = |d: Duration| d.as_millis() as u64;
+        Some(LiveGame {
+            pair: game.0,
+            game: game.1,
+            gold: spec.engines[gold].name.clone(),
+            silver: spec.engines[1 - gold].name.clone(),
+            time_control: spec.time_control.clone(),
+            moves: live.moves.clone(),
+            used_ms: live.used.iter().copied().map(ms).collect(),
+            reserves_ms: live.reserves.map(|r| r.map(ms)),
+            turn_elapsed_ms: ms(live.turn_started.elapsed()),
+        })
+    }
+
+    fn start_live(&self, game: (u32, u8)) {
+        let reserves = self.config.time_control.map(|tc| [tc.starting_reserve(); 2]);
+        let live = Live { moves: Vec::new(), used: Vec::new(), reserves, turn_started: Instant::now() };
+        self.state.lock().unwrap().live.insert(game, live);
+    }
+
+    /// Records a move in a running game; returns both reserves after it.
+    fn live_move(
+        &self,
+        game: (u32, u8),
+        side: usize,
+        notation: &str,
+        used: Duration,
+        reserve: Option<Duration>,
+    ) -> Option<[Duration; 2]> {
+        let mut st = self.state.lock().unwrap();
+        let live = st.live.get_mut(&game)?;
+        live.moves.push(notation.to_string());
+        live.used.push(used);
+        if let (Some(r), Some(reserves)) = (reserve, live.reserves.as_mut()) {
+            reserves[side] = r;
+        }
+        live.turn_started = Instant::now();
+        live.reserves
     }
 
     /// Puts back a game that couldn't be played, counting a failure for
@@ -434,6 +525,7 @@ async fn play_game(
         }
     }
 
+    ctx.start_live((pair, game));
     ctx.send(RunEvent::GameStarted { pair, game });
     let gold = GameEntry::gold_of(game);
     let [a, b] = engines;
@@ -441,8 +533,10 @@ async fn play_game(
     let (g, s) = if gold == 0 { (a, b) } else { (b, a) };
     let mut used = Vec::new();
     let played = play_match(g, s, &ctx.config, |event| {
-        if let MatchEvent::MovePlayed { used: u, .. } = event {
+        if let MatchEvent::MovePlayed { ply, side, notation, used: u, reserve } = event {
             used.push(u);
+            let reserves = ctx.live_move((pair, game), side.index(), &notation, u, reserve);
+            ctx.send(RunEvent::MovePlayed { pair, game, ply, notation, used: u, reserves });
         }
     })
     .await;
@@ -561,6 +655,22 @@ fn write_game(
         moves_hash: moves_hash(notations.iter().map(String::as_str)),
         finished: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
     })
+}
+
+/// The reason a [`GameEntry`]'s `reason` names.
+pub(crate) fn reason_from_name(name: &str) -> Option<WinReason> {
+    [
+        WinReason::Goal,
+        WinReason::Elimination,
+        WinReason::Immobilization,
+        WinReason::Timeout,
+        WinReason::Resignation,
+        WinReason::IllegalMove,
+        WinReason::Score,
+        WinReason::Forfeit,
+    ]
+    .into_iter()
+    .find(|r| reason_name(*r) == name)
 }
 
 pub(crate) fn reason_name(reason: WinReason) -> &'static str {

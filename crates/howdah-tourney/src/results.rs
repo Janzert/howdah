@@ -5,6 +5,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use howdah_arimaa::{Color, GameResult};
 use serde::{Deserialize, Serialize};
 
 use crate::error::TourneyError;
@@ -43,6 +44,13 @@ impl GameEntry {
 
     pub fn gold(&self) -> usize {
         GameEntry::gold_of(self.game)
+    }
+
+    /// How the game ended, by colour (None for a reason this version
+    /// doesn't know).
+    pub fn result(&self) -> Option<GameResult> {
+        let winner = if self.winner == self.gold() { Color::Gold } else { Color::Silver };
+        Some(GameResult { winner, reason: crate::runner::reason_from_name(&self.reason)? })
     }
 }
 

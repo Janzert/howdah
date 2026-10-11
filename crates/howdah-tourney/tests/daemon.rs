@@ -172,3 +172,42 @@ async fn refusals() {
     assert!(daemon.submit(spec("late", "max_pairs = 1", &[]), 0).is_err());
     daemon.closed().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_viewer_can_join_a_running_game() {
+    let tmp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::start(tmp.path(), 0).unwrap();
+    // Engine two takes its time over its sixth move, so the game is still
+    // running when the viewer joins after its fifth.
+    let t = daemon
+        .submit(spec("live", "max_pairs = 1", &["--mode", "slow", "--delay-ms", "300", "--after", "5"]), 0)
+        .unwrap();
+    let mut rx = daemon.subscribe();
+    daemon.set_slots(1);
+    let mut seen: Vec<String> = Vec::new();
+    let mut joined = None;
+    events_until(&mut rx, |e| {
+        if let DaemonEvent::MovePlayed { test, pair: 1, game: 1, ply, notation, .. } = e {
+            assert_eq!(test, &t.id);
+            assert_eq!(*ply, seen.len());
+            seen.push(notation.clone());
+            if *ply == 9 {
+                joined = Some(daemon.live(&t.id, 1, 1).unwrap());
+            }
+        }
+        matches!(e, DaemonEvent::GameFinished { entry, .. } if entry.game == 1)
+    })
+    .await;
+    let live = joined.expect("joined the game");
+    assert_eq!((live.gold.as_str(), live.silver.as_str()), ("one", "two"));
+    assert_eq!(live.moves, seen[..10]);
+    assert_eq!(live.used_ms.len(), 10);
+    assert!(live.reserves_ms.is_some());
+    // A finished game isn't live any more; its record is there instead.
+    assert!(daemon.live(&t.id, 1, 1).is_err());
+    let record = daemon.record(&t.id, 1, 1).unwrap();
+    assert!(record.contains(&seen[9]));
+    let entry = &daemon.games(&t.id).unwrap()[0];
+    assert!(entry.result().is_some());
+    close(&daemon).await;
+}

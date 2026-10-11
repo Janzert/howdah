@@ -23,7 +23,7 @@ use tokio::task::JoinHandle;
 
 use crate::error::TourneyError;
 use crate::results::GameEntry;
-use crate::runner::{EventFn, Picker, RunEnd, RunEvent, TestRun, play_slot};
+use crate::runner::{EventFn, LiveGame, Picker, RunEnd, RunEvent, TestRun, play_slot};
 use crate::spec::{SprtSpec, TestSpec};
 use crate::stats::Summary;
 use crate::testdir::{TestDir, slug};
@@ -143,6 +143,17 @@ pub enum DaemonEvent {
         pair: u32,
         game: u8,
     },
+    /// A move in a running game, with both reserves after it (gold,
+    /// silver) if it has clocks.
+    MovePlayed {
+        test: String,
+        pair: u32,
+        game: u8,
+        ply: usize,
+        notation: String,
+        used_ms: u64,
+        reserves_ms: Option<[u64; 2]>,
+    },
     GameFinished {
         test: String,
         entry: GameEntry,
@@ -172,6 +183,7 @@ impl DaemonEvent {
         match self {
             DaemonEvent::TestChanged { .. } => "testChanged",
             DaemonEvent::GameStarted { .. } => "gameStarted",
+            DaemonEvent::MovePlayed { .. } => "movePlayed",
             DaemonEvent::GameFinished { .. } => "gameFinished",
             DaemonEvent::EngineRestarted { .. } => "engineRestarted",
             DaemonEvent::EngineFailedToStart { .. } => "engineFailedToStart",
@@ -342,6 +354,15 @@ impl Daemon {
 
     pub fn games(&self, id: &str) -> Result<Vec<GameEntry>, TourneyError> {
         self.with(id, |e| Ok(e.run.entries()))
+    }
+
+    /// A running game's moves and clocks so far.
+    pub fn live(&self, id: &str, pair: u32, game: u8) -> Result<LiveGame, TourneyError> {
+        self.with(id, |e| {
+            e.run
+                .live((pair, game))
+                .ok_or_else(|| TourneyError::Refused(format!("{id} isn't playing game {pair}.{game}")))
+        })
     }
 
     /// A finished game's record.
@@ -612,6 +633,15 @@ fn event_fn(inner: &Arc<Inner>, id: &str) -> EventFn {
         let test = test.clone();
         let event = match e {
             RunEvent::GameStarted { pair, game } => DaemonEvent::GameStarted { test, pair, game },
+            RunEvent::MovePlayed { pair, game, ply, notation, used, reserves } => DaemonEvent::MovePlayed {
+                test,
+                pair,
+                game,
+                ply,
+                notation,
+                used_ms: used.as_millis() as u64,
+                reserves_ms: reserves.map(|r| r.map(|d| d.as_millis() as u64)),
+            },
             RunEvent::GameFinished { entry, .. } => DaemonEvent::GameFinished { test, entry },
             RunEvent::EngineRestarted { engine, reason } => {
                 DaemonEvent::EngineRestarted { test, engine, reason }
