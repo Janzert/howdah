@@ -275,6 +275,14 @@ impl Tourney {
                             names.insert(test.id.clone(), test.engines.clone());
                             self.update(true, Some(test_view(&test)), None, None);
                         }
+                        // The daemon sends no TestChanged as a game starts,
+                        // so its test's running games come from asking.
+                        DaemonEvent::GameStarted { test, .. } => {
+                            if let Ok(info) = client.info(&test).await {
+                                names.insert(test, info.engines.clone());
+                                self.update(true, Some(test_view(&info)), None, None);
+                            }
+                        }
                         DaemonEvent::GameFinished { test, entry } => {
                             if !names.contains_key(&test)
                                 && let Ok(info) = client.info(&test).await
