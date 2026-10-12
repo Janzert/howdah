@@ -18,6 +18,7 @@ mod error;
 pub mod manifest;
 mod matchplay;
 mod message;
+pub mod process;
 mod profile;
 
 pub use engine::{Direction, Engine, EngineConfig, EngineId};

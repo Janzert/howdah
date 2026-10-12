@@ -1,7 +1,8 @@
 //! A minimal AEI engine for tests: plays random legal moves, and can be told
 //! to misbehave. Not a useful opponent.
 //!
-//! Usage: `aei-test-engine [--mode MODE] [--after N] [--delay-ms MS] [--seed S] [--name NAME] [--until-stop]`
+//! Usage: `aei-test-engine [--mode MODE] [--after N] [--delay-ms MS] [--seed S] [--name NAME] [--until-stop]
+//! [--grow-mb MB] [--think-ms MS] [--ignore-quit] [--child-pid-file PATH]`
 //!
 //! `--name` sets the name it gives (`id name`), so it can stand in for an
 //! engine with a `Profile`.
@@ -22,6 +23,16 @@
 //! - `lost-stop`: as `slow`, but a `stop` ends the search without a move,
 //!   as Sharp does when stopped right after `go`: it logs
 //!   `Error: Bot tried to make illegal move:` and waits for commands.
+//!
+//! For the tourney's process and memory watchdog:
+//! - `--grow-mb MB`: every `go` allocates (and touches) MB more memory and
+//!   keeps it, as a leaking engine would.
+//! - `--think-ms MS`: every move takes MS (or until `stop`).
+//! - `--ignore-quit`: ignores `quit` and the end of its input, running on
+//!   until killed.
+//! - `--child-pid-file PATH`: starts a child process (itself, sleeping,
+//!   `--sleeper`) and writes the child's pid to PATH, so a test can check
+//!   that killing the engine kills what it started.
 
 use std::io::{BufRead, Write};
 use std::sync::mpsc;
@@ -60,6 +71,10 @@ struct Options {
     seed: u64,
     until_stop: bool,
     name: String,
+    grow_mb: usize,
+    think: Duration,
+    ignore_quit: bool,
+    child_pid_file: Option<String>,
 }
 
 fn parse_options() -> Options {
@@ -70,12 +85,26 @@ fn parse_options() -> Options {
         seed: SystemTime::now().duration_since(UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1,
         until_stop: false,
         name: "aei-test-engine".into(),
+        grow_mb: 0,
+        think: Duration::ZERO,
+        ignore_quit: false,
+        child_pid_file: None,
     };
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(i) = args.iter().position(|a| a == "--until-stop") {
-        args.remove(i);
-        o.until_stop = true;
+    let mut flag = |name: &str| match args.iter().position(|a| a == name) {
+        Some(i) => {
+            args.remove(i);
+            true
+        }
+        None => false,
+    };
+    if flag("--sleeper") {
+        loop {
+            std::thread::sleep(Duration::from_secs(3600));
+        }
     }
+    o.until_stop = flag("--until-stop");
+    o.ignore_quit = flag("--ignore-quit");
     let mut i = 0;
     while i + 1 < args.len() {
         let v = &args[i + 1];
@@ -85,6 +114,9 @@ fn parse_options() -> Options {
             "--delay-ms" => o.delay = Duration::from_millis(v.parse().expect("--delay-ms MS")),
             "--seed" => o.seed = v.parse::<u64>().expect("--seed S") | 1,
             "--name" => o.name = v.clone(),
+            "--grow-mb" => o.grow_mb = v.parse().expect("--grow-mb MB"),
+            "--think-ms" => o.think = Duration::from_millis(v.parse().expect("--think-ms MS")),
+            "--child-pid-file" => o.child_pid_file = Some(v.clone()),
             other => panic!("unknown option {other}"),
         }
         i += 2;
@@ -178,6 +210,19 @@ fn wait_for_stop(rx: &mpsc::Receiver<String>, delay: Duration) -> Wait {
 
 fn main() {
     let opts = parse_options();
+    if let Some(path) = &opts.child_pid_file {
+        let exe = std::env::current_exe().expect("own path");
+        // Never waited for: it's left for whoever ends us to kill.
+        #[allow(clippy::zombie_processes)]
+        let child = std::process::Command::new(exe)
+            .arg("--sleeper")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("child starts");
+        std::fs::write(path, child.id().to_string()).expect("pid file written");
+    }
+    let mut hoard: Vec<Vec<u8>> = Vec::new();
     let mut rng = Rng(opts.seed);
     let (tx, rx) = mpsc::channel::<String>();
     std::thread::spawn(move || {
@@ -228,6 +273,13 @@ fn main() {
             }
             "go" if rest == "ponder" => {}
             "go" => {
+                if opts.grow_mb > 0 {
+                    hoard.push(vec![1u8; opts.grow_mb << 20]);
+                }
+                if !opts.think.is_zero() && wait_for_stop(&rx, opts.think) == Wait::Quit && !opts.ignore_quit
+                {
+                    return;
+                }
                 let misbehave = moves_made == opts.after;
                 moves_made += 1;
                 say("info depth 1");
@@ -281,10 +333,19 @@ fn main() {
                     Some(m) => say(&format!("bestmove {m}")),
                     None => say("bestmove resign"),
                 }
+                // Keeps the hoard from being optimised away.
+                std::hint::black_box(&hoard);
             }
             "stop" => {}
+            "quit" if opts.ignore_quit => {}
             "quit" => return,
             _ => say(&format!("log Error: unknown command {line:?}")),
+        }
+    }
+    // The end of input.
+    if opts.ignore_quit {
+        loop {
+            std::thread::sleep(Duration::from_secs(3600));
         }
     }
 }

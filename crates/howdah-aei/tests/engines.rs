@@ -203,3 +203,112 @@ fn engine_dies_with_its_spawning_thread() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+/// Whether process `pid` is running (a zombie isn't).
+fn alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let out = std::process::Command::new("ps").args(["-o", "stat=", "-p", &pid.to_string()]).output();
+        let stat = String::from_utf8_lossy(&out.expect("ps runs").stdout).trim().to_string();
+        !stat.is_empty() && !stat.starts_with('Z')
+    }
+    #[cfg(windows)]
+    {
+        let filter = format!("PID eq {pid}");
+        let out = std::process::Command::new("tasklist").args(["/FI", &filter, "/NH"]).output();
+        String::from_utf8_lossy(&out.expect("tasklist runs").stdout)
+            .split_whitespace()
+            .any(|w| w == pid.to_string())
+    }
+}
+
+/// Waits up to two seconds for `pid` to be gone.
+async fn gone(pid: u32) -> bool {
+    for _ in 0..40 {
+        if !alive(pid) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    false
+}
+
+/// An engine that ignores `quit` and has started a child of its own.
+async fn stubborn_engine(dir: &std::path::Path) -> (Engine, u32, u32) {
+    let pid_file = dir.join("child.pid");
+    let pid_arg = pid_file.to_str().unwrap();
+    let engine = Engine::start(&config(&["--ignore-quit", "--child-pid-file", pid_arg]).own_process_group())
+        .await
+        .expect("engine starts");
+    let child: u32 = std::fs::read_to_string(&pid_file).unwrap().trim().parse().unwrap();
+    let pid = engine.pid().unwrap();
+    assert!(alive(pid) && alive(child));
+    (engine, pid, child)
+}
+
+#[tokio::test]
+async fn quit_kills_an_engine_that_ignores_it_and_its_children() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, pid, child) = stubborn_engine(dir.path()).await;
+    let started = std::time::Instant::now();
+    engine.quit(Duration::from_millis(300)).await.unwrap();
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert!(gone(pid).await, "the engine is still running");
+    assert!(gone(child).await, "the engine's child is still running");
+}
+
+#[tokio::test]
+async fn dropping_an_engine_kills_its_children() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, pid, child) = stubborn_engine(dir.path()).await;
+    drop(engine);
+    assert!(gone(pid).await, "the engine is still running");
+    assert!(gone(child).await, "the engine's child is still running");
+}
+
+#[tokio::test]
+async fn kill_takes_the_children_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, pid, child) = stubborn_engine(dir.path()).await;
+    engine.kill().await.unwrap();
+    assert!(gone(pid).await && gone(child).await);
+}
+
+#[tokio::test]
+async fn reads_an_engines_growing_memory() {
+    let mut engine = start(&["--grow-mb", "40"]).await;
+    let Some(before) = engine.resident_memory() else {
+        eprintln!("resident memory can't be read here");
+        return;
+    };
+    engine.new_game().await.unwrap();
+    engine.go().await.unwrap();
+    while !matches!(engine.recv().await.unwrap(), EngineMessage::BestMove(_)) {}
+    let after = engine.resident_memory().unwrap();
+    assert!(after >= before + (35 << 20), "{before} -> {after}");
+    engine.quit(Duration::from_secs(5)).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_memory_limit_kills_an_engine_that_passes_it() {
+    if howdah_aei::process::memory_cap_method().is_none() {
+        eprintln!("no memory cap here");
+        return;
+    }
+    let mut engine = Engine::start(&config(&["--grow-mb", "64"]).memory_limit(48 << 20)).await.unwrap();
+    assert!(engine.memory_capped());
+    engine.new_game().await.unwrap();
+    engine.go().await.unwrap();
+    let ended = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match engine.recv().await {
+                Err(e) => break e,
+                Ok(EngineMessage::BestMove(m)) => panic!("moved ({m}) past its limit"),
+                Ok(_) => {}
+            }
+        }
+    })
+    .await
+    .expect("the engine was killed");
+    assert!(matches!(ended, AeiError::Exited | AeiError::Io(_)), "{ended}");
+}

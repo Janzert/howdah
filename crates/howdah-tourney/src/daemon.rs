@@ -6,7 +6,8 @@
 //! takes a game from the active test with the highest priority, staying on
 //! the test it holds engines for when that's among the best, and otherwise
 //! the one with the fewest games running. A test's `concurrency` caps its
-//! games at once.
+//! games at once. All the slots' engines share a memory budget (see
+//! `memory`).
 //!
 //! This is the daemon without its HTTP API (`server`), so it can be driven
 //! and tested directly.
@@ -22,6 +23,7 @@ use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 
 use crate::error::TourneyError;
+use crate::memory::{self, Engines};
 use crate::results::GameEntry;
 use crate::runner::{EventFn, LiveGame, Picker, RunEnd, RunEvent, TestRun, play_slot};
 use crate::spec::{SprtSpec, TestSpec};
@@ -129,6 +131,15 @@ pub struct DaemonStatus {
     pub data_dir: PathBuf,
     pub pid: u32,
     pub closing: bool,
+    /// Bytes all the engines may hold together.
+    #[serde(default)]
+    pub memory_budget: u64,
+    /// Bytes the engines held at their last readings.
+    #[serde(default)]
+    pub engine_memory: u64,
+    /// Engine processes running (each slot's, idle ones included).
+    #[serde(default)]
+    pub engines: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -255,6 +266,7 @@ struct Inner {
     wake: Notify,
     events: broadcast::Sender<DaemonEvent>,
     closing: AtomicBool,
+    engines: Engines,
 }
 
 /// The queue and its slots. Cloning shares it.
@@ -263,8 +275,19 @@ pub struct Daemon(Arc<Inner>);
 
 impl Daemon {
     /// Loads the tests in `data_dir` and starts `slots` slots. Active tests
-    /// carry on where they were.
+    /// carry on where they were. The engines' memory budget is
+    /// [`crate::default_memory_budget`].
     pub fn start(data_dir: &Path, slots: u32) -> Result<Daemon, TourneyError> {
+        Daemon::start_with_budget(data_dir, slots, memory::default_budget())
+    }
+
+    /// [`Daemon::start`] with a budget of `memory_budget` bytes for all the
+    /// engines together.
+    pub fn start_with_budget(
+        data_dir: &Path,
+        slots: u32,
+        memory_budget: u64,
+    ) -> Result<Daemon, TourneyError> {
         let tests_dir = data_dir.join("tests");
         std::fs::create_dir_all(&tests_dir).map_err(TourneyError::io(&tests_dir))?;
         let (events, _) = broadcast::channel(1024);
@@ -275,6 +298,7 @@ impl Daemon {
             wake: Notify::new(),
             events,
             closing: AtomicBool::new(false),
+            engines: Engines::new(memory_budget),
         });
         let mut dirs: Vec<PathBuf> = std::fs::read_dir(&tests_dir)
             .map_err(TourneyError::io(&tests_dir))?
@@ -503,6 +527,9 @@ impl Daemon {
             data_dir: self.0.data_dir.clone(),
             pid: std::process::id(),
             closing: self.0.closing.load(Ordering::SeqCst),
+            memory_budget: self.0.engines.budget(),
+            engine_memory: self.0.engines.total(),
+            engines: self.0.engines.count(),
         }
     }
 
@@ -704,5 +731,13 @@ impl Picker for Inner {
     fn failed(&self, run: &Arc<TestRun>, error: TourneyError) -> Option<TourneyError> {
         eprintln!("{}: {error}", run.dir.path.display());
         None
+    }
+
+    fn engines(&self) -> &Engines {
+        &self.engines
+    }
+
+    fn stopping(&self, slot: usize) -> bool {
+        self.closing.load(Ordering::SeqCst) || slot >= self.slots.lock().unwrap().target as usize
     }
 }

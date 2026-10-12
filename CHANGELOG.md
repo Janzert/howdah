@@ -25,6 +25,15 @@ young).
   a number of game slots, highest priority first, that carries on after
   a restart. The same command submits, lists, watches, pauses, resumes,
   stops and reprioritizes tests, over a local HTTP API with a token.
+- The engine test daemon keeps engines' memory in check: an engine that
+  has grown too much (three times its size after its first game, by
+  default) is restarted between games, one past its limit (a quarter of
+  the machine's memory, by default) forfeits its game, recorded as a
+  memory-limit forfeit, and the engines together stay within a budget
+  (half the machine's memory, or `--memory-budget`). On Linux each
+  engine also runs under a kernel memory cap (a systemd user scope) when
+  it can. Limits can be set per test (`[memory]` in `test.toml`), and
+  each game's results and the daemon's log show the engines' memory.
 - A position editor, from the lobby or from a game window ("Edit
   position", `e`, which opens the shown position in a new window): place
   pieces from a palette per side (it counts what's left), drag them
@@ -95,6 +104,12 @@ young).
 
 ### Fixed
 
+- The engine test daemon's idle game slots kept their engines running,
+  so a daemon with more slots than a test's games at once held extra
+  engines (and their memory) for as long as it ran. A slot now lets its
+  engines go after 10 seconds with nothing to play. Ending an engine
+  also ends whatever it started, and on Windows an app's or daemon's
+  engines no longer outlive it.
 - Logged in to arimaa.com with your email address, the lobby showed the
   email as your name and didn't find your side in your own games (Play,
   "Your move", postal moves due); it now uses your gameroom username.

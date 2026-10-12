@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TestView } from './bindings/TestView';
-import { llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
+import { endingText, llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
 
 function view(over: Partial<TestView> = {}): TestView {
   return {
@@ -52,5 +52,13 @@ describe('tests', () => {
     expect(pairCount('')).toBeNull();
     expect(pairCount(null)).toBeNull();
     expect(pairCount(12)).toBe(12);
+  });
+});
+
+describe('endingText', () => {
+  it('words the reasons that need it', () => {
+    expect(endingText('goal')).toBe('goal');
+    expect(endingText('illegalMove')).toBe('illegal move');
+    expect(endingText('resourceLimit')).toBe('a memory-limit forfeit');
   });
 });

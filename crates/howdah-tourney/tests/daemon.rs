@@ -211,3 +211,25 @@ async fn a_viewer_can_join_a_running_game() {
     assert!(entry.result().is_some());
     close(&daemon).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn idle_slots_let_their_engines_go() {
+    let tmp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::start(tmp.path(), 0).unwrap();
+    let mut rx = daemon.subscribe();
+    let t = daemon.submit(spec("idle", "max_pairs = 2", &[]), 0).unwrap();
+    daemon.set_slots(3);
+    events_until(&mut rx, |e| finished(e, &t.id)).await;
+    // Nothing more to play: within the slots' idle time (10 s), none of
+    // them holds an engine.
+    let mut engines = daemon.status().engines;
+    for _ in 0..30 {
+        if engines == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        engines = daemon.status().engines;
+    }
+    assert_eq!(engines, 0);
+    close(&daemon).await;
+}

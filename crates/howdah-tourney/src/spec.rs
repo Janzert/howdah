@@ -18,6 +18,11 @@
 //! [[engines]]
 //! name = "base"
 //! program = "/home/me/bots/opfor-base"
+//!
+//! [memory]        # optional; these are the defaults
+//! growth = 3.0    # restart an engine between games past 3x its size after its first game
+//! # restart_mb = 2000   # ... or past this many MB
+//! # limit_mb = 8000     # forfeit mid-game past this (default: a quarter of the machine's memory)
 //! ```
 //!
 //! Engine 1 is the one being tested: scores, Elo and the SPRT are from its
@@ -52,6 +57,55 @@ pub struct TestSpec {
     pub engine_logs: bool,
     /// Exactly two.
     pub engines: Vec<EngineSpec>,
+    /// When an engine's memory makes the runner restart it, or forfeit
+    /// its game.
+    #[serde(default, skip_serializing_if = "MemorySpec::is_default")]
+    pub memory: MemorySpec,
+}
+
+/// Limits on each engine's resident memory (`[memory]`). Between games
+/// the runner restarts an engine that has grown past `growth` times its
+/// size after its first game (and past [`MemorySpec::GROWTH_FLOOR_MB`]),
+/// or past `restart_mb`. In a game, one past `limit_mb` forfeits it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemorySpec {
+    /// 0 turns the growth check off.
+    #[serde(default = "default_growth")]
+    pub growth: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restart_mb: Option<u64>,
+    /// None: a quarter of the machine's memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_mb: Option<u64>,
+}
+
+impl Default for MemorySpec {
+    fn default() -> Self {
+        MemorySpec { growth: default_growth(), restart_mb: None, limit_mb: None }
+    }
+}
+
+impl MemorySpec {
+    /// Growth alone never restarts an engine smaller than this, so small
+    /// engines aren't restarted for a few MB.
+    pub const GROWTH_FLOOR_MB: u64 = 256;
+
+    fn is_default(&self) -> bool {
+        *self == MemorySpec::default()
+    }
+
+    /// The hard limit in bytes, given the machine's memory.
+    pub fn limit_bytes(&self, physical: Option<u64>) -> u64 {
+        match self.limit_mb {
+            Some(mb) => mb << 20,
+            None => physical.map_or(4 << 30, |p| p / 4),
+        }
+    }
+}
+
+fn default_growth() -> f64 {
+    3.0
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -168,6 +222,18 @@ impl TestSpec {
             }
             _ => {}
         }
+        let m = &self.memory;
+        if !(m.growth == 0.0 || m.growth > 1.0) || !m.growth.is_finite() {
+            return bad("memory growth must be 0 (off) or more than 1".into());
+        }
+        if m.restart_mb == Some(0) || m.limit_mb == Some(0) {
+            return bad("memory limits must be at least 1 MB".into());
+        }
+        if let (Some(r), Some(l)) = (m.restart_mb, m.limit_mb)
+            && r >= l
+        {
+            return bad("memory restart_mb must be below limit_mb".into());
+        }
         Ok(())
     }
 }
@@ -229,5 +295,25 @@ mod tests {
         assert!(TestSpec::parse(&bounds).unwrap_err().contains("elo1"));
         let unknown = SPEC.replace("concurrency = 2", "concurency = 2");
         assert!(TestSpec::parse(&unknown).is_err());
+        let growth = format!("{SPEC}\n        [memory]\n        growth = 0.5");
+        assert!(TestSpec::parse(&growth).unwrap_err().contains("growth"));
+        let limits = format!("{SPEC}\n        [memory]\n        restart_mb = 900\n        limit_mb = 800");
+        assert!(TestSpec::parse(&limits).unwrap_err().contains("restart_mb"));
+    }
+
+    #[test]
+    fn memory_limits_default_and_round_trip() {
+        let spec = TestSpec::parse(SPEC).unwrap();
+        assert_eq!(spec.memory, MemorySpec::default());
+        assert!(!spec.to_toml().contains("[memory]"));
+        assert_eq!(spec.memory.limit_bytes(Some(32 << 30)), 8 << 30);
+        assert_eq!(spec.memory.limit_bytes(None), 4 << 30);
+        let set = TestSpec::parse(&format!(
+            "{SPEC}\n        [memory]\n        growth = 0\n        limit_mb = 3000"
+        ))
+        .unwrap();
+        assert_eq!(set.memory, MemorySpec { growth: 0.0, restart_mb: None, limit_mb: Some(3000) });
+        assert_eq!(set.memory.limit_bytes(Some(32 << 30)), 3000 << 20);
+        assert_eq!(TestSpec::parse(&set.to_toml()).unwrap(), set);
     }
 }

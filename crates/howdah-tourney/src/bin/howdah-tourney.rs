@@ -6,7 +6,8 @@
 //! howdah-tourney run DIR [-j N]      play its games here (resuming), N at once
 //! howdah-tourney show DIR|ID         print a test's results (a directory, or the daemon's test)
 //!
-//! howdah-tourney daemon [--slots N] [--port P]   run the daemon (in the foreground)
+//! howdah-tourney daemon [--slots N] [--port P] [--memory-budget MB]
+//!                                                run the daemon (in the foreground)
 //! howdah-tourney submit SPEC.toml [--priority N] add a test to the daemon's queue
 //! howdah-tourney list                            the daemon's tests
 //! howdah-tourney status                          its slots and running games
@@ -23,6 +24,10 @@
 //! The spec format is in `src/spec.rs`. Ctrl-C during `run` or `daemon`
 //! starts no more games and waits for the running ones; a second Ctrl-C
 //! quits at once (those games are played again next time).
+//!
+//! The engines' memory budget (all of them together) is half the
+//! machine's memory unless `--memory-budget` says otherwise; each test's
+//! own limits are in its spec's `[memory]`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -30,15 +35,16 @@ use std::process::ExitCode;
 
 use howdah_tourney::client::Client;
 use howdah_tourney::{
-    Daemon, DaemonEvent, DaemonInfo, Decision, GameEntry, RunEnd, RunEvent, RunOptions, StopHandle, Summary,
-    TestDir, TestInfo, TestSpec, TestStatus, TourneyError, default_data_dir, server, summarize,
+    Daemon, DaemonEvent, DaemonInfo, Decision, GameEntry, RESOURCE_LIMIT, RunEnd, RunEvent, RunOptions,
+    StopHandle, Summary, TestDir, TestInfo, TestSpec, TestStatus, TourneyError, default_data_dir, server,
+    summarize,
 };
 
 const USAGE: &str = "usage:
   howdah-tourney new SPEC.toml DIR
   howdah-tourney run DIR [-j N]
   howdah-tourney show DIR|ID
-  howdah-tourney daemon [--slots N] [--port P]
+  howdah-tourney daemon [--slots N] [--port P] [--memory-budget MB]
   howdah-tourney submit SPEC.toml [--priority N]
   howdah-tourney list | status | watch [ID]
   howdah-tourney pause|resume|stop ID
@@ -89,16 +95,21 @@ async fn command(args: &[String], data: &Path) -> Result<(), String> {
         ["daemon", rest @ ..] => {
             let mut slots = None;
             let mut port = 0;
+            let mut budget = None;
             for pair in rest.chunks(2) {
                 match pair {
                     ["--slots", n] => slots = Some(number(n, "--slots")?),
                     ["--port", p] => {
                         port = p.parse().map_err(|_| format!("--port must be a port, not {p:?}"))?
                     }
+                    ["--memory-budget", mb] => match number(mb, "--memory-budget")? {
+                        0 => return Err("--memory-budget must be at least 1 MB".into()),
+                        mb => budget = Some(u64::from(mb) << 20),
+                    },
                     _ => return Err(USAGE.into()),
                 }
             }
-            daemon(data, slots, port).await
+            daemon(data, slots, port, budget).await
         }
         ["submit", spec] => submit(data, Path::new(spec), 0).await,
         ["submit", spec, "--priority", p] | ["submit", "--priority", p, spec] => {
@@ -186,7 +197,12 @@ async fn run(dir: &Path, concurrency: Option<u32>) -> Result<(), String> {
     let stop = StopHandle::default();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let sprt = test.spec.sprt;
-    let mut runner = Box::pin(howdah_tourney::run(test, RunOptions { concurrency }, stop.clone(), tx));
+    let mut runner = Box::pin(howdah_tourney::run(
+        test,
+        RunOptions { concurrency, ..RunOptions::default() },
+        stop.clone(),
+        tx,
+    ));
     let mut interrupts = 0;
     let end = loop {
         tokio::select! {
@@ -260,9 +276,12 @@ fn print_game(prefix: &str, names: &[String; 2], entry: &GameEntry, summary: Opt
         names[gold],
         names[1 - gold],
         names[entry.winner],
-        entry.reason,
+        if entry.reason == RESOURCE_LIMIT { "going over a memory limit" } else { &entry.reason },
         entry.plies
     );
+    if let Some([a, b]) = entry.memory_mb {
+        line += &format!(" ({a}/{b} MB)");
+    }
     if let Some(summary) = summary.filter(|s| s.pairs > 0) {
         line += &format!(" | {}", short_stats(summary));
     }
@@ -343,7 +362,7 @@ fn decision_text(names: &[String; 2], d: Decision) -> String {
     }
 }
 
-async fn daemon(data: &Path, slots: Option<u32>, port: u16) -> Result<(), String> {
+async fn daemon(data: &Path, slots: Option<u32>, port: u16, budget: Option<u64>) -> Result<(), String> {
     if let Some(info) = DaemonInfo::read(data)
         && Client::new(&info).status().await.is_ok()
     {
@@ -353,9 +372,13 @@ async fn daemon(data: &Path, slots: Option<u32>, port: u16) -> Result<(), String
         let cores = std::thread::available_parallelism().map_or(2, |n| n.get() as u32);
         (cores / 2).max(1)
     });
-    let daemon = Daemon::start(data, slots).map_err(|e| e.to_string())?;
+    let budget = budget.unwrap_or_else(howdah_tourney::default_memory_budget);
+    let daemon = Daemon::start_with_budget(data, slots, budget).map_err(|e| e.to_string())?;
     let (listener, info) = server::bind(data, port).await.map_err(|e| e.to_string())?;
     println!("Serving {} on 127.0.0.1:{} with {slots} slots", data.display(), info.port);
+    let cap = howdah_aei::process::memory_cap_method()
+        .map_or("not capped by the kernel".into(), |m| format!("each capped in {m}"));
+    println!("Engine memory: {} MB budget for all of them; {cap}", budget >> 20);
     for t in daemon.list() {
         println!("  {}", list_line(&t));
     }
@@ -482,6 +505,12 @@ async fn list(data: &Path) -> Result<(), String> {
 async fn status(data: &Path) -> Result<(), String> {
     let s = client(data)?.status().await.map_err(|e| e.to_string())?;
     println!("Daemon pid {} serving {}: {} slots, {} tests", s.pid, s.data_dir.display(), s.slots, s.tests);
+    println!(
+        "{} engines hold {} MB of a {} MB budget",
+        s.engines,
+        s.engine_memory >> 20,
+        s.memory_budget >> 20
+    );
     if s.closing {
         println!("Shutting down");
     }

@@ -13,8 +13,18 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["process", "io-util", "time", "sync", "macros", "rt"] }
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+    "Win32_System_ProcessStatus",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+tempfile = "3.27.0"

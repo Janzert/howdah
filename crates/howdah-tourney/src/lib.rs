@@ -18,6 +18,7 @@
 
 mod daemon;
 mod error;
+mod memory;
 mod results;
 mod runner;
 mod spec;
@@ -34,8 +35,9 @@ pub use daemon::{
     TestStatus, default_data_dir,
 };
 pub use error::TourneyError;
-pub use results::{GameEntry, ResultsLog, moves_hash, read_results};
+pub use memory::default_budget as default_memory_budget;
+pub use results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash, read_results};
 pub use runner::{LiveGame, RunEnd, RunEvent, RunOptions, StopHandle, run};
-pub use spec::{EngineSpec, OptionValue, SprtSpec, TestSpec};
+pub use spec::{EngineSpec, MemorySpec, OptionValue, SprtSpec, TestSpec};
 pub use stats::{Decision, Summary, elo_from_score, score_from_elo, summarize};
 pub use testdir::TestDir;

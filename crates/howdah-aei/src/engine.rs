@@ -11,6 +11,7 @@ use tokio::time::{Instant, timeout_at};
 
 use crate::error::AeiError;
 use crate::message::EngineMessage;
+use crate::process;
 
 /// How to launch an engine. The program is run directly (no shell).
 #[derive(Clone, Debug)]
@@ -25,6 +26,10 @@ pub struct EngineConfig {
     /// it and the controller decides when it stops. Our own death still
     /// ends it as before (`kill_on_drop`, and on Linux `kill_with_parent`).
     pub own_process_group: bool,
+    /// A memory cap in bytes for the kernel to enforce, where it can
+    /// ([`process::memory_cap_method`]): an engine passing it is killed
+    /// (and so fails), rather than the machine running out of memory.
+    pub memory_limit: Option<u64>,
 }
 
 impl EngineConfig {
@@ -35,6 +40,7 @@ impl EngineConfig {
             working_dir: None,
             handshake_timeout: Duration::from_secs(10),
             own_process_group: false,
+            memory_limit: None,
         }
     }
 
@@ -54,6 +60,11 @@ impl EngineConfig {
 
     pub fn own_process_group(mut self) -> EngineConfig {
         self.own_process_group = true;
+        self
+    }
+
+    pub fn memory_limit(mut self, bytes: u64) -> EngineConfig {
+        self.memory_limit = Some(bytes);
         self
     }
 }
@@ -79,12 +90,21 @@ type Transcript = Box<dyn FnMut(Direction, &str) + Send>;
 
 /// A running engine that has completed the AEI handshake. The process is
 /// killed when this is dropped; call [`Engine::quit`] for a clean exit.
+/// Whatever it started goes with it: on Unix when it has a process group
+/// of its own, on Windows always (its job object).
 pub struct Engine {
     child: Child,
     stdin: ChildStdin,
     lines: Lines<BufReader<ChildStdout>>,
     id: EngineId,
     transcript: Option<Transcript>,
+    /// Whether the process leads a group of its own, killed with it.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    group: bool,
+    /// Whether a memory cap applies to it.
+    capped: bool,
+    #[cfg(windows)]
+    job: Option<process::Job>,
 }
 
 /// Has Linux kill the engine when we die. `kill_on_drop` needs our
@@ -125,8 +145,12 @@ impl Engine {
         config: &EngineConfig,
         transcript: Option<Transcript>,
     ) -> Result<Engine, AeiError> {
-        let mut cmd = Command::new(&config.program);
-        cmd.args(&config.args)
+        let wrapped =
+            config.memory_limit.and_then(|l| process::capped_command(&config.program, &config.args, l));
+        let capped = wrapped.is_some() || (cfg!(windows) && config.memory_limit.is_some());
+        let (program, args) = wrapped.unwrap_or_else(|| (config.program.clone(), config.args.clone()));
+        let mut cmd = Command::new(&program);
+        cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -151,6 +175,10 @@ impl Engine {
         let mut child = cmd
             .spawn()
             .map_err(|source| AeiError::Spawn { program: config.program.display().to_string(), source })?;
+        // Put in its job before the handshake, so it has had little time
+        // to start anything outside it.
+        #[cfg(windows)]
+        let job = child.raw_handle().and_then(|h| process::Job::assign(h, config.memory_limit));
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let mut engine = Engine {
@@ -159,6 +187,10 @@ impl Engine {
             lines: BufReader::new(stdout).lines(),
             id: EngineId::default(),
             transcript,
+            group: config.own_process_group,
+            capped,
+            #[cfg(windows)]
+            job,
         };
         engine.handshake(config.handshake_timeout).await?;
         Ok(engine)
@@ -195,6 +227,17 @@ impl Engine {
     /// The engine's process id, while it runs.
     pub fn pid(&self) -> Option<u32> {
         self.child.id()
+    }
+
+    /// Bytes the engine's process has resident, if that can be read
+    /// ([`process::resident_memory`]).
+    pub fn resident_memory(&self) -> Option<u64> {
+        process::resident_memory(self.pid()?)
+    }
+
+    /// Whether the kernel enforces [`EngineConfig::memory_limit`] for it.
+    pub fn memory_capped(&self) -> bool {
+        self.capped
     }
 
     /// The engine's name, or a placeholder.
@@ -313,13 +356,59 @@ impl Engine {
     }
 
     /// Sends `quit` and waits up to `timeout` for the process to exit, then
-    /// kills it.
+    /// kills it. Either way, whatever else is in its process group (or its
+    /// job, on Windows) is killed too, so nothing it started outlives it.
     pub async fn quit(mut self, timeout: Duration) -> Result<(), AeiError> {
-        // The engine may already be gone; that's fine.
-        let _ = self.send("quit").await;
-        match tokio::time::timeout(timeout, self.child.wait()).await {
+        // The engine may already be gone; that's fine. A stuck pipe
+        // mustn't hold us past the timeout either.
+        let deadline = Instant::now() + timeout;
+        let pid = self.child.id();
+        let _ = timeout_at(deadline, self.send("quit")).await;
+        let exited = timeout_at(deadline, self.child.wait()).await;
+        // A process we gave up on hasn't been waited for, so its id can't
+        // have been reused. One that exited was waited for just now, and
+        // ids are only reused after wrapping around.
+        self.kill_tree(pid);
+        match exited {
             Ok(status) => status.map(|_| ()).map_err(AeiError::Io),
-            Err(_) => self.child.kill().await.map_err(AeiError::Io),
+            Err(_) => self.child.wait().await.map(|_| ()).map_err(AeiError::Io),
+        }
+    }
+
+    /// Kills the engine and everything else in its group or job, at once.
+    pub async fn kill(mut self) -> Result<(), AeiError> {
+        self.kill_tree(self.child.id());
+        self.child.wait().await.map(|_| ()).map_err(AeiError::Io)
+    }
+
+    /// Sends SIGKILL to the engine's process group (or the process, if it
+    /// has none of its own), or terminates its job. It doesn't wait.
+    fn kill_tree(&mut self, #[cfg_attr(not(unix), allow(unused_variables))] pid: Option<u32>) {
+        #[cfg(unix)]
+        if self.group
+            && let Some(pid) = pid
+        {
+            process::kill_group(pid);
+            return;
+        }
+        #[cfg(windows)]
+        if let Some(job) = &self.job {
+            job.terminate();
+            return;
+        }
+        let _ = self.child.start_kill();
+    }
+}
+
+impl Drop for Engine {
+    /// `kill_on_drop` kills only the process; take its group (or job) too.
+    /// The id is ours while the child hasn't been waited for.
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if self.group
+            && let Some(pid) = self.child.id()
+        {
+            process::kill_group(pid);
         }
     }
 }

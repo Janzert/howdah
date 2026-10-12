@@ -531,6 +531,7 @@ pub fn test_spec(new: NewTestSpec, engines: [EngineSpec; 2]) -> Result<TestSpec,
         sprt: new.sprt.map(|s| SprtSpec { elo0: s.elo0, elo1: s.elo1, alpha: 0.05, beta: 0.05 }),
         engine_logs: false,
         engines: specs,
+        memory: Default::default(),
     };
     if spec.name.is_empty() {
         return Err(ApiError::state("the test needs a name"));

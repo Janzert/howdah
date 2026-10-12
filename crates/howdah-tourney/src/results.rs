@@ -20,7 +20,8 @@ pub struct GameEntry {
     /// The winning engine's index (0 or 1).
     pub winner: usize,
     /// How it ended: goal, elimination, immobilization, timeout,
-    /// resignation, illegalMove, score or forfeit.
+    /// resignation, illegalMove, score, forfeit, or [`RESOURCE_LIMIT`] (a
+    /// forfeit for going over a memory limit).
     pub reason: String,
     pub plies: u32,
     /// Why it ended, when that wasn't on the board.
@@ -34,6 +35,24 @@ pub struct GameEntry {
     pub moves_hash: String,
     /// When it ended, in seconds since the Unix epoch.
     pub finished: u64,
+    /// Each engine's resident memory in MB (by index) as the game ended,
+    /// if it could be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_mb: Option<[u64; 2]>,
+    /// Engines restarted after the game, and why.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub restarts: Vec<Restart>,
+}
+
+/// [`GameEntry::reason`] for a game an engine forfeited by going over a
+/// memory limit.
+pub const RESOURCE_LIMIT: &str = "resourceLimit";
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Restart {
+    /// The engine's index.
+    pub engine: usize,
+    pub reason: String,
 }
 
 impl GameEntry {
@@ -144,6 +163,8 @@ pub(crate) fn entry(pair: u32, game: u8, winner: usize) -> GameEntry {
         record: format!("games/{pair:04}-{game}.txt"),
         moves_hash: format!("{pair}-{game}"),
         finished: 0,
+        memory_mb: None,
+        restarts: Vec::new(),
     }
 }
 

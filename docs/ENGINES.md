@@ -38,8 +38,22 @@ working Python controller. Engine quirks live in one place in the code,
   sees its stdin close: Sharp exits on that, and OpFor does since
   2026-10-09 (before, it ran on as an orphan, even mid-search). On Linux
   the engine also gets `PR_SET_PDEATHSIG` (SIGKILL when the thread that
-  spawned it exits, so spawn from a long-lived runtime thread); other
-  platforms rely on the engine exiting at end of input.
+  spawned it exits, so spawn from a long-lived runtime thread). On
+  Windows every engine runs in a job object that kills it (and whatever
+  it started) when the job's handle closes, which happens when we exit
+  however we exit. macOS relies on the engine exiting at end of input.
+  An engine started in its own process group (`own_process_group`, as
+  the tourney does) is ended with its whole group: after `quit` and the
+  timeout, after a clean exit, on `kill` and on drop.
+- **Memory** (`howdah_aei::process`): `Engine::resident_memory` reads
+  the engine process's resident memory (the working set on Windows), and
+  `EngineConfig::memory_limit` asks the kernel to kill an engine past a
+  cap: a systemd user scope on Linux when `systemd-run` works, the job
+  object's per-process limit on Windows, nothing on macOS. Only the
+  tourney uses them so far, with a watchdog that restarts engines that
+  grow and forfeits a game past a limit (`docs/TOURNAMENTS.md`, "As
+  built (engine processes and memory)"); the app's matches and analysis
+  could take the same pieces if an engine leaks there.
 - **Scores** are read from the mover's side and shown on one scale,
   centi-rabbits (a rabbit up in the opening is about +100), with proven
   wins kept apart.

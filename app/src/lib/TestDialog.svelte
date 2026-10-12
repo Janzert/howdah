@@ -7,7 +7,7 @@
   import type { TestGameView } from './bindings/TestGameView';
   import type { TestView } from './bindings/TestView';
   import { on } from './events';
-  import { llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
+  import { endingText, llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
 
   interface Props {
     id: string;
@@ -159,7 +159,7 @@
           <li>
             <span class="num">{g.pair}.{g.game}</span>
             <span class="who">{g.gold} vs {g.silver}</span>
-            <span class="result">{won(g)} ({g.winner}) by {g.reason}, {g.plies} plies</span>
+            <span class="result">{won(g)} ({g.winner}) by {endingText(g.reason)}, {g.plies} plies</span>
             <button class="subtle" onclick={() => open(g.pair, g.game)}>Open</button>
           </li>
         {/each}

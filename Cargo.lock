@@ -1388,8 +1388,10 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -149,3 +149,101 @@ async fn the_sprt_ends_a_one_sided_test() {
     assert_eq!(end, RunEnd::Decided(Decision::Pass));
     assert!(events.is_empty());
 }
+
+async fn play_with(test: &TestDir, options: RunOptions) -> (RunEnd, Vec<RunEvent>) {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let end = run(test.clone(), options, StopHandle::default(), tx).await.unwrap();
+    let mut events = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        events.push(e);
+    }
+    (end, events)
+}
+
+fn restarts_of(events: &[RunEvent], engine: usize) -> Vec<String> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            RunEvent::EngineRestarted { engine: i, reason } if *i == engine => Some(reason.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_engine_that_keeps_growing_is_restarted_between_games() {
+    if howdah_aei::process::resident_memory(std::process::id()).is_none() {
+        eprintln!("resident memory can't be read here");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    // About 240 MB a game, so it passes the 256 MB floor in its second,
+    // at about twice its size after the first.
+    let test = make_test(tmp.path(), "max_pairs = 1\n[memory]\ngrowth = 1.5", &["--grow-mb", "20"], "");
+    let (end, events) = play(&test, StopHandle::default(), None).await;
+    assert_eq!(end, RunEnd::MaxPairs);
+    let mut entries = test.results().unwrap();
+    entries.sort_by_key(|e| e.game);
+    let [first, second] = &entries[..] else { panic!("{entries:?}") };
+    let [_, grown] = first.memory_mb.unwrap();
+    assert!(grown >= 100, "{first:?}");
+    assert!(first.restarts.is_empty(), "{first:?}");
+    // Played on after the first game, restarted after the second.
+    assert_eq!(second.restarts.len(), 1, "{second:?}");
+    assert_eq!(second.restarts[0].engine, 1);
+    assert!(second.restarts[0].reason.contains("after its first game"), "{second:?}");
+    assert_eq!(restarts_of(&events, 1), [second.restarts[0].reason.clone()]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_engine_over_its_limit_forfeits_mid_game() {
+    if howdah_aei::process::resident_memory(std::process::id()).is_none() {
+        eprintln!("resident memory can't be read here");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    // 100 MB a second: past the limit within a second, well before the
+    // turn limit and the kernel's cap (356 MB).
+    let test = make_test(
+        tmp.path(),
+        "max_pairs = 1\n[memory]\nlimit_mb = 100",
+        &["--grow-mb", "20", "--think-ms", "200"],
+        "",
+    );
+    let (end, events) = play(&test, StopHandle::default(), None).await;
+    assert_eq!(end, RunEnd::MaxPairs);
+    let entries = test.results().unwrap();
+    assert_eq!(entries.len(), 2);
+    for e in &entries {
+        assert_eq!((e.winner, e.reason.as_str()), (0, howdah_tourney::RESOURCE_LIMIT), "{e:?}");
+        let detail = e.detail.as_deref().unwrap();
+        assert!(detail.starts_with("two used") && detail.contains("over its limit of 100 MB"), "{detail}");
+        assert!(e.plies < 80, "{e:?}");
+        assert_eq!(e.restarts.iter().map(|r| r.engine).collect::<Vec<_>>(), [1, 0]);
+        // The record says so too.
+        let record = GameRecord::parse(&std::fs::read_to_string(test.path.join(&e.record)).unwrap()).unwrap();
+        assert_eq!(record.tag("Termination"), Some(detail));
+        assert_eq!(record.tag("Result"), Some(if e.game == 1 { "1-0" } else { "0-1" }));
+    }
+    assert_eq!(restarts_of(&events, 1).len(), 2);
+    let summary = howdah_tourney::summarize(None, &entries);
+    assert_eq!(summary.reasons.get(howdah_tourney::RESOURCE_LIMIT), Some(&2));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_largest_engine_forfeits_when_all_are_over_the_budget() {
+    if howdah_aei::process::resident_memory(std::process::id()).is_none() {
+        eprintln!("resident memory can't be read here");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let test = make_test(tmp.path(), "max_pairs = 1", &["--grow-mb", "20", "--think-ms", "200"], "");
+    let options = RunOptions { memory_budget: Some(120 << 20), ..RunOptions::default() };
+    let (end, _) = play_with(&test, options).await;
+    assert_eq!(end, RunEnd::MaxPairs);
+    for e in test.results().unwrap() {
+        assert_eq!((e.winner, e.reason.as_str()), (0, howdah_tourney::RESOURCE_LIMIT), "{e:?}");
+        let detail = e.detail.unwrap();
+        assert!(detail.contains("over the budget of 120 MB; two was the largest"), "{detail}");
+    }
+}

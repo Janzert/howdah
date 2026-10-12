@@ -360,6 +360,96 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   opens a game window in the lobby's own tab with a new session, so the
   followed game was opened on a session made through the bridge.
 
+**As built (engine processes and memory, 2026-10-11):** after test 0003
+(OpFor against OpFor, 2 games at a time on a daemon with 4 slots) had 8
+OpFor processes holding about 25 GB after 10 hours, and the machine ran
+out of memory. 4 of the 8 were idle: a slot kept its engines until it
+moved to another test, so every slot that had played a game still held
+two engines while only two games ran. The rest is protection that works
+for any engine.
+- **Idle slots let their engines go.** A slot that has had nothing to
+  play for 10 s (`IDLE_KEEP`) quits its engines, so the engines running
+  are those of the games being played, plus a slot's for a few seconds
+  between games. A slot that finishes a game usually takes the next one
+  itself and keeps its engines.
+- **Quitting kills the whole engine** (`howdah-aei`, `Engine::quit`):
+  `quit`, up to the grace period, then SIGKILL to its process group
+  (the tourney starts every engine in its own group), and the group is
+  killed after a clean exit too, so nothing the engine started outlives
+  it. Dropping an `Engine` kills its group as well, and `Engine::kill`
+  does it at once. On Windows every engine runs in a job object that
+  kills it and whatever it started when the job is closed or terminated
+  (also when our process ends); the engine joins it right after it
+  starts, so a child started in that instant could escape it.
+- **Memory is read** from the OS (`howdah_aei::process`: `/proc/<pid>/statm`
+  on Linux, the working set on Windows, `proc_pidinfo` on macOS): only the
+  engine's own process, not its children. Each running game's engines
+  are read every 2 s, and each engine after each game. Nothing reads
+  idle engines; they keep their last reading.
+- **Restarts between games.** Never mid-game: after a game, an engine is
+  restarted if its resident memory is more than `growth` times what it
+  was after its first game (default 3, and only once it's past 256 MB),
+  or past `restart_mb` (none by default). These are in the test's
+  `[memory]` table in `test.toml`; with none, the defaults apply, so
+  older tests get them on resume.
+- **The hard limit.** An engine past `limit_mb` (default a quarter of
+  the machine's memory) in a game forfeits it at once: the game is
+  recorded with reason `resourceLimit` (and the record's `Termination`,
+  and the log's detail, saying which engine used how much against what
+  limit), and both engines are restarted, the other one since it may be
+  mid-search. It counts in the statistics as the loss it is, and as a
+  failure towards halting the test (three in a row halt it), but it's
+  counted apart under endings, so a leak shows instead of passing for
+  weak play.
+- **The budget.** All the engines a daemon (or a `run`) holds share a
+  budget, half the machine's memory unless `daemon --memory-budget MB`
+  says otherwise. A slot starts no game while the engines hold 90% of
+  it, quitting its own idle engines first and checking again every 2 s.
+  When the engines together pass the budget mid-game, the largest one
+  forfeits its game as above (the reason names the budget). `status`
+  shows the engines' memory against the budget.
+- **The kernel's cap**, as a backstop for the watchdog, which only reads
+  every 2 s: each engine starts with a cap a quarter (and at least
+  256 MB) above its test's limit, so the watchdog normally ends the game
+  first and says why. On Linux the engine is started through
+  `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0`, when
+  that works (tried once per process); `systemd-run` execs the engine, so
+  its pid, process group and parent-death signal stay as they were. On
+  Windows it's the job object's per-process memory limit, which counts
+  committed memory rather than the working set. macOS has none. An
+  engine the kernel kills shows up as a crash (a forfeit), not as a
+  `resourceLimit`.
+  - Why per engine, and not the daemon in one scope or `setrlimit`:
+    `RLIMIT_AS` limits address space, not memory, and engines (the D
+    runtime, big hash tables) reserve far more than they touch, while
+    Linux ignores `RLIMIT_RSS`. A single scope for the daemon would need
+    the app to start it through `systemd-run` (or the daemon to re-exec
+    itself) and would let the kernel pick the victim, possibly the
+    daemon. A scope per engine kills only the engine that grew, and the
+    budget above caps the total.
+- **Results.** Each game's `results.jsonl` entry has `memoryMb` (both
+  engines' resident memory as it ended) and `restarts` (engine and
+  reason, numbers included); `daemon.log` has the memory at the end of
+  each game's line (`(one/two MB)`, by engine) and a "restarting"
+  line with the reason for each restart, and at startup the budget and
+  how engines are capped.
+- Tested with `aei-test-engine`'s `--grow-mb` (and `--think-ms`, so a
+  game lasts past a reading): a restart after the second game and not
+  the first, a forfeit at the limit, the largest engine forfeiting past
+  the budget, and the kernel's cap killing an engine; with
+  `--ignore-quit` and `--child-pid-file`: `quit`, `kill` and dropping
+  each killing the engine and its child; and idle slots ending with no
+  engines. The Windows and macOS code is only compiled (in CI, and
+  checked with `cargo check --target`), not run.
+- **The app's own engines** (matches and analysis, `controller.rs`)
+  don't use the watchdog: they're one or two engines the user is
+  watching, and they aren't started in a group of their own (so
+  `quit` kills only the process there). Their Windows job (kill on
+  close) fixes engines outliving the app there. If a leaking engine
+  turns up in long analysis sessions, the same pieces apply: start them
+  with `own_process_group` and a `memory_limit`, and read
+  `Engine::resident_memory` between searches.
+
 Later, if wanted: eval-based adjudication (resigning for an engine past
 a score threshold for some turns, using `Profile`'s scores), a setup
 book, tests naming git commits that the daemon builds, remote workers

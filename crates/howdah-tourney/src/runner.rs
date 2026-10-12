@@ -7,6 +7,12 @@
 //! test, for the daemon its queue. A game that ends is written as a record
 //! and appended to the log before the slot moves on, so a run stopped or
 //! killed at any point resumes by playing whatever isn't logged.
+//!
+//! Engines' memory is watched (`memory`): a slot lets its engines go when
+//! it has had nothing to play for [`IDLE_KEEP`], or when the engines
+//! together are near the budget; an engine that has grown too much is
+//! restarted between games, and one past its limit (or the largest, when
+//! all of them are past the budget) forfeits its game.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
@@ -17,13 +23,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use howdah_aei::{Direction, Engine, MatchConfig, MatchEvent, MatchOutcome, play_match};
-use howdah_arimaa::{GameRecord, GameTree, WinReason};
+use howdah_arimaa::{Color, Game, GameRecord, GameResult, GameTree, WinReason};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinSet;
 
 use crate::error::TourneyError;
-use crate::results::{GameEntry, ResultsLog, moves_hash};
+use crate::memory::{self, Engines, Limits, size};
+use crate::results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash};
 use crate::stats::{Decision, Summary, summarize};
 use crate::testdir::TestDir;
 
@@ -34,10 +41,17 @@ const MAX_FAILURES: u32 = 3;
 /// How long to wait before trying again after an engine didn't start.
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 
+/// How long a slot with nothing to play keeps its engines. Idle engines
+/// still hold their memory, so they're let go unless a game comes soon.
+const IDLE_KEEP: Duration = Duration::from_secs(10);
+
 #[derive(Clone, Debug, Default)]
 pub struct RunOptions {
     /// Games at once, instead of the spec's.
     pub concurrency: Option<u32>,
+    /// Bytes all the engines may hold together ([`crate::default_memory_budget`]
+    /// if None).
+    pub memory_budget: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -62,8 +76,8 @@ pub enum RunEvent {
         entry: GameEntry,
         summary: Box<Summary>,
     },
-    /// An engine was restarted after failing, or timing out (it may still
-    /// be searching).
+    /// An engine was restarted after failing, timing out (it may still
+    /// be searching), or using too much memory.
     EngineRestarted {
         engine: usize,
         reason: String,
@@ -160,6 +174,7 @@ pub struct LiveGame {
 pub(crate) struct TestRun {
     pub(crate) dir: TestDir,
     config: MatchConfig,
+    limits: Limits,
     /// Games at once at most.
     concurrency: u32,
     state: Mutex<State>,
@@ -180,6 +195,7 @@ impl TestRun {
         let end = summarize(dir.spec.sprt, &entries).decision.map(RunEnd::Decided);
         Ok(TestRun {
             config: MatchConfig { time_control: dir.spec.time_control(), ..MatchConfig::default() },
+            limits: Limits::new(&dir.spec.memory),
             concurrency: concurrency.max(1),
             state: Mutex::new(State {
                 done: entries.iter().map(|e| (e.pair, e.game)).collect(),
@@ -307,6 +323,11 @@ impl TestRun {
         })
     }
 
+    /// The moves of a running game so far.
+    fn live_moves(&self, game: (u32, u8)) -> Vec<String> {
+        self.state.lock().unwrap().live.get(&game).map(|l| l.moves.clone()).unwrap_or_default()
+    }
+
     fn start_live(&self, game: (u32, u8)) {
         let reserves = self.config.time_control.map(|tc| [tc.starting_reserve(); 2]);
         let live = Live { moves: Vec::new(), used: Vec::new(), reserves, turn_started: Instant::now() };
@@ -395,9 +416,16 @@ pub(crate) trait Picker: Send + Sync + 'static {
     /// A game's files couldn't be written. The test is halted already;
     /// returning the error ends the slot with it.
     fn failed(&self, run: &Arc<TestRun>, error: TourneyError) -> Option<TourneyError>;
+
+    /// The engines every slot has running, and their budget.
+    fn engines(&self) -> &Engines;
+
+    /// Whether slot `slot` should start no more games (it may still be
+    /// waiting for room in the budget).
+    fn stopping(&self, slot: usize) -> bool;
 }
 
-struct OneTest(Arc<TestRun>);
+struct OneTest(Arc<TestRun>, Engines);
 
 impl Picker for OneTest {
     async fn next(&self, _slot: usize, _current: Option<&Arc<TestRun>>) -> Option<(Arc<TestRun>, (u32, u8))> {
@@ -408,6 +436,14 @@ impl Picker for OneTest {
 
     fn failed(&self, _run: &Arc<TestRun>, error: TourneyError) -> Option<TourneyError> {
         Some(error)
+    }
+
+    fn engines(&self) -> &Engines {
+        &self.1
+    }
+
+    fn stopping(&self, _slot: usize) -> bool {
+        self.0.hold.is_stopped()
     }
 }
 
@@ -428,7 +464,8 @@ pub async fn run(
         return Ok(end);
     }
     let test = Arc::new(TestRun { hold: stop.clone(), ..test });
-    let picker = Arc::new(OneTest(test.clone()));
+    let budget = options.memory_budget.unwrap_or_else(memory::default_budget);
+    let picker = Arc::new(OneTest(test.clone(), Engines::new(budget)));
     let mut slots = JoinSet::new();
     for slot in 0..concurrency as usize {
         slots.spawn(play_slot(picker.clone(), slot));
@@ -448,34 +485,66 @@ pub async fn run(
 /// The transcript file an engine is writing to, swapped for each game.
 type LogSink = Arc<Mutex<Option<BufWriter<File>>>>;
 
+/// An engine a slot holds.
+struct Slotted {
+    engine: Engine,
+    /// Its key in [`Engines`].
+    key: u64,
+    /// Its resident memory after its first game.
+    first: Option<u64>,
+}
+
 /// A slot's engines, for the test it's on.
 struct Held {
     run: Arc<TestRun>,
-    engines: [Option<Engine>; 2],
+    engines: [Option<Slotted>; 2],
     sinks: [LogSink; 2],
 }
 
-async fn quit_all(engines: [Option<Engine>; 2]) {
-    for engine in engines.into_iter().flatten() {
-        let _ = engine.quit(Duration::from_secs(5)).await;
+async fn quit_all(engines: &mut [Option<Slotted>; 2], tracked: &Engines) {
+    for slotted in engines.iter_mut().filter_map(Option::take) {
+        tracked.remove(slotted.key);
+        let _ = slotted.engine.quit(Duration::from_secs(5)).await;
     }
 }
 
 pub(crate) async fn play_slot(picker: Arc<impl Picker>, slot: usize) -> Result<(), TourneyError> {
+    let tracked = picker.engines();
     let mut held: Option<Held> = None;
     let mut result = Ok(());
-    while let Some((run, game)) = picker.next(slot, held.as_ref().map(|h| &h.run)).await {
+    loop {
+        if !tracked.room() {
+            // Our idle engines count against the budget too.
+            if let Some(h) = &mut held {
+                quit_all(&mut h.engines, tracked).await;
+            }
+            while !tracked.room() && !picker.stopping(slot) {
+                tokio::time::sleep(memory::POLL).await;
+            }
+        }
+        // Picking is done within one poll, so a timeout can't lose a game.
+        let next =
+            match tokio::time::timeout(IDLE_KEEP, picker.next(slot, held.as_ref().map(|h| &h.run))).await {
+                Ok(next) => next,
+                Err(_) => {
+                    if let Some(h) = &mut held {
+                        quit_all(&mut h.engines, tracked).await;
+                    }
+                    picker.next(slot, held.as_ref().map(|h| &h.run)).await
+                }
+            };
+        let Some((run, game)) = next else { break };
         if held.as_ref().is_some_and(|h| !Arc::ptr_eq(&h.run, &run))
-            && let Some(old) = held.take()
+            && let Some(mut old) = held.take()
         {
-            quit_all(old.engines).await;
+            quit_all(&mut old.engines, tracked).await;
         }
         let h = held.get_or_insert_with(|| Held {
             run: run.clone(),
             engines: [None, None],
             sinks: Default::default(),
         });
-        let played = play_game(&run, game, &mut h.engines, &h.sinks).await;
+        let played = play_game(&run, game, &mut h.engines, &h.sinks, tracked).await;
         run.not_running(game);
         if let Err(e) = played {
             run.halt(e.to_string());
@@ -487,23 +556,34 @@ pub(crate) async fn play_slot(picker: Arc<impl Picker>, slot: usize) -> Result<(
         }
         picker.after_game(&run);
     }
-    if let Some(h) = held {
-        quit_all(h.engines).await;
+    if let Some(mut h) = held {
+        quit_all(&mut h.engines, tracked).await;
     }
     result
+}
+
+/// How a game in play ended.
+enum Played {
+    Game(Result<MatchOutcome, howdah_aei::AeiError>),
+    /// Engine `.0` went over a memory limit, for reason `.1`.
+    OverLimit(usize, String),
 }
 
 async fn play_game(
     ctx: &TestRun,
     (pair, game): (u32, u8),
-    engines: &mut [Option<Engine>; 2],
+    engines: &mut [Option<Slotted>; 2],
     sinks: &[LogSink; 2],
+    tracked: &Engines,
 ) -> Result<(), TourneyError> {
     let mut failed = Vec::new();
     for i in 0..2 {
         if engines[i].is_none() {
             match start_engine(ctx, i, sinks[i].clone()).await {
-                Ok(e) => engines[i] = Some(e),
+                Ok(engine) => {
+                    let key = tracked.add(engine.pid().unwrap_or(0));
+                    engines[i] = Some(Slotted { engine, key, first: None });
+                }
                 Err(error) => {
                     ctx.send(RunEvent::EngineFailedToStart { engine: i, error: error.clone() });
                     failed.push((i, error));
@@ -528,18 +608,24 @@ async fn play_game(
     ctx.start_live((pair, game));
     ctx.send(RunEvent::GameStarted { pair, game });
     let gold = GameEntry::gold_of(game);
-    let [a, b] = engines;
-    let (a, b) = (a.as_mut().expect("started"), b.as_mut().expect("started"));
-    let (g, s) = if gold == 0 { (a, b) } else { (b, a) };
+    let keys = [0, 1].map(|i| engines[i].as_ref().expect("started").key);
     let mut used = Vec::new();
-    let played = play_match(g, s, &ctx.config, |event| {
-        if let MatchEvent::MovePlayed { ply, side, notation, used: u, reserve } = event {
-            used.push(u);
-            let reserves = ctx.live_move((pair, game), side.index(), &notation, u, reserve);
-            ctx.send(RunEvent::MovePlayed { pair, game, ply, notation, used: u, reserves });
+    let played = {
+        let [a, b] = &mut *engines;
+        let (a, b) = (&mut a.as_mut().expect("started").engine, &mut b.as_mut().expect("started").engine);
+        let (g, s) = if gold == 0 { (a, b) } else { (b, a) };
+        let game_played = play_match(g, s, &ctx.config, |event| {
+            if let MatchEvent::MovePlayed { ply, side, notation, used: u, reserve } = event {
+                used.push(u);
+                let reserves = ctx.live_move((pair, game), side.index(), &notation, u, reserve);
+                ctx.send(RunEvent::MovePlayed { pair, game, ply, notation, used: u, reserves });
+            }
+        });
+        tokio::select! {
+            outcome = game_played => Played::Game(outcome),
+            (i, why) = watch_memory(ctx, tracked, keys) => Played::OverLimit(i, why),
         }
-    })
-    .await;
+    };
     for sink in sinks {
         if let Some(mut w) = sink.lock().unwrap().take() {
             let _ = w.flush();
@@ -547,48 +633,141 @@ async fn play_game(
     }
 
     match played {
-        Err(e) => {
+        Played::Game(Err(e)) => {
             // It failed before the first move, so it isn't a game. We
             // can't tell which engine to blame: start both afresh.
             let why = format!("failed before the first move: {e}");
             for i in 0..2 {
-                restart(ctx, engines, i, &why).await;
+                restart(ctx, engines, tracked, i, &why).await;
             }
             ctx.give_back((pair, game), &[0, 1], &why);
         }
-        Ok(outcome) => {
-            let entry = write_game(ctx, pair, game, &outcome, &used)?;
+        Played::Game(Ok(outcome)) => {
+            let mut entry = write_game(ctx, pair, game, &outcome, &used)?;
             let loser = 1 - entry.winner;
             let reason = outcome.result.reason;
             let failed = (reason == WinReason::Forfeit).then_some(loser);
-            let detail = outcome.detail.clone().unwrap_or_default();
+            let mut restarts = Vec::new();
+            if matches!(reason, WinReason::Forfeit | WinReason::Timeout) {
+                restarts.push(Restart { engine: loser, reason: outcome.detail.clone().unwrap_or_default() });
+            }
+            let rss = keys.map(|k| tracked.read(k));
+            for (i, slotted) in engines.iter_mut().enumerate() {
+                let (Some(slotted), Some(rss)) = (slotted, rss[i]) else { continue };
+                let first = *slotted.first.get_or_insert(rss);
+                if !restarts.iter().any(|r| r.engine == i)
+                    && let Some(reason) = ctx.limits.restart_reason(first, rss)
+                {
+                    restarts.push(Restart { engine: i, reason });
+                }
+            }
+            entry.memory_mb = memory_mb(rss);
+            entry.restarts = restarts.clone();
             let summary = ctx.finish(entry.clone(), failed)?;
             ctx.send(RunEvent::GameFinished { entry, summary: Box::new(summary) });
-            if matches!(reason, WinReason::Forfeit | WinReason::Timeout) {
-                restart(ctx, engines, loser, &detail).await;
+            for r in &restarts {
+                restart(ctx, engines, tracked, r.engine, &r.reason).await;
             }
             for (slot, spec) in engines.iter_mut().zip(&ctx.dir.spec.engines) {
                 if spec.restart_each_game
                     && let Some(e) = slot.take()
                 {
-                    let _ = e.quit(Duration::from_secs(5)).await;
+                    tracked.remove(e.key);
+                    let _ = e.engine.quit(Duration::from_secs(5)).await;
                 }
             }
+        }
+        Played::OverLimit(over, why) => {
+            // The game is cut short: the engine over its limit forfeits
+            // it, and both start afresh (the other may be mid-search).
+            let mut record = Game::new();
+            for m in ctx.live_moves((pair, game)) {
+                if record.play_notation(&m).is_err() {
+                    break;
+                }
+            }
+            let side = if over == gold { Color::Gold } else { Color::Silver };
+            let result = GameResult { winner: side.opponent(), reason: WinReason::Forfeit };
+            record.end_game(result).ok();
+            let outcome = MatchOutcome { game: record, result, detail: Some(why.clone()), reserves: None };
+            let mut entry = write_game(ctx, pair, game, &outcome, &used)?;
+            entry.reason = RESOURCE_LIMIT.into();
+            entry.memory_mb = memory_mb(keys.map(|k| tracked.read(k)));
+            let other = 1 - over;
+            let cut = "its game was cut short by the other engine's memory".to_string();
+            entry.restarts =
+                vec![Restart { engine: over, reason: why }, Restart { engine: other, reason: cut }];
+            let summary = ctx.finish(entry.clone(), Some(over))?;
+            ctx.send(RunEvent::GameFinished { entry: entry.clone(), summary: Box::new(summary) });
+            if let Some(e) = engines[over].take() {
+                tracked.remove(e.key);
+                let _ = e.engine.kill().await;
+                ctx.send(RunEvent::EngineRestarted {
+                    engine: over,
+                    reason: entry.restarts[0].reason.clone(),
+                });
+            }
+            restart(ctx, engines, tracked, other, &entry.restarts[1].reason).await;
         }
     }
     Ok(())
 }
 
+/// Reads a running game's engines every [`memory::POLL`] and returns the
+/// one to stop, and why: one over its limit, or the largest of all the
+/// engines when they're over the budget together and it's one of ours.
+async fn watch_memory(ctx: &TestRun, tracked: &Engines, keys: [u64; 2]) -> (usize, String) {
+    let names = &ctx.dir.spec.engines;
+    let limit = ctx.limits.limit;
+    loop {
+        tokio::time::sleep(memory::POLL).await;
+        for (i, key) in keys.iter().enumerate() {
+            if let Some(rss) = tracked.read(*key)
+                && rss > limit
+            {
+                let name = &names[i].name;
+                return (i, format!("{name} used {} resident, over its limit of {}", size(rss), size(limit)));
+            }
+        }
+        if let Some((total, largest)) = tracked.over_budget()
+            && let Some(i) = keys.iter().position(|k| *k == largest)
+        {
+            return (
+                i,
+                format!(
+                    "the engines used {} together, over the budget of {}; {} was the largest",
+                    size(total),
+                    size(tracked.budget()),
+                    names[i].name
+                ),
+            );
+        }
+    }
+}
+
+/// Both readings in MB, if both could be read.
+fn memory_mb(rss: [Option<u64>; 2]) -> Option<[u64; 2]> {
+    Some([rss[0]?, rss[1]?].map(memory::mb))
+}
+
 /// Quits engine `i` (it starts again before the next game).
-async fn restart(ctx: &TestRun, engines: &mut [Option<Engine>; 2], i: usize, reason: &str) {
+async fn restart(
+    ctx: &TestRun,
+    engines: &mut [Option<Slotted>; 2],
+    tracked: &Engines,
+    i: usize,
+    reason: &str,
+) {
     if let Some(e) = engines[i].take() {
-        let _ = e.quit(Duration::from_secs(2)).await;
+        tracked.remove(e.key);
+        let _ = e.engine.quit(Duration::from_secs(2)).await;
         ctx.send(RunEvent::EngineRestarted { engine: i, reason: reason.to_string() });
     }
 }
 
 async fn start_engine(ctx: &TestRun, i: usize, sink: LogSink) -> Result<Engine, String> {
-    let config = ctx.dir.engine_config(i);
+    // The kernel's cap, a backstop for the watchdog's limit.
+    let config = ctx.dir.engine_config(i).memory_limit(ctx.limits.kernel_cap());
     let transcript = ctx.dir.spec.engine_logs.then(|| {
         Box::new(move |d: Direction, line: &str| {
             if let Some(w) = sink.lock().unwrap().as_mut() {
@@ -654,6 +833,8 @@ fn write_game(
         record: name,
         moves_hash: moves_hash(notations.iter().map(String::as_str)),
         finished: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+        memory_mb: None,
+        restarts: Vec::new(),
     })
 }
 
@@ -671,6 +852,8 @@ pub(crate) fn reason_from_name(name: &str) -> Option<WinReason> {
     ]
     .into_iter()
     .find(|r| reason_name(*r) == name)
+    // A forfeit for going over a memory limit.
+    .or((name == RESOURCE_LIMIT).then_some(WinReason::Forfeit))
 }
 
 pub(crate) fn reason_name(reason: WinReason) -> &'static str {

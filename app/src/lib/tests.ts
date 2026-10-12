@@ -43,3 +43,13 @@ export function pairCount(value: number | string | null | undefined): number | n
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
+
+/** How a test's game ended, in words: the log's reason names, with
+ * `resourceLimit` (a forfeit for going over a memory limit) spelled out. */
+export function endingText(reason: string): string {
+  const words: Record<string, string> = {
+    illegalMove: 'illegal move',
+    resourceLimit: 'a memory-limit forfeit',
+  };
+  return words[reason] ?? reason;
+}
