@@ -128,6 +128,11 @@ impl Client {
         self.post(&format!("/tests/{id}/priority"), &json!({ "priority": priority })).await
     }
 
+    /// Changes how many of a test's games may run at once.
+    pub async fn set_concurrency(&self, id: &str, concurrency: u32) -> Result<TestInfo, ClientError> {
+        self.post(&format!("/tests/{id}/concurrency"), &json!({ "concurrency": concurrency })).await
+    }
+
     pub async fn set_max_pairs(&self, id: &str, max_pairs: Option<u32>) -> Result<TestInfo, ClientError> {
         self.post(&format!("/tests/{id}/max-pairs"), &json!({ "maxPairs": max_pairs })).await
     }

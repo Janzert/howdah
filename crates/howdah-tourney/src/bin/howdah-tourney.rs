@@ -15,6 +15,7 @@
 //! howdah-tourney pause|resume|stop ID
 //! howdah-tourney priority ID N
 //! howdah-tourney max-pairs ID N|none
+//! howdah-tourney concurrency ID N
 //! howdah-tourney slots N
 //! howdah-tourney shutdown [--now]
 //! ```
@@ -50,6 +51,7 @@ const USAGE: &str = "usage:
   howdah-tourney pause|resume|stop ID
   howdah-tourney priority ID N
   howdah-tourney max-pairs ID N|none
+  howdah-tourney concurrency ID N
   howdah-tourney slots N
   howdah-tourney shutdown [--now]
 (any command takes --data-dir DIR for the daemon's data directory)";
@@ -140,6 +142,12 @@ async fn command(args: &[String], data: &Path) -> Result<(), String> {
         ["max-pairs", id, n] => {
             let n = if *n == "none" { None } else { Some(number(n, "max pairs")?) };
             let info = client(data)?.set_max_pairs(id, n).await.map_err(|e| e.to_string())?;
+            println!("{}", list_line(&info));
+            Ok(())
+        }
+        ["concurrency", id, n] => {
+            let n = number(n, "games at once")?;
+            let info = client(data)?.set_concurrency(id, n).await.map_err(|e| e.to_string())?;
             println!("{}", list_line(&info));
             Ok(())
         }

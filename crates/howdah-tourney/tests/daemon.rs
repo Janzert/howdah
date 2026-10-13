@@ -155,6 +155,29 @@ async fn a_halted_test_can_be_resumed_and_a_finished_one_extended() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn games_at_once_can_change_and_stay_changed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::start(tmp.path(), 2).unwrap();
+    let t = daemon.submit(spec("c", "max_pairs = 3\nconcurrency = 1", &["--think-ms", "100"]), 0).unwrap();
+    assert_eq!(t.concurrency, 1);
+    assert!(daemon.set_concurrency(&t.id, 0).unwrap_err().to_string().contains("at least 1"));
+    assert_eq!(daemon.set_concurrency(&t.id, 2).unwrap().concurrency, 2);
+    // The second slot takes a game too.
+    let both = tokio::time::timeout(Duration::from_secs(20), async {
+        while daemon.info(&t.id).unwrap().running.len() < 2 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    });
+    both.await.expect("two games at once");
+    daemon.pause(&t.id).unwrap();
+    close(&daemon).await;
+
+    let daemon = Daemon::start(tmp.path(), 0).unwrap();
+    assert_eq!(daemon.info(&t.id).unwrap().concurrency, 2, "kept in state.json");
+    close(&daemon).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn refusals() {
     let tmp = tempfile::tempdir().unwrap();
     let daemon = Daemon::start(tmp.path(), 0).unwrap();

@@ -86,6 +86,9 @@ struct SavedState {
     status: TestStatus,
     priority: i32,
     max_pairs: Option<u32>,
+    /// Games at once, when changed from the spec's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    concurrency: Option<u32>,
     /// Seconds since the Unix epoch.
     submitted: u64,
     end: Option<RunEnd>,
@@ -235,7 +238,7 @@ impl Entry {
             priority: self.saved.priority,
             max_pairs: self.saved.max_pairs,
             sprt: spec.sprt,
-            concurrency: spec.concurrency,
+            concurrency: self.run.concurrency(),
             running: self.run.running(),
             end: self.saved.end.clone(),
             submitted: self.saved.submitted,
@@ -380,8 +383,14 @@ impl Daemon {
         let max_pairs = spec.max_pairs;
         let path = tests_dir.join(&id);
         TestDir::create(spec, &self.0.data_dir, &path)?;
-        let saved =
-            SavedState { status: TestStatus::Active, priority, max_pairs, submitted: now(), end: None };
+        let saved = SavedState {
+            status: TestStatus::Active,
+            priority,
+            max_pairs,
+            concurrency: None,
+            submitted: now(),
+            end: None,
+        };
         let entry = load_entry_with(&self.0, &path, saved)?;
         entry.save()?;
         let info = entry.info();
@@ -476,6 +485,19 @@ impl Daemon {
     pub fn set_priority(&self, id: &str, priority: i32) -> Result<TestInfo, TourneyError> {
         self.update(id, |e| {
             e.saved.priority = priority;
+            Ok(())
+        })
+    }
+
+    /// Changes how many of the test's games may run at once. Games
+    /// beyond a lowered limit finish; a raised one takes free slots.
+    pub fn set_concurrency(&self, id: &str, concurrency: u32) -> Result<TestInfo, TourneyError> {
+        if concurrency == 0 {
+            return Err(TourneyError::Refused("games at once must be at least 1".into()));
+        }
+        self.update(id, |e| {
+            e.run.set_concurrency(concurrency);
+            e.saved.concurrency = Some(concurrency);
             Ok(())
         })
     }
@@ -649,6 +671,7 @@ fn load_entry(inner: &Arc<Inner>, path: &Path) -> Result<Entry, TourneyError> {
             status: TestStatus::Active,
             priority: 0,
             max_pairs: TestDir::open(path)?.spec.max_pairs,
+            concurrency: None,
             submitted: now(),
             end: None,
         },
@@ -666,7 +689,7 @@ fn load_entry(inner: &Arc<Inner>, path: &Path) -> Result<Entry, TourneyError> {
 fn load_entry_with(inner: &Arc<Inner>, path: &Path, saved: SavedState) -> Result<Entry, TourneyError> {
     let dir = TestDir::open(path)?;
     let id = path.file_name().expect("a test's directory has a name").to_string_lossy().into_owned();
-    let concurrency = dir.spec.concurrency;
+    let concurrency = saved.concurrency.unwrap_or(dir.spec.concurrency);
     let run = TestRun::open(dir, concurrency, event_fn(inner, &id))?;
     run.set_max_pairs(saved.max_pairs);
     if saved.status != TestStatus::Active {

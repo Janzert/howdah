@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::future::Future;
 use std::io::{BufWriter, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -207,7 +207,7 @@ pub(crate) struct TestRun {
     config: MatchConfig,
     limits: Limits,
     /// Games at once at most.
-    concurrency: u32,
+    concurrency: AtomicU32,
     state: Mutex<State>,
     /// Set while the test should start no more games.
     pub(crate) hold: StopHandle,
@@ -227,7 +227,7 @@ impl TestRun {
         Ok(TestRun {
             config: MatchConfig { time_control: dir.spec.time_control(), ..MatchConfig::default() },
             limits: Limits::new(&dir.spec.memory),
-            concurrency: concurrency.max(1),
+            concurrency: AtomicU32::new(concurrency.max(1)),
             state: Mutex::new(State {
                 done: entries.iter().map(|e| (e.pair, e.game)).collect(),
                 entries,
@@ -249,7 +249,7 @@ impl TestRun {
     /// Takes the next game to play, if the test has one to start now.
     pub(crate) fn next_game(&self) -> Option<(u32, u8)> {
         let mut st = self.state.lock().unwrap();
-        if st.end.is_some() || self.hold.is_stopped() || st.running.len() as u32 >= self.concurrency {
+        if st.end.is_some() || self.hold.is_stopped() || st.running.len() as u32 >= self.concurrency() {
             return None;
         }
         let g = match st.retry.pop_front() {
@@ -301,6 +301,16 @@ impl TestRun {
 
     pub(crate) fn summary(&self) -> Summary {
         summarize(self.dir.spec.sprt, &self.state.lock().unwrap().entries)
+    }
+
+    /// Games at once at most.
+    pub(crate) fn concurrency(&self) -> u32 {
+        self.concurrency.load(Ordering::SeqCst)
+    }
+
+    /// Changes the games at once; games beyond a lowered limit finish.
+    pub(crate) fn set_concurrency(&self, n: u32) {
+        self.concurrency.store(n.max(1), Ordering::SeqCst);
     }
 
     pub(crate) fn set_max_pairs(&self, max_pairs: Option<u32>) {

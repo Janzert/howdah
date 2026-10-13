@@ -14,7 +14,8 @@
 //!   on.
 //! - `POST /tests/{id}/pause`, `/resume`, `/stop`; `POST
 //!   /tests/{id}/priority` `{"priority": n}`; `POST /tests/{id}/max-pairs`
-//!   `{"maxPairs": n | null}`.
+//!   `{"maxPairs": n | null}`; `POST /tests/{id}/concurrency`
+//!   `{"concurrency": n}` (games at once).
 //! - `POST /slots` `{"slots": n}`; `POST /shutdown` `{"now": bool}`.
 //! - `GET /events`: server-sent events, each a [`DaemonEvent`] named by
 //!   its `type`.
@@ -123,6 +124,7 @@ pub async fn serve(daemon: Daemon, listener: TcpListener, info: DaemonInfo) -> R
         .route("/tests/{id}/stop", post(stop))
         .route("/tests/{id}/priority", post(priority))
         .route("/tests/{id}/max-pairs", post(max_pairs))
+        .route("/tests/{id}/concurrency", post(concurrency))
         .route("/slots", post(slots))
         .route("/shutdown", post(shutdown))
         .route("/events", get(events))
@@ -254,6 +256,21 @@ async fn priority(
 ) -> ApiResult<crate::daemon::TestInfo> {
     let req: Priority = body(&bytes)?;
     Ok(Json(s.daemon.set_priority(&id, req.priority)?))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Concurrency {
+    concurrency: u32,
+}
+
+async fn concurrency(
+    State(s): State<AppState>,
+    UrlPath(id): UrlPath<String>,
+    bytes: Bytes,
+) -> ApiResult<crate::daemon::TestInfo> {
+    let req: Concurrency = body(&bytes)?;
+    Ok(Json(s.daemon.set_concurrency(&id, req.concurrency)?))
 }
 
 #[derive(Deserialize)]
