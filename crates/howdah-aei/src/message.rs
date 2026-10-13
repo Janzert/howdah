@@ -21,7 +21,8 @@ pub enum EngineMessage {
 }
 
 /// `info <type> <value>`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Info {
     /// Centi-rabbits from the mover's point of view.
     Score(i32),

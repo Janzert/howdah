@@ -1,5 +1,6 @@
 //! A client for the daemon's HTTP API (see [`crate::server`]).
 
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use reqwest::header;
@@ -7,7 +8,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
-use crate::daemon::{DaemonEvent, DaemonInfo, DaemonStatus, INFO_FILE, TestInfo};
+use crate::daemon::{DaemonEvent, DaemonInfo, DaemonStatus, GameOutput, INFO_FILE, TestInfo};
 use crate::results::GameEntry;
 use crate::runner::LiveGame;
 use crate::spec::TestSpec;
@@ -142,19 +143,34 @@ impl Client {
     /// The daemon's events from now on.
     pub async fn events(&self) -> Result<EventStream, ClientError> {
         let response = self.send(self.http.get(format!("{}/events", self.base))).await?;
-        Ok(EventStream { response, buf: Vec::new() })
+        Ok(EventStream { response, buf: Vec::new(), item: PhantomData })
+    }
+
+    /// A running game's engine output from now on (what came before is in
+    /// [`Client::live`]).
+    pub async fn output(
+        &self,
+        id: &str,
+        pair: u32,
+        game: u8,
+    ) -> Result<EventStream<GameOutput>, ClientError> {
+        let url = format!("{}/tests/{id}/output/{pair}/{game}", self.base);
+        let response = self.send(self.http.get(url)).await?;
+        Ok(EventStream { response, buf: Vec::new(), item: PhantomData })
     }
 }
 
-/// Server-sent events from the daemon.
-pub struct EventStream {
+/// Server-sent events from the daemon: [`DaemonEvent`]s, or a game's
+/// [`GameOutput`].
+pub struct EventStream<T = DaemonEvent> {
     response: reqwest::Response,
     buf: Vec<u8>,
+    item: PhantomData<T>,
 }
 
-impl EventStream {
+impl<T: DeserializeOwned> EventStream<T> {
     /// The next event; None when the daemon closes the stream.
-    pub async fn next(&mut self) -> Option<Result<DaemonEvent, ClientError>> {
+    pub async fn next(&mut self) -> Option<Result<T, ClientError>> {
         loop {
             if let Some(end) = self.buf.windows(2).position(|w| w == b"\n\n") {
                 let block: Vec<u8> = self.buf.drain(..end + 2).collect();

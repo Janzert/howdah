@@ -255,7 +255,7 @@ fn show(dir: &Path) -> Result<(), String> {
 
 fn print_event(names: &[String; 2], event: &RunEvent) {
     match event {
-        RunEvent::GameStarted { .. } | RunEvent::MovePlayed { .. } => {}
+        RunEvent::GameStarted { .. } | RunEvent::MovePlayed { .. } | RunEvent::EngineOutput { .. } => {}
         RunEvent::GameFinished { entry, summary } => print_game("", names, entry, Some(summary)),
         RunEvent::EngineRestarted { engine, reason } => {
             println!("       restarting {} ({reason})", names[*engine]);

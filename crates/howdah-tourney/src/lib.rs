@@ -31,13 +31,13 @@ pub mod client;
 pub mod server;
 
 pub use daemon::{
-    DATA_DIR_ENV, Daemon, DaemonEvent, DaemonInfo, DaemonStatus, INFO_FILE, RunningGame, TestInfo,
-    TestStatus, default_data_dir,
+    DATA_DIR_ENV, Daemon, DaemonEvent, DaemonInfo, DaemonStatus, GameOutput, INFO_FILE, RunningGame,
+    TestInfo, TestStatus, default_data_dir,
 };
 pub use error::TourneyError;
 pub use memory::default_budget as default_memory_budget;
 pub use results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash, read_results};
-pub use runner::{LiveGame, RunEnd, RunEvent, RunOptions, StopHandle, run};
+pub use runner::{EngineLine, LiveGame, RunEnd, RunEvent, RunOptions, StopHandle, run};
 pub use spec::{EngineSpec, MemorySpec, OptionValue, SprtSpec, TestSpec};
 pub use stats::{Decision, Summary, elo_from_score, score_from_elo, summarize};
 pub use testdir::TestDir;

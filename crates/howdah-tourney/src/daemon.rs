@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use howdah_arimaa::Color;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
@@ -25,7 +26,7 @@ use tokio::task::JoinHandle;
 use crate::error::TourneyError;
 use crate::memory::{self, Engines};
 use crate::results::GameEntry;
-use crate::runner::{EventFn, LiveGame, Picker, RunEnd, RunEvent, TestRun, play_slot};
+use crate::runner::{EngineLine, EventFn, LiveGame, Picker, RunEnd, RunEvent, TestRun, play_slot};
 use crate::spec::{SprtSpec, TestSpec};
 use crate::stats::Summary;
 use crate::testdir::{TestDir, slug};
@@ -188,6 +189,18 @@ pub enum DaemonEvent {
     },
 }
 
+/// An engine's search output in a running game, from the game's output
+/// stream (kept apart from [`DaemonEvent`]s, which every client gets).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameOutput {
+    pub test: String,
+    pub pair: u32,
+    pub game: u8,
+    pub side: Color,
+    pub line: EngineLine,
+}
+
 impl DaemonEvent {
     /// The event's `type`, as the server names its server-sent events.
     pub fn name(&self) -> &'static str {
@@ -265,6 +278,8 @@ struct Inner {
     /// Wakes idle slots when there may be a game for them.
     wake: Notify,
     events: broadcast::Sender<DaemonEvent>,
+    /// Engine output from every running game.
+    output: broadcast::Sender<GameOutput>,
     closing: AtomicBool,
     engines: Engines,
 }
@@ -291,12 +306,14 @@ impl Daemon {
         let tests_dir = data_dir.join("tests");
         std::fs::create_dir_all(&tests_dir).map_err(TourneyError::io(&tests_dir))?;
         let (events, _) = broadcast::channel(1024);
+        let (output, _) = broadcast::channel(4096);
         let inner = Arc::new(Inner {
             data_dir: data_dir.to_path_buf(),
             tests: Mutex::new(Vec::new()),
             slots: Mutex::new(Slots { target: 0, handles: Vec::new(), alive: Vec::new() }),
             wake: Notify::new(),
             events,
+            output,
             closing: AtomicBool::new(false),
             engines: Engines::new(memory_budget),
         });
@@ -325,6 +342,11 @@ impl Daemon {
 
     pub fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {
         self.0.events.subscribe()
+    }
+
+    /// The engines' search output in every running game.
+    pub fn subscribe_output(&self) -> broadcast::Receiver<GameOutput> {
+        self.0.output.subscribe()
     }
 
     /// Adds a test. Its engines' programs must be absolute paths (the
@@ -655,10 +677,16 @@ fn load_entry_with(inner: &Arc<Inner>, path: &Path, saved: SavedState) -> Result
 
 fn event_fn(inner: &Arc<Inner>, id: &str) -> EventFn {
     let events = inner.events.clone();
+    let output = inner.output.clone();
     let test = id.to_string();
     Box::new(move |e| {
         let test = test.clone();
         let event = match e {
+            RunEvent::EngineOutput { pair, game, side, line } => {
+                // Nobody may be listening.
+                let _ = output.send(GameOutput { test, pair, game, side, line });
+                return;
+            }
             RunEvent::GameStarted { pair, game } => DaemonEvent::GameStarted { test, pair, game },
             RunEvent::MovePlayed { pair, game, ply, notation, used, reserves } => DaemonEvent::MovePlayed {
                 test,

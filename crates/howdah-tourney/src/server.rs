@@ -8,7 +8,10 @@
 //! - `GET /tests/{id}/games`: its [`GameEntry`]s; `GET
 //!   /tests/{id}/games/{pair}/{game}`: a game's record, as text; `GET
 //!   /tests/{id}/live/{pair}/{game}`: a running game so far, a
-//!   [`LiveGame`] (later moves come as `movePlayed` events).
+//!   [`LiveGame`] (later moves come as `movePlayed` events); `GET
+//!   /tests/{id}/output/{pair}/{game}`: server-sent events, each a
+//!   [`GameOutput`] (`engineOutput`), the game's engine output from now
+//!   on.
 //! - `POST /tests/{id}/pause`, `/resume`, `/stop`; `POST
 //!   /tests/{id}/priority` `{"priority": n}`; `POST /tests/{id}/max-pairs`
 //!   `{"maxPairs": n | null}`.
@@ -36,7 +39,7 @@ use tokio::net::TcpListener;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
 
-use crate::daemon::{Daemon, DaemonEvent, DaemonInfo, INFO_FILE};
+use crate::daemon::{Daemon, DaemonEvent, DaemonInfo, GameOutput, INFO_FILE};
 use crate::error::TourneyError;
 use crate::spec::TestSpec;
 
@@ -114,6 +117,7 @@ pub async fn serve(daemon: Daemon, listener: TcpListener, info: DaemonInfo) -> R
         .route("/tests/{id}/games", get(games))
         .route("/tests/{id}/games/{pair}/{game}", get(record))
         .route("/tests/{id}/live/{pair}/{game}", get(live))
+        .route("/tests/{id}/output/{pair}/{game}", get(output))
         .route("/tests/{id}/pause", post(pause))
         .route("/tests/{id}/resume", post(resume))
         .route("/tests/{id}/stop", post(stop))
@@ -205,6 +209,19 @@ async fn live(
     UrlPath((id, pair, game)): UrlPath<(String, u32, u8)>,
 ) -> ApiResult<crate::runner::LiveGame> {
     Ok(Json(s.daemon.live(&id, pair, game)?))
+}
+
+async fn output(
+    State(s): State<AppState>,
+    UrlPath((id, pair, game)): UrlPath<(String, u32, u8)>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let stream = BroadcastStream::new(s.daemon.subscribe_output()).filter_map(move |o| {
+        // As with `/events`, a client too slow to keep up misses lines.
+        let o: GameOutput = o.ok()?;
+        (o.test == id && o.pair == pair && o.game == game)
+            .then(|| Ok(Event::default().event("engineOutput").json_data(&o).expect("output serializes")))
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 async fn pause(

@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use howdah_aei::{Direction, Engine, MatchConfig, MatchEvent, MatchOutcome, play_match};
+use howdah_aei::{Direction, Engine, Info, MatchConfig, MatchEvent, MatchOutcome, play_match};
 use howdah_arimaa::{Color, Game, GameRecord, GameResult, GameTree, WinReason};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
@@ -54,6 +54,19 @@ pub struct RunOptions {
     pub memory_budget: Option<u64>,
 }
 
+/// Something an engine said while searching in a running game, as
+/// `play_match` reports it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EngineLine {
+    Info(Info),
+    Log(String),
+}
+
+/// How many of each side's latest lines a running game keeps, for a
+/// viewer joining it.
+const LINES_KEPT: usize = 150;
+
 #[derive(Clone, Debug)]
 pub enum RunEvent {
     GameStarted {
@@ -75,6 +88,13 @@ pub enum RunEvent {
     GameFinished {
         entry: GameEntry,
         summary: Box<Summary>,
+    },
+    /// An engine's search output in a running game.
+    EngineOutput {
+        pair: u32,
+        game: u8,
+        side: Color,
+        line: EngineLine,
     },
     /// An engine was restarted after failing, timing out (it may still
     /// be searching), or using too much memory.
@@ -149,6 +169,10 @@ struct Live {
     reserves: Option<[Duration; 2]>,
     /// When the side to move's turn started.
     turn_started: Instant,
+    /// The engines' `id name`s (gold, silver).
+    ids: [Option<String>; 2],
+    /// Each side's latest search output.
+    output: [VecDeque<EngineLine>; 2],
 }
 
 /// A running game as far as it has got, for a viewer joining it.
@@ -168,6 +192,13 @@ pub struct LiveGame {
     pub reserves_ms: Option<[u64; 2]>,
     /// Milliseconds the side to move has spent on this turn.
     pub turn_elapsed_ms: u64,
+    /// The engines' `id name`s (gold, silver), as they gave them.
+    #[serde(default)]
+    pub engine_ids: [Option<String>; 2],
+    /// Each side's latest search output (gold, silver), oldest first;
+    /// later lines come from the game's output stream.
+    #[serde(default)]
+    pub output: [Vec<EngineLine>; 2],
 }
 
 /// One test's games in play.
@@ -320,6 +351,8 @@ impl TestRun {
             used_ms: live.used.iter().copied().map(ms).collect(),
             reserves_ms: live.reserves.map(|r| r.map(ms)),
             turn_elapsed_ms: ms(live.turn_started.elapsed()),
+            engine_ids: live.ids.clone(),
+            output: live.output.clone().map(Vec::from),
         })
     }
 
@@ -328,10 +361,31 @@ impl TestRun {
         self.state.lock().unwrap().live.get(&game).map(|l| l.moves.clone()).unwrap_or_default()
     }
 
-    fn start_live(&self, game: (u32, u8)) {
+    fn start_live(&self, game: (u32, u8), ids: [Option<String>; 2]) {
         let reserves = self.config.time_control.map(|tc| [tc.starting_reserve(); 2]);
-        let live = Live { moves: Vec::new(), used: Vec::new(), reserves, turn_started: Instant::now() };
+        let live = Live {
+            moves: Vec::new(),
+            used: Vec::new(),
+            reserves,
+            turn_started: Instant::now(),
+            ids,
+            output: Default::default(),
+        };
         self.state.lock().unwrap().live.insert(game, live);
+    }
+
+    /// Keeps an engine's search output in a running game, and passes it on.
+    fn live_output(&self, game: (u32, u8), side: Color, line: EngineLine) {
+        {
+            let mut st = self.state.lock().unwrap();
+            let Some(live) = st.live.get_mut(&game) else { return };
+            let kept = &mut live.output[side.index()];
+            if kept.len() == LINES_KEPT {
+                kept.pop_front();
+            }
+            kept.push_back(line.clone());
+        }
+        self.send(RunEvent::EngineOutput { pair: game.0, game: game.1, side, line });
     }
 
     /// Records a move in a running game; returns both reserves after it.
@@ -605,21 +659,25 @@ async fn play_game(
         }
     }
 
-    ctx.start_live((pair, game));
-    ctx.send(RunEvent::GameStarted { pair, game });
     let gold = GameEntry::gold_of(game);
+    let ids = [gold, 1 - gold].map(|i| engines[i].as_ref().and_then(|e| e.engine.id().name.clone()));
+    ctx.start_live((pair, game), ids);
+    ctx.send(RunEvent::GameStarted { pair, game });
     let keys = [0, 1].map(|i| engines[i].as_ref().expect("started").key);
     let mut used = Vec::new();
     let played = {
         let [a, b] = &mut *engines;
         let (a, b) = (&mut a.as_mut().expect("started").engine, &mut b.as_mut().expect("started").engine);
         let (g, s) = if gold == 0 { (a, b) } else { (b, a) };
-        let game_played = play_match(g, s, &ctx.config, |event| {
-            if let MatchEvent::MovePlayed { ply, side, notation, used: u, reserve } = event {
+        let game_played = play_match(g, s, &ctx.config, |event| match event {
+            MatchEvent::MovePlayed { ply, side, notation, used: u, reserve } => {
                 used.push(u);
                 let reserves = ctx.live_move((pair, game), side.index(), &notation, u, reserve);
                 ctx.send(RunEvent::MovePlayed { pair, game, ply, notation, used: u, reserves });
             }
+            MatchEvent::Info { side, info } => ctx.live_output((pair, game), side, EngineLine::Info(info)),
+            MatchEvent::Log { side, text } => ctx.live_output((pair, game), side, EngineLine::Log(text)),
+            _ => {}
         });
         tokio::select! {
             outcome = game_played => Played::Game(outcome),

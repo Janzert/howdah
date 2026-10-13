@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use howdah_arimaa::Color;
 use howdah_tourney::client::{Client, ClientError};
-use howdah_tourney::{Daemon, DaemonEvent, DaemonInfo, INFO_FILE, TestSpec, TestStatus, server};
+use howdah_tourney::{Daemon, DaemonEvent, DaemonInfo, EngineLine, INFO_FILE, TestSpec, TestStatus, server};
 
 fn test_engine() -> PathBuf {
     let exe = std::env::current_exe().unwrap();
@@ -87,4 +88,46 @@ async fn a_test_through_the_http_api() {
     tokio::time::timeout(Duration::from_secs(30), serving).await.unwrap().unwrap().unwrap();
     assert!(!tmp.path().join(INFO_FILE).exists());
     assert!(matches!(Client::connect(tmp.path()), Err(ClientError::NotRunning(_))));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_games_engine_output() {
+    let tmp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::start(tmp.path(), 0).unwrap();
+    let (listener, info) = server::bind(tmp.path(), 0).await.unwrap();
+    let serving = tokio::spawn(server::serve(daemon, listener, info));
+    let client = Client::connect(tmp.path()).unwrap();
+    let mut events = client.events().await.unwrap();
+    let program = test_engine().display().to_string().replace('\\', "/");
+    let spec = TestSpec::parse(&format!(
+        "name = \"output\"\ntime_control = \"0s/30s/100/0/6t\"\nmax_pairs = 1\nconcurrency = 1\n\
+         [[engines]]\nname = \"one\"\nprogram = \"{program}\"\nargs = [\"--think-ms\", \"200\", \"--name\", \"Uno\"]\n\
+         [[engines]]\nname = \"two\"\nprogram = \"{program}\"\nargs = [\"--think-ms\", \"200\"]\n"
+    ))
+    .unwrap();
+    let test = client.submit(&spec, 0).await.unwrap();
+    client.set_slots(1).await.unwrap();
+
+    let wait = tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            if let DaemonEvent::GameStarted { pair, game, .. } = events.next().await.unwrap().unwrap() {
+                break (pair, game);
+            }
+        }
+    });
+    let (pair, game) = wait.await.expect("a game started");
+    let mut output = client.output(&test.id, pair, game).await.unwrap();
+    let line = tokio::time::timeout(Duration::from_secs(30), output.next()).await.expect("output came");
+    let line = line.unwrap().unwrap();
+    assert_eq!((line.test.as_str(), line.pair, line.game), (test.id.as_str(), pair, game));
+    assert!(matches!(&line.line, EngineLine::Info(_) | EngineLine::Log(_)), "{line:?}");
+
+    let live = client.live(&test.id, pair, game).await.unwrap();
+    // Game 1 has engine one as gold.
+    assert_eq!(live.engine_ids, [Some("Uno".into()), Some("aei-test-engine".into())]);
+    let side = if line.side == Color::Gold { 0 } else { 1 };
+    assert!(live.output[side].contains(&line.line), "{live:?}");
+
+    client.shutdown(true).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(30), serving).await.unwrap().unwrap().unwrap();
 }
