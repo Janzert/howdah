@@ -231,6 +231,10 @@ impl Tourney {
             s.set_test_game(TestGameTag { test: id.to_string(), name: info.name.clone(), pair, game });
             let generation = s.generation();
             s.sync_remote(generation, &live.moves, live.used_ms.last().map(|ms| Duration::from_millis(*ms)))?;
+            // The moves so far arrive together, without times; the
+            // daemon has them all.
+            let used: Vec<Duration> = live.used_ms.iter().map(|&ms| Duration::from_millis(ms)).collect();
+            s.fill_move_times(generation, &used);
             if let Some(r) = live.reserves_ms {
                 let _ = s.set_remote_clock(generation, clock(r, Duration::from_millis(live.turn_elapsed_ms)));
             }
