@@ -221,9 +221,10 @@ plans the engine test and tournament runner.
   - `Daemon` (`daemon.rs`): a queue of tests in a data directory
     (`default_data_dir`: `$HOWDAH_TOURNEY_DIR`, else `tourney/` in the
     app's local data dir), each with a `state.json` (`TestStatus`,
-    priority, pair limit, end), sharing `slots`. Slots run `play_slot`
-    with the daemon as its `Picker` (highest priority first; a test's
-    `concurrency` caps it); `run` uses the same slots with a one-test
+    priority, pair limit, games at once if changed, end), sharing `slots`.
+    Slots run `play_slot` with the daemon as its `Picker` (highest
+    priority first; a test's `concurrency` caps it, and
+    `set_concurrency` changes it while it runs); `run` uses the same slots with a one-test
     picker. `TestRun` (`runner.rs`) is one test in play. Clients see
     `TestInfo`s and `DaemonEvent`s (a broadcast).
   - `server` (feature `server`): the HTTP API on 127.0.0.1, with a

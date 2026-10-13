@@ -262,6 +262,9 @@ function makeApi(sid: () => SessionId | null) {
     tourneyControl: (id: string, action: 'pause' | 'resume' | 'stop') =>
       invoke<TestView>('tourney_control', { id, action }),
     tourneySetPriority: (id: string, priority: number) => invoke<TestView>('tourney_set_priority', { id, priority }),
+    /** Changes how many of a test's games may run at once. */
+    tourneySetConcurrency: (id: string, concurrency: number) =>
+      invoke<TestView>('tourney_set_concurrency', { id, concurrency }),
     /** Changes a test's pair limit (null: until the SPRT decides). */
     tourneySetMaxPairs: (id: string, maxPairs: number | null) =>
       invoke<TestView>('tourney_set_max_pairs', { id, maxPairs }),

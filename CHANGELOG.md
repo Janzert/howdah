@@ -20,7 +20,8 @@ young).
   the SPRT) as games finish. Each test's games open in a game window: a
   running one follows the game live with its clocks, a finished one
   opens as a record. Tests can be paused, resumed, stopped and
-  reprioritized, and the daemon given more or fewer games at once.
+  reprioritized, their pair limit and games at once changed, and the
+  daemon given more or fewer games at once.
   A test game's window title names the test and the game (pair.game),
   and Follow opens a window that moves on, 15 s after each game ends,
   to the test's newest game not open in another window. A running test

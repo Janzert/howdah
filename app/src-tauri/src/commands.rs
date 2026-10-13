@@ -669,6 +669,15 @@ pub async fn tourney_set_priority(
 }
 
 #[tauri::command]
+pub async fn tourney_set_concurrency(
+    state: State<'_, Backend>,
+    id: String,
+    concurrency: u32,
+) -> Result<TestView, ApiError> {
+    state.tourney_set_concurrency(&id, concurrency).await
+}
+
+#[tauri::command]
 pub async fn tourney_set_max_pairs(
     state: State<'_, Backend>,
     id: String,

@@ -270,7 +270,8 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
 - The data directory is `$HOWDAH_TOURNEY_DIR`, else `tourney/` in the
   app's local data directory (beside `engines/`), or `--data-dir`.
   Tests are `tests/<NNNN>-<name>/`. Instead of an events file, each
-  test's changes (status, priority, pair limit, end) go in `state.json`
+  test's changes (status, priority, pair limit, games at once when
+  changed from the spec's, end) go in `state.json`
   beside `test.toml`, rewritten whole (written to a temporary file and
   renamed).
 - Statuses are active, paused and finished, a finished test saying why:

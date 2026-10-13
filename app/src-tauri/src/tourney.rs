@@ -129,6 +129,10 @@ impl Tourney {
         Ok(test_view(&self.client()?.set_priority(id, priority).await.map_err(api)?))
     }
 
+    pub async fn set_concurrency(&self, id: &str, concurrency: u32) -> Result<TestView, ApiError> {
+        Ok(test_view(&self.client()?.set_concurrency(id, concurrency).await.map_err(api)?))
+    }
+
     pub async fn set_max_pairs(&self, id: &str, max_pairs: Option<u32>) -> Result<TestView, ApiError> {
         Ok(test_view(&self.client()?.set_max_pairs(id, max_pairs).await.map_err(api)?))
     }

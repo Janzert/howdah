@@ -24,6 +24,7 @@
   let busy = $state(false);
   let priority = $state(0);
   let maxPairs = $state<number | null>(null);
+  let concurrency = $state(1);
   let dialog: HTMLDialogElement;
 
   $effect(() => {
@@ -34,6 +35,7 @@
     test = t;
     priority = t.priority;
     maxPairs = t.maxPairs;
+    concurrency = t.concurrency;
   }
 
   onMount(() => {
@@ -68,6 +70,7 @@
       if (priority !== t.priority) t = await api.tourneySetPriority(id, priority);
       const pairs = pairCount(maxPairs);
       if (pairs !== t.maxPairs) t = await api.tourneySetMaxPairs(id, pairs);
+      if (concurrency !== t.concurrency) t = await api.tourneySetConcurrency(id, concurrency);
       return t;
     });
   }
@@ -137,6 +140,10 @@
       <input id="test-priority" type="number" bind:value={priority} />
       <label for="test-pairs">Max pairs</label>
       <input id="test-pairs" type="number" min="1" bind:value={maxPairs} placeholder="none" />
+      <label for="test-concurrency" title="How many of this test's games may run at once (the daemon's games at once still apply)"
+        >At once</label
+      >
+      <input id="test-concurrency" type="number" min="1" bind:value={concurrency} />
       <button onclick={applyLimits} disabled={busy}>Apply</button>
     </div>
     {#if error}<p class="error" role="alert">{error}</p>{/if}

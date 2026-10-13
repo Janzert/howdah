@@ -4457,7 +4457,11 @@ mod tests {
         assert!(kept.windows(2).all(|w| w[0].seq < w[1].seq));
         s.new_game();
         assert!(s.engine_output().is_empty());
-        assert_eq!(s.record_engine_output(line(Color::Gold, "c")).seq, OUTPUT_KEPT as u64 + 3, "numbers go on");
+        assert_eq!(
+            s.record_engine_output(line(Color::Gold, "c")).seq,
+            OUTPUT_KEPT as u64 + 3,
+            "numbers go on"
+        );
     }
 
     #[test]

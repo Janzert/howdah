@@ -809,6 +809,11 @@ impl Backend {
         self.tourney.set_priority(id, priority).await
     }
 
+    /// Changes how many of a test's games may run at once.
+    pub async fn tourney_set_concurrency(&self, id: &str, concurrency: u32) -> Result<TestView, ApiError> {
+        self.tourney.set_concurrency(id, concurrency).await
+    }
+
     pub async fn tourney_set_max_pairs(
         &self,
         id: &str,
@@ -1175,6 +1180,9 @@ impl Backend {
             "tourney_set_priority" => {
                 ok(self.tourney_set_priority(&arg::<String>(args, "id")?, arg(args, "priority")?).await?)
             }
+            "tourney_set_concurrency" => ok(self
+                .tourney_set_concurrency(&arg::<String>(args, "id")?, arg(args, "concurrency")?)
+                .await?),
             "tourney_set_max_pairs" => {
                 ok(self.tourney_set_max_pairs(&arg::<String>(args, "id")?, arg(args, "maxPairs")?).await?)
             }
