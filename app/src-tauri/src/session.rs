@@ -41,7 +41,7 @@ use crate::dto::{
     AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, LastMoveView,
     LastStepView, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind,
     PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView, SessionView, SideClockView, StepTarget,
-    TakebackView, TurnStepView, TurnView,
+    TakebackView, TestGameTag, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -409,6 +409,8 @@ pub struct Session {
     continue_turns: bool,
     /// The puzzle being solved, if the game is one.
     puzzle: Option<Puzzle>,
+    /// The engine test game shown, if the game is one.
+    test_game: Option<TestGameTag>,
 }
 
 /// Where a puzzle came from, and what its page says about it.
@@ -476,6 +478,7 @@ impl Session {
             evals: HashMap::new(),
             continue_turns: true,
             puzzle: None,
+            test_game: None,
         };
         s.refresh();
         s
@@ -504,6 +507,16 @@ impl Session {
     /// Replaces the record's tags (players, event and so on).
     pub fn set_tags(&mut self, tags: Vec<(String, String)>) {
         self.tags = tags;
+    }
+
+    /// Marks the game as an engine test's game, until it's replaced.
+    pub fn set_test_game(&mut self, tag: TestGameTag) {
+        self.test_game = Some(tag);
+    }
+
+    /// The engine test game shown, if the game is one.
+    pub fn test_game(&self) -> Option<&TestGameTag> {
+        self.test_game.as_ref()
     }
 
     /// A tag's value, unless it's missing or blank.
@@ -2480,6 +2493,7 @@ impl Session {
             analysis_allowed: self.analysis_allowed(),
             stuck: self.stuck(),
             stored_analysis: self.evals.get(&self.cursor_node()).cloned(),
+            test_game: self.test_game.clone(),
         }
     }
 

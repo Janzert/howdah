@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerKind } from './bindings/PlayerKind';
 import type { SessionView } from './bindings/SessionView';
-import { gameTitle, waitsOnUser } from './windowList';
+import { gameTitle, testGameLabel, waitsOnUser } from './windowList';
 
 function match(gold: PlayerKind, silver: PlayerKind, livePly: number, extra: Partial<SessionView> = {}): SessionView {
   return {
@@ -42,5 +42,13 @@ describe('gameTitle', () => {
     expect(gameTitle(match('human', 'engine', 2))).toBe('Al - Bob');
     expect(gameTitle({ ...match('human', 'engine', 2), players: null, tagNames: ['Cy', null] })).toBe('Cy - ?');
     expect(gameTitle({ ...match('human', 'engine', 2), players: null })).toBeNull();
+  });
+});
+
+describe('testGameLabel', () => {
+  it('names an engine test and the game in it', () => {
+    const testGame = { test: '0001-e1', name: 'e1', pair: 12, game: 2 };
+    expect(testGameLabel(match('remote', 'remote', 2, { testGame }))).toBe('e1 12.2');
+    expect(testGameLabel(match('remote', 'remote', 2, { testGame: null }))).toBeNull();
   });
 });

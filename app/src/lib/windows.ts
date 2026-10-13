@@ -23,6 +23,9 @@ export interface HandOff {
   spec: MatchSpec | null;
   /** Opens the position editor on this position. */
   editor?: PositionSpec;
+  /** Follows the engine test whose game it opens on: when a game ends,
+   * it moves on to the test's newest game without a window. */
+  follow?: boolean;
 }
 
 const handOffKey = (id: SessionId) => `handoff.${id}`;

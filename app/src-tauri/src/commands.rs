@@ -702,3 +702,12 @@ pub async fn open_tourney_game(
 ) -> Result<(), ApiError> {
     state.open_tourney_game(session, &test, pair, game).await
 }
+
+#[tauri::command]
+pub async fn follow_tourney_test(
+    state: State<'_, Backend>,
+    session: SessionId,
+    test: String,
+) -> Result<bool, ApiError> {
+    state.follow_tourney_test(session, &test).await
+}

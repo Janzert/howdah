@@ -18,8 +18,10 @@
     /** Opens a test's game in a game window; resolves to an error message,
      * or null. */
     onOpenGame: (test: string, pair: number, game: number) => Promise<string | null>;
+    /** Opens a game window following a test; resolves as `onOpenGame`. */
+    onFollow: (test: string) => Promise<string | null>;
   }
-  let { engines, onOpenGame }: Props = $props();
+  let { engines, onOpenGame, onFollow }: Props = $props();
 
   let status = $state<TourneyStatusView | null>(null);
   let tests = $state<TestView[]>([]);
@@ -161,7 +163,7 @@
   />
 {/if}
 {#if shown}
-  <TestDialog id={shown} {onOpenGame} onClose={() => (shown = null)} />
+  <TestDialog id={shown} {onOpenGame} {onFollow} onClose={() => (shown = null)} />
 {/if}
 
 <style>

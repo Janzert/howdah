@@ -268,6 +268,9 @@ function makeApi(sid: () => SessionId | null) {
      * finished one loaded. */
     openTourneyGame: (test: string, pair: number, game: number) =>
       invoke<void>('open_tourney_game', { session: sid(), test, pair, game }),
+    /** Opens test `test`'s newest running game that no other session
+     * shows, for a window following the test; false when there's none. */
+    followTourneyTest: (test: string) => invoke<boolean>('follow_tourney_test', { session: sid(), test }),
     /** Matches native widgets (GTK's `<select>` popups and tooltips) to the
      * page's colors. */
     setNativeAppearance: (dark: boolean) => invoke<void>('set_native_appearance', { dark }),

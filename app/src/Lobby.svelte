@@ -92,6 +92,20 @@
     }
   }
 
+  /** Opens a game window following engine test `id`, on its newest
+   * running game without a window; resolves to an error message, or null. */
+  async function followTest(id: string): Promise<string | null> {
+    try {
+      const prepare = async (a: Api) => {
+        if (!(await a.followTourneyTest(id))) throw new Error('Every game playing now has a window');
+      };
+      await openGameWindow(prepare, { spec: null, follow: true });
+      return null;
+    } catch (e) {
+      return errorMessage(e);
+    }
+  }
+
   /** Opens an arimaa.com game, unless it has a window already (one window
    * per game): then that window comes forward, taking the user's seat
    * first if they asked to play and it only watches. */
@@ -292,7 +306,11 @@
         {/if}
       </section>
 
-      <TestsSection {engines} onOpenGame={(test, pair, game) => openWindow((a) => a.openTourneyGame(test, pair, game))} />
+      <TestsSection
+        {engines}
+        onOpenGame={(test, pair, game) => openWindow((a) => a.openTourneyGame(test, pair, game))}
+        onFollow={followTest}
+      />
     </div>
 
     <div class="column">

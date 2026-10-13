@@ -12,6 +12,7 @@
   import type { MatchSpec } from './lib/bindings/MatchSpec';
   import type { SessionView } from './lib/bindings/SessionView';
   import type { Square } from './lib/bindings/Square';
+  import type { TestView } from './lib/bindings/TestView';
   import Board from './lib/board/Board.svelte';
   import { type AnimHooks, BoardModel } from './lib/board/boardModel.svelte';
   import { nextTick, turnTimeLeft } from './lib/clock';
@@ -46,7 +47,7 @@
   import { myTurn, newOpponentChat, watchSounds } from './lib/gameroom';
   import { countNext, pickNext } from './lib/nextGame';
   import { OpenGames } from './lib/openGames.svelte';
-  import { gameTitle, waitsOnUser } from './lib/windowList';
+  import { gameTitle, testGameLabel, waitsOnUser } from './lib/windowList';
   import { focusGameWindow, guardClose, openGameWindow, rememberSize, showLobby, takeHandOff } from './lib/windows';
 
   function pref(key: string): string | null {
@@ -108,6 +109,11 @@
   /** The position editor's starting position while it's open: the window
    * shows the editor instead of its game until a game starts from it. */
   let editing = $state<PositionSpec | null>(handOff?.editor ?? null);
+  /** Following an engine test (opened from its Follow): when a game ends,
+   * the window moves on to the test's newest game without a window. */
+  let following = $state(handOff?.follow ?? false);
+  /** While following, why the next game hasn't opened yet. */
+  let followWait = $state<string | null>(null);
   /** The edited position the new-game dialog starts from. */
   let playFrom = $state<PositionSpec | null>(null);
   let engines = $state<EngineSpec[]>([]);
@@ -328,6 +334,12 @@
       if (chat.length > 0) requestAttention('New chat');
     });
     const unlistenLobby = on('gameroom://lobby', lobbyGames);
+    const unlistenTourney = on('tourney://changed', (u) => {
+      if (following && followWait && u.test && u.test.id === view?.testGame?.test) {
+        if (u.test.running.length > 0) void followNext();
+        else followWait = waitText(u.test);
+      }
+    });
     void guardClose(
       () => closeWarning?.reason ?? null,
       (reason) =>
@@ -353,8 +365,31 @@
       unlistenAnalysis.then((f) => f());
       unlistenWatch.then((f) => f());
       unlistenLobby.then((f) => f());
+      unlistenTourney.then((f) => f());
     };
   });
+
+  /** Following a test: opens its newest running game without a window
+   * here (the backend picks, so windows following one test take
+   * different games), or waits for one to start. */
+  async function followNext() {
+    const id = view?.testGame?.test;
+    if (!id || followBusy) return;
+    followBusy = true;
+    try {
+      // Starts the daemon's events coming, for the wait.
+      await api.tourneyStatus();
+      if (await api.followTourneyTest(id)) followWait = null;
+      else followWait = waitText((await api.tourneyTest(id)).test);
+    } catch (e) {
+      followWait = errorMessage(e);
+    }
+    followBusy = false;
+  }
+  let followBusy = false;
+
+  const waitText = (t: TestView) =>
+    t.status === 'finished' ? 'The test has finished.' : "Waiting for the test's next game…";
 
   /** Keeps the lobby's lists, for the Lobby button and Next game. The
    * lobby announces what's new; this window's game has its own alerts. */
@@ -385,7 +420,9 @@
       return;
     }
     if (!view) return;
-    const name = gameTitle(view) ?? 'Untitled game';
+    const players = gameTitle(view) ?? 'Untitled game';
+    const test = testGameLabel(view);
+    const name = test ? `${players} · ${test}` : players;
     void setTitle(`${waitsOnUser(view) ? 'Your move · ' : ''}${name} – Howdah`);
   });
 
@@ -880,11 +917,15 @@
        nothing here leaves it; a new game is in the game's panel. -->
   <GameEndDialog
     {view}
-    onRematch={watch ? undefined : rematch}
+    onRematch={watch || view.testGame ? undefined : rematch}
     onSwapSides={swappedSpec && !watch ? () => startGame(swappedSpec!) : undefined}
     note={watch?.chatOpen ? 'The chat stays open below the board.' : undefined}
     onAnalyse={engines.length && !analysing ? startAnalysis : undefined}
-    onClose={() => (showGameEnd = false)}
+    follow={following && view.testGame ? { waiting: followWait, onNext: followNext } : undefined}
+    onClose={() => {
+      showGameEnd = false;
+      following = false;
+    }}
   />
 {/if}
 {#if showHelp}

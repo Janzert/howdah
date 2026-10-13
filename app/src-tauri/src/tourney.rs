@@ -22,8 +22,8 @@ use howdah_tourney::{
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
-    ApiError, EngineSpec, NewTestSpec, SprtView, TestDetailView, TestGameRef, TestGameView, TestView,
-    TourneyStatusView, TourneyUpdate,
+    ApiError, EngineSpec, NewTestSpec, SprtView, TestDetailView, TestGameRef, TestGameTag, TestGameView,
+    TestView, TourneyStatusView, TourneyUpdate,
 };
 use crate::session::{Player, RemoteClock, Session};
 
@@ -47,8 +47,8 @@ pub struct Tourney {
 pub enum Opened {
     /// It's running; the session follows it.
     Following,
-    /// It's finished; this is its record.
-    Finished(GameRecord),
+    /// It's finished; this is its record, and the test's name.
+    Finished(GameRecord, String),
 }
 
 fn api(e: ClientError) -> ApiError {
@@ -204,7 +204,8 @@ impl Tourney {
             Ok(live) => live,
             Err(ClientError::Daemon(_)) => {
                 let text = client.record(id, pair, game).await.map_err(api)?;
-                return Ok(Opened::Finished(GameRecord::parse(&text)?));
+                let info = client.info(id).await.map_err(api)?;
+                return Ok(Opened::Finished(GameRecord::parse(&text)?, info.name));
             }
             Err(e) => return Err(api(e)),
         };
@@ -227,6 +228,7 @@ impl Tourney {
                 tags.push(("TimeControl".into(), tc.clone()));
             }
             s.set_tags(tags);
+            s.set_test_game(TestGameTag { test: id.to_string(), name: info.name.clone(), pair, game });
             let generation = s.generation();
             s.sync_remote(generation, &live.moves, live.used_ms.last().map(|ms| Duration::from_millis(*ms)))?;
             if let Some(r) = live.reserves_ms {

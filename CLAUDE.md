@@ -451,7 +451,12 @@ plans the engine test and tournament runner.
     running one in the session: a match of two `Player::Remote`s fed by
     `sync_remote`, `set_remote_clock` and `finish_remote` from the
     daemon's `movePlayed` and `gameFinished` events (`Follow`, ending when
-    the session's generation changes or it closes). `start_daemon` runs
+    the session's generation changes or it closes). Either way the
+    session is marked with the game (`Session::set_test_game`,
+    `SessionView.testGame`, cleared when the game is replaced).
+    `Backend::follow_tourney_test` (a window following a test) opens the
+    newest running game no other session shows, under a lock so
+    followers pick different games. `start_daemon` runs
     `howdah-tourney` from beside the app, detached.
   - `engines.rs`: the engine list (`engines.json` in the app config dir).
     It defaults to the bundled `aei-test-engine` when that sits next to the
@@ -531,7 +536,9 @@ plans the engine test and tournament runner.
     setting up a game window's).
   - `lib/TestsSection.svelte` (the lobby's Engine tests, under Open
     windows), `TestDialog.svelte` (one test: results, controls, games to
-    watch or open) and `NewTestDialog.svelte`; `lib/tests.ts` words a
+    watch or open, and Follow: a window with `HandOff.follow`, whose
+    game-end dialog counts down 15 s to the test's next game) and
+    `NewTestDialog.svelte`; `lib/tests.ts` words a
     test's state and SPRT.
   - `Lobby.svelte`, the main window: Play and analyse (New game, Analysis
     board with the last analysis engine, Open record), Open windows (each

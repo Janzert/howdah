@@ -21,6 +21,9 @@ young).
   running one follows the game live with its clocks, a finished one
   opens as a record. Tests can be paused, resumed, stopped and
   reprioritized, and the daemon given more or fewer games at once.
+  A test game's window title names the test and the game (pair.game),
+  and Follow opens a window that moves on, 15 s after each game ends,
+  to the test's newest game not open in another window.
 - `howdah-tourney daemon`: a long-running queue of engine tests sharing
   a number of game slots, highest priority first, that carries on after
   a restart. The same command submits, lists, watches, pauses, resumes,

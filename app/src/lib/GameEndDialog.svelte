@@ -15,8 +15,31 @@
     onClose: () => void;
     /** A line under the result (an arimaa.com game's chat staying open). */
     note?: string;
+    /** In a window following an engine test: `onNext` goes to its next
+     * game, after a countdown unless the user chooses first; `waiting`
+     * says why it hasn't opened yet. Closing the dialog stops following. */
+    follow?: { waiting: string | null; onNext: () => void };
   }
-  let { view, onRematch, onSwapSides, onAnalyse, onClose, note }: Props = $props();
+  let { view, onRematch, onSwapSides, onAnalyse, onClose, note, follow }: Props = $props();
+
+  /** Seconds before a followed test's next game opens. */
+  const FOLLOW_SECONDS = 15;
+  let countdown = $state(FOLLOW_SECONDS);
+  let movedOn = $state(false);
+
+  function next() {
+    movedOn = true;
+    follow?.onNext();
+  }
+
+  $effect(() => {
+    if (!follow || movedOn) return;
+    const timer = setInterval(() => {
+      countdown -= 1;
+      if (countdown <= 0) next();
+    }, 1000);
+    return () => clearInterval(timer);
+  });
 
   const text = $derived(view.result ? describeResult(view.result) : null);
   // The winner's name, when it tells the players apart (not "Human" vs "Human").
@@ -48,6 +71,11 @@
     {#if view.endDetail}<p class="detail">{view.endDetail}</p>{/if}
   {/if}
   {#if note}<p class="detail">{note}</p>{/if}
+  {#if follow}
+    <p class="detail" role="status">
+      {movedOn ? (follow.waiting ?? 'Opening the next game…') : `Next game of the test in ${countdown} s`}
+    </p>
+  {/if}
   {#if error}<p class="error">{error}</p>{/if}
   <div class="buttons">
     {#if onRematch}
@@ -55,6 +83,9 @@
     {/if}
     {#if onSwapSides}
       <button onclick={() => start(onSwapSides)}>Swap sides</button>
+    {/if}
+    {#if follow && !movedOn}
+      <button onclick={next} title="Go on to the test's next game now">Next game</button>
     {/if}
     <span class="spacer"></span>
     {#if onAnalyse}
@@ -69,7 +100,9 @@
       </button>
     {/if}
     <!-- svelte-ignore a11y_autofocus -->
-    <button class="primary" onclick={onClose} autofocus title="Close, leaving the game on the board to review">
+    <button class="primary" onclick={onClose} autofocus title={follow
+        ? 'Close and stay on this game, no longer following the test'
+        : 'Close, leaving the game on the board to review'}>
       Review game
     </button>
   </div>

@@ -14,6 +14,7 @@ import type { PlayersView } from "./PlayersView";
 import type { PositionView } from "./PositionView";
 import type { PuzzleView } from "./PuzzleView";
 import type { TakebackView } from "./TakebackView";
+import type { TestGameTag } from "./TestGameTag";
 import type { TurnView } from "./TurnView";
 
 export type SessionView = { 
@@ -168,4 +169,8 @@ stuck: Color | null,
  * What analysis found at the shown node earlier, if anything, so the
  * eval shows at once while the new search starts.
  */
-storedAnalysis: AnalysisLine | null, };
+storedAnalysis: AnalysisLine | null, 
+/**
+ * The engine test game shown, when the session shows one.
+ */
+testGame: TestGameTag | null, };

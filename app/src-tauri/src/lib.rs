@@ -165,6 +165,7 @@ pub fn run() {
             commands::tourney_start_daemon,
             commands::tourney_shutdown,
             commands::open_tourney_game,
+            commands::follow_tourney_test,
             commands::play_gameroom_game,
             commands::gameroom_server_bots,
             commands::gameroom_bot_info,

@@ -12,9 +12,11 @@
   interface Props {
     id: string;
     onOpenGame: (test: string, pair: number, game: number) => Promise<string | null>;
+    /** Opens a game window that follows the test from game to game. */
+    onFollow: (test: string) => Promise<string | null>;
     onClose: () => void;
   }
-  let { id, onOpenGame, onClose }: Props = $props();
+  let { id, onOpenGame, onFollow, onClose }: Props = $props();
 
   let test = $state<TestView | null>(null);
   let games = $state<TestGameView[]>([]);
@@ -72,6 +74,10 @@
 
   async function open(pair: number, game: number) {
     error = await onOpenGame(id, pair, game);
+  }
+
+  async function follow() {
+    error = await onFollow(id);
   }
 
   const pos = $derived(test ? llrPosition(test) : null);
@@ -136,7 +142,15 @@
     {#if error}<p class="error" role="alert">{error}</p>{/if}
 
     {#if test.running.length > 0}
-      <h3>Playing now</h3>
+      <div class="heading">
+        <h3>Playing now</h3>
+        <button
+          class="subtle"
+          onclick={follow}
+          title="Watch the newest game without a window, and as each game ends, go on to the next one"
+          >Follow</button
+        >
+      </div>
       <ul class="games" aria-label="Games playing now">
         {#each test.running as r (`${r.pair}.${r.game}`)}
           <li>
@@ -206,6 +220,11 @@
   h3 {
     margin: 12px 0 4px;
     font-size: 14px;
+  }
+  .heading {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
   }
   .state {
     font-size: 11px;

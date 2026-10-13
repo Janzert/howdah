@@ -34,7 +34,7 @@ use crate::dto::{
     GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView,
     PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView,
     PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, StartedBotView,
-    StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
+    StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -144,6 +144,9 @@ pub struct Backend {
     puzzles: PuzzleBook,
     /// The engine test daemon, as a client.
     tourney: Arc<Tourney>,
+    /// Held while a session picks and opens a test game to follow, so
+    /// sessions following one test pick different games.
+    following: tokio::sync::Mutex<()>,
     events: Events,
 }
 
@@ -164,6 +167,7 @@ impl Backend {
             gameroom: Arc::new(Gameroom::new(saved_login, events.clone())),
             puzzles: PuzzleBook::new(),
             tourney: Arc::new(Tourney::new(howdah_tourney::default_data_dir(), events.clone())),
+            following: tokio::sync::Mutex::new(()),
             events,
         }
     }
@@ -849,11 +853,34 @@ impl Backend {
             .await?;
         match opened {
             tourney::Opened::Following => Ok(()),
-            tourney::Opened::Finished(record) => self.mutate(id, |s| {
+            tourney::Opened::Finished(record, name) => self.mutate(id, |s| {
                 s.load_record_from_start(record);
+                s.set_test_game(TestGameTag { test: test.to_string(), name, pair, game });
                 Ok(Vec::new())
             }),
         }
+    }
+
+    /// Follows test `test` in session `id`: opens its most recently started
+    /// running game that no other session shows (the daemon lists them in
+    /// the order they started), so windows following one test watch
+    /// different games. False when there's none.
+    pub async fn follow_tourney_test(&self, id: SessionId, test: &str) -> Result<bool, ApiError> {
+        let _picking = self.following.lock().await;
+        let detail = self.tourney.test(test).await?;
+        let shown: Vec<(u32, u8)> = self
+            .sessions()
+            .iter()
+            .filter(|(other, _)| **other != id)
+            .filter_map(|(_, h)| {
+                let s = h.lock();
+                s.test_game().filter(|g| g.test == test).map(|g| (g.pair, g.game))
+            })
+            .collect();
+        let next = detail.test.running.iter().rev().find(|r| !shown.contains(&(r.pair, r.game)));
+        let Some(next) = next else { return Ok(false) };
+        self.open_tourney_game(id, test, next.pair, next.game).await?;
+        Ok(true)
     }
 
     /// Opens arimaa.com game `gid` in session `id`. A live game (its
@@ -1156,6 +1183,9 @@ impl Backend {
                     arg(args, "game")?,
                 )
                 .await?),
+            "follow_tourney_test" => {
+                ok(self.follow_tourney_test(sid()?, &arg::<String>(args, "test")?).await?)
+            }
             "open_gameroom_game" => ok(self.open_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?),
             "play_gameroom_game" => ok(self
                 .play_gameroom_game(

@@ -290,6 +290,8 @@ pub struct SessionView {
     /// What analysis found at the shown node earlier, if anything, so the
     /// eval shows at once while the new search starts.
     pub stored_analysis: Option<AnalysisLine>,
+    /// The engine test game shown, when the session shows one.
+    pub test_game: Option<TestGameTag>,
 }
 
 /// An evaluation from gold's side.
@@ -1219,6 +1221,19 @@ pub struct SprtView {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TestGameRef {
+    pub pair: u32,
+    pub game: u8,
+}
+
+/// The engine test game a session shows, running or finished.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TestGameTag {
+    /// The test's id.
+    pub test: String,
+    /// The test's name.
+    pub name: String,
     pub pair: u32,
     pub game: u8,
 }

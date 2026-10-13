@@ -337,7 +337,22 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   and clocks from the daemon (its own event stream, opened before the
   snapshot is read so no move falls between), and the result from the
   daemon when the game ends. It stops following when the window closes
-  or shows another game.
+  or shows another game. The session remembers the test game it shows
+  (`SessionView.testGame`), and the window's title names it after the
+  players (`SlowA - SlowB · <test> 12.1`).
+- The test dialog's Follow (by Playing now) opens a window that follows
+  the test (Brian, 2026-10-13): when its game ends, the game-end dialog
+  counts down 15 s and then opens the test's most recently started game
+  that no other window shows, in the same window, or waits for one to
+  start. Choosing anything in the dialog (Review game, Analyse) stops
+  following; Next game skips the countdown. The backend picks the game
+  (`follow_tourney_test`) under a lock, so several windows following one
+  test end up on different games even when they look at once. Checked in
+  the browser preview with two following windows on a test of slowed
+  random movers (`aei-test-engine --think-ms 700`): they took different
+  games, moved on after the countdown, Review game stayed put, and a
+  window waiting while the test was paused took the newest game when it
+  resumed.
 - Without a daemon, the section offers to start one when
   `howdah-tourney` sits beside the app's program, with its output in
   `daemon.log` in the data directory; otherwise it gives the command.

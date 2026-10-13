@@ -30,3 +30,10 @@ export function gameTitle(v: SessionView): string | null {
   if (gold || silver) return `${gold ?? '?'} - ${silver ?? '?'}`;
   return null;
 }
+
+/** An engine test's game, as "<test> <pair>.<game>", or null for any
+ * other game. */
+export function testGameLabel(v: SessionView): string | null {
+  const g = v.testGame;
+  return g ? `${g.name} ${g.pair}.${g.game}` : null;
+}
