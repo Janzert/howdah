@@ -31,10 +31,10 @@ export function scoreText(t: TestView): string {
 
 /** Fast time controls for engine tests, with a turn limit. */
 export const TEST_TIME_CONTROLS: [string, string][] = [
-  ['1s/10s/100/0/80t', '1 s a move'],
-  ['2s/30s/100/0/80t', '2 s a move'],
-  ['5s/1m/100/0/80t', '5 s a move'],
-  ['15s/2m/100/0/80t', '15 s a move'],
+  ['1s/10s/100/0/100t', '1 s a move'],
+  ['2s/30s/100/0/100t', '2 s a move'],
+  ['5s/1m/100/0/100t', '5 s a move'],
+  ['15s/2m/100/0/100t', '15 s a move'],
 ];
 
 /** A pair limit from a number field (empty: none). */

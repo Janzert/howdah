@@ -87,7 +87,7 @@
       bind:value={timeControl}
       list="nt-tcs"
       autocomplete="off"
-      title="Per move / reserve / percent added / reserve limit / game or turn limit (80t: 80 turns)"
+      title="Per move / reserve / percent added / reserve limit / game or turn limit (100t: 100 turns)"
     />
     <datalist id="nt-tcs">
       {#each TEST_TIME_CONTROLS as [tc, label] (tc)}<option value={tc} {label}></option>{/each}

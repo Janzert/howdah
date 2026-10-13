@@ -2,7 +2,7 @@
 //!
 //! ```toml
 //! name = "opfor-null-move"
-//! time_control = "2s/30s/100/0/80t"
+//! time_control = "2s/30s/100/0/100t"
 //! concurrency = 4
 //! max_pairs = 2000
 //!
