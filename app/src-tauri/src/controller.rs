@@ -246,7 +246,13 @@ impl Coordinator {
     }
 
     fn output(&self, side: Color, kind: EngineOutputKind, text: String) {
-        let out = EngineOutput { side, kind, text, depth: None, score: None, pv: None };
+        self.publish(EngineOutput { seq: 0, side, kind, text, depth: None, score: None, pv: None });
+    }
+
+    /// Keeps a player's output in the session, for a panel opening later,
+    /// and sends it.
+    fn publish(&self, out: EngineOutput) {
+        let out = lock(&self.session).record_engine_output(out);
         emit(&self.events, ENGINE_OUTPUT, out);
     }
 
@@ -578,7 +584,7 @@ impl Coordinator {
             ActorEvent::Line(msg) => {
                 let profile = self.actors[side.index()].as_ref().map_or(Profile::Generic, |a| a.profile);
                 if let Some(out) = engine_output(side, profile, msg) {
-                    emit(&self.events, ENGINE_OUTPUT, out);
+                    self.publish(out);
                 }
             }
             ActorEvent::Started { name, profile } => {
@@ -1198,9 +1204,10 @@ fn read_search(profile: Profile, msg: EngineMessage) -> Option<Search> {
 
 /// A match engine's message for its panel. Scores are its own view, in
 /// centi-rabbits; a proven result has none (the line still shows it).
-fn engine_output(side: Color, profile: Profile, msg: EngineMessage) -> Option<EngineOutput> {
+pub(crate) fn engine_output(side: Color, profile: Profile, msg: EngineMessage) -> Option<EngineOutput> {
     let s = read_search(profile, msg)?;
     Some(EngineOutput {
+        seq: 0,
         side,
         kind: s.kind,
         text: s.text,

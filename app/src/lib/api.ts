@@ -8,6 +8,7 @@ import type { Color } from './bindings/Color';
 import type { EngineCatalogView } from './bindings/EngineCatalogView';
 import type { EngineIdentity } from './bindings/EngineIdentity';
 import type { EngineOption } from './bindings/EngineOption';
+import type { EngineOutput } from './bindings/EngineOutput';
 import type { EngineSpec } from './bindings/EngineSpec';
 import type { GameroomGames } from './bindings/GameroomGames';
 import type { GameroomStatus } from './bindings/GameroomStatus';
@@ -268,6 +269,9 @@ function makeApi(sid: () => SessionId | null) {
      * finished one loaded. */
     openTourneyGame: (test: string, pair: number, game: number) =>
       invoke<void>('open_tourney_game', { session: sid(), test, pair, game }),
+    /** The engine output kept for this session's game, oldest first (for
+     * an engine panel opening after it was sent). */
+    engineOutput: () => invoke<EngineOutput[]>('engine_output', { session: sid() }),
     /** Opens test `test`'s newest running game that no other session
      * shows, for a window following the test; false when there's none. */
     followTourneyTest: (test: string) => invoke<boolean>('follow_tourney_test', { session: sid(), test }),

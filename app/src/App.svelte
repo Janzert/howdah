@@ -138,7 +138,8 @@
   let matchSig = '';
 
   function setView(v: SessionView) {
-    const sig = v.players ? `${v.players.gold.name}|${v.players.silver.name}` : '';
+    const test = v.testGame ? `|${v.testGame.test} ${v.testGame.pair}.${v.testGame.game}` : '';
+    const sig = v.players ? `${v.players.gold.name}|${v.players.silver.name}${test}` : '';
     if (sig !== matchSig || (v.players && v.moves.length === 0 && (view?.moves.length ?? 0) > 0)) {
       matchKey++;
       if (settings.humanAtBottom) {
@@ -811,8 +812,8 @@
         {#if watch}
           <WatchPanel {watch} {view} {run} {receivedAt} {now} onNewGame={newOnlineGame} />
         {/if}
-        {#if hasEngine && view.players}
-          <EnginePanel players={view.players} resetKey={matchKey} {engines} />
+        {#if (hasEngine || view.testGame) && view.players}
+          <EnginePanel players={view.players} resetKey={matchKey} {engines} daemon={view.testGame != null} />
         {/if}
         {#if analysisShown}
           <AnalysisPanel

@@ -340,6 +340,22 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   or shows another game. The session remembers the test game it shows
   (`SessionView.testGame`), and the window's title names it after the
   players (`SlowA - SlowB · <test> 12.1`).
+- A running test game shows both engines' panels, as a local engine
+  game does (Brian, 2026-10-13). The runner passes `play_match`'s `Info`
+  and `Log` events on as `RunEvent::EngineOutput` and keeps each side's
+  last 150 lines in the game's live state; the daemon sends them on a
+  broadcast of their own (`GameOutput`), served per game at `GET
+  /tests/{id}/output/{pair}/{game}` (`Client::output`), so the general
+  event stream doesn't carry every running game's output. `LiveGame`
+  has the kept lines and the engines' `id name`s, from which the app
+  picks each one's `Profile` to read its output. The game files don't
+  keep engine output, so a finished game opened from the list has no
+  panels. The snapshot's move times (`usedMs`, all of them) now go on
+  the moves already played, as a finished game's record has them.
+  Checked in the browser preview with Sharp against OpFor: a window
+  opened mid-game showed both panels at once (from the session's kept
+  output), then live, and moving the session on to the pair's second
+  game showed only that game's output, sides swapped.
 - The test dialog's Follow (by Playing now) opens a window that follows
   the test (Brian, 2026-10-13): when its game ends, the game-end dialog
   counts down 15 s and then opens the test's most recently started game

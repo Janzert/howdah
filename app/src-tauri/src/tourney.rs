@@ -4,7 +4,8 @@
 //! is connected (it looks for a daemon every few seconds). A test's game
 //! opens in a game window: a finished one as its record, a running one
 //! followed like a watched arimaa.com game, between two remote players
-//! whose moves and clocks come from the daemon.
+//! whose moves and clocks come from the daemon, as does the engines'
+//! search output for the engine panels.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -12,18 +13,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
+use howdah_aei::{EngineId, EngineMessage, Profile};
 use howdah_arimaa::{Color, GameRecord, TimeControl};
 use howdah_tourney::client::{Client, ClientError, EventStream};
 use howdah_tourney::{
-    DaemonEvent, DaemonInfo, Decision, GameEntry, OptionValue, RunEnd, SprtSpec, TestInfo, TestSpec,
-    TestStatus,
+    DaemonEvent, DaemonInfo, Decision, EngineLine, GameEntry, GameOutput, OptionValue, RunEnd, SprtSpec,
+    TestInfo, TestSpec, TestStatus,
 };
 
 use crate::backend::{Events, emit, emit_session};
-use crate::controller::{Controller, SharedSession};
+use crate::controller::{Controller, ENGINE_OUTPUT, SharedSession, engine_output};
 use crate::dto::{
-    ApiError, EngineSpec, NewTestSpec, SprtView, TestDetailView, TestGameRef, TestGameTag, TestGameView,
-    TestView, TourneyStatusView, TourneyUpdate,
+    ApiError, EngineOutput, EngineSpec, NewTestSpec, SprtView, TestDetailView, TestGameRef, TestGameTag,
+    TestGameView, TestView, TourneyStatusView, TourneyUpdate,
 };
 use crate::session::{Player, RemoteClock, Session};
 
@@ -210,6 +212,11 @@ impl Tourney {
             Err(e) => return Err(api(e)),
         };
         let info = client.info(id).await.map_err(api)?;
+        // From here on; what came before is in the snapshot. A daemon
+        // without the stream only gives moves.
+        let output = client.output(id, pair, game).await.ok();
+        let profiles =
+            live.engine_ids.clone().map(|name| Profile::detect(&EngineId { name, ..EngineId::default() }));
         let tc: Option<TimeControl> = live.time_control.as_deref().and_then(|t| t.parse().ok());
         let generation = {
             let mut s = lock(&session);
@@ -235,6 +242,13 @@ impl Tourney {
             // daemon has them all.
             let used: Vec<Duration> = live.used_ms.iter().map(|&ms| Duration::from_millis(ms)).collect();
             s.fill_move_times(generation, &used);
+            for (i, side) in Color::ALL.into_iter().enumerate() {
+                for line in &live.output[i] {
+                    if let Some(out) = panel_output(side, profiles[i], line.clone()) {
+                        s.record_engine_output(out);
+                    }
+                }
+            }
             if let Some(r) = live.reserves_ms {
                 let _ = s.set_remote_clock(generation, clock(r, Duration::from_millis(live.turn_elapsed_ms)));
             }
@@ -252,8 +266,9 @@ impl Tourney {
             pair,
             game,
             moves: live.moves,
+            profiles,
         };
-        tauri::async_runtime::spawn(follow.run(stream));
+        tauri::async_runtime::spawn(follow.run(stream, output));
         Ok(Opened::Following)
     }
 
@@ -375,14 +390,48 @@ struct Follow {
     pair: u32,
     game: u8,
     moves: Vec<String>,
+    /// How to read each side's output (gold, silver).
+    profiles: [Profile; 2],
+}
+
+/// An engine line from the daemon as the engine panels show it.
+fn panel_output(side: Color, profile: Profile, line: EngineLine) -> Option<EngineOutput> {
+    let msg = match line {
+        EngineLine::Info(info) => EngineMessage::Info(info),
+        EngineLine::Log(text) => EngineMessage::Log(text),
+    };
+    engine_output(side, profile, msg)
+}
+
+/// The next line from a game's output stream; never, once it's gone.
+async fn next_output(output: &mut Option<EventStream<GameOutput>>) -> GameOutput {
+    if let Some(stream) = output
+        && let Some(Ok(o)) = stream.next().await
+    {
+        return o;
+    }
+    *output = None;
+    std::future::pending().await
 }
 
 impl Follow {
     /// Plays the game's moves into the session as the daemon reports them,
     /// until it ends, the session moves on to another game, or its window
     /// closes.
-    async fn run(mut self, mut stream: EventStream) {
-        while let Some(Ok(event)) = stream.next().await {
+    async fn run(mut self, mut stream: EventStream, mut output: Option<EventStream<GameOutput>>) {
+        loop {
+            let event = tokio::select! {
+                e = stream.next() => match e {
+                    Some(Ok(e)) => e,
+                    _ => return,
+                },
+                o = next_output(&mut output) => {
+                    if !self.engine_line(o) {
+                        return;
+                    }
+                    continue;
+                }
+            };
             let ours = |t: &str, p: u32, g: u8| t == self.test && p == self.pair && g == self.game;
             match event {
                 DaemonEvent::MovePlayed { test, pair, game, ply, notation, used_ms, reserves_ms }
@@ -427,6 +476,25 @@ impl Follow {
                 _ => {}
             }
         }
+    }
+
+    /// Passes on an engine's output in the game to the session's panels;
+    /// false once the session has moved on or closed.
+    fn engine_line(&self, o: GameOutput) -> bool {
+        if (o.test.as_str(), o.pair, o.game) != (self.test.as_str(), self.pair, self.game) {
+            return true;
+        }
+        let Some(session) = self.session.upgrade() else { return false };
+        let Some(out) = panel_output(o.side, self.profiles[o.side.index()], o.line) else { return true };
+        let out = {
+            let mut s = lock(&session);
+            if s.generation() != self.generation {
+                return false;
+            }
+            s.record_engine_output(out)
+        };
+        emit(&self.events, ENGINE_OUTPUT, out);
+        true
     }
 }
 

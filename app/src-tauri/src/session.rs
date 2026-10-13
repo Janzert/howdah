@@ -28,7 +28,7 @@
 //! [`Session::answer_takeback`]). No engine is asked to move in such a
 //! game yet.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use howdah_arimaa::{
@@ -38,10 +38,10 @@ use howdah_arimaa::{
 };
 
 use crate::dto::{
-    AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, LastMoveView,
-    LastStepView, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind,
-    PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView, SessionView, SideClockView, StepTarget,
-    TakebackView, TestGameTag, TurnStepView, TurnView,
+    AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, EngineOutput,
+    LastMoveView, LastStepView, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView,
+    PlayerKind, PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView, SessionView, SideClockView,
+    StepTarget, TakebackView, TestGameTag, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -411,7 +411,15 @@ pub struct Session {
     puzzle: Option<Puzzle>,
     /// The engine test game shown, if the game is one.
     test_game: Option<TestGameTag>,
+    /// Each side's latest engine output in the match (gold, silver), for
+    /// an engine panel that opens after it was sent.
+    engine_output: [VecDeque<EngineOutput>; 2],
+    /// The last number given to engine output, counting across games.
+    output_seq: u64,
 }
+
+/// How many of each side's engine output lines a session keeps.
+const OUTPUT_KEPT: usize = 150;
 
 /// Where a puzzle came from, and what its page says about it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -479,6 +487,8 @@ impl Session {
             continue_turns: true,
             puzzle: None,
             test_game: None,
+            engine_output: Default::default(),
+            output_seq: 0,
         };
         s.refresh();
         s
@@ -488,7 +498,8 @@ impl Session {
     /// Analysis stays on.
     fn replace(&mut self, tree: GameTree, tags: Vec<(String, String)>, at: NodeId, matchup: Option<Match>) {
         let generation = self.generation + 1;
-        let (analysis, continue_turns) = (self.analysis.take(), self.continue_turns);
+        let (analysis, continue_turns, output_seq) =
+            (self.analysis.take(), self.continue_turns, self.output_seq);
         // In a server's game, the server's results are the game's.
         let mut tree = tree;
         tree.set_repetition_immobilization(!matchup.as_ref().is_some_and(Match::server_clock));
@@ -496,6 +507,7 @@ impl Session {
         self.generation = generation;
         self.analysis = analysis;
         self.continue_turns = continue_turns;
+        self.output_seq = output_seq;
         self.matchup = matchup;
         self.refresh();
     }
@@ -512,6 +524,27 @@ impl Session {
     /// Marks the game as an engine test's game, until it's replaced.
     pub fn set_test_game(&mut self, tag: TestGameTag) {
         self.test_game = Some(tag);
+    }
+
+    /// Keeps a line of a match engine's output, numbered, for the engine
+    /// panels; returns it numbered, to send.
+    pub fn record_engine_output(&mut self, mut out: EngineOutput) -> EngineOutput {
+        self.output_seq += 1;
+        out.seq = self.output_seq;
+        let kept = &mut self.engine_output[out.side.index()];
+        if kept.len() == OUTPUT_KEPT {
+            kept.pop_front();
+        }
+        kept.push_back(out.clone());
+        out
+    }
+
+    /// The engine output kept for this game, oldest first.
+    pub fn engine_output(&self) -> Vec<EngineOutput> {
+        let [gold, silver] = &self.engine_output;
+        let mut all: Vec<EngineOutput> = gold.iter().chain(silver).cloned().collect();
+        all.sort_by_key(|o| o.seq);
+        all
     }
 
     /// The engine test game shown, if the game is one.
@@ -4399,6 +4432,32 @@ mod tests {
         assert!(s.analysis_target().is_none());
         s.goto(9).unwrap();
         assert!(s.analysis_target().is_some());
+    }
+
+    #[test]
+    fn engine_output_is_kept_numbered_until_the_game_is_replaced() {
+        let line = |side: Color, text: &str| crate::dto::EngineOutput {
+            seq: 0,
+            side,
+            kind: crate::dto::EngineOutputKind::Log,
+            text: text.into(),
+            depth: None,
+            score: None,
+            pv: None,
+        };
+        let mut s = Session::new();
+        assert_eq!(s.record_engine_output(line(Color::Gold, "a")).seq, 1);
+        s.record_engine_output(line(Color::Silver, "b"));
+        for i in 0..OUTPUT_KEPT {
+            s.record_engine_output(line(Color::Gold, &i.to_string()));
+        }
+        let kept = s.engine_output();
+        assert_eq!(kept.len(), OUTPUT_KEPT + 1, "gold's oldest dropped");
+        assert_eq!((kept[0].text.as_str(), kept[0].seq), ("b", 2));
+        assert!(kept.windows(2).all(|w| w[0].seq < w[1].seq));
+        s.new_game();
+        assert!(s.engine_output().is_empty());
+        assert_eq!(s.record_engine_output(line(Color::Gold, "c")).seq, OUTPUT_KEPT as u64 + 3, "numbers go on");
     }
 
     #[test]

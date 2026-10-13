@@ -30,11 +30,11 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec,
-    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView,
-    PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView,
-    PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, StartedBotView,
-    StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
+    AnimStep, ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput,
+    EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView,
+    PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView,
+    PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
+    StartedBotView, StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -861,6 +861,12 @@ impl Backend {
         }
     }
 
+    /// The engine output kept for session `id`'s game, oldest first, for an
+    /// engine panel that opens after it was sent.
+    pub fn engine_output(&self, id: SessionId) -> Result<Vec<EngineOutput>, ApiError> {
+        self.read(id, Session::engine_output)
+    }
+
     /// Follows test `test` in session `id`: opens its most recently started
     /// running game that no other session shows (the daemon lists them in
     /// the order they started), so windows following one test watch
@@ -1183,6 +1189,7 @@ impl Backend {
                     arg(args, "game")?,
                 )
                 .await?),
+            "engine_output" => ok(self.engine_output(sid()?)?),
             "follow_tourney_test" => {
                 ok(self.follow_tourney_test(sid()?, &arg::<String>(args, "test")?).await?)
             }

@@ -6,10 +6,10 @@ use tauri::State;
 
 use crate::backend::{self, Backend};
 use crate::dto::{
-    ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineSpec, GameroomGames,
-    GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PositionCheck,
-    PositionSpec, PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView,
-    StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
+    ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
+    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView,
+    PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId,
+    SessionView, StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
 };
 
 #[tauri::command]
@@ -701,6 +701,11 @@ pub async fn open_tourney_game(
     game: u8,
 ) -> Result<(), ApiError> {
     state.open_tourney_game(session, &test, pair, game).await
+}
+
+#[tauri::command]
+pub fn engine_output(state: State<'_, Backend>, session: SessionId) -> Result<Vec<EngineOutput>, ApiError> {
+    state.engine_output(session)
 }
 
 #[tauri::command]

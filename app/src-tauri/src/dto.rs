@@ -771,6 +771,10 @@ pub enum EngineOutputKind {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct EngineOutput {
+    /// Numbers the session's engine output, from 1 (0 until it's kept,
+    /// `Session::record_engine_output`).
+    #[ts(type = "number")]
+    pub seq: u64,
     pub side: Color,
     pub kind: EngineOutputKind,
     /// Display text, e.g. `depth 12+` or the log line.

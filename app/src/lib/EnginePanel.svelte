@@ -12,11 +12,13 @@
 
   interface Props {
     players: PlayersView;
-    /** Changes whenever a new match starts, clearing the output. */
+    /** Changes whenever a new match starts, reloading the output. */
     resetKey: number;
     engines: EngineSpec[];
+    /** An engine test's game: both sides are engines the daemon runs. */
+    daemon?: boolean;
   }
-  let { players, resetKey, engines }: Props = $props();
+  let { players, resetKey, engines, daemon = false }: Props = $props();
 
   /** The side whose engine options are being changed. */
   let optionsFor = $state<Color | null>(null);
@@ -41,19 +43,51 @@
   let output = $state<Record<Color, SideState>>({ gold: empty(), silver: empty() });
   const MAX_LINES = 150;
 
+  /** The newest output shown, by its number. */
+  let shownSeq = 0;
+  /** Output arriving while the kept output loads, to add after it. */
+  let pending: EngineOutput[] | null = null;
+  let loads = 0;
+
+  function take(o: EngineOutput) {
+    if (o.seq <= shownSeq) return;
+    shownSeq = o.seq;
+    const s = output[o.side];
+    if (o.depth != null) s.depth = o.depth;
+    if (o.score != null) s.score = o.score;
+    if (o.pv != null) s.pv = o.pv;
+    s.lines.push({ kind: o.kind, text: o.text });
+    if (s.lines.length > MAX_LINES) s.lines.splice(0, s.lines.length - MAX_LINES);
+  }
+
+  /** Starts over with the output the session kept for its game, which
+   * came before the panel opened or the game changed. */
+  async function load() {
+    const mine = ++loads;
+    output = { gold: empty(), silver: empty() };
+    shownSeq = 0;
+    pending = [];
+    let kept: EngineOutput[] = [];
+    try {
+      kept = await api.engineOutput();
+    } catch {
+      /* the live output still comes */
+    }
+    if (mine !== loads) return;
+    const arrived = pending;
+    pending = null;
+    for (const o of [...kept, ...arrived]) take(o);
+  }
+
   $effect(() => {
     resetKey;
-    untrack(() => (output = { gold: empty(), silver: empty() }));
+    untrack(() => void load());
   });
 
   onMount(() => {
     const unlisten = on('engine://output', (o: EngineOutput) => {
-      const s = output[o.side];
-      if (o.depth != null) s.depth = o.depth;
-      if (o.score != null) s.score = o.score;
-      if (o.pv != null) s.pv = o.pv;
-      s.lines.push({ kind: o.kind, text: o.text });
-      if (s.lines.length > MAX_LINES) s.lines.splice(0, s.lines.length - MAX_LINES);
+      if (pending) pending.push(o);
+      else take(o);
     });
     return () => {
       unlisten.then((f) => f());
@@ -69,7 +103,7 @@
     }
   }
 
-  const sides = $derived((['gold', 'silver'] as Color[]).filter((c) => players[c].kind === 'engine'));
+  const sides = $derived((['gold', 'silver'] as Color[]).filter((c) => daemon || players[c].kind === 'engine'));
 
   function scrollToEnd(node: HTMLElement, _lines: unknown) {
     const go = () => (node.scrollTop = node.scrollHeight);

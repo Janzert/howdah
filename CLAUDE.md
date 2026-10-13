@@ -228,7 +228,9 @@ plans the engine test and tournament runner.
     `TestInfo`s and `DaemonEvent`s (a broadcast).
   - `server` (feature `server`): the HTTP API on 127.0.0.1, with a
     bearer token from `daemon.json` (`DaemonInfo`, mode 600), and
-    server-sent events; routes in its doc comment. `client` (feature
+    server-sent events; routes in its doc comment. Engines' search output
+    in running games (`EngineLine`, kept per side in the live state) has
+    its own broadcast and a stream per game (`GameOutput`). `client` (feature
     `client`): `Client` and its `EventStream`.
 - `app/src-tauri`: thin shell.
   - `session.rs` has the pure state logic: a `GameTree`, the line being
@@ -329,7 +331,11 @@ plans the engine test and tournament runner.
       `AnalysisTarget.start`: `prepare` sends `setposition` after
       `newgame`, and keeps sending only new moves while the start and
       the moves so far match what the engine was told (`Told`).
-    - Engine output goes out as `engine://output`.
+    - Engine output goes out as `engine://output`, numbered (`seq`) and
+      kept in the session too (`Session::record_engine_output`, 150 lines
+      a side, cleared with the game), so an engine panel that opens or
+      starts over later loads it (`engine_output`) and adds only newer
+      lines.
     - A game's engine player carries options for that game
       (`Player::Engine.options`, from `PlayerSpec`), sent over the
       engine's saved ones when its process starts. `set_engine_options`
@@ -451,7 +457,12 @@ plans the engine test and tournament runner.
     running one in the session: a match of two `Player::Remote`s fed by
     `sync_remote`, `set_remote_clock` and `finish_remote` from the
     daemon's `movePlayed` and `gameFinished` events (`Follow`, ending when
-    the session's generation changes or it closes). Either way the
+    the session's generation changes or it closes). It also opens the
+    game's engine output stream (`Client::output`) and passes each line
+    to the engine panels, read with the `Profile` of the engine's
+    `id name` from the snapshot (`LiveGame.engine_ids`), as the
+    controller reads a local engine's; the snapshot's kept lines and move
+    times (`fill_move_times`) go on the session as it opens. Either way the
     session is marked with the game (`Session::set_test_game`,
     `SessionView.testGame`, cleared when the game is replaced).
     `Backend::follow_tourney_test` (a window following a test) opens the
