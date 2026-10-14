@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/howdah-arimaa", "crates/howdah-aei", "crates/howdah-gameroom", "crates/howdah-tourney", "app/src-tauri"]
+members = ["crates/howdah-arimaa", "crates/howdah-aei", "crates/howdah-gameroom", "crates/howdah-tourney", "crates/howdah-render", "app/src-tauri"]
 
 [workspace.package]
 edition = "2024"

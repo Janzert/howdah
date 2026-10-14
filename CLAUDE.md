@@ -233,6 +233,14 @@ plans the engine test and tournament runner.
     in running games (`EngineLine`, kept per side in the live state) has
     its own broadcast and a stream per game (`GameOutput`). `client` (feature
     `client`): `Client` and its `EventStream`.
+- `crates/howdah-render`: draws positions as images with the app's image
+  themes (`image` crate; depends only on `howdah-arimaa`). The classic
+  themes' manifests and files are embedded from `app/src/themes/classic/`
+  (a new image theme needs adding to `THEMES`), and pieces are placed as
+  the board does: centred in the manifest's `grid`, scaled by
+  `pieces.scale`. The `howdah-render` binary reads anything
+  `StartPosition::parse` does, skipping `#` lines (`--theme`, `--size`,
+  `--flip`; `.jpg` output drops alpha).
 - `app/src-tauri`: thin shell.
   - `session.rs` has the pure state logic: a `GameTree`, the line being
     shown (`line`, root to a leaf) with a cursor ply on it, the in-progress
@@ -892,6 +900,7 @@ cargo test --workspace            # all Rust tests (test profile uses opt-level 
 cargo run -p howdah-aei --example match -- --gold "CMD" --silver "CMD" [--tc 2s/10s] [--transcript]
 cargo run -p howdah-tourney -- new SPEC.toml DIR   # then: run DIR [-j N], show DIR
 cargo run -p howdah-tourney -- daemon              # then: submit SPEC.toml, list, watch, ... (--data-dir DIR)
+cargo run -p howdah-render -- [--theme classic-stone] [--size 360] POSITION OUT.png
 cargo run -p howdah-gameroom --example probe -- live   # live server; ARIMAA_USERNAME/ARIMAA_PASSWORD
 cargo clippy --workspace --all-targets
 cd app && npm install

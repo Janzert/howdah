@@ -168,6 +168,8 @@ CI runs these on Linux, Windows and macOS and builds the installers.
   game records. Pure Rust with no UI dependencies.
 - `crates/howdah-aei`: an async AEI controller and engine-vs-engine matches.
 - `crates/howdah-gameroom`: the arimaa.com gameroom client.
+- `crates/howdah-render`: draws a position as a PNG or JPEG with the
+  classic themes (`cargo run -p howdah-render -- POSITION OUT.png`).
 - `app/`: the Tauri application. `src-tauri/` is the Rust shell and `src/`
   is the Svelte frontend.
 - `docs/`: design notes (analysis, variations, engines, the gameroom,
