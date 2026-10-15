@@ -91,6 +91,10 @@ young).
   that move took and the reserve after it, as arimaa.com's game viewer
   does. A timed game's record now keeps its time control, one per side
   (`GoldTimeControl`, `SilverTimeControl`) when they differ.
+- A setting to play the low-time ticks for both clocks in a game with no
+  human player at this machine: one watched on arimaa.com, engine against
+  engine, or an engine test game (off by default; otherwise only a human's
+  own clock ticks).
 
 ### Changed
 

@@ -153,6 +153,11 @@
       <span class="value">{settings.volume}%</span>
     </div>
     <p class="hint">Moving the slider unmutes.</p>
+    <label class="check gap">
+      <input type="checkbox" bind:checked={settings.spectatorTicks} />
+      Low-time ticks when watching
+    </label>
+    <p class="hint">Tick for both clocks in a game with no human player here: one watched on arimaa.com, or engine against engine.</p>
   </section>
 
   <div class="buttons">

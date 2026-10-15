@@ -15,7 +15,7 @@
   import type { TestView } from './lib/bindings/TestView';
   import Board from './lib/board/Board.svelte';
   import { type AnimHooks, BoardModel } from './lib/board/boardModel.svelte';
-  import { nextTick, turnTimeLeft } from './lib/clock';
+  import { nextTick, ticksFor, turnTimeLeft } from './lib/clock';
   import EnginePanel from './lib/EnginePanel.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
   import EvalBar from './lib/EvalBar.svelte';
@@ -232,11 +232,13 @@
     }
   });
 
-  // Low-time ticks while a human's clock runs, at the times in TICK_TIMES_MS.
+  // Low-time ticks while a human's clock runs (or, by the setting, either
+  // clock in a game without a human here), at the times in TICK_TIMES_MS.
   $effect(() => {
     const clock = view?.clock;
     const side = clock?.running;
-    if (!clock || !side || view?.result || view?.players?.[side].kind !== 'human') return;
+    const players = view?.players;
+    if (!clock || !side || view?.result || !players || !ticksFor(players, side, settings.spectatorTicks)) return;
     const arrived = receivedAt;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const schedule = (lastTick?: number) => {
