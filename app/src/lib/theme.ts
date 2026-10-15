@@ -70,6 +70,10 @@ export interface Theme {
   /** WAV files replacing the app's board sounds (step, lastStep, capture,
    * ownLoss, restore); any left out keep the default. Data URLs once loaded. */
   sounds?: Partial<Record<BoardSoundName, string>>;
+  /** How far the board sounds' pitch varies, either way: the `jitter` in
+   * the sound lab's `preset.json` beside the theme's sounds. Set on load;
+   * unset for a theme without one (the default sounds' then applies). */
+  soundVariation?: number;
 }
 
 const manifests = import.meta.glob<Theme>('../themes/*/*.theme.json', { eager: true, import: 'default' });
@@ -81,6 +85,19 @@ const assetUrls = import.meta.glob<string>('../themes/**/*.{png,jpg,jpeg,svg,web
 
 // Inlined like the app's own sounds, which `lib/sound.ts` decodes itself.
 const soundData = import.meta.glob<string>('../themes/**/*.wav', { eager: true, query: '?inline', import: 'default' });
+
+// The sound lab's settings for each theme's sounds, saved beside them.
+const soundPresets = import.meta.glob<{ settings?: { jitter?: unknown } }>('../themes/**/preset.json', {
+  eager: true,
+  import: 'default',
+});
+
+/** The pitch variation in the preset beside a theme's sound `rel`, if any. */
+function soundVariation(manifestPath: string, rel: string): number | undefined {
+  const file = manifestPath.slice(0, manifestPath.lastIndexOf('/') + 1) + rel;
+  const jitter = soundPresets[file.slice(0, file.lastIndexOf('/') + 1) + 'preset.json']?.settings?.jitter;
+  return typeof jitter === 'number' && Number.isFinite(jitter) && jitter >= 0 ? jitter : undefined;
+}
 
 function resolveSound(manifestPath: string, rel: string): string | undefined {
   const dir = manifestPath.slice(0, manifestPath.lastIndexOf('/') + 1);
@@ -107,6 +124,7 @@ function load(path: string, raw: Theme): Theme {
     for (const [name, rel] of Object.entries(t.sounds) as [BoardSoundName, string][]) {
       const data = resolveSound(path, rel);
       if (data) sounds[name] = data;
+      t.soundVariation ??= soundVariation(path, rel);
     }
     t.sounds = sounds;
   }

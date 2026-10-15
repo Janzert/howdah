@@ -8,7 +8,7 @@
  ],
  "settings": {
   "stepMs": 220,
-  "jitter": 0.08,
+  "jitter": 0.09,
   "slide": {
    "file": "card-shove-1.ogg",
    "offsetMs": 15,
@@ -23,14 +23,14 @@
   },
   "click": {
    "file": "chip-lay-2.ogg",
-   "rate": 0.91,
+   "rate": 0.92,
    "levelDb": -10,
    "lowpass": 16000,
    "overlapMs": -13
   },
   "last": {
    "file": "chip-lay-2.ogg",
-   "rate": 0.6,
+   "rate": 0.75,
    "levelDb": -6,
    "lowpass": 16000
   },

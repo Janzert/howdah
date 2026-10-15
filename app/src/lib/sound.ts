@@ -17,6 +17,7 @@ import capture from '../sounds/board/capture.wav?inline';
 import lastStep from '../sounds/board/lastStep.wav?inline';
 import ownLoss from '../sounds/board/ownLoss.wav?inline';
 import restore from '../sounds/board/restore.wav?inline';
+import boardPreset from '../sounds/board/preset.json';
 import step from '../sounds/board/step.wav?inline';
 import { dataUrlBytes, decodeWav } from './wav';
 
@@ -45,8 +46,10 @@ export const BOARD_SOUNDS = ['step', 'lastStep', 'capture', 'ownLoss', 'restore'
 export type BoardSoundName = (typeof BOARD_SOUNDS)[number];
 const isBoardSound = (n: SoundName): n is BoardSoundName => (BOARD_SOUNDS as readonly string[]).includes(n);
 
-/** How far a board sound's pitch varies from play to play, either way. */
-const BOARD_VARIATION = 0.08;
+/** How far a board sound's pitch varies from play to play, either way, by
+ * default: the `jitter` the sound lab saved the default sounds with. */
+const DEFAULT_VARIATION = boardPreset.settings.jitter;
+let variation = DEFAULT_VARIATION;
 
 const boardDefaults: Record<BoardSoundName, string> = { step, lastStep, capture, ownLoss, restore };
 
@@ -125,9 +128,11 @@ function bufferFor(name: SoundName, url: string): AudioBuffer | null {
 }
 
 /** Uses a theme's board sounds (data URLs) in place of the defaults; any
- * it leaves out keep the default. */
-export function setThemeSounds(theme: Partial<Record<BoardSoundName, string>>) {
+ * it leaves out keep the default. `pitchVariation` is the theme's own
+ * (from its sounds' preset), else the default's. */
+export function setThemeSounds(theme: Partial<Record<BoardSoundName, string>>, pitchVariation?: number) {
   sources = { ...appSounds, ...boardDefaults, ...theme };
+  variation = pitchVariation ?? DEFAULT_VARIATION;
   decodeAll();
 }
 
@@ -156,7 +161,7 @@ export function play(name: SoundName) {
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   const source = ctx.createBufferSource();
   source.buffer = buffer;
-  if (isBoardSound(name)) source.playbackRate.value = 1 + (Math.random() * 2 - 1) * BOARD_VARIATION;
+  if (isBoardSound(name)) source.playbackRate.value = 1 + (Math.random() * 2 - 1) * variation;
   source.connect(output);
   playing.add(source);
   source.onended = () => {

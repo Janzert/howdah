@@ -5,7 +5,7 @@
  ],
  "settings": {
   "stepMs": 220,
-  "jitter": 0.08,
+  "jitter": 0.09,
   "slide": {
    "file": "card-shove-1.ogg",
    "offsetMs": 15,

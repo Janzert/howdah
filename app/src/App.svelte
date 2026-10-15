@@ -258,7 +258,7 @@
   $effect(() => setAppearance(settings.appearance));
   $effect(() => setMuted(!settings.sound));
   $effect(() => setVolume(settings.volume));
-  $effect(() => setThemeSounds(theme.sounds ?? {}));
+  $effect(() => setThemeSounds(theme.sounds ?? {}, theme.soundVariation));
   $effect(() => model.setBaseSpeed(settings.stepMs));
   $effect(() => {
     api.setContinueTurns(settings.continueTurns).catch(() => {});
