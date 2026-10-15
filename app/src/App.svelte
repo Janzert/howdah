@@ -96,6 +96,11 @@
   });
   /** How many other games wait on the user's move (Next game). */
   const nextCount = $derived(countNext(session!, games.waiting(), lobbyLists, games.openGids()));
+  /** A match without a human side (a test's game, a watched arimaa.com
+   * game, engine against engine): no Next game button. */
+  const spectating = $derived(
+    view?.players != null && view.players.gold.kind !== 'human' && view.players.silver.kind !== 'human',
+  );
   // The game-end dialog waits for the final move's animation.
   let gameEndPending = $state(false);
   let showGameEnd = $state(false);
@@ -859,13 +864,15 @@
         <button onclick={openRecord}>Record</button>
         <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
         <button onclick={editPosition} title="Set up a position from the shown one, in a new window (e)">Edit position</button>
-        <button
-          onclick={nextGame}
-          disabled={nextCount === 0}
-          title={nextCount > 0 ? 'The next game waiting on your move (n)' : 'No other game waits on your move (n)'}
-        >
-          Next game{#if nextCount > 0}<span class="badge">{nextCount}</span>{/if}
-        </button>
+        {#if !spectating}
+          <button
+            onclick={nextGame}
+            disabled={nextCount === 0}
+            title={nextCount > 0 ? 'The next game waiting on your move (n)' : 'No other game waits on your move (n)'}
+          >
+            Next game{#if nextCount > 0}<span class="badge">{nextCount}</span>{/if}
+          </button>
+        {/if}
         <button
           onclick={() => showLobby()}
           title="The lobby: new games, open windows, arimaa.com, engines and settings{lobbyWaiting > 0

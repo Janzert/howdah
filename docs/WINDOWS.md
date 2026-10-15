@@ -261,7 +261,10 @@ the client has to trust the user and community norms (Brian,
   after this one, else opens a window playing the first postal game on
   the user's move from the lobby's lists that has no window
   (`lib/nextGame.ts`). It stays a button and a key; no automatic switch
-  after a move (the open question below).
+  after a move (the open question below). The button is hidden in a
+  match without a human side (a test's game, a watched arimaa.com game,
+  engine against engine), where the user only watches (Brian,
+  2026-10-15); the key still works there.
 - Titles: a game window's is "Gold - Silver – Howdah" (the players, or
   the record's names; "Untitled game" otherwise), with "Your move · " in
   front while the game waits on the user (`setTitle` in
