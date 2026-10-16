@@ -1029,11 +1029,9 @@ fn add_to_zip<W: std::io::Write + std::io::Seek>(
         let path = item.path();
         let name = format!("{prefix}/{}", item.file_name().to_string_lossy());
         let meta = std::fs::metadata(&path).map_err(TourneyError::io(&path))?;
-        let mut options = SimpleFileOptions::default().large_file(meta.len() >= 1 << 32);
+        let options = SimpleFileOptions::default().large_file(meta.len() >= 1 << 32);
         #[cfg(unix)]
-        {
-            options = options.unix_permissions(std::os::unix::fs::PermissionsExt::mode(&meta.permissions()));
-        }
+        let options = options.unix_permissions(std::os::unix::fs::PermissionsExt::mode(&meta.permissions()));
         if meta.is_dir() {
             zip.add_directory(&name, options).map_err(zip_err(&path))?;
             add_to_zip(zip, &path, &name)?;
