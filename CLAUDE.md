@@ -226,7 +226,11 @@ plans the engine test and tournament runner.
     priority first; a test's `concurrency` caps it, and
     `set_concurrency` changes it while it runs); `run` uses the same slots with a one-test
     picker. `TestRun` (`runner.rs`) is one test in play. Clients see
-    `TestInfo`s and `DaemonEvent`s (a broadcast).
+    `TestInfo`s and `DaemonEvent`s (a broadcast). `remove` takes a test
+    that isn't active out (`retire` makes slots drop its engines first),
+    zipping it into `archive/` or deleting it; `archived` reads the
+    zips (`ArchivedTest`), `restore` unzips one back into the queue and
+    `delete_archived` deletes one.
   - `server` (feature `server`): the HTTP API on 127.0.0.1, with a
     bearer token from `daemon.json` (`DaemonInfo`, mode 600), and
     server-sent events; routes in its doc comment. Engines' search output
@@ -557,8 +561,9 @@ plans the engine test and tournament runner.
   - `lib/TestsSection.svelte` (the lobby's Engine tests, under Open
     windows), `TestDialog.svelte` (one test: results, controls, games to
     watch or open, and Follow: a window with `HandOff.follow`, whose
-    game-end dialog counts down 15 s to the test's next game) and
-    `NewTestDialog.svelte`; `lib/tests.ts` words a
+    game-end dialog counts down 15 s to the test's next game),
+    `NewTestDialog.svelte` and `ArchiveDialog.svelte` (archived tests to
+    restore or delete); `lib/tests.ts` words a
     test's state and SPRT.
   - `Lobby.svelte`, the main window: Play and analyse (New game, Analysis
     board with the last analysis engine, Open record), Open windows (each

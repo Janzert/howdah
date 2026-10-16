@@ -15,6 +15,8 @@
 //! howdah-tourney pause|resume|stop ID
 //! howdah-tourney archive|delete ID              take a stopped or paused test out
 //!                                                (archive zips it into the data directory's archive/)
+//! howdah-tourney archived                        the archived tests
+//! howdah-tourney restore|delete-archived FILE    put one back in the queue, or delete it
 //! howdah-tourney priority ID N
 //! howdah-tourney max-pairs ID N|none
 //! howdah-tourney concurrency ID N
@@ -52,6 +54,7 @@ const USAGE: &str = "usage:
   howdah-tourney list | status | watch [ID]
   howdah-tourney pause|resume|stop ID
   howdah-tourney archive|delete ID
+  howdah-tourney archived | restore FILE | delete-archived FILE
   howdah-tourney priority ID N
   howdah-tourney max-pairs ID N|none
   howdah-tourney concurrency ID N
@@ -144,6 +147,26 @@ async fn command(args: &[String], data: &Path) -> Result<(), String> {
         ["delete", id] => {
             client(data)?.delete(id).await.map_err(|e| e.to_string())?;
             println!("Deleted {id}");
+            Ok(())
+        }
+        ["archived"] => {
+            for a in client(data)?.archived().await.map_err(|e| e.to_string())? {
+                let size = format!("{:.1} MB", a.size as f64 / 1e6);
+                match (&a.test, &a.error) {
+                    (Some(t), _) => println!("{}  {size}  {}", a.file, list_line(t)),
+                    (None, e) => println!("{}  {size}  unreadable: {}", a.file, e.as_deref().unwrap_or("?")),
+                }
+            }
+            Ok(())
+        }
+        ["restore", file] => {
+            let info = client(data)?.restore(file).await.map_err(|e| e.to_string())?;
+            println!("{}", list_line(&info));
+            Ok(())
+        }
+        ["delete-archived", file] => {
+            client(data)?.delete_archived(file).await.map_err(|e| e.to_string())?;
+            println!("Deleted {file}");
             Ok(())
         }
         ["priority", id, p] => {

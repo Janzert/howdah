@@ -15,6 +15,9 @@
 //! - `POST /tests/{id}/archive`: zips a test that isn't active into
 //!   `archive/` and takes it out, `{"archive": path}`; `DELETE
 //!   /tests/{id}`: deletes one, `{"archive": null}`.
+//! - `GET /archive`: the archived tests, [`ArchivedTest`]s, newest
+//!   first; `POST /archive/{file}/restore`: puts one back in the queue
+//!   ([`TestInfo`]); `DELETE /archive/{file}`: deletes one, `{}`.
 //! - `POST /tests/{id}/pause`, `/resume`, `/stop`; `POST
 //!   /tests/{id}/priority` `{"priority": n}`; `POST /tests/{id}/max-pairs`
 //!   `{"maxPairs": n | null}`; `POST /tests/{id}/concurrency`
@@ -48,7 +51,9 @@ use crate::error::TourneyError;
 use crate::spec::TestSpec;
 
 #[cfg(doc)]
-use crate::{daemon::DaemonStatus, daemon::TestInfo, results::GameEntry, runner::LiveGame};
+use crate::{
+    daemon::ArchivedTest, daemon::DaemonStatus, daemon::TestInfo, results::GameEntry, runner::LiveGame,
+};
 
 #[derive(Clone)]
 struct AppState {
@@ -129,6 +134,9 @@ pub async fn serve(daemon: Daemon, listener: TcpListener, info: DaemonInfo) -> R
         .route("/tests/{id}/priority", post(priority))
         .route("/tests/{id}/max-pairs", post(max_pairs))
         .route("/tests/{id}/concurrency", post(concurrency))
+        .route("/archive", get(archived))
+        .route("/archive/{file}", axum::routing::delete(delete_archived))
+        .route("/archive/{file}/restore", post(restore))
         .route("/slots", post(slots))
         .route("/shutdown", post(shutdown))
         .route("/events", get(events))
@@ -238,6 +246,30 @@ async fn archive(State(s): State<AppState>, UrlPath(id): UrlPath<String>) -> Api
 async fn delete(State(s): State<AppState>, UrlPath(id): UrlPath<String>) -> ApiResult<serde_json::Value> {
     s.daemon.remove(&id, false).await?;
     Ok(Json(serde_json::json!({ "archive": null })))
+}
+
+async fn archived(State(s): State<AppState>) -> Json<Vec<crate::daemon::ArchivedTest>> {
+    // Reading the zips is file work.
+    let daemon = s.daemon.clone();
+    Json(tokio::task::spawn_blocking(move || daemon.archived()).await.expect("listing doesn't panic"))
+}
+
+async fn restore(
+    State(s): State<AppState>,
+    UrlPath(file): UrlPath<String>,
+) -> ApiResult<crate::daemon::TestInfo> {
+    let daemon = s.daemon.clone();
+    let info =
+        tokio::task::spawn_blocking(move || daemon.restore(&file)).await.expect("restoring doesn't panic")?;
+    Ok(Json(info))
+}
+
+async fn delete_archived(
+    State(s): State<AppState>,
+    UrlPath(file): UrlPath<String>,
+) -> ApiResult<serde_json::Value> {
+    s.daemon.delete_archived(&file)?;
+    Ok(Json(serde_json::json!({})))
 }
 
 async fn pause(

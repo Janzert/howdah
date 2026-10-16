@@ -30,11 +30,12 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput,
-    EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView,
-    PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView,
-    PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
-    StartedBotView, StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
+    AnimStep, ApiError, ArchivedTestView, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption,
+    EngineOutput, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec,
+    PlayerGamesView, PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView, PositionSpec,
+    PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView,
+    SessionsChanged, StartedBotView, StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView,
+    WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -828,6 +829,20 @@ impl Backend {
         self.tourney.remove(id, archive).await
     }
 
+    /// The daemon's archived tests, newest first.
+    pub async fn tourney_archived(&self) -> Result<Vec<ArchivedTestView>, ApiError> {
+        self.tourney.archived().await
+    }
+
+    /// Puts an archived test back in the daemon's queue.
+    pub async fn tourney_restore(&self, file: &str) -> Result<TestView, ApiError> {
+        self.tourney.restore(file).await
+    }
+
+    pub async fn tourney_delete_archived(&self, file: &str) -> Result<(), ApiError> {
+        self.tourney.delete_archived(file).await
+    }
+
     pub async fn tourney_set_slots(&self, slots: u32) -> Result<(), ApiError> {
         self.tourney.set_slots(slots).await
     }
@@ -1194,6 +1209,11 @@ impl Backend {
             }
             "tourney_remove" => {
                 ok(self.tourney_remove(&arg::<String>(args, "id")?, arg(args, "archive")?).await?)
+            }
+            "tourney_archived" => ok(self.tourney_archived().await?),
+            "tourney_restore" => ok(self.tourney_restore(&arg::<String>(args, "file")?).await?),
+            "tourney_delete_archived" => {
+                ok(self.tourney_delete_archived(&arg::<String>(args, "file")?).await?)
             }
             "tourney_set_slots" => ok(self.tourney_set_slots(arg(args, "slots")?).await?),
             "tourney_start_daemon" => ok(self.tourney_start_daemon(arg(args, "slots")?).await?),

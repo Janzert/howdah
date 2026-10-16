@@ -1311,6 +1311,25 @@ pub struct TestDetailView {
     pub games: Vec<TestGameView>,
 }
 
+/// An archived engine test (a zip in the daemon's `archive/`).
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ArchivedTestView {
+    /// The zip's file name, which names it to the daemon.
+    pub file: String,
+    /// The zip's size in bytes.
+    #[ts(type = "number")]
+    pub size: u64,
+    /// When it was archived, in seconds since the Unix epoch.
+    #[ts(type = "number")]
+    pub archived: u64,
+    /// The test as it was; None if the zip couldn't be read.
+    pub test: Option<TestView>,
+    /// Why it couldn't be read.
+    pub error: Option<String>,
+}
+
 /// A new engine test from the lobby: two engines from the engine list.
 #[derive(Clone, Debug, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

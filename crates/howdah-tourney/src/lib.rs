@@ -31,8 +31,8 @@ pub mod client;
 pub mod server;
 
 pub use daemon::{
-    ARCHIVE_DIR, DATA_DIR_ENV, Daemon, DaemonEvent, DaemonInfo, DaemonStatus, GameOutput, INFO_FILE,
-    RunningGame, TestInfo, TestStatus, default_data_dir,
+    ARCHIVE_DIR, ArchivedTest, DATA_DIR_ENV, Daemon, DaemonEvent, DaemonInfo, DaemonStatus, GameOutput,
+    INFO_FILE, RunningGame, TestInfo, TestStatus, default_data_dir,
 };
 pub use error::TourneyError;
 pub use memory::default_budget as default_memory_budget;

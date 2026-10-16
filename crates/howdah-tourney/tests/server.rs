@@ -88,6 +88,16 @@ async fn a_test_through_the_http_api() {
     assert_eq!(zip, tmp.path().join("archive").join(format!("{}.zip", test.id)));
     assert!(zip.is_file() && !test.path.exists() && !second.path.exists());
     assert!(client.list().await.unwrap().is_empty());
+    let archived = client.archived().await.unwrap();
+    assert_eq!(archived.len(), 1);
+    assert_eq!(archived[0].test.as_ref().unwrap().summary.games, 4);
+    let back = client.restore(&archived[0].file).await.unwrap();
+    assert_eq!((back.id, back.summary.games), (test.id.clone(), 4));
+    client.archive(&test.id).await.unwrap();
+    client.delete_archived(&archived[0].file).await.unwrap();
+    assert!(client.archived().await.unwrap().is_empty());
+    let err = client.restore("nope.zip").await.unwrap_err();
+    assert!(err.to_string().contains("no test"), "{err}");
 
     let mut wrong = DaemonInfo::read(tmp.path()).unwrap();
     wrong.token = "nope".into();

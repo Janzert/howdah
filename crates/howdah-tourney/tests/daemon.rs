@@ -307,5 +307,36 @@ async fn finished_tests_can_be_archived_or_deleted() {
     // An archived test's number isn't used again.
     let next = daemon.submit(spec("next", "max_pairs = 1", &[]), 0).unwrap();
     assert_eq!(next.id, "0002-next");
+
+    let archived = daemon.archived();
+    assert_eq!(archived.len(), 1);
+    assert_eq!(archived[0].file, "0001-kept.zip");
+    let was = archived[0].test.as_ref().unwrap();
+    assert_eq!((was.name.as_str(), was.status, was.summary.games), ("kept", TestStatus::Finished, 2));
+    assert_eq!(was.end, Some(RunEnd::MaxPairs));
+    for bad in ["../0001-kept.zip", ".zip", "nope.zip", "0001-kept"] {
+        assert!(matches!(daemon.delete_archived(bad), Err(TourneyError::NoTest(_))), "{bad}");
+    }
+
+    // Restored, it's as it was, and its zip is gone.
+    let back = daemon.restore("0001-kept.zip").unwrap();
+    assert_eq!((back.id.as_str(), back.status, back.summary.games), ("0001-kept", TestStatus::Finished, 2));
+    assert!(daemon.archived().is_empty() && !zip.exists());
+    assert_eq!(daemon.games(&back.id).unwrap().len(), 2);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let program = back.path.join("engines/one").read_dir().unwrap().next().unwrap().unwrap().path();
+        assert_ne!(std::fs::metadata(program).unwrap().permissions().mode() & 0o111, 0);
+    }
+
+    // Archived again, it can't be restored over itself, and can be deleted.
+    let zip = daemon.remove(&back.id, true).await.unwrap().unwrap();
+    std::fs::create_dir(tmp.path().join("tests/0001-kept")).unwrap();
+    let err = daemon.restore("0001-kept.zip").unwrap_err();
+    assert!(err.to_string().contains("in the queue already"), "{err}");
+    std::fs::remove_dir(tmp.path().join("tests/0001-kept")).unwrap();
+    daemon.delete_archived("0001-kept.zip").unwrap();
+    assert!(daemon.archived().is_empty() && !zip.exists());
     close(&daemon).await;
 }

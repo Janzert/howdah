@@ -4,13 +4,15 @@
   // Howdah closed; this lists them, starts new ones, and opens their games
   // in game windows. Without a daemon it offers to start one. Finished
   // tests can be archived (zipped into the daemon's archive/), one at a
-  // time from a test's dialog or all at once here.
+  // time from a test's dialog or all at once here, and restored or
+  // deleted from the Archived tests dialog.
   import { onMount } from 'svelte';
   import { api, errorMessage } from './api';
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { TestView } from './bindings/TestView';
   import type { TourneyStatusView } from './bindings/TourneyStatusView';
   import { on } from './events';
+  import ArchiveDialog from './ArchiveDialog.svelte';
   import NewTestDialog from './NewTestDialog.svelte';
   import TestDialog from './TestDialog.svelte';
   import { llrPosition, scoreText, testState } from './tests';
@@ -35,6 +37,7 @@
   let notice = $state<string | null>(null);
   /** Archive finished was clicked once; the second click archives. */
   let confirmArchive = $state(false);
+  let showArchive = $state(false);
   let startSlots = $state(Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
 
   async function refresh() {
@@ -161,23 +164,25 @@
         title="Stop the daemon once its running games end; tests carry on when it starts again">Shut down</button>
       <button class="primary" onclick={() => (showNew = true)}>New test</button>
     </div>
+    <div class="row">
+      <span class="spacer"></span>
+      <button class="subtle" onclick={() => (showArchive = true)}
+        title="The archived tests, to restore or delete">Archived tests…</button>
+      {#if finished.length > 0}
+        <button
+          class="subtle"
+          class:danger={confirmArchive}
+          onclick={archiveFinished}
+          onblur={() => (confirmArchive = false)}
+          disabled={busy}
+          title="Zip every finished test into the daemon's archive folder and take them off the list"
+          >{confirmArchive ? `Archive ${finished.length} tests?` : `Archive finished (${finished.length})`}</button
+        >
+      {/if}
+    </div>
     {#if tests.length === 0}
       <p class="hint">No tests yet.</p>
     {:else}
-      {#if finished.length > 0}
-        <div class="row">
-          <span class="spacer"></span>
-          <button
-            class="subtle"
-            class:danger={confirmArchive}
-            onclick={archiveFinished}
-            onblur={() => (confirmArchive = false)}
-            disabled={busy}
-            title="Zip every finished test into the daemon's archive folder and take them off the list"
-            >{confirmArchive ? `Archive ${finished.length} tests?` : `Archive finished (${finished.length})`}</button
-          >
-        </div>
-      {/if}
       <ul class="tests" aria-label="Engine tests">
         {#each [...tests].reverse() as t (t.id)}
           {@const pos = llrPosition(t)}
@@ -209,6 +214,16 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 </section>
 
+{#if showArchive}
+  <ArchiveDialog
+    dataDir={status?.dataDir ?? null}
+    onRestored={(t) => {
+      if (!tests.some((x) => x.id === t.id)) tests = [...tests, t].sort((a, b) => a.id.localeCompare(b.id));
+      notice = `Restored ${t.id}`;
+    }}
+    onClose={() => (showArchive = false)}
+  />
+{/if}
 {#if showNew}
   <NewTestDialog
     {engines}

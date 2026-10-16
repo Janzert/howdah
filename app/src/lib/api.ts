@@ -3,6 +3,7 @@
 // `game://changed` event (see events.ts).
 import { invoke } from '@tauri-apps/api/core';
 import type { ApiError } from './bindings/ApiError';
+import type { ArchivedTestView } from './bindings/ArchivedTestView';
 import type { BotInfoView } from './bindings/BotInfoView';
 import type { Color } from './bindings/Color';
 import type { EngineCatalogView } from './bindings/EngineCatalogView';
@@ -256,6 +257,11 @@ function makeApi(sid: () => SessionId | null) {
     /** Takes a test that isn't active out of the daemon: zipped into its
      * `archive/` (resolves to the zip's path) if `archive`, else deleted. */
     tourneyRemove: (id: string, archive: boolean) => invoke<string | null>('tourney_remove', { id, archive }),
+    /** The daemon's archived tests, newest first. */
+    tourneyArchived: () => invoke<ArchivedTestView[]>('tourney_archived'),
+    /** Puts an archived test (by its zip's file name) back in the queue. */
+    tourneyRestore: (file: string) => invoke<TestView>('tourney_restore', { file }),
+    tourneyDeleteArchived: (file: string) => invoke<void>('tourney_delete_archived', { file }),
     /** The daemon's tests, oldest first. */
     tourneyTests: () => invoke<TestView[]>('tourney_tests'),
     /** A test with its finished games, newest first. */

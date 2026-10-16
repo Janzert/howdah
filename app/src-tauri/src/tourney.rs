@@ -24,8 +24,8 @@ use howdah_tourney::{
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, ENGINE_OUTPUT, SharedSession, engine_output};
 use crate::dto::{
-    ApiError, EngineOutput, EngineSpec, NewTestSpec, SprtView, TestDetailView, TestGameRef, TestGameTag,
-    TestGameView, TestView, TourneyStatusView, TourneyUpdate,
+    ApiError, ArchivedTestView, EngineOutput, EngineSpec, NewTestSpec, SprtView, TestDetailView, TestGameRef,
+    TestGameTag, TestGameView, TestView, TourneyStatusView, TourneyUpdate,
 };
 use crate::session::{Player, RemoteClock, Session};
 
@@ -147,6 +147,30 @@ impl Tourney {
         } else {
             client.delete(id).await.map_err(api).map(|()| None)
         }
+    }
+
+    /// The archived tests, newest first.
+    pub async fn archived(&self) -> Result<Vec<ArchivedTestView>, ApiError> {
+        let list = self.client()?.archived().await.map_err(api)?;
+        Ok(list
+            .into_iter()
+            .map(|a| ArchivedTestView {
+                file: a.file,
+                size: a.size,
+                archived: a.archived,
+                test: a.test.as_ref().map(test_view),
+                error: a.error,
+            })
+            .collect())
+    }
+
+    /// Puts archived test `file` back in the queue.
+    pub async fn restore(&self, file: &str) -> Result<TestView, ApiError> {
+        Ok(test_view(&self.client()?.restore(file).await.map_err(api)?))
+    }
+
+    pub async fn delete_archived(&self, file: &str) -> Result<(), ApiError> {
+        self.client()?.delete_archived(file).await.map_err(api)
     }
 
     pub async fn set_slots(&self, slots: u32) -> Result<(), ApiError> {

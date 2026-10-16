@@ -95,6 +95,11 @@ pub fn read_results(path: &Path) -> Result<Vec<GameEntry>, TourneyError> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(TourneyError::io(path)(e)),
     };
+    parse_results(&text, path)
+}
+
+/// [`read_results`] on a log already read; `path` is for errors.
+pub(crate) fn parse_results(text: &str, path: &Path) -> Result<Vec<GameEntry>, TourneyError> {
     let complete = text.ends_with('\n');
     let lines: Vec<&str> = text.lines().collect();
     let mut entries: Vec<GameEntry> = Vec::new();

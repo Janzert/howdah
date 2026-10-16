@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
-use crate::daemon::{DaemonEvent, DaemonInfo, DaemonStatus, GameOutput, INFO_FILE, TestInfo};
+use crate::daemon::{ArchivedTest, DaemonEvent, DaemonInfo, DaemonStatus, GameOutput, INFO_FILE, TestInfo};
 use crate::results::GameEntry;
 use crate::runner::LiveGame;
 use crate::spec::TestSpec;
@@ -139,6 +139,22 @@ impl Client {
     /// Deletes a test that isn't active, and all its files.
     pub async fn delete(&self, id: &str) -> Result<(), ClientError> {
         self.send(self.http.delete(format!("{}/tests/{id}", self.base))).await?;
+        Ok(())
+    }
+
+    /// The archived tests, newest first.
+    pub async fn archived(&self) -> Result<Vec<ArchivedTest>, ClientError> {
+        self.get("/archive").await
+    }
+
+    /// Puts archived test `file` (its zip's name) back in the queue.
+    pub async fn restore(&self, file: &str) -> Result<TestInfo, ClientError> {
+        self.post(&format!("/archive/{file}/restore"), &json!({})).await
+    }
+
+    /// Deletes archived test `file`.
+    pub async fn delete_archived(&self, file: &str) -> Result<(), ClientError> {
+        self.send(self.http.delete(format!("{}/archive/{file}", self.base))).await?;
         Ok(())
     }
 

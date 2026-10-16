@@ -6,10 +6,11 @@ use tauri::State;
 
 use crate::backend::{self, Backend};
 use crate::dto::{
-    ApiError, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
-    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView,
-    PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId,
-    SessionView, StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
+    ApiError, ArchivedTestView, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput,
+    EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView,
+    PlayerMatchView, PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
+    ServerBotsView, SessionId, SessionView, StartedBotView, StepTarget, TestDetailView, TestView,
+    TourneyStatusView, WatchView,
 };
 
 #[tauri::command]
@@ -693,6 +694,21 @@ pub async fn tourney_remove(
     archive: bool,
 ) -> Result<Option<String>, ApiError> {
     state.tourney_remove(&id, archive).await
+}
+
+#[tauri::command]
+pub async fn tourney_archived(state: State<'_, Backend>) -> Result<Vec<ArchivedTestView>, ApiError> {
+    state.tourney_archived().await
+}
+
+#[tauri::command]
+pub async fn tourney_restore(state: State<'_, Backend>, file: String) -> Result<TestView, ApiError> {
+    state.tourney_restore(&file).await
+}
+
+#[tauri::command]
+pub async fn tourney_delete_archived(state: State<'_, Backend>, file: String) -> Result<(), ApiError> {
+    state.tourney_delete_archived(&file).await
 }
 
 #[tauri::command]

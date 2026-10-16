@@ -131,9 +131,10 @@ One directory per test, under the daemon's data directory
 
 A test that isn't active and has no games running can be archived:
 its directory is zipped into `<data dir>/archive/<id>.zip` and taken
-out of the queue (unzipping it back into `tests/` brings it back on the
-daemon's next start), or deleted outright. Archived tests' numbers
-aren't given to new tests.
+out of the queue, or deleted outright. Archived tests can be listed
+(read from their zips), restored (unzipped back into `tests/` and into
+the queue as they were, and the zip removed) or deleted. Archived
+tests' numbers aren't given to new tests.
 
 The state of a test is its spec plus `results.jsonl`, so resuming after
 a crash or a stop is just reading them: pairs with both games logged are
@@ -191,7 +192,8 @@ chess.
 Local HTTP with JSON and server-sent events, as the dev bridge does:
 - Commands: submit, list, get a test (spec, state, stats), list a test's
   games, pause, resume, stop, change pairs or priority, set
-  concurrency, archive or delete a test, shut down.
+  concurrency, archive or delete a test, list, restore or delete
+  archived tests, shut down.
 - Events: a test added or changed state, stats updated, a game started
   or finished. A running game's `MatchEvent`s (moves, clocks, engine
   info) are sent only to clients following that game.
@@ -209,6 +211,9 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   snapshots), and to archive every finished test at once.
 - A test's dialog archives or deletes it (delete after a second click)
   once it's stopped or paused with no games running.
+- An **Archived tests** dialog from the Tests page lists the archive
+  (each test's results as archived, when, and the zip's size), with
+  Restore and Delete (after a second click) for each.
 - A **test page**: the stats above, the list of games (open one in a
   game window to replay it), and the running games.
 - A **running game** opens in a game window as a read-only session that
