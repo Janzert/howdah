@@ -21,4 +21,8 @@ game: TestGameView | null,
 /**
  * The daemon's slots, when they changed.
  */
-slots: number | null, };
+slots: number | null, 
+/**
+ * A test taken out of the queue (archived or deleted), by id.
+ */
+removed: string | null, };

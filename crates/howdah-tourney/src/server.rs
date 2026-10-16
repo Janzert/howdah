@@ -12,6 +12,9 @@
 //!   /tests/{id}/output/{pair}/{game}`: server-sent events, each a
 //!   [`GameOutput`] (`engineOutput`), the game's engine output from now
 //!   on.
+//! - `POST /tests/{id}/archive`: zips a test that isn't active into
+//!   `archive/` and takes it out, `{"archive": path}`; `DELETE
+//!   /tests/{id}`: deletes one, `{"archive": null}`.
 //! - `POST /tests/{id}/pause`, `/resume`, `/stop`; `POST
 //!   /tests/{id}/priority` `{"priority": n}`; `POST /tests/{id}/max-pairs`
 //!   `{"maxPairs": n | null}`; `POST /tests/{id}/concurrency`
@@ -114,7 +117,8 @@ pub async fn serve(daemon: Daemon, listener: TcpListener, info: DaemonInfo) -> R
     let app = Router::new()
         .route("/status", get(status))
         .route("/tests", get(list).post(submit))
-        .route("/tests/{id}", get(test_info))
+        .route("/tests/{id}", get(test_info).delete(delete))
+        .route("/tests/{id}/archive", post(archive))
         .route("/tests/{id}/games", get(games))
         .route("/tests/{id}/games/{pair}/{game}", get(record))
         .route("/tests/{id}/live/{pair}/{game}", get(live))
@@ -224,6 +228,16 @@ async fn output(
             .then(|| Ok(Event::default().event("engineOutput").json_data(&o).expect("output serializes")))
     });
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+async fn archive(State(s): State<AppState>, UrlPath(id): UrlPath<String>) -> ApiResult<serde_json::Value> {
+    let zip = s.daemon.remove(&id, true).await?;
+    Ok(Json(serde_json::json!({ "archive": zip })))
+}
+
+async fn delete(State(s): State<AppState>, UrlPath(id): UrlPath<String>) -> ApiResult<serde_json::Value> {
+    s.daemon.remove(&id, false).await?;
+    Ok(Json(serde_json::json!({ "archive": null })))
 }
 
 async fn pause(

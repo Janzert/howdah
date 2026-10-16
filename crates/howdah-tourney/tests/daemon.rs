@@ -256,3 +256,56 @@ async fn idle_slots_let_their_engines_go() {
     assert_eq!(engines, 0);
     close(&daemon).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn finished_tests_can_be_archived_or_deleted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::start(tmp.path(), 0).unwrap();
+    let mut rx = daemon.subscribe();
+    let kept = daemon.submit(spec("kept", "max_pairs = 1", &[]), 0).unwrap();
+    let gone = daemon.submit(spec("gone", "max_pairs = 1", &[]), 0).unwrap();
+    let err = daemon.remove(&kept.id, true).await.unwrap_err();
+    assert!(err.to_string().contains("is active"), "{err}");
+    daemon.set_slots(1);
+    let (mut a, mut b) = (false, false);
+    events_until(&mut rx, |e| {
+        a |= finished(e, &kept.id);
+        b |= finished(e, &gone.id);
+        a && b
+    })
+    .await;
+
+    // The slot still holds the last test's engines; taking it out lets
+    // them go at once rather than after the idle time.
+    let zip = daemon.remove(&kept.id, true).await.unwrap().unwrap();
+    assert!(daemon.remove(&gone.id, false).await.unwrap().is_none());
+    assert_eq!(daemon.status().engines, 0);
+    events_until(
+        &mut rx,
+        |e| matches!(e, DaemonEvent::TestRemoved { test, archive: None } if *test == gone.id),
+    )
+    .await;
+    assert!(daemon.list().is_empty());
+    assert!(!kept.path.exists() && !gone.path.exists());
+    assert_eq!(zip, tmp.path().join("archive/0001-kept.zip"));
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(&zip).unwrap()).unwrap();
+    let names: Vec<String> = archive.file_names().map(str::to_string).collect();
+    for name in [
+        "0001-kept/test.toml",
+        "0001-kept/results.jsonl",
+        "0001-kept/state.json",
+        "0001-kept/games/0001-2.txt",
+    ] {
+        assert!(names.iter().any(|n| n == name), "{name} not in {names:?}");
+    }
+    let mut results = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name("0001-kept/results.jsonl").unwrap(), &mut results)
+        .unwrap();
+    assert_eq!(results.lines().count(), 2);
+    assert!(matches!(daemon.remove(&kept.id, false).await, Err(TourneyError::NoTest(_))));
+
+    // An archived test's number isn't used again.
+    let next = daemon.submit(spec("next", "max_pairs = 1", &[]), 0).unwrap();
+    assert_eq!(next.id, "0002-next");
+    close(&daemon).await;
+}

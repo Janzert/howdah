@@ -13,6 +13,8 @@
 //! howdah-tourney status                          its slots and running games
 //! howdah-tourney watch [ID]                      follow games as they finish (until ID does)
 //! howdah-tourney pause|resume|stop ID
+//! howdah-tourney archive|delete ID              take a stopped or paused test out
+//!                                                (archive zips it into the data directory's archive/)
 //! howdah-tourney priority ID N
 //! howdah-tourney max-pairs ID N|none
 //! howdah-tourney concurrency ID N
@@ -49,6 +51,7 @@ const USAGE: &str = "usage:
   howdah-tourney submit SPEC.toml [--priority N]
   howdah-tourney list | status | watch [ID]
   howdah-tourney pause|resume|stop ID
+  howdah-tourney archive|delete ID
   howdah-tourney priority ID N
   howdah-tourney max-pairs ID N|none
   howdah-tourney concurrency ID N
@@ -131,6 +134,16 @@ async fn command(args: &[String], data: &Path) -> Result<(), String> {
             }
             .map_err(|e| e.to_string())?;
             println!("{}", list_line(&info));
+            Ok(())
+        }
+        ["archive", id] => {
+            let zip = client(data)?.archive(id).await.map_err(|e| e.to_string())?;
+            println!("Archived {id} to {}", zip.display());
+            Ok(())
+        }
+        ["delete", id] => {
+            client(data)?.delete(id).await.map_err(|e| e.to_string())?;
+            println!("Deleted {id}");
             Ok(())
         }
         ["priority", id, p] => {
@@ -450,6 +463,10 @@ fn print_daemon_event(
         DaemonEvent::EngineFailedToStart { test, engine, error } => {
             println!("{test}        {} didn't start: {error}", names_of(test)[*engine]);
         }
+        DaemonEvent::TestRemoved { test, archive } => match archive {
+            Some(zip) => println!("{test} archived to {}", zip.display()),
+            None => println!("{test} deleted"),
+        },
         DaemonEvent::SlotsChanged { slots } => println!("{slots} slots"),
         DaemonEvent::ShuttingDown { now } => {
             println!("{}", if *now { "Shutting down now" } else { "Shutting down after the running games" })

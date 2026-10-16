@@ -211,6 +211,10 @@ pub(crate) struct TestRun {
     state: Mutex<State>,
     /// Set while the test should start no more games.
     pub(crate) hold: StopHandle,
+    /// Set when the test is taken out of the daemon (archived or
+    /// deleted): slots holding its engines let them go.
+    retired: AtomicBool,
+    retire: tokio::sync::Notify,
     on_event: EventFn,
 }
 
@@ -242,6 +246,8 @@ impl TestRun {
             }),
             dir,
             hold: StopHandle::default(),
+            retired: AtomicBool::new(false),
+            retire: tokio::sync::Notify::new(),
             on_event,
         })
     }
@@ -462,6 +468,26 @@ impl TestRun {
     fn send(&self, event: RunEvent) {
         (self.on_event)(event);
     }
+
+    /// Tells the slots holding the test's engines to let them go, and its
+    /// files (once they drop the test).
+    pub(crate) fn retire(&self) {
+        self.retired.store(true, Ordering::SeqCst);
+        self.retire.notify_waiters();
+    }
+
+    /// Resolves once the test is retired.
+    async fn retired(&self) {
+        loop {
+            let notified = self.retire.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.retired.load(Ordering::SeqCst) {
+                return;
+            }
+            notified.await;
+        }
+    }
 }
 
 /// Where slots get their games.
@@ -586,17 +612,31 @@ pub(crate) async fn play_slot(picker: Arc<impl Picker>, slot: usize) -> Result<(
                 tokio::time::sleep(memory::POLL).await;
             }
         }
-        // Picking is done within one poll, so a timeout can't lose a game.
-        let next =
-            match tokio::time::timeout(IDLE_KEEP, picker.next(slot, held.as_ref().map(|h| &h.run))).await {
-                Ok(next) => next,
-                Err(_) => {
-                    if let Some(h) = &mut held {
-                        quit_all(&mut h.engines, tracked).await;
+        // Picking is done within one poll, so a timeout (or the test being
+        // retired) can't lose a game.
+        let waited = {
+            let current = held.as_ref().map(|h| &h.run);
+            tokio::select! {
+                next = tokio::time::timeout(IDLE_KEEP, picker.next(slot, current)) => next.ok(),
+                () = async {
+                    match current {
+                        Some(run) => run.retired().await,
+                        None => std::future::pending().await,
                     }
-                    picker.next(slot, held.as_ref().map(|h| &h.run)).await
+                } => None,
+            }
+        };
+        let next = match waited {
+            Some(next) => next,
+            None => {
+                // Idle or retired: let the engines go, and the test too, so
+                // a retired test's files are free.
+                if let Some(mut h) = held.take() {
+                    quit_all(&mut h.engines, tracked).await;
                 }
-            };
+                picker.next(slot, None).await
+            }
+        };
         let Some((run, game)) = next else { break };
         if held.as_ref().is_some_and(|h| !Arc::ptr_eq(&h.run, &run))
             && let Some(mut old) = held.take()

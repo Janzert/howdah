@@ -161,6 +161,7 @@ pub fn run() {
             commands::tourney_control,
             commands::tourney_set_priority,
             commands::tourney_set_max_pairs,
+            commands::tourney_remove,
             commands::tourney_set_concurrency,
             commands::tourney_set_slots,
             commands::tourney_start_daemon,

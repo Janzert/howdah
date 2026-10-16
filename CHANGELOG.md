@@ -21,7 +21,11 @@ young).
   running one follows the game live with its clocks, a finished one
   opens as a record. Tests can be paused, resumed, stopped and
   reprioritized, their pair limit and games at once changed, and the
-  daemon given more or fewer games at once.
+  daemon given more or fewer games at once. A stopped or paused test can
+  be archived (zipped into the daemon's `archive/` folder) or deleted
+  from its dialog, and Archive finished archives every finished test;
+  `howdah-tourney archive|delete ID` does the same from the command
+  line.
   A test game's window title names the test and the game (pair.game),
   and Follow opens a window that moves on, 15 s after each game ends,
   to the test's newest game not open in another window. A running test

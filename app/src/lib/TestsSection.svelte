@@ -2,7 +2,9 @@
   // The lobby's Engine tests: the howdah-tourney daemon's queue of tests
   // (docs/TOURNAMENTS.md). The daemon runs on its own, so tests go on with
   // Howdah closed; this lists them, starts new ones, and opens their games
-  // in game windows. Without a daemon it offers to start one.
+  // in game windows. Without a daemon it offers to start one. Finished
+  // tests can be archived (zipped into the daemon's archive/), one at a
+  // time from a test's dialog or all at once here.
   import { onMount } from 'svelte';
   import { api, errorMessage } from './api';
   import type { EngineSpec } from './bindings/EngineSpec';
@@ -29,6 +31,10 @@
   let busy = $state(false);
   let showNew = $state(false);
   let shown = $state<string | null>(null);
+  /** What the last archive or delete did. */
+  let notice = $state<string | null>(null);
+  /** Archive finished was clicked once; the second click archives. */
+  let confirmArchive = $state(false);
   let startSlots = $state(Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
 
   async function refresh() {
@@ -55,6 +61,7 @@
         else tests = [...tests, t];
       }
       if (u.slots != null && status) status.slots = u.slots;
+      if (u.removed) tests = tests.filter((t) => t.id !== u.removed);
     });
     return () => void unlisten.then((f) => f());
   });
@@ -85,6 +92,41 @@
   });
 
   const running = $derived(tests.reduce((n, t) => n + t.running.length, 0));
+  const finished = $derived(tests.filter((t) => t.status === 'finished' && t.running.length === 0));
+
+  function archiveFinished() {
+    if (!confirmArchive) {
+      confirmArchive = true;
+      return;
+    }
+    confirmArchive = false;
+    const ids = finished.map((t) => t.id);
+    void act(async () => {
+      notice = null;
+      let done = 0;
+      try {
+        for (const id of ids) {
+          await api.tourneyRemove(id, true);
+          tests = tests.filter((t) => t.id !== id);
+          done++;
+        }
+      } finally {
+        if (done > 0) notice = `Archived ${done === 1 ? '1 test' : `${done} tests`} to ${archiveDir()}`;
+      }
+    });
+  }
+
+  /** The daemon's archive folder, for messages. */
+  function archiveDir(): string {
+    const dir = status?.dataDir;
+    if (!dir) return 'the archive folder';
+    return `${dir}${dir.includes('\\') ? '\\' : '/'}archive`;
+  }
+
+  function removed(id: string, zip: string | null) {
+    tests = tests.filter((t) => t.id !== id);
+    notice = zip ? `Archived ${id} to ${zip}` : `Deleted ${id}`;
+  }
 </script>
 
 <section aria-labelledby="tests-title">
@@ -122,6 +164,20 @@
     {#if tests.length === 0}
       <p class="hint">No tests yet.</p>
     {:else}
+      {#if finished.length > 0}
+        <div class="row">
+          <span class="spacer"></span>
+          <button
+            class="subtle"
+            class:danger={confirmArchive}
+            onclick={archiveFinished}
+            onblur={() => (confirmArchive = false)}
+            disabled={busy}
+            title="Zip every finished test into the daemon's archive folder and take them off the list"
+            >{confirmArchive ? `Archive ${finished.length} tests?` : `Archive finished (${finished.length})`}</button
+          >
+        </div>
+      {/if}
       <ul class="tests" aria-label="Engine tests">
         {#each [...tests].reverse() as t (t.id)}
           {@const pos = llrPosition(t)}
@@ -149,6 +205,7 @@
     {/if}
   {/if}
   {#if status?.dataDir}<p class="hint small">Tests are kept in {status.dataDir}</p>{/if}
+  {#if notice}<p class="hint small" role="status">{notice}</p>{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 </section>
 
@@ -163,7 +220,8 @@
   />
 {/if}
 {#if shown}
-  <TestDialog id={shown} {onOpenGame} {onFollow} onClose={() => (shown = null)} />
+  {@const id = shown}
+  <TestDialog {id} {onOpenGame} {onFollow} onRemoved={(zip) => removed(id, zip)} onClose={() => (shown = null)} />
 {/if}
 
 <style>
@@ -273,5 +331,8 @@
     font-size: 12px;
     padding: 2px 8px;
     color: var(--muted);
+  }
+  .subtle.danger {
+    color: var(--warn);
   }
 </style>

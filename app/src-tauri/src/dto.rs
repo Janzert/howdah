@@ -1339,4 +1339,6 @@ pub struct TourneyUpdate {
     pub game: Option<TestGameView>,
     /// The daemon's slots, when they changed.
     pub slots: Option<u32>,
+    /// A test taken out of the queue (archived or deleted), by id.
+    pub removed: Option<String>,
 }

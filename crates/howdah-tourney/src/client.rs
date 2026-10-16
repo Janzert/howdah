@@ -26,6 +26,11 @@ pub enum ClientError {
     Json(#[from] serde_json::Error),
 }
 
+#[derive(serde::Deserialize)]
+struct Removed {
+    archive: Option<PathBuf>,
+}
+
 #[derive(Clone)]
 pub struct Client {
     base: String,
@@ -122,6 +127,19 @@ impl Client {
 
     pub async fn stop(&self, id: &str) -> Result<TestInfo, ClientError> {
         self.post(&format!("/tests/{id}/stop"), &json!({})).await
+    }
+
+    /// Zips a test that isn't active into the data directory's `archive/`
+    /// and takes it out of the queue; returns the zip's path.
+    pub async fn archive(&self, id: &str) -> Result<PathBuf, ClientError> {
+        let removed: Removed = self.post(&format!("/tests/{id}/archive"), &json!({})).await?;
+        Ok(removed.archive.unwrap_or_default())
+    }
+
+    /// Deletes a test that isn't active, and all its files.
+    pub async fn delete(&self, id: &str) -> Result<(), ClientError> {
+        self.send(self.http.delete(format!("{}/tests/{id}", self.base))).await?;
+        Ok(())
     }
 
     pub async fn set_priority(&self, id: &str, priority: i32) -> Result<TestInfo, ClientError> {

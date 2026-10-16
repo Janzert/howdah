@@ -1,7 +1,9 @@
 <script lang="ts">
   // One engine test: its results, its running and finished games (each
   // opens in a game window: a running one followed live), and pausing,
-  // resuming, stopping, its priority and its pair limit.
+  // resuming, stopping, its priority and its pair limit. Once it's not
+  // active and has no games running, it can be archived (zipped into the
+  // daemon's archive/) or deleted.
   import { onMount } from 'svelte';
   import { api, errorMessage } from './api';
   import type { TestGameView } from './bindings/TestGameView';
@@ -14,9 +16,11 @@
     onOpenGame: (test: string, pair: number, game: number) => Promise<string | null>;
     /** Opens a game window that follows the test from game to game. */
     onFollow: (test: string) => Promise<string | null>;
+    /** The test was archived (to `archive`) or deleted; the dialog closes. */
+    onRemoved: (archive: string | null) => void;
     onClose: () => void;
   }
-  let { id, onOpenGame, onFollow, onClose }: Props = $props();
+  let { id, onOpenGame, onFollow, onRemoved, onClose }: Props = $props();
 
   let test = $state<TestView | null>(null);
   let games = $state<TestGameView[]>([]);
@@ -25,6 +29,8 @@
   let priority = $state(0);
   let maxPairs = $state<number | null>(null);
   let concurrency = $state(1);
+  /** Delete was clicked once; the second click deletes. */
+  let confirmDelete = $state(false);
   let dialog: HTMLDialogElement;
 
   $effect(() => {
@@ -75,6 +81,24 @@
     });
   }
 
+  async function remove(archive: boolean) {
+    if (!archive && !confirmDelete) {
+      confirmDelete = true;
+      return;
+    }
+    confirmDelete = false;
+    busy = true;
+    error = null;
+    try {
+      const zip = await api.tourneyRemove(id, archive);
+      onRemoved(zip);
+      dialog.close();
+    } catch (e) {
+      error = errorMessage(e);
+    }
+    busy = false;
+  }
+
   async function open(pair: number, game: number) {
     error = await onOpenGame(id, pair, game);
   }
@@ -84,6 +108,7 @@
   }
 
   const pos = $derived(test ? llrPosition(test) : null);
+  const removable = $derived(test != null && test.status !== 'active' && test.running.length === 0);
   const won = (g: TestGameView) => (g.winner === 'gold' ? g.gold : g.silver);
 </script>
 
@@ -195,6 +220,25 @@
     <p>Loading…</p>
   {/if}
   <div class="buttons">
+    {#if test}
+      <button
+        onclick={() => remove(true)}
+        disabled={busy || !removable}
+        title={removable
+          ? "Zip the test's directory into the daemon's archive folder and take it off the list"
+          : 'Stop or pause the test, and let its games finish, first'}>Archive</button
+      >
+      <button
+        class:danger={confirmDelete}
+        onclick={() => remove(false)}
+        onblur={() => (confirmDelete = false)}
+        disabled={busy || !removable}
+        title={removable
+          ? 'Delete the test and all its games, without keeping a copy'
+          : 'Stop or pause the test, and let its games finish, first'}
+        >{confirmDelete ? 'Delete all its games?' : 'Delete'}</button
+      >
+    {/if}
     <span class="spacer"></span>
     <button onclick={() => dialog.close()}>Close</button>
   </div>
@@ -338,5 +382,8 @@
     font-size: 12px;
     padding: 2px 8px;
     color: var(--muted);
+  }
+  .danger {
+    color: var(--warn);
   }
 </style>

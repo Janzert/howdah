@@ -687,6 +687,15 @@ pub async fn tourney_set_max_pairs(
 }
 
 #[tauri::command]
+pub async fn tourney_remove(
+    state: State<'_, Backend>,
+    id: String,
+    archive: bool,
+) -> Result<Option<String>, ApiError> {
+    state.tourney_remove(&id, archive).await
+}
+
+#[tauri::command]
 pub async fn tourney_set_slots(state: State<'_, Backend>, slots: u32) -> Result<(), ApiError> {
     state.tourney_set_slots(slots).await
 }

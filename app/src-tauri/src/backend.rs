@@ -822,6 +822,12 @@ impl Backend {
         self.tourney.set_max_pairs(id, max_pairs).await
     }
 
+    /// Archives (zips) or deletes a test that isn't active; the archive's
+    /// path, when archived.
+    pub async fn tourney_remove(&self, id: &str, archive: bool) -> Result<Option<String>, ApiError> {
+        self.tourney.remove(id, archive).await
+    }
+
     pub async fn tourney_set_slots(&self, slots: u32) -> Result<(), ApiError> {
         self.tourney.set_slots(slots).await
     }
@@ -1185,6 +1191,9 @@ impl Backend {
                 .await?),
             "tourney_set_max_pairs" => {
                 ok(self.tourney_set_max_pairs(&arg::<String>(args, "id")?, arg(args, "maxPairs")?).await?)
+            }
+            "tourney_remove" => {
+                ok(self.tourney_remove(&arg::<String>(args, "id")?, arg(args, "archive")?).await?)
             }
             "tourney_set_slots" => ok(self.tourney_set_slots(arg(args, "slots")?).await?),
             "tourney_start_daemon" => ok(self.tourney_start_daemon(arg(args, "slots")?).await?),

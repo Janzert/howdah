@@ -9,6 +9,11 @@
 //! games at once. All the slots' engines share a memory budget (see
 //! `memory`).
 //!
+//! A test that isn't active and has no games running can be taken out of
+//! the queue: archived (zipped into `<data dir>/archive/<id>.zip`, which
+//! unzipped back into `tests/` brings it back on the next start) or
+//! deleted.
+//!
 //! This is the daemon without its HTTP API (`server`), so it can be driven
 //! and tested directly.
 
@@ -16,7 +21,7 @@ use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use howdah_arimaa::Color;
 use serde::{Deserialize, Serialize};
@@ -35,6 +40,12 @@ use crate::testdir::{TestDir, slug};
 pub const DATA_DIR_ENV: &str = "HOWDAH_TOURNEY_DIR";
 
 const STATE_FILE: &str = "state.json";
+
+/// Where archived tests go, in the data directory.
+pub const ARCHIVE_DIR: &str = "archive";
+
+/// How long taking a test out waits for slots to let its engines go.
+const RETIRE_WAIT: Duration = Duration::from_secs(30);
 
 /// In the data directory while a daemon serves it: how to reach it.
 pub const INFO_FILE: &str = "daemon.json";
@@ -183,6 +194,12 @@ pub enum DaemonEvent {
         engine: usize,
         error: String,
     },
+    /// A test was taken out of the queue: archived (to `archive`) or
+    /// deleted.
+    TestRemoved {
+        test: String,
+        archive: Option<PathBuf>,
+    },
     SlotsChanged {
         slots: u32,
     },
@@ -214,6 +231,7 @@ impl DaemonEvent {
             DaemonEvent::GameFinished { .. } => "gameFinished",
             DaemonEvent::EngineRestarted { .. } => "engineRestarted",
             DaemonEvent::EngineFailedToStart { .. } => "engineFailedToStart",
+            DaemonEvent::TestRemoved { .. } => "testRemoved",
             DaemonEvent::SlotsChanged { .. } => "slotsChanged",
             DaemonEvent::ShuttingDown { .. } => "shuttingDown",
         }
@@ -368,9 +386,20 @@ impl Daemon {
         // can't take the same one; copying the engines happens unlocked.
         let id = {
             let tests = self.0.tests.lock().unwrap();
-            let mut next =
-                tests.iter().filter_map(|e| e.id.split('-').next()?.parse::<u32>().ok()).max().unwrap_or(0)
-                    + 1;
+            // Archived tests' numbers aren't used again.
+            let archived: Vec<String> = std::fs::read_dir(self.0.data_dir.join(ARCHIVE_DIR))
+                .into_iter()
+                .flatten()
+                .filter_map(|d| Some(d.ok()?.file_name().to_str()?.to_string()))
+                .collect();
+            let mut next = tests
+                .iter()
+                .map(|e| e.id.as_str())
+                .chain(archived.iter().map(String::as_str))
+                .filter_map(|id| id.split('-').next()?.parse::<u32>().ok())
+                .max()
+                .unwrap_or(0)
+                + 1;
             loop {
                 let id = format!("{next:04}-{}", slug(&spec.name));
                 match std::fs::create_dir(tests_dir.join(&id)) {
@@ -524,6 +553,66 @@ impl Daemon {
         })
     }
 
+    /// Takes a test out of the queue, zipping its directory into
+    /// `archive/<id>.zip` first if `archive` (that file is returned), and
+    /// deletes its directory. The test must not be active or have games
+    /// running. Slots holding its engines let them go first.
+    pub async fn remove(&self, id: &str, archive: bool) -> Result<Option<PathBuf>, TourneyError> {
+        let entry = {
+            let mut tests = self.0.tests.lock().unwrap();
+            let i =
+                tests.iter().position(|e| e.id == id).ok_or_else(|| TourneyError::NoTest(id.to_string()))?;
+            let e = &tests[i];
+            if e.saved.status == TestStatus::Active {
+                return Err(TourneyError::Refused(format!("{id} is active; stop or pause it first")));
+            }
+            if !e.run.running().is_empty() {
+                return Err(TourneyError::Refused(format!("{id} still has games running")));
+            }
+            tests.remove(i)
+        };
+        entry.run.retire();
+        self.0.wake.notify_waiters();
+        // The slots drop the test once its engines have quit; then its
+        // files are free (Windows can't delete a running program or an
+        // open log).
+        let deadline = Instant::now() + RETIRE_WAIT;
+        while Arc::strong_count(&entry.run) > 1 && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let path = entry.run.dir.path.clone();
+        drop(entry);
+        let data_dir = self.0.data_dir.clone();
+        let test = id.to_string();
+        let result = tokio::task::spawn_blocking(move || -> Result<Option<PathBuf>, TourneyError> {
+            let zip = if archive { Some(zip_test(&path, &data_dir.join(ARCHIVE_DIR), &test)?) } else { None };
+            std::fs::remove_dir_all(&path).map_err(TourneyError::io(&path))?;
+            Ok(zip)
+        })
+        .await
+        .expect("removing a test doesn't panic");
+        match result {
+            Ok(zip) => {
+                let _ =
+                    self.0.events.send(DaemonEvent::TestRemoved { test: id.into(), archive: zip.clone() });
+                Ok(zip)
+            }
+            Err(e) => {
+                // Put back what's left, if it still opens.
+                let path = self.0.data_dir.join("tests").join(id);
+                if let Ok(entry) = load_entry(&self.0, &path) {
+                    let info = entry.info();
+                    let mut tests = self.0.tests.lock().unwrap();
+                    tests.push(entry);
+                    tests.sort_by(|a, b| a.id.cmp(&b.id));
+                    drop(tests);
+                    self.changed(&info);
+                }
+                Err(e)
+            }
+        }
+    }
+
     /// Sets the number of slots. Extra slots stop after their game.
     pub fn set_slots(&self, slots: u32) {
         let mut s = self.0.slots.lock().unwrap();
@@ -655,6 +744,70 @@ impl Daemon {
         let _ = self.0.events.send(DaemonEvent::TestChanged { test: Box::new(info.clone()) });
         self.0.wake.notify_waiters();
     }
+}
+
+/// Zips test `id`'s directory `dir` into `archive_dir/<id>.zip`, its files
+/// under `<id>/`, and returns the zip's path. Nothing is left behind if
+/// it fails.
+fn zip_test(dir: &Path, archive_dir: &Path, id: &str) -> Result<PathBuf, TourneyError> {
+    std::fs::create_dir_all(archive_dir).map_err(TourneyError::io(archive_dir))?;
+    let mut zip_path = archive_dir.join(format!("{id}.zip"));
+    let mut n = 2;
+    while zip_path.exists() {
+        zip_path = archive_dir.join(format!("{id}-{n}.zip"));
+        n += 1;
+    }
+    let tmp = zip_path.with_extension("zip.tmp");
+    let result = (|| {
+        let file = std::fs::File::create(&tmp).map_err(TourneyError::io(&tmp))?;
+        let mut zip = zip::ZipWriter::new(std::io::BufWriter::new(file));
+        add_to_zip(&mut zip, dir, id)?;
+        let zip_err = |e: zip::result::ZipError| TourneyError::Io { path: tmp.clone(), source: e.into() };
+        let mut out = zip.finish().map_err(zip_err)?;
+        std::io::Write::flush(&mut out).map_err(TourneyError::io(&tmp))?;
+        drop(out);
+        std::fs::rename(&tmp, &zip_path).map_err(TourneyError::io(&zip_path))
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result.map(|()| zip_path)
+}
+
+fn add_to_zip<W: std::io::Write + std::io::Seek>(
+    zip: &mut zip::ZipWriter<W>,
+    dir: &Path,
+    prefix: &str,
+) -> Result<(), TourneyError> {
+    use zip::write::SimpleFileOptions;
+    let zip_err = |path: &Path| {
+        let path = path.to_path_buf();
+        move |e: zip::result::ZipError| TourneyError::Io { path, source: e.into() }
+    };
+    let mut items: Vec<std::fs::DirEntry> = std::fs::read_dir(dir)
+        .map_err(TourneyError::io(dir))?
+        .collect::<Result<_, _>>()
+        .map_err(TourneyError::io(dir))?;
+    items.sort_by_key(|d| d.file_name());
+    for item in items {
+        let path = item.path();
+        let name = format!("{prefix}/{}", item.file_name().to_string_lossy());
+        let meta = std::fs::metadata(&path).map_err(TourneyError::io(&path))?;
+        let mut options = SimpleFileOptions::default().large_file(meta.len() >= 1 << 32);
+        #[cfg(unix)]
+        {
+            options = options.unix_permissions(std::os::unix::fs::PermissionsExt::mode(&meta.permissions()));
+        }
+        if meta.is_dir() {
+            zip.add_directory(&name, options).map_err(zip_err(&path))?;
+            add_to_zip(zip, &path, &name)?;
+        } else {
+            zip.start_file(&name, options).map_err(zip_err(&path))?;
+            let mut file = std::fs::File::open(&path).map_err(TourneyError::io(&path))?;
+            std::io::copy(&mut file, zip).map_err(TourneyError::io(&path))?;
+        }
+    }
+    Ok(())
 }
 
 fn now() -> u64 {

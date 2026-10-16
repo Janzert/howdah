@@ -137,6 +137,18 @@ impl Tourney {
         Ok(test_view(&self.client()?.set_max_pairs(id, max_pairs).await.map_err(api)?))
     }
 
+    /// Takes a test that isn't active out of the daemon's queue: zipped
+    /// into its `archive/` (whose path is returned) if `archive`, else
+    /// deleted.
+    pub async fn remove(&self, id: &str, archive: bool) -> Result<Option<String>, ApiError> {
+        let client = self.client()?;
+        if archive {
+            Ok(Some(client.archive(id).await.map_err(api)?.display().to_string()))
+        } else {
+            client.delete(id).await.map_err(api).map(|()| None)
+        }
+    }
+
     pub async fn set_slots(&self, slots: u32) -> Result<(), ApiError> {
         self.client()?.set_slots(slots).await.map_err(api).map(drop)
     }
@@ -317,6 +329,17 @@ impl Tourney {
                             let engines = names.get(&test).cloned().unwrap_or_default();
                             self.update(true, None, Some(game_view(&test, &engines, &entry)), None);
                         }
+                        DaemonEvent::TestRemoved { test, .. } => {
+                            names.remove(&test);
+                            let update = TourneyUpdate {
+                                connected: true,
+                                test: None,
+                                game: None,
+                                slots: None,
+                                removed: Some(test),
+                            };
+                            emit(&self.events, TOURNEY_CHANGED, update);
+                        }
                         DaemonEvent::SlotsChanged { slots } => self.update(true, None, None, Some(slots)),
                         _ => {}
                     }
@@ -334,7 +357,7 @@ impl Tourney {
         game: Option<TestGameView>,
         slots: Option<u32>,
     ) {
-        emit(&self.events, TOURNEY_CHANGED, TourneyUpdate { connected, test, game, slots });
+        emit(&self.events, TOURNEY_CHANGED, TourneyUpdate { connected, test, game, slots, removed: None });
     }
 }
 

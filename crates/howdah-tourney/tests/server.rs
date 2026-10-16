@@ -78,6 +78,17 @@ async fn a_test_through_the_http_api() {
     relative.engines[0].program = "bots/one".into();
     assert!(client.submit(&relative, 0).await.unwrap_err().to_string().contains("absolute path"));
 
+    client.set_slots(0).await.unwrap();
+    let second = client.submit(&spec(), 0).await.unwrap();
+    let err = client.delete(&second.id).await.unwrap_err();
+    assert!(err.to_string().contains("is active"), "{err}");
+    client.stop(&second.id).await.unwrap();
+    client.delete(&second.id).await.unwrap();
+    let zip = client.archive(&test.id).await.unwrap();
+    assert_eq!(zip, tmp.path().join("archive").join(format!("{}.zip", test.id)));
+    assert!(zip.is_file() && !test.path.exists() && !second.path.exists());
+    assert!(client.list().await.unwrap().is_empty());
+
     let mut wrong = DaemonInfo::read(tmp.path()).unwrap();
     wrong.token = "nope".into();
     let err = Client::new(&wrong).status().await.unwrap_err();
