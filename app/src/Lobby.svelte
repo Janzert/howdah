@@ -488,7 +488,7 @@
   >
     <Icon name={item.icon} />
     {#if !collapsed}<span class="label">{item.label}</span>{/if}
-    {#if item.offline}<span class="offline" title="Not logged in"><Icon name="offline" size={14} /></span>{/if}
+    {#if item.offline}<span class="offline" title="Not logged in"><Icon name="offline" size={16} /></span>{/if}
     {#if item.badge}<span class="badge" title={item.badgeTitle}>{item.badge}</span>{/if}
   </button>
 {/snippet}
