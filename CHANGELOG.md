@@ -122,7 +122,8 @@ young).
   listed under arimaa.com in the sidebar until closed. New games and
   invitations go through a New game dialog, which Invite opens with the
   player filled in. It offers the same time controls as a local
-  New game, which now include two postal ones. Engine tests show as cards; each test opens in its
+  New game: now all of arimaa.com's presets, postal ones included, by
+  the site's names. Engine tests show as cards; each test opens in its
   own panel, listed under Engine tests with its score. Notifications about
   arimaa.com have a Show button.
 - A board's buttons are in tidy rows, with Lobby, Dock or Pop out and Next

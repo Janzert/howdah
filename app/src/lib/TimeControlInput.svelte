@@ -1,22 +1,25 @@
 <script lang="ts" module>
-  /** Common arimaa.com time controls (names as on the site), for local
-   * games and arimaa.com's New game alike; the postal ones are the
-   * gameroom's own. */
+  /** arimaa.com's preset time controls (as its Create Game form offers
+   * them, names included; parent repo's docs/GAMEROOM-API.md), for local
+   * games and arimaa.com's New game alike. */
   export const PRESETS: { name: string; value: string }[] = [
     { name: 'Lightning 8 sec/move', value: '8s/2m16s/100/0/32m/2m16s' },
     { name: 'Blitz 15 sec/move', value: '15s/2m30s/100/0/1h/2m30s' },
     { name: 'Fast 30 sec/move', value: '30s/3m/100/0/2h/3m' },
+    { name: 'Quick 45 sec/move', value: '45s/3m30s/100/0/3h/3m30s' },
     { name: 'Regular 1 min/move', value: '1m/4m/100/0/4h/4m' },
     { name: 'Match 1.5 min/move', value: '1m30s/5m/100/0/6h/5m' },
+    { name: 'Gradual 2 min/move', value: '2m/6m/100/0/8h/6m' },
+    { name: 'Relaxed 3 min/move', value: '3m/8m/100/0/12h/8m' },
     { name: 'Slow 4 min/move', value: '4m/10m/100/0/16h/10m' },
-    { name: 'Postal 1 day/move, 60 day reserve', value: '1d/60d/100/0/300d/21d' },
-    { name: 'Postal 1 day/move, 14 day reserve', value: '1d/14d/100/14d/0' },
+    { name: 'Postal: Most Popular 1d/60d/100/0/300d/21d', value: '1d/60d/100/0/300d/21d' },
+    { name: 'Postal: Move in 1 day with 14 day reserve', value: '1d/14d/100/14d/0' },
   ];
 
   /** The first choice: no clock in a local game. */
   export const NO_CLOCK = { name: 'No clock', value: '' };
   /** arimaa.com's "No time limit", a postal game without clocks. */
-  export const NO_TIME_LIMIT = { name: 'Postal no time limit', value: '0/0/0/0/0' };
+  export const NO_TIME_LIMIT = { name: 'Postal: No time limit', value: '0/0/0/0/0' };
 </script>
 
 <script lang="ts">
