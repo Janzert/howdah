@@ -612,7 +612,8 @@ plans the engine test and tournament runner.
     "Your move" from `waitsOnUser`; `lib/openGames.svelte.ts` follows
     every session's view and arimaa.com game, for the lobby and for game
     boards' Next game). The arimaa.com panels are in `lib/gameroom/`.
-    Lobby styles shared by the panels (cards, row lists, dots, badges) are in `src/lobby.css`, all
+    Lobby styles shared by the panels (cards, row lists, rows that open a
+    board as one button, `li.pick`, dots, badges) are in `src/lobby.css`, all
     under `.lobby`; `lib/Icon.svelte` has the line icons.
     It follows every session's `game://changed` and `gameroom://watch`
     (`onEvery` in `lib/events.ts`) and `sessions://changed`. It owns the
@@ -956,7 +957,7 @@ plans the engine test and tournament runner.
     does when the button that opened a panel goes away with the old one.
     Fast-forward (`p`, the nav row's button between Forward and End,
     `playToEnd` in App) steps through the shown line to its end, each
-    move animated, a pause after each (`playbackPause`); again, any other
+    move animated, a pause of one step's animation time after each (`playbackPause`); again, any other
     move through the game, or the shown move changing, stops it.
   - Dialogs share one frame (border, corners, padding, shadow, backdrop)
     from `app.css`'s `dialog` rule; each component sets only its width.

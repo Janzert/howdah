@@ -654,9 +654,9 @@
   /** Playing the shown line through to its end, a move at a time. */
   let playing = $state(false);
 
-  /** How long each played-back move stays before the next: a beat after
-   * its animation, longer with slower animations. */
-  const playbackPause = () => Math.max(450, settings.stepMs * 3);
+  /** How long each played-back move stays before the next: one step's
+   * animation time (a short beat when animation is off). */
+  const playbackPause = () => Math.max(150, settings.stepMs);
 
   /** Steps forward through the shown line, each move animated, until its
    * end; again (or any other move through the game) stops it. Stops too if

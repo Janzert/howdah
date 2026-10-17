@@ -79,17 +79,17 @@
           </div>
           <ul class="list" aria-label={g.name || 'Puzzles'}>
             {#each g.puzzles as p (p.id)}
-              <li>
-                <span class="row-text">
-                  <span class="row-line">
-                    {#if solved.has(p.id)}<span class="done" title="Solved">✓</span>{/if}
-                    <span class="name">{p.title || p.id}</span>
+              <li class="pick">
+                <button onclick={() => open(p.id)} disabled={opening != null}>
+                  <span class="row-text">
+                    <span class="row-line">
+                      {#if solved.has(p.id)}<span class="done" title="Solved">✓</span>{/if}
+                      <span class="name">{p.title || p.id}</span>
+                    </span>
                   </span>
-                </span>
-                <span class="meta">{p.id}</span>
-                <button onclick={() => open(p.id)} disabled={opening != null} aria-label="Open puzzle {p.title || p.id}"
-                  >{opening === p.id ? 'Opening…' : 'Open'}</button
-                >
+                  <span class="meta">{p.id}</span>
+                  <span class="action">{opening === p.id ? 'Opening…' : 'Open'}</span>
+                </button>
               </li>
             {/each}
           </ul>

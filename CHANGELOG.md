@@ -131,6 +131,7 @@ young).
 - Home offers to download Sharp or OpFor while no engine is installed.
 - Puzzles is a lobby panel, with a filter and how many of each group are
   solved.
+- In the lists of games and puzzles, a click anywhere on a row opens it.
 - The lobby's keys: Alt+↑/↓ through the sidebar, Alt+1–9 to an entry by
   number, also from a docked board.
 - An arimaa.com game opens its board at once, with a spinner until the

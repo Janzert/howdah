@@ -8,10 +8,12 @@
   let { game: g }: { game: LiveGameView } = $props();
 </script>
 
-<li>
-  <span class="row-text">
-    <span class="row-line"><Matchup gold={g.gold} silver={g.silver} /></span>
-    <span class="meta">{gameMeta(g)}</span>
-  </span>
-  <button onclick={() => gameroom.open(g.gid)} disabled={gameroom.busy} aria-label="Watch game {g.gid}">Watch</button>
+<li class="pick">
+  <button onclick={() => gameroom.open(g.gid)} disabled={gameroom.busy} title="Watch game {g.gid}">
+    <span class="row-text">
+      <span class="row-line"><Matchup gold={g.gold} silver={g.silver} /></span>
+      <span class="meta">{gameMeta(g)}</span>
+    </span>
+    <span class="action">Watch</span>
+  </button>
 </li>

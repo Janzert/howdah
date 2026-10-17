@@ -221,3 +221,44 @@
   gap: 6px;
   font-size: 13px;
 }
+
+/* A row that opens a board: the whole row is its button, with what it
+ * does ("Watch", "Open") muted at the end. */
+.lobby .list > li.pick {
+  padding: 0;
+}
+
+.lobby .list > li.pick > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.lobby .list > li.pick > button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.lobby .list > li.pick .action {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lobby .list > li.pick > button:hover:not(:disabled) .action {
+  color: var(--accent);
+}
+
+/* A panel's heading takes focus when the panel opens (Lobby's
+ * `focusPanel`), as a place to start from, not something to act on. */
+.lobby main h1:focus {
+  outline: none;
+}

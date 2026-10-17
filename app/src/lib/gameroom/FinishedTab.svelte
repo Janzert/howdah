@@ -51,14 +51,14 @@
         {:else}
           <ul class="list scroll" aria-label="Games of {picked.player.username}">
             {#each picked.games as g (g.gid)}
-              <li>
-                <span class="row-text">
-                  <span class="row-line"><Matchup gold={g.gold} silver={g.silver} /></span>
-                  <span class="meta">{pastMeta(g)}</span>
-                </span>
-                <button onclick={() => gameroom.open(g.gid)} disabled={gameroom.busy} aria-label="Open game {g.gid}"
-                  >Open</button
-                >
+              <li class="pick">
+                <button onclick={() => gameroom.open(g.gid)} disabled={gameroom.busy} title="Open game {g.gid}">
+                  <span class="row-text">
+                    <span class="row-line"><Matchup gold={g.gold} silver={g.silver} /></span>
+                    <span class="meta">{pastMeta(g)}</span>
+                  </span>
+                  <span class="action">Open</span>
+                </button>
               </li>
             {/each}
             {#if picked.next != null}
