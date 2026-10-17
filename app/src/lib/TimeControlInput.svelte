@@ -1,5 +1,7 @@
 <script lang="ts" module>
-  /** Common arimaa.com time controls (names as on the site). */
+  /** Common arimaa.com time controls (names as on the site), for local
+   * games and arimaa.com's New game alike; the postal ones are the
+   * gameroom's own. */
   export const PRESETS: { name: string; value: string }[] = [
     { name: 'Lightning 8 sec/move', value: '8s/2m16s/100/0/32m/2m16s' },
     { name: 'Blitz 15 sec/move', value: '15s/2m30s/100/0/1h/2m30s' },
@@ -7,39 +9,54 @@
     { name: 'Regular 1 min/move', value: '1m/4m/100/0/4h/4m' },
     { name: 'Match 1.5 min/move', value: '1m30s/5m/100/0/6h/5m' },
     { name: 'Slow 4 min/move', value: '4m/10m/100/0/16h/10m' },
+    { name: 'Postal 1 day/move, 60 day reserve', value: '1d/60d/100/0/300d/21d' },
+    { name: 'Postal 1 day/move, 14 day reserve', value: '1d/14d/100/14d/0' },
   ];
+
+  /** The first choice: no clock in a local game. */
+  export const NO_CLOCK = { name: 'No clock', value: '' };
+  /** arimaa.com's "No time limit", a postal game without clocks. */
+  export const NO_TIME_LIMIT = { name: 'Postal no time limit', value: '0/0/0/0/0' };
 </script>
 
 <script lang="ts">
   interface Props {
-    /** The time control text; empty means no clock. */
+    /** The time control text; `none.value` means no clock. */
     value: string;
     id?: string;
+    /** The first choice (`NO_CLOCK`, or arimaa.com's `NO_TIME_LIMIT`). */
+    none?: { name: string; value: string };
   }
-  let { value = $bindable(), id }: Props = $props();
+  let { value = $bindable(), id, none = NO_CLOCK }: Props = $props();
 
   // Which preset the text matches, if any. Picking one fills in the text,
   // which stays editable.
   const selected = $derived.by(() => {
     const v = value.trim();
-    if (v === '') return 'none';
+    if (v === none.value) return 'none';
     return PRESETS.find((p) => p.value === v)?.value ?? 'custom';
   });
 
   function pick(e: Event) {
     const choice = (e.currentTarget as HTMLSelectElement).value;
-    if (choice === 'none') value = '';
+    if (choice === 'none') value = none.value;
     else if (choice !== 'custom') value = choice;
   }
 </script>
 
 <div class="tc">
   <select value={selected} onchange={pick} aria-label="Time control preset">
-    <option value="none">No clock</option>
+    <option value="none">{none.name}</option>
     {#each PRESETS as p (p.value)}<option value={p.value}>{p.name}</option>{/each}
     <option value="custom" disabled={selected !== 'custom'}>Custom</option>
   </select>
-  <input {id} bind:value placeholder="none (e.g. 30s/2m)" spellcheck="false" />
+  <input
+    {id}
+    bind:value
+    placeholder={none.value === '' ? 'none (e.g. 30s/2m)' : 'e.g. 1m/4m/100/0/4h'}
+    spellcheck="false"
+    title="Per move / reserve / percent added / reserve limit / game limit / turn limit"
+  />
 </div>
 
 <style>

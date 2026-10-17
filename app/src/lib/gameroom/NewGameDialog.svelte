@@ -1,22 +1,10 @@
-<script lang="ts" module>
-  /** Time controls offered; any other can be typed. The postal ones are
-   * the gameroom's own ("No time limit" is its `0/0/0/0/0`). */
-  export const GAMEROOM_TIME_CONTROLS: { value: string; name: string }[] = [
-    { value: '15s/3m/100/0/15m', name: '15 s a move' },
-    { value: '1m/2m/100/0/10m', name: '1 min a move' },
-    { value: '2m/5m/100/0/30m', name: '2 min a move' },
-    { value: '1d/60d/100/0/300d/21d', name: 'Postal: a day a move, the most popular' },
-    { value: '1d/14d/100/14d/0', name: 'Postal: a day a move, 14 day reserve' },
-    { value: '0/0/0/0/0', name: 'Postal: no time limit' },
-  ];
-</script>
-
 <script lang="ts">
   // A new arimaa.com game: open to anyone (it waits in the gameroom's open
   // games), or an invitation to one player. The choices are kept in
   // localStorage, the opponent and message aren't.
   import { untrack } from 'svelte';
   import type { Color } from '../bindings/Color';
+  import TimeControlInput, { NO_TIME_LIMIT } from '../TimeControlInput.svelte';
   import { gameroom, type NewGameSpec, pref, savePref } from './store.svelte';
 
   let { initial, onClose }: { initial: Partial<NewGameSpec>; onClose: () => void } = $props();
@@ -25,12 +13,11 @@
   // Only errors from this dialog's own request.
   gameroom.error = null;
   let side = $state<Color | 'random'>(start.side ?? ((pref('gameroom.newSide') as Color | 'random') || 'random'));
-  let timeControl = $state(start.timeControl ?? (pref('gameroom.newTc') || '2m/5m/100/0/30m'));
+  let timeControl = $state(start.timeControl ?? (pref('gameroom.newTc') || '1m/4m/100/0/4h/4m'));
   let rated = $state(start.rated ?? pref('gameroom.newRated') === '1');
   let opponent = $state(start.opponent ?? '');
   let message = $state(start.message ?? '');
 
-  const preset = $derived(GAMEROOM_TIME_CONTROLS.find((p) => p.value === timeControl.trim())?.value ?? 'custom');
   const inviting = $derived(opponent.trim() !== '');
   /** Players to suggest for the opponent: those Invite is offered for. */
   const suggestions = $derived([...gameroom.invitable].sort());
@@ -83,34 +70,15 @@
         {/each}
       </div>
       <label for="gr-new-tc">Time control</label>
-      <div class="tc">
-        <select
-          value={preset}
-          aria-label="Time control preset"
-          onchange={(e) => {
-            const v = e.currentTarget.value;
-            if (v !== 'custom') timeControl = v;
-          }}
-        >
-          {#each GAMEROOM_TIME_CONTROLS as p (p.value)}<option value={p.value}>{p.name}</option>{/each}
-          <option value="custom" disabled={preset !== 'custom'}>Custom</option>
-        </select>
-        <input
-          id="gr-new-tc"
-          bind:value={timeControl}
-          autocomplete="off"
-          spellcheck="false"
-          title="Per move / reserve / percent added / reserve limit / game limit"
-        />
-      </div>
+      <TimeControlInput id="gr-new-tc" bind:value={timeControl} none={NO_TIME_LIMIT} />
       <span></span>
       <label class="check"><input type="checkbox" bind:checked={rated} /> Rated</label>
     </div>
     <p class="hint">
       {#if inviting}
-        Invites {opponent.trim()}; if they accept, the game opens in a new window.
+        Invites {opponent.trim()}; if they accept, the game opens on a new board.
       {:else}
-        The game waits in the gameroom's open games until someone sits; it opens in a new window now, and your
+        The game waits in the gameroom's open games until someone sits; it opens on a new board now, and your
         first move goes once they do.
       {/if}
     </p>
@@ -151,14 +119,6 @@
   .grid input:not([type='checkbox'], [type='radio']) {
     width: 100%;
     box-sizing: border-box;
-  }
-  .tc {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .tc input {
-    font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
   }
   .segmented {
     display: inline-flex;

@@ -744,8 +744,9 @@ plans the engine test and tournament runner.
     have Play to take their seat again, Cancel while nobody has sat ("Your
     move" first, from `mygames`' `turn`), the open games others created
     Play as the free side, and the New game dialog takes side, time
-    control in the gameroom's format with a few presets, the gameroom's
-    postal ones among them, and rated (kept in localStorage). The Watch panel lists the postal
+    control in the gameroom's format with `TimeControlInput`'s presets
+    (the local New game's list, the gameroom's postal ones among them,
+    and its "No time limit", `0/0/0/0/0`, in place of No clock), and rated (kept in localStorage). The Watch panel lists the postal
     games being played (`gameroom_postal_games`, one page fetch, when the
     Watch panel first opens), to watch. Postal is the server's call from the time control
     (days per move, or `0/0/0/0/0`, its "No time limit", which `start`

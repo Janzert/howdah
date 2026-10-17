@@ -156,7 +156,7 @@
             Players can't start this bot now.
           {:else}
             The bot opens a game in the gameroom;
-            {join ? 'you join it as soon as it opens, in a new window.' : 'it waits in the open games for you or anyone.'}
+            {join ? 'you join it as soon as it opens, on a new board.' : 'it waits in the open games for you or anyone.'}
           {/if}
         </p>
       {/if}
