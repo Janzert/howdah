@@ -430,14 +430,6 @@
 <style>
   dialog {
     width: min(620px, 92vw);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    color: var(--text);
-    padding: 16px;
-  }
-  dialog::backdrop {
-    background: rgba(0, 0, 0, 0.4);
   }
   h2 {
     margin: 0 0 12px;

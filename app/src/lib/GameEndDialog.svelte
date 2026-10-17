@@ -111,11 +111,6 @@
 <style>
   dialog {
     width: min(420px, 90vw);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    color: var(--text);
-    padding: 16px;
   }
   dialog::backdrop {
     background: rgba(0, 0, 0, 0.25);
