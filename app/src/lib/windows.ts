@@ -1,15 +1,20 @@
-// Windows (docs/WINDOWS.md): the main window is the lobby, with no
-// session; each game window shows its own session, named in its URL
-// (`?session=<id>`). In Tauri a game window's label is `game-<session>`,
-// and the backend ends the session when the window is destroyed
-// (`Backend::window_closed`) and hides the lobby instead of closing it
+// Windows and boards (docs/WINDOWS.md): the main window is the lobby,
+// with no session; each board shows its own session, named in its URL
+// (`?session=<id>`), either as a panel docked in the lobby (an iframe,
+// `&docked`; lib/frames.ts) or in a game window of its own. The backend
+// knows which sessions are docked (`set_session_docked`). In Tauri a game
+// window's label is `game-<session>`, and the backend ends the session
+// when the window is destroyed unless it's docked
+// (`Backend::window_closed`), and hides the lobby instead of closing it
 // while game windows are open (`lib.rs`). In the browser preview a window
 // is a tab, named so the others can find it, and a game window's tab
 // closes its session itself on `pagehide`.
-import { type Api, api, apiFor, isGameWindow, session } from './api';
+import { type Api, api, apiFor, isDocked, isGameWindow, session } from './api';
 import type { MatchSpec } from './bindings/MatchSpec';
 import type { PositionSpec } from './bindings/PositionSpec';
 import type { SessionId } from './bindings/SessionId';
+import { askLobby, onCloseRequest } from './frames';
+import { settings } from './settings.svelte';
 
 export const inTauri = '__TAURI_INTERNALS__' in window;
 
@@ -30,44 +35,57 @@ export interface HandOff {
 
 const handOffKey = (id: SessionId) => `handoff.${id}`;
 
-/** Opens a game window on a new session. `prepare` sets the session up
- * first (a match, a record, an arimaa.com game), so a failure leaves no
- * window behind; its error is thrown. */
-export async function openGameWindow(prepare?: (a: Api) => Promise<void>, handOff?: HandOff): Promise<SessionId> {
+/** Leaves `handOff` for the board on session `id`, to take when it opens. */
+export function saveHandOff(id: SessionId, handOff: HandOff) {
+  try {
+    localStorage.setItem(handOffKey(id), JSON.stringify(handOff));
+  } catch {
+    /* the board just won't know */
+  }
+}
+
+/** Opens a board on a new session: docked in the lobby or in a window of
+ * its own, as the Settings say (from a game window, always a window; from
+ * a docked board, the lobby decides). `prepare` sets the session up first
+ * (a match, a record, an arimaa.com game), so a failure leaves no board
+ * behind; its error is thrown. */
+export async function openBoard(prepare?: (a: Api) => Promise<void>, handOff?: HandOff): Promise<SessionId> {
   const id = await api.openSession();
   try {
     await prepare?.(apiFor(id));
-    if (handOff) {
-      try {
-        localStorage.setItem(handOffKey(id), JSON.stringify(handOff));
-      } catch {
-        /* the window just won't know */
-      }
-    }
-    const url = `index.html?session=${id}`;
-    if (inTauri) {
-      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      const size = savedSize();
-      const w = new WebviewWindow(`game-${id}`, {
-        url,
-        title: 'Howdah',
-        ...size,
-        ...(await cascadedPosition(size)),
-        minWidth: 640,
-        minHeight: 480,
-      });
-      await new Promise<void>((resolve, reject) => {
-        void w.once('tauri://created', () => resolve());
-        void w.once<string>('tauri://error', (e) => reject(new Error(`Couldn't open a window: ${e.payload}`)));
-      });
-    } else if (!window.open(url, gameTab(id))) {
-      throw new Error("Couldn't open a window (the browser blocked it)");
-    }
+    if (handOff) saveHandOff(id, handOff);
+    if (isDocked) askLobby({ kind: 'show', session: id, fresh: true });
+    else if (session == null && !settings.boardsInWindows) await api.setSessionDocked(id, true);
+    else await openWindowFor(id);
   } catch (e) {
     await api.closeSession(id).catch(() => {});
     throw e;
   }
   return id;
+}
+
+/** Opens a game window on session `id`, which is open already (a new
+ * board, or one popped out of the lobby). Not from a docked board. */
+export async function openWindowFor(id: SessionId) {
+  const url = `index.html?session=${id}`;
+  if (inTauri) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const size = savedSize();
+    const w = new WebviewWindow(`game-${id}`, {
+      url,
+      title: 'Howdah',
+      ...size,
+      ...(await cascadedPosition(size)),
+      minWidth: 640,
+      minHeight: 480,
+    });
+    await new Promise<void>((resolve, reject) => {
+      void w.once('tauri://created', () => resolve());
+      void w.once<string>('tauri://error', (e) => reject(new Error(`Couldn't open a window: ${e.payload}`)));
+    });
+  } else if (!window.open(url, gameTab(id))) {
+    throw new Error("Couldn't open a window (the browser blocked it)");
+  }
 }
 
 const SIZE_KEY = 'gameWindow.size';
@@ -170,8 +188,21 @@ function browserTab(name: string, url: string) {
 
 /** Shows the lobby (hidden, in Tauri, when it was closed). */
 export async function showLobby() {
+  if (isDocked) return;
   if (inTauri) await bringForward('main');
   else browserTab(LOBBY_TAB, 'index.html');
+}
+
+/** Shows board `id`: its panel in the lobby (the lobby coming forward),
+ * or its window. */
+export async function showBoard(id: SessionId) {
+  if (isDocked) return askLobby({ kind: 'show', session: id });
+  if ((await api.dockedSessions()).includes(id)) {
+    await api.showBoard(id);
+    await showLobby();
+    return;
+  }
+  await focusGameWindow(id);
 }
 
 /** Brings game window `id` forward. */
@@ -191,6 +222,14 @@ export function nameTab() {
  * the session as the window goes; the browser preview can only show its
  * own generic prompt. */
 export async function guardClose(warning: () => string | null, ask: (reason: string) => Promise<boolean>) {
+  if (isDocked) {
+    // The lobby's close button for the board.
+    onCloseRequest(async () => {
+      const reason = warning();
+      if (!reason || (await ask(reason))) askLobby({ kind: 'close' });
+    });
+    return;
+  }
   if (!inTauri) {
     window.addEventListener('beforeunload', (e) => {
       if (warning()) e.preventDefault();
@@ -214,12 +253,40 @@ export async function guardClose(warning: () => string | null, ask: (reason: str
   });
 }
 
+/** Set while a game window docks its board, so its going doesn't close
+ * the session. */
+let docking = false;
+
 /** In the browser preview, a game window's tab ends its session when it
- * goes away. Tauri's windows leave that to the backend. */
+ * goes away (unless it docked it). Tauri's windows leave that to the
+ * backend. */
 export async function closeSessionWithPage() {
-  if (!import.meta.env.DEV || inTauri || !isGameWindow) return;
+  if (!import.meta.env.DEV || inTauri || !isGameWindow || isDocked) return;
   const { closeSessionOnUnload } = await import('./devBridge');
   window.addEventListener('pagehide', () => {
-    if (session != null) closeSessionOnUnload(session);
+    if (session != null && !docking) closeSessionOnUnload(session);
   });
+}
+
+/** In a game window: moves its board into the lobby as a panel, and
+ * closes the window without asking (the game goes on in the panel). */
+export async function dockWindow() {
+  if (session == null || isDocked) return;
+  await api.setSessionDocked(session, true);
+  await showLobby();
+  docking = true;
+  if (inTauri) {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().destroy();
+  } else {
+    window.close();
+  }
+}
+
+/** In a docked board: moves it to a window of its own, handing over
+ * `handOff`. */
+export function popOut(handOff: HandOff) {
+  if (session == null || !isDocked) return;
+  saveHandOff(session, handOff);
+  askLobby({ kind: 'popOut' });
 }

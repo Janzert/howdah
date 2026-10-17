@@ -6,8 +6,9 @@
     /** The button that closes anyway ("Leave game and close"). */
     confirm: string;
     onAnswer: (close: boolean) => void;
+    title?: string;
   }
-  let { reason, confirm, onAnswer }: Props = $props();
+  let { reason, confirm, onAnswer, title = 'Close this window?' }: Props = $props();
 
   let dialog: HTMLDialogElement;
   let answer = false;
@@ -23,7 +24,7 @@
 </script>
 
 <dialog bind:this={dialog} onclose={() => onAnswer(answer)} aria-labelledby="close-window-title">
-  <h2 id="close-window-title">Close this window?</h2>
+  <h2 id="close-window-title">{title}</h2>
   <p>{reason}</p>
   <div class="buttons">
     <span class="spacer"></span>

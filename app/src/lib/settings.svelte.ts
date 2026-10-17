@@ -35,6 +35,9 @@ export interface SettingsData {
   continueTurns: boolean;
   /** Turn the board so a lone human player is at the bottom when a game starts. */
   humanAtBottom: boolean;
+  /** Open new boards in windows of their own rather than as panels in
+   * the main window. */
+  boardsInWindows: boolean;
   /** The engine analysis last used (an engine id). */
   analysisEngine: string | null;
   moveTimes: MoveTimes;
@@ -53,6 +56,7 @@ export const DEFAULTS: SettingsData = {
   hoverInput: 'off',
   continueTurns: true,
   humanAtBottom: true,
+  boardsInWindows: false,
   analysisEngine: null,
   moveTimes: 'off',
 };
@@ -94,6 +98,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   }
   if (typeof raw.continueTurns === 'boolean') s.continueTurns = raw.continueTurns;
   if (typeof raw.humanAtBottom === 'boolean') s.humanAtBottom = raw.humanAtBottom;
+  if (typeof raw.boardsInWindows === 'boolean') s.boardsInWindows = raw.boardsInWindows;
   if (typeof raw.analysisEngine === 'string') s.analysisEngine = raw.analysisEngine;
   if (raw.moveTimes === 'off' || raw.moveTimes === 'move' || raw.moveTimes === 'game') s.moveTimes = raw.moveTimes;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
@@ -169,6 +174,13 @@ class Settings {
   }
   set humanAtBottom(v: boolean) {
     this.update({ humanAtBottom: v });
+  }
+
+  get boardsInWindows() {
+    return this.#data.boardsInWindows;
+  }
+  set boardsInWindows(v: boolean) {
+    this.update({ boardsInWindows: v });
   }
 
   get analysisEngine() {

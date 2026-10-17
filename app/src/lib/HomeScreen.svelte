@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The lobby window's Home screen: ways to start (new game, analysis
+  // The lobby window's Home panel: ways to start (new game, analysis
   // board, record, position editor, puzzles), what waits on the user, and
-  // the open game windows as cards.
+  // the open boards as cards.
   import type { Theme } from './theme';
   import Icon, { type IconName } from './Icon.svelte';
   import MiniBoard from './board/MiniBoard.svelte';
@@ -10,6 +10,8 @@
   interface Props {
     windows: ListedWindow[];
     theme: Theme;
+    /** The boards docked as panels here (the others have windows). */
+    docked: number[];
     /** Invitations to the user on arimaa.com, and their postal games
      * waiting on their move without a window. */
     invitations: number;
@@ -22,7 +24,7 @@
     onWindow: (w: ListedWindow) => void;
     onGameroom: () => void;
   }
-  let { windows, theme, invitations, postalTurns, onNewGame, onAnalysis, onRecord, onEditor, onPuzzles, onWindow, onGameroom }:
+  let { windows, theme, docked, invitations, postalTurns, onNewGame, onAnalysis, onRecord, onEditor, onPuzzles, onWindow, onGameroom }:
     Props = $props();
 
   const actions = $derived<{ label: string; about: string; icon: IconName; run: () => void; primary?: boolean }[]>([
@@ -55,7 +57,7 @@
     <h2 id="home-title">Play and analyse</h2>
     <div class="actions">
       {#each actions as a (a.label)}
-        <button class="action" class:primary={a.primary} onclick={a.run} aria-label={a.label} title={a.about}>
+        <button class="action" class:primary={a.primary} onclick={a.run} aria-label={a.label}>
           <span class="action-icon"><Icon name={a.icon} size={22} /></span>
           <span class="action-text">
             <span class="action-label">{a.label}</span>
@@ -67,11 +69,11 @@
   </section>
 
   <section aria-labelledby="windows-title">
-    <h2 id="windows-title">Open windows</h2>
+    <h2 id="windows-title">Open boards</h2>
     {#if windows.length === 0}
-      <p class="empty">No games are open. Each game you start or open gets a window of its own.</p>
+      <p class="empty">No boards are open. Each game you start or open gets a board of its own, here or in a window.</p>
     {:else}
-      <ul class="windows" aria-label="Open windows">
+      <ul class="windows" aria-label="Boards">
         {#each windows as w (w.id)}
           <li>
             <button class="window" class:waiting={w.yourMove} onclick={() => onWindow(w)} aria-label="Show {w.title}">
@@ -79,7 +81,7 @@
               <span class="about">
                 <span class="title">{w.title}</span>
                 {#if w.yourMove}<span><span class="badge">Your move</span></span>{/if}
-                <span class="meta">{w.kind}</span>
+                <span class="meta">{w.kind}{docked.includes(w.id) ? '' : ' · own window'}</span>
                 {#if w.clocks}
                   <span class="meta clocks">
                     <span class="dot gold"></span>{w.clocks.gold ?? '–'}

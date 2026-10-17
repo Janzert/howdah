@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { analysisEngine, pvMoves } from './lib/analysis';
   import AnalysisPanel from './lib/AnalysisPanel.svelte';
-  import { api, errorMessage, session } from './lib/api';
+  import { api, errorMessage, isDocked, session } from './lib/api';
   import type { AnalysisLine } from './lib/bindings/AnalysisLine';
   import type { AnalysisView } from './lib/bindings/AnalysisView';
   import { setAppearance } from './lib/appearance';
@@ -48,7 +48,7 @@
   import { countNext, pickNext } from './lib/nextGame';
   import { OpenGames } from './lib/openGames.svelte';
   import { gameTitle, testGameLabel, waitsOnUser } from './lib/windowList';
-  import { focusGameWindow, guardClose, openGameWindow, rememberSize, showLobby, takeHandOff } from './lib/windows';
+  import { dockWindow, guardClose, openBoard, popOut, rememberSize, showBoard, showLobby, takeHandOff } from './lib/windows';
 
   function pref(key: string): string | null {
     try {
@@ -405,8 +405,9 @@
     lobbyLists = g;
   }
 
-  /** Brings forward the next game waiting on the user's move: another
-   * window, else a postal game from the lobby's lists, in a new window. */
+  /** Shows the next game waiting on the user's move: another board (a
+   * panel in the lobby or a window), else a postal game from the lobby's
+   * lists, on a new board. */
   async function nextGame() {
     const next = pickNext(session!, games.waiting(), lobbyLists, games.openGids());
     if (!next) {
@@ -414,11 +415,11 @@
       return;
     }
     if (next.kind === 'window') {
-      await focusGameWindow(next.session);
+      await showBoard(next.session);
       return;
     }
     const { gid, side } = next;
-    await openGameWindow((a) => a.playGameroomGame(gid, side)).catch((e) => flash(errorMessage(e)));
+    await openBoard((a) => a.playGameroomGame(gid, side)).catch((e) => flash(errorMessage(e)));
   }
 
   // The title names the game, and says when it waits on the user.
@@ -498,11 +499,16 @@
     const remote = [view.players.gold, view.players.silver].filter((p) => p.kind === 'remote').length;
     if (remote === 1) {
       return {
-        reason: "You're playing a game on arimaa.com. Closing the window leaves it; the game goes on there with your clock running.",
+        reason: `You're playing a game on arimaa.com. Closing the ${isDocked ? 'board' : 'window'} leaves it; the game goes on there with your clock running.`,
         confirm: 'Leave game and close',
       };
     }
-    if (remote === 0) return { reason: 'A match is being played. Closing the window stops it.', confirm: 'Stop match and close' };
+    if (remote === 0) {
+      return {
+        reason: `A match is being played. Closing the ${isDocked ? 'board' : 'window'} stops it.`,
+        confirm: 'Stop match and close',
+      };
+    }
     return null;
   });
 
@@ -536,7 +542,7 @@
   async function editPosition() {
     try {
       const position = await api.editorPosition();
-      await openGameWindow(undefined, { spec: null, editor: position });
+      await openBoard(undefined, { spec: null, editor: position });
     } catch (e) {
       flash(errorMessage(e));
     }
@@ -860,20 +866,29 @@
         <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
         <button onclick={openRecord} title="The game record, to copy, save or load">Record</button>
         <button onclick={() => (showNewGame = true)} title="A new game in this window">New game</button>
-        <button onclick={() => openGameWindow().catch((e) => flash(errorMessage(e)))} title="Open another window, with a game of its own">
-          New window
+        <button onclick={() => openBoard().catch((e) => flash(errorMessage(e)))} title="Another board, with a game of its own">
+          New board
         </button>
         <button onclick={editPosition} title="Set up a position from the shown one, in a new window (e)">Edit position</button>
       </div>
-      <div class="windows" class:single={spectating}>
-        <button
-          onclick={() => showLobby()}
-          title="The lobby: new games, open windows, arimaa.com, engine tests, engines and settings{lobbyWaiting > 0
-            ? ` (${lobbyWaiting} waiting on you)`
-            : ''}"
-        >
-          Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
-        </button>
+      <div class="windows" style:grid-template-columns="repeat({(isDocked ? 1 : 2) + (spectating ? 0 : 1)}, 1fr)">
+        {#if isDocked}
+          <button onclick={() => popOut({ spec: lastSpec, follow: following })} title="Move this board to a window of its own"
+            >Pop out</button
+          >
+        {:else}
+          <button
+            onclick={() => showLobby()}
+            title="The lobby: new games, the boards, arimaa.com, engine tests, engines and settings{lobbyWaiting > 0
+              ? ` (${lobbyWaiting} waiting on you)`
+              : ''}"
+          >
+            Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
+          </button>
+          <button onclick={() => dockWindow().catch((e) => flash(errorMessage(e)))} title="Move this board into the lobby window, as a panel there, and close this window"
+            >Dock</button
+          >
+        {/if}
         {#if !spectating}
           <button
             class:primary={nextCount > 0}
@@ -891,6 +906,7 @@
 
 {#if closing}
   <CloseWindowDialog
+    title={isDocked ? 'Close this board?' : undefined}
     reason={closing.reason}
     confirm={closing.confirm}
     onAnswer={(close) => {
@@ -1031,9 +1047,6 @@
     gap: 4px;
     padding-top: 8px;
     border-top: 1px solid var(--border);
-  }
-  .windows.single {
-    grid-template-columns: 1fr;
   }
   .windows .primary .badge {
     background: var(--accent-text);

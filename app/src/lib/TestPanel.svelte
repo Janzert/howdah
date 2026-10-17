@@ -1,6 +1,7 @@
 <script lang="ts">
-  // One engine test: its results, its running and finished games (each
-  // opens in a game window: a running one followed live), and pausing,
+  // One engine test, as a panel of its own in the lobby window (listed
+  // under Engine tests in the sidebar): its results, its running and
+  // finished games (each opens on a board: a running one followed live), and pausing,
   // resuming, stopping, its priority and its pair limit. Once it's not
   // active and has no games running, it can be archived (zipped into the
   // daemon's archive/) or deleted.
@@ -16,8 +17,9 @@
     onOpenGame: (test: string, pair: number, game: number) => Promise<string | null>;
     /** Opens a game window that follows the test from game to game. */
     onFollow: (test: string) => Promise<string | null>;
-    /** The test was archived (to `archive`) or deleted; the dialog closes. */
+    /** The test was archived (to `archive`) or deleted. */
     onRemoved: (archive: string | null) => void;
+    /** Closes the panel. */
     onClose: () => void;
   }
   let { id, onOpenGame, onFollow, onRemoved, onClose }: Props = $props();
@@ -31,11 +33,6 @@
   let concurrency = $state(1);
   /** Delete was clicked once; the second click deletes. */
   let confirmDelete = $state(false);
-  let dialog: HTMLDialogElement;
-
-  $effect(() => {
-    dialog.showModal();
-  });
 
   function show(t: TestView) {
     test = t;
@@ -92,7 +89,6 @@
     try {
       const zip = await api.tourneyRemove(id, archive);
       onRemoved(zip);
-      dialog.close();
     } catch (e) {
       error = errorMessage(e);
     }
@@ -112,12 +108,15 @@
   const won = (g: TestGameView) => (g.winner === 'gold' ? g.gold : g.silver);
 </script>
 
-<dialog bind:this={dialog} onclose={onClose} aria-labelledby="test-title">
+<div class="screen">
+  <header>
+    <h1 id="test-title">{test?.name ?? 'Engine test'}</h1>
+    {#if test}<span class="state">{testState(test)}</span>{/if}
+    <span class="spacer"></span>
+    <button onclick={onClose} title="Close this panel (the test goes on)">Close</button>
+  </header>
+  <div class="card">
   {#if test}
-    <h2 id="test-title">
-      {test.name}
-      <span class="state">{testState(test)}</span>
-    </h2>
     <p class="note">
       <strong>{test.engines[0]}</strong> (tested) vs {test.engines[1]}{test.timeControl
         ? `, ${test.timeControl}`
@@ -213,10 +212,8 @@
     {/if}
     <p class="note path">{test.path}</p>
   {:else if error}
-    <h2 id="test-title">Engine test</h2>
     <p class="error" role="alert">{error}</p>
   {:else}
-    <h2 id="test-title">Engine test</h2>
     <p>Loading…</p>
   {/if}
   <div class="buttons">
@@ -239,34 +236,27 @@
         >{confirmDelete ? 'Delete all its games?' : 'Delete'}</button
       >
     {/if}
-    <span class="spacer"></span>
-    <button onclick={() => dialog.close()}>Close</button>
   </div>
-</dialog>
+  </div>
+</div>
 
 <style>
-  dialog {
-    width: min(680px, 92vw);
-    max-height: 88vh;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    color: var(--text);
-    padding: 16px;
-  }
-  dialog[open] {
-    display: flex;
-    flex-direction: column;
-  }
-  dialog::backdrop {
-    background: rgba(0, 0, 0, 0.4);
-  }
-  h2 {
+  header {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 0 4px;
-    font-size: 16px;
+    margin-bottom: 14px;
+    min-height: 30px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card {
+    max-width: 820px;
   }
   h3 {
     margin: 12px 0 4px;
@@ -341,8 +331,7 @@
   }
   .games.list {
     overflow-y: auto;
-    min-height: 0;
-    max-height: 40vh;
+    max-height: 50vh;
   }
   .games li {
     display: flex;

@@ -17,7 +17,7 @@
 //! carries a `session` field. Each session is a game window's; the main
 //! window (the lobby) has none.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -34,8 +34,8 @@ use crate::dto::{
     EngineOutput, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec,
     PlayerGamesView, PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView, PositionSpec,
     PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView,
-    SessionsChanged, StartedBotView, StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView,
-    WatchView,
+    SessionsChanged, ShowBoard, StartedBotView, StepTarget, TestDetailView, TestGameTag, TestView,
+    TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -59,6 +59,8 @@ pub type Events = Arc<dyn EventSink>;
 /// closed. `api.ts` has the same number.
 /// Event carrying [`SessionsChanged`] when a session opens or closes.
 pub const SESSIONS_CHANGED: &str = "sessions://changed";
+/// Event carrying [`ShowBoard`].
+pub const SHOW_BOARD: &str = "sessions://show";
 
 /// The session a game window shows, from its label (`game-<session>`, as
 /// the frontend names the windows it opens; `lib/windows.ts`).
@@ -137,6 +139,9 @@ impl Drop for SessionHandle {
 
 pub struct Backend {
     sessions: Mutex<BTreeMap<SessionId, Arc<SessionHandle>>>,
+    /// The sessions shown as panels in the lobby rather than in windows
+    /// of their own: closing a window on one leaves it open.
+    docked: Mutex<BTreeSet<SessionId>>,
     next_session: AtomicU32,
     engines: SharedRegistry,
     /// Engine manifests and installing from them.
@@ -162,6 +167,7 @@ impl Backend {
     ) -> Backend {
         Backend {
             sessions: Mutex::new(BTreeMap::new()),
+            docked: Mutex::new(BTreeSet::new()),
             next_session: AtomicU32::new(1),
             engines: Arc::new(Mutex::new(registry)),
             catalog: Arc::new(Mutex::new(catalog)),
@@ -224,9 +230,40 @@ impl Backend {
         id
     }
 
-    /// Tells every window which sessions are open.
+    /// Tells every window which sessions are open, and which are docked.
     fn sessions_changed(&self) {
-        emit(&self.events, SESSIONS_CHANGED, SessionsChanged { sessions: self.list_sessions() });
+        emit(
+            &self.events,
+            SESSIONS_CHANGED,
+            SessionsChanged { sessions: self.list_sessions(), docked: self.docked_sessions() },
+        );
+    }
+
+    fn docked(&self) -> MutexGuard<'_, BTreeSet<SessionId>> {
+        self.docked.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The sessions docked in the lobby.
+    pub fn docked_sessions(&self) -> Vec<SessionId> {
+        self.docked().iter().copied().collect()
+    }
+
+    /// Docks session `id` in the lobby (a window closing on it then leaves
+    /// it open), or undocks it before it gets a window of its own.
+    pub fn set_session_docked(&self, id: SessionId, docked: bool) -> Result<(), ApiError> {
+        self.handle(id)?;
+        let changed = if docked { self.docked().insert(id) } else { self.docked().remove(&id) };
+        if changed {
+            self.sessions_changed();
+        }
+        Ok(())
+    }
+
+    /// Asks the lobby to show docked board `id`.
+    pub fn show_board(&self, id: SessionId) -> Result<(), ApiError> {
+        self.handle(id)?;
+        emit(&self.events, SHOW_BOARD, ShowBoard { board: id });
+        Ok(())
     }
 
     /// Starts session `id` with an empty game.
@@ -243,6 +280,7 @@ impl Backend {
     pub fn close_session(&self, id: SessionId) -> Result<(), ApiError> {
         let handle =
             self.sessions().remove(&id).ok_or_else(|| ApiError::state(format!("no session {id}")))?;
+        self.docked().remove(&id);
         handle.stop_watching();
         self.sessions_changed();
         Ok(())
@@ -250,9 +288,12 @@ impl Backend {
 
     /// A window was destroyed (`label` is its Tauri label). A game window's
     /// session ends with it, as [`close_session`](Self::close_session)
-    /// does, unless the frontend closed it already.
+    /// does, unless the frontend closed it already or it was docked in
+    /// the lobby (the window's Dock).
     pub fn window_closed(&self, label: &str) {
-        if let Some(id) = game_window_session(label) {
+        if let Some(id) = game_window_session(label)
+            && !self.docked().contains(&id)
+        {
             let _ = self.close_session(id);
         }
     }
@@ -1069,6 +1110,9 @@ impl Backend {
             "open_session" => ok(self.open_session()),
             "close_session" => ok(self.close_session(sid()?)?),
             "list_sessions" => ok(self.list_sessions()),
+            "docked_sessions" => ok(self.docked_sessions()),
+            "set_session_docked" => ok(self.set_session_docked(sid()?, arg::<bool>(args, "docked")?)?),
+            "show_board" => ok(self.show_board(sid()?)?),
             "get_state" => ok(self.get_state(sid()?)?),
             "new_game" => ok(self.new_game(sid()?)?),
             "load_game" => ok(self.load_game(sid()?, &arg::<String>(args, "record")?)?),
@@ -1430,6 +1474,29 @@ mod tests {
         b.window_closed(&format!("game-{game}")); // already gone: nothing happens
         b.window_closed("main");
         assert_eq!(b.list_sessions(), [kept]);
+    }
+
+    #[test]
+    fn a_docked_session_outlives_its_window() {
+        let recorder = Arc::new(Recorder::default());
+        let b = backend(recorder.clone());
+        let id = b.open_session();
+        b.set_session_docked(id, true).unwrap();
+        b.window_closed(&format!("game-{id}"));
+        assert_eq!(b.list_sessions(), [id]);
+        assert_eq!(b.docked_sessions(), [id]);
+        let last = recorder.0.lock().unwrap().iter().rev().find(|(n, _)| n == SESSIONS_CHANGED).cloned();
+        assert_eq!(last.unwrap().1["docked"], serde_json::json!([id.0]));
+        // Undocked again (popped out), its window's closing ends it.
+        b.set_session_docked(id, false).unwrap();
+        b.window_closed(&format!("game-{id}"));
+        assert!(b.list_sessions().is_empty());
+        // Closing a docked session undocks it.
+        let other = b.open_session();
+        b.set_session_docked(other, true).unwrap();
+        b.close_session(other).unwrap();
+        assert!(b.docked_sessions().is_empty());
+        assert!(b.set_session_docked(other, true).is_err());
     }
 
     #[test]

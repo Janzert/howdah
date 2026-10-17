@@ -12,6 +12,12 @@ function liveResult(v: SessionView) {
   return live === v.cursor ? v.result : (v.tree.find((n) => n.id === live)?.result ?? null);
 }
 
+/** Whether a match is being played (engines or a remote player in it,
+ * no result yet): closing its board would stop it or leave the game. */
+export function matchGoesOn(v: SessionView): boolean {
+  return v.players != null && v.live != null && liveResult(v) == null;
+}
+
 /** Whether the game waits on the user's move: a match against an engine
  * or a remote player (on arimaa.com), with the human side to move. */
 export function waitsOnUser(v: SessionView): boolean {

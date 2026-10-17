@@ -125,14 +125,12 @@ test('coordinates setting from the lobby changes the board labels and persists',
   // Settings live in the lobby; the game window follows.
   const lobby = await context.newPage();
   await lobby.goto('/');
-  await lobby.getByRole('button', { name: 'Settings' }).click();
-  const dialog = lobby.getByRole('dialog', { name: 'Settings' });
-  await dialog.getByLabel('Files and ranks').check();
+  await lobby.getByRole('navigation', { name: 'Lobby' }).getByRole('button', { name: 'Settings' }).click();
+  await expect(lobby.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+  await lobby.getByLabel('Files and ranks').check();
   await expect(labels).toHaveCount(16);
-  await dialog.getByLabel('None').check();
+  await lobby.getByLabel('None').check();
   await expect(labels).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Done' }).click();
-  await expect(dialog).toBeHidden();
   await lobby.close();
 
   await page.reload();

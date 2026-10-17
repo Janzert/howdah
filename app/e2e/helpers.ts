@@ -33,3 +33,17 @@ export async function openGamePage(page: Page): Promise<number> {
   await page.waitForFunction(() => window.__arimaa?.state() != null);
   return id;
 }
+
+/** Makes new boards open in windows of their own (the setting), for tests
+ * written for game windows. Before the page's first load. */
+export async function boardsInWindows(page: Page) {
+  await page.addInitScript(() => {
+    let s: Record<string, unknown> = {};
+    try {
+      s = JSON.parse(localStorage.getItem('settings') ?? '{}');
+    } catch {
+      /* the defaults */
+    }
+    localStorage.setItem('settings', JSON.stringify({ ...s, boardsInWindows: true }));
+  });
+}

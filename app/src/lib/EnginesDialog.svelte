@@ -1,4 +1,7 @@
 <script lang="ts">
+  // The engine list (add, edit, install from a manifest, update, delete):
+  // a dialog in a game window, the Engines panel in the lobby window
+  // (`panel`).
   import { api, errorMessage } from './api';
   import type { EngineCatalogView } from './bindings/EngineCatalogView';
   import type { EngineSpec } from './bindings/EngineSpec';
@@ -17,9 +20,11 @@
   interface Props {
     /** Called after any change so the parent can reload the list. */
     onChanged: () => void;
-    onClose: () => void;
+    onClose?: () => void;
+    /** Shown as the lobby's panel rather than a dialog. */
+    panel?: boolean;
   }
-  let { onChanged, onClose }: Props = $props();
+  let { onChanged, onClose, panel = false }: Props = $props();
 
   let engines = $state<EngineSpec[]>([]);
   let editing = $state<{
@@ -56,10 +61,10 @@
   let described = $derived(
     settingOptions(catalog?.manifests.find((m) => m.id === editing?.installed?.manifest)?.options ?? []),
   );
-  let dialog: HTMLDialogElement;
+  let dialog = $state<HTMLDialogElement>();
 
   $effect(() => {
-    dialog.showModal();
+    dialog?.showModal();
     reload();
   });
 
@@ -248,8 +253,7 @@
     e.installed && !e.name.includes(e.installed.version) ? `${e.name} (${e.installed.version})` : e.name;
 </script>
 
-<dialog bind:this={dialog} onclose={onClose}>
-  <h2>Engines</h2>
+{#snippet body()}
   {#if editing}
     <div class="form">
       <label for="en-name">Name</label>
@@ -403,11 +407,25 @@
     <div class="buttons">
       <button onclick={() => edit(null)}>Add engine…</button>
       <button onclick={() => (adding = true)} disabled={adding}>Add from manifest…</button>
-      <span class="spacer"></span>
-      <button class="primary" onclick={onClose}>Done</button>
+      {#if !panel}
+        <span class="spacer"></span>
+        <button class="primary" onclick={onClose}>Done</button>
+      {/if}
     </div>
   {/if}
-</dialog>
+{/snippet}
+
+{#if panel}
+  <div class="screen">
+    <header><h1>Engines</h1></header>
+    <div class="card">{@render body()}</div>
+  </div>
+{:else}
+  <dialog bind:this={dialog} onclose={onClose}>
+    <h2>Engines</h2>
+    {@render body()}
+  </dialog>
+{/if}
 
 <style>
   dialog {
@@ -424,6 +442,19 @@
   h2 {
     margin: 0 0 12px;
     font-size: 16px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 14px;
+    min-height: 30px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 20px;
+  }
+  .card {
+    max-width: 720px;
   }
   ul {
     list-style: none;

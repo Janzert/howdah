@@ -1,77 +1,40 @@
 <script lang="ts">
   // The lobby window's Engine tests screen: the howdah-tourney daemon's queue of tests
   // (docs/TOURNAMENTS.md). The daemon runs on its own, so tests go on with
-  // Howdah closed; this lists them, starts new ones, and opens their games
-  // in game windows. Without a daemon it offers to start one. Finished
-  // tests can be archived (zipped into the daemon's archive/), one at a
-  // time from a test's dialog or all at once here, and restored or
-  // deleted from the Archived tests dialog.
-  import { onMount } from 'svelte';
+  // Howdah closed; this lists them (state in `tourney.svelte.ts`) and
+  // starts new ones; each opens in a panel of its own (`TestPanel`). Without
+  // a daemon it offers to start one. Finished tests can be archived
+  // (zipped into the daemon's archive/), one at a time from a test's panel
+  // or all at once here, and restored or deleted from the Archived tests
+  // dialog.
   import { api, errorMessage } from './api';
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { TestView } from './bindings/TestView';
-  import type { TourneyStatusView } from './bindings/TourneyStatusView';
-  import { on } from './events';
   import Icon from './Icon.svelte';
   import ArchiveDialog from './ArchiveDialog.svelte';
   import NewTestDialog from './NewTestDialog.svelte';
-  import TestDialog from './TestDialog.svelte';
   import { llrPosition, scoreText, testState } from './tests';
+  import { tourney } from './tourney.svelte';
 
   interface Props {
     engines: EngineSpec[];
-    /** Opens a test's game in a game window; resolves to an error message,
-     * or null. */
-    onOpenGame: (test: string, pair: number, game: number) => Promise<string | null>;
-    /** Opens a game window following a test; resolves as `onOpenGame`. */
-    onFollow: (test: string) => Promise<string | null>;
-    /** Gets the number of games playing whenever it changes (the
-     * sidebar's badge). */
-    onPlaying?: (games: number) => void;
+    /** Opens a test's panel. */
+    onOpenTest: (id: string) => void;
   }
-  let { engines, onOpenGame, onFollow, onPlaying }: Props = $props();
+  let { engines, onOpenTest }: Props = $props();
 
-  let status = $state<TourneyStatusView | null>(null);
-  let tests = $state<TestView[]>([]);
+  const status = $derived(tourney.status);
+  const tests = $derived(tourney.tests);
   let error = $state<string | null>(null);
   let busy = $state(false);
   let showNew = $state(false);
-  let shown = $state<string | null>(null);
-  /** What the last archive or delete did. */
-  let notice = $state<string | null>(null);
+  /** What the last archive, delete or restore did (a test's panel's
+   * too). */
+  const notice = $derived(tourney.notice);
   /** Archive finished was clicked once; the second click archives. */
   let confirmArchive = $state(false);
   let showArchive = $state(false);
   let startSlots = $state(Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
-
-  async function refresh() {
-    try {
-      status = await api.tourneyStatus();
-      tests = status.connected ? await api.tourneyTests() : [];
-      error = null;
-    } catch (e) {
-      error = errorMessage(e);
-    }
-  }
-
-  onMount(() => {
-    void refresh();
-    const unlisten = on('tourney://changed', (u) => {
-      if (status && u.connected !== status.connected) {
-        void refresh();
-        return;
-      }
-      if (u.test) {
-        const t = u.test;
-        const i = tests.findIndex((x) => x.id === t.id);
-        if (i >= 0) tests[i] = t;
-        else tests = [...tests, t];
-      }
-      if (u.slots != null && status) status.slots = u.slots;
-      if (u.removed) tests = tests.filter((t) => t.id !== u.removed);
-    });
-    return () => void unlisten.then((f) => f());
-  });
 
   async function act(f: () => Promise<unknown>) {
     busy = true;
@@ -86,7 +49,7 @@
 
   const startDaemon = () => act(async () => {
     await api.tourneyStartDaemon(startSlots);
-    await refresh();
+    await tourney.refresh();
   });
 
   function setSlots(n: number) {
@@ -98,9 +61,8 @@
     await api.tourneyShutdown(false);
   });
 
-  const running = $derived(tests.reduce((n, t) => n + t.running.length, 0));
+  const running = $derived(tourney.playing);
   const finished = $derived(tests.filter((t) => t.status === 'finished' && t.running.length === 0));
-  $effect(() => onPlaying?.(running));
 
   /** The tests, newest first: those still going, then the finished. */
   const groups = $derived.by(() => {
@@ -120,16 +82,16 @@
     confirmArchive = false;
     const ids = finished.map((t) => t.id);
     void act(async () => {
-      notice = null;
+      tourney.notice = null;
       let done = 0;
       try {
         for (const id of ids) {
           await api.tourneyRemove(id, true);
-          tests = tests.filter((t) => t.id !== id);
+          tourney.forget(id);
           done++;
         }
       } finally {
-        if (done > 0) notice = `Archived ${done === 1 ? '1 test' : `${done} tests`} to ${archiveDir()}`;
+        if (done > 0) tourney.notice = `Archived ${done === 1 ? '1 test' : `${done} tests`} to ${archiveDir()}`;
       }
     });
   }
@@ -139,11 +101,6 @@
     const dir = status?.dataDir;
     if (!dir) return 'the archive folder';
     return `${dir}${dir.includes('\\') ? '\\' : '/'}archive`;
-  }
-
-  function removed(id: string, zip: string | null) {
-    tests = tests.filter((t) => t.id !== id);
-    notice = zip ? `Archived ${id} to ${zip}` : `Deleted ${id}`;
   }
 </script>
 
@@ -224,7 +181,7 @@
               {#each g.tests as t (t.id)}
                 {@const pos = llrPosition(t)}
                 <li>
-                  <button class="test" onclick={() => (shown = t.id)} aria-label="Show test {t.name}">
+                  <button class="test" onclick={() => onOpenTest(t.id)} aria-label="Show test {t.name}">
                     <span class="title">
                       <span class="name">{t.name}</span>
                       <span class="state {testState(t)}">{testState(t)}</span>
@@ -255,8 +212,8 @@
   <ArchiveDialog
     dataDir={status?.dataDir ?? null}
     onRestored={(t) => {
-      if (!tests.some((x) => x.id === t.id)) tests = [...tests, t].sort((a, b) => a.id.localeCompare(b.id));
-      notice = `Restored ${t.id}`;
+      tourney.add(t);
+      tourney.notice = `Restored ${t.id}`;
     }}
     onClose={() => (showArchive = false)}
   />
@@ -266,14 +223,10 @@
     {engines}
     onCreated={(t) => {
       showNew = false;
-      shown = t.id;
+      onOpenTest(t.id);
     }}
     onClose={() => (showNew = false)}
   />
-{/if}
-{#if shown}
-  {@const id = shown}
-  <TestDialog {id} {onOpenGame} {onFollow} onRemoved={(zip) => removed(id, zip)} onClose={() => (shown = null)} />
 {/if}
 
 <style>

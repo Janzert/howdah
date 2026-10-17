@@ -45,7 +45,7 @@
       <div class="card-head">
         <h2 id="gr-mine-title">Your games</h2>
         <span class="spacer"></span>
-        <button class="icon" onclick={() => (gameroom.tab = 'bots')}><Icon name="bot" size={16} /> Play a bot</button>
+        <button class="icon" onclick={() => gameroom.show('bots')}><Icon name="bot" size={16} /> Play a bot</button>
         <button class="primary icon" onclick={() => (gameroom.newGame = {})} disabled={busy}>
           <Icon name="plus" size={16} /> New game
         </button>
@@ -154,7 +154,7 @@
       <div class="card-head">
         <h2 id="gr-live-title">Live now {#if games}<span class="count">{games.live.length}</span>{/if}</h2>
         <span class="spacer"></span>
-        <button class="link" onclick={() => (gameroom.tab = 'watch')}>Live and postal games</button>
+        <button class="link" onclick={() => gameroom.show('watch')}>Live and postal games</button>
       </div>
       {#if !games}
         <p class="empty">…</p>
@@ -165,7 +165,7 @@
           {#each games.live.slice(0, LIVE_SHOWN) as g (g.gid)}<LiveGameRow game={g} />{/each}
         </ul>
         {#if games.live.length > LIVE_SHOWN}
-          <button class="link more" onclick={() => (gameroom.tab = 'watch')}>All {games.live.length} live games</button>
+          <button class="link more" onclick={() => gameroom.show('watch')}>All {games.live.length} live games</button>
         {/if}
       {/if}
     </section>
@@ -174,7 +174,7 @@
       <div class="card-head">
         <h2 id="gr-recent-title">Recently finished</h2>
         <span class="spacer"></span>
-        <button class="link" onclick={() => (gameroom.tab = 'finished')}>More, and a player's games</button>
+        <button class="link" onclick={() => gameroom.show('finished')}>More, and a player's games</button>
       </div>
       {#if !games}
         <p class="empty">…</p>
@@ -191,7 +191,7 @@
       <div class="card-head">
         <h2 id="gr-online-title">Online {#if games}<span class="count">{gameroom.online.length}</span>{/if}</h2>
         <span class="spacer"></span>
-        <button class="link" onclick={() => (gameroom.tab = 'players')}>Players</button>
+        <button class="link" onclick={() => gameroom.show('players')}>Players</button>
       </div>
       {#if games && gameroom.online.length === 0}
         <p class="empty">Nobody is logged in to the gameroom.</p>
@@ -219,7 +219,7 @@
           {/each}
           {#if gameroom.online.length > ONLINE_SHOWN}
             <li>
-              <button class="link" onclick={() => (gameroom.tab = 'players')}
+              <button class="link" onclick={() => gameroom.show('players')}
                 >and {gameroom.online.length - ONLINE_SHOWN} more</button
               >
             </li>

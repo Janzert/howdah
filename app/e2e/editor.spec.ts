@@ -1,13 +1,15 @@
 // The position editor (docs/UI-SURVEY.md, section 6), opened from the lobby
 // and from a game window, each in a window of its own.
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { bridge, closeAllSessions } from './helpers';
+import { boardsInWindows, bridge, closeAllSessions } from './helpers';
 
 async function opens(context: BrowserContext, click: () => Promise<void>): Promise<Page> {
   const [win] = await Promise.all([context.waitForEvent('page'), click()]);
   await win.waitForFunction(() => window.__arimaa?.state() != null);
   return win;
 }
+
+test.beforeEach(({ page }) => boardsInWindows(page));
 
 const editor = (win: Page) => win.evaluate(() => window.__arimaa!.editor());
 const board = (win: Page) => win.getByRole('application', { name: 'Arimaa board' });

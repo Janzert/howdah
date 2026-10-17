@@ -1,20 +1,22 @@
 <script lang="ts">
+  // The keyboard and mouse help: a dialog in a game window (`?`), the Help
+  // panel in the lobby window (`panel`).
   import { keyName, shortcutFor, shortcutGroups } from './shortcuts';
 
-  let { onClose }: { onClose: () => void } = $props();
+  let { onClose, panel = false }: { onClose?: () => void; panel?: boolean } = $props();
 
-  let dialog: HTMLDialogElement;
+  let dialog = $state<HTMLDialogElement>();
   const groups = shortcutGroups();
 
   $effect(() => {
-    dialog.showModal();
+    dialog?.showModal();
   });
 
   // `?` closes the help as well as opening it (Esc closes any dialog).
   function onkeydown(e: KeyboardEvent) {
     if (shortcutFor(e)?.id === 'help') {
       e.preventDefault();
-      dialog.close();
+      dialog?.close();
     }
   }
 
@@ -29,8 +31,7 @@
   ];
 </script>
 
-<dialog bind:this={dialog} onclose={onClose} {onkeydown} aria-labelledby="help-title">
-  <h2 id="help-title">Keyboard and mouse</h2>
+{#snippet body()}
   <div class="columns">
     {#each groups as g (g.group)}
       <section>
@@ -55,10 +56,26 @@
       </dl>
     </section>
   </div>
-  <div class="buttons">
-    <button class="primary" onclick={() => dialog.close()}>Close</button>
+{/snippet}
+
+{#if panel}
+  <div class="screen">
+    <header><h1 id="help-title">Help</h1></header>
+    <div class="card">
+      <h2>Keyboard and mouse</h2>
+      <p class="note">The keys work in a board, as a panel here or in its own window; <kbd>?</kbd> there shows this too.</p>
+      {@render body()}
+    </div>
   </div>
-</dialog>
+{:else}
+  <dialog bind:this={dialog} onclose={onClose} {onkeydown} aria-labelledby="help-title">
+    <h2 id="help-title">Keyboard and mouse</h2>
+    {@render body()}
+    <div class="buttons">
+      <button class="primary" onclick={() => dialog?.close()}>Close</button>
+    </div>
+  </dialog>
+{/if}
 
 <style>
   dialog {
@@ -76,6 +93,24 @@
   h2 {
     margin: 0 0 8px;
     font-size: 16px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 14px;
+    min-height: 30px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 20px;
+  }
+  .card {
+    max-width: 900px;
+  }
+  .note {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--muted);
   }
   h3 {
     margin: 0 0 6px;

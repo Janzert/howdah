@@ -2,7 +2,8 @@
 import type { SessionId } from "./SessionId";
 
 /**
- * The sessions open now, sent as `sessions://changed` whenever one opens
- * or closes (each is a game window's).
+ * The sessions open now, sent as `sessions://changed` whenever one opens,
+ * closes, or moves between a window and the lobby. Each is a board: a
+ * game window's, or one docked as a panel in the lobby (`docked`).
  */
-export type SessionsChanged = { sessions: Array<SessionId>, };
+export type SessionsChanged = { sessions: Array<SessionId>, docked: Array<SessionId>, };

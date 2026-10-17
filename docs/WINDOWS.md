@@ -286,6 +286,46 @@ Windows come first; nothing in the design should rule out tabs (a game
 view that doesn't assume it owns the whole window, and a session per
 game either way). Brian, 2026-10-09.
 
+## Boards as panels (2026-10-18)
+
+Brian asked (2026-10-18) for boards to open as panels in the lobby
+window, each able to pop out to a window of its own and go back, and for
+the sidebar to list every board and go to its panel or window. As built:
+
+- A board is a session either way. The backend keeps which sessions are
+  docked (`Backend::set_session_docked`, `docked_sessions`;
+  `SessionsChanged.docked`), and doesn't end a docked session when a
+  window on it closes (`window_closed`), so a window can hand its board
+  to the lobby.
+- A docked board is the game window's page in an iframe
+  (`index.html?session=<id>&docked`; `isDocked` in `api.ts`), so nothing
+  in the game view had to change for it. Tauri gives its IPC to a
+  window's main frame only (`tauri::manager::webview`, scripts "for the
+  main frame only"), so the frame's IPC is mocked (`lib/frames.ts`,
+  `installFrameRelay`): each command is posted to the lobby, which runs
+  it with its own IPC and posts the answer back, and the lobby posts
+  every event on to every frame (`serveFrames`). Window commands
+  (`plugin:…`) aren't relayed; what a board does to windows goes through
+  `askLobby`: a new board (Edit position, New board, Next game's postal
+  game) is shown as a panel or a window as the Settings say ("New
+  boards": in this window, the default, or in their own windows); Pop
+  out; and Close, after the board's own close question.
+- Pop out: the lobby undocks the session, drops the frame and opens a
+  game window on the same session (`openWindowFor`), handing over the
+  rematch spec. Dock (in a game window): the window docks its session,
+  shows the lobby and closes itself without asking; the lobby sees the
+  session docked and shows its panel. In the browser preview the window's
+  tab skips its closing beacon while docking.
+- Next game and the lobby's one board per arimaa.com game use
+  `showBoard(id)`: a docked board's panel (from a game window, through
+  `show_board` and the `sessions://show` event, with the lobby brought
+  forward), or a window.
+- Docked boards stay loaded while another panel is shown (hidden), so
+  their games, sounds and clocks go on.
+- Closing the main window with docked boards still playing (a match or
+  an arimaa.com game) asks first when it would quit Howdah; with game
+  windows open it only hides, as before, and the boards go on.
+
 ## Decided
 
 Brian's answers to the first round of questions (2026-10-09), recorded

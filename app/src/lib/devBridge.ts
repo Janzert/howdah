@@ -4,6 +4,7 @@
 import { emit } from '@tauri-apps/api/event';
 import { mockIPC } from '@tauri-apps/api/mocks';
 import { isApiError, session } from './api';
+import { EVENT_NAMES } from './events';
 import type { ApiError } from './bindings/ApiError';
 
 const BASE = '/bridge';
@@ -44,16 +45,7 @@ async function invoke(cmd: string, args: unknown): Promise<unknown> {
 export function installDevBridge(): void {
   mockIPC((cmd, args) => invoke(cmd, args), { shouldMockEvents: true });
   const source = new EventSource(`${BASE}/events`);
-  const names = [
-    'game://changed',
-    'engine://output',
-    'analysis://update',
-    'gameroom://watch',
-    'gameroom://lobby',
-    'gameroom://invitation',
-    'sessions://changed',
-    'tourney://changed',
-  ];
+  const names = EVENT_NAMES;
   for (const name of names) {
     source.addEventListener(name, (e) => {
       void emit(name, JSON.parse((e as MessageEvent<string>).data));

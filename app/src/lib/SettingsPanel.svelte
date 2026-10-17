@@ -1,16 +1,10 @@
 <script lang="ts">
-  // Display preferences. Changes apply immediately and are saved as they're made.
+  // The lobby window's Settings panel: display and sound preferences, and
+  // where new boards open. Changes apply at once and are saved as they're
+  // made (and reach every window).
   import { MAX_STEP_MS, settings, type Appearance, type Coordinates, type HoverInput } from './settings.svelte';
   import { play } from './sound';
   import { findTheme, themes } from './theme';
-
-  let { onClose }: { onClose: () => void } = $props();
-
-  let dialog: HTMLDialogElement;
-
-  $effect(() => {
-    dialog.showModal();
-  });
 
   const appearanceChoices: { value: Appearance; label: string }[] = [
     { value: 'system', label: 'System' },
@@ -42,8 +36,9 @@
   const attribution = $derived(findTheme(settings.theme).attribution);
 </script>
 
-<dialog bind:this={dialog} onclose={onClose} aria-labelledby="settings-title">
-  <h2 id="settings-title">Settings</h2>
+<div class="screen">
+  <header><h1 id="settings-title">Settings</h1></header>
+  <div class="card">
 
   <section>
     <h3>Display</h3>
@@ -160,26 +155,41 @@
     <p class="hint">Tick for both clocks in a game with no human player here: one watched on arimaa.com, or engine against engine.</p>
   </section>
 
-  <div class="buttons">
-    <button class="primary" onclick={onClose}>Done</button>
+  <section>
+    <h3>Boards</h3>
+    <fieldset class="row">
+      <legend>New boards</legend>
+      <div class="choices">
+        <label>
+          <input type="radio" name="boards-in" value={false} bind:group={settings.boardsInWindows} />
+          In this window
+        </label>
+        <label>
+          <input type="radio" name="boards-in" value={true} bind:group={settings.boardsInWindows} />
+          In their own windows
+        </label>
+      </div>
+    </fieldset>
+    <p class="hint">A board can move between the two at any time: Pop out, or Dock in its window.</p>
+  </section>
   </div>
-</dialog>
+</div>
 
 <style>
-  dialog {
-    width: min(420px, 90vw);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    color: var(--text);
-    padding: 16px;
+  header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 14px;
+    min-height: 30px;
   }
-  dialog::backdrop {
-    background: rgba(0, 0, 0, 0.4);
+  h1 {
+    margin: 0;
+    font-size: 20px;
   }
-  h2 {
-    margin: 0 0 8px;
-    font-size: 16px;
+  .card {
+    max-width: 560px;
+    padding-top: 4px;
+    padding-bottom: 4px;
   }
   h3 {
     margin: 0 0 6px;
@@ -190,7 +200,9 @@
     color: var(--muted);
   }
   section {
-    padding: 10px 0;
+    padding: 12px 0;
+  }
+  section + section {
     border-top: 1px solid var(--border);
   }
   .row {
@@ -267,10 +279,5 @@
     margin: -2px 0 0 108px;
     font-size: 12px;
     color: var(--muted);
-  }
-  .buttons {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 8px;
   }
 </style>

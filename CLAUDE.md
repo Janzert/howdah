@@ -524,14 +524,18 @@ plans the engine test and tournament runner.
   - `backend.rs`: `Backend` holds the command logic, free of Tauri types.
     It holds several sessions keyed by `SessionId`, each with its own
     controller (`open_session`, `close_session`, `list_sessions`).
-    Each session is a game window's (plan in `docs/WINDOWS.md`); the main
-    window, the lobby, has none, and the backend starts with none. A game
-    window's Tauri label is `game-<session>` (`game_window_session`);
-    `window_closed`, called from `lib.rs` when Tauri destroys a window,
-    closes its session. `close_session` also leaves the session's
-    arimaa.com game (`stop_watching`). Opening or closing a session sends
-    `sessions://changed` (`SessionsChanged`, the open ones) for the
-    lobby's list. `lib.rs` also hides the lobby instead of closing it
+    Each session is a board's (plan in `docs/WINDOWS.md`): a game
+    window's, or one docked as a panel in the lobby (`set_session_docked`,
+    `docked_sessions`); the main window, the lobby, has none, and the
+    backend starts with none. A game window's Tauri label is
+    `game-<session>` (`game_window_session`); `window_closed`, called from
+    `lib.rs` when Tauri destroys a window, closes its session unless it's
+    docked (a window's Dock hands it to the lobby). `close_session` also
+    leaves the session's arimaa.com game (`stop_watching`). Opening,
+    closing, docking or undocking a session sends `sessions://changed`
+    (`SessionsChanged`, the open ones and the docked ones) for the lobby's
+    list; `show_board` sends `sessions://show` (`ShowBoard`) for the
+    lobby to show a docked board. `lib.rs` also hides the lobby instead of closing it
     while a game window is open (`CloseRequested`), and quits when the
     last game window goes while the lobby is hidden. Every session command
     takes a `session` argument, and a session's events carry a `session`
@@ -568,55 +572,75 @@ plans the engine test and tournament runner.
     `isGameWindow`); every session command of `api` passes it, and
     `apiFor(id)` gives the same commands on another session (the lobby
     setting up a game window's).
-  - `lib/TestsScreen.svelte` (the lobby's Engine tests screen: the
-    daemon's state, then the tests as cards, in progress and finished; kept
-    mounted while hidden, for the sidebar's count of games playing),
-    `TestDialog.svelte` (one test: results, controls, games to
-    watch or open, and Follow: a window with `HandOff.follow`, whose
+  - `lib/tourney.svelte.ts` (`tourney`: the daemon's state and tests for
+    the lobby, followed from `tourney://changed`),
+    `lib/TestsScreen.svelte` (the lobby's Engine tests panel: the
+    daemon's state, then the tests as cards, in progress and finished),
+    `TestPanel.svelte` (one test, a panel listed under Engine tests in
+    the sidebar with a summary, until closed: results, controls, games to
+    watch or open, and Follow: a board with `HandOff.follow`, whose
     game-end dialog counts down 15 s to the test's next game),
     `NewTestDialog.svelte` and `ArchiveDialog.svelte` (archived tests to
     restore or delete); `lib/tests.ts` words a
     test's state and SPRT.
-  - `Lobby.svelte`, the main window: a sidebar beside one screen. The
+  - `Lobby.svelte`, the main window: a sidebar beside one panel. The
     sidebar (folds to icons and boards, `lobby.sidebar` in localStorage)
-    has the screens (Home, arimaa.com, Engine tests, with badges: what
-    waits on the user on arimaa.com, test games playing), the game
-    windows (each one's `MiniBoard` and title, "Your move" first; a click
-    brings the window forward), and Engines, Settings and Help. The
-    screen shown is kept as `lobby.screen`. `HomeScreen.svelte`: Play and
+    lists the panels: Home, arimaa.com (with the arimaa.com panels opened
+    from its overview indented under it), Engine tests (with the tests
+    opened under it, each with its state, score and LLR), badges (what
+    waits on the user on arimaa.com, test games playing), Open boards
+    (each one's `MiniBoard` and title, "Your move" first; a click shows
+    its panel or brings its window forward; a docked one has a close
+    button), and the Engines, Settings and Help panels
+    (`EnginesDialog`/`HelpDialog` with `panel`, `SettingsPanel`). The
+    panel shown is kept as `lobby.panel` (a key: `gameroom:watch`,
+    `test:<id>`, `board:<session>`, …), the panels opened as
+    `lobby.gameroomPanels` and `lobby.testPanels`; closing one goes back
+    to the panel shown before it. Docked boards are iframes over the
+    panel area, all loaded, one shown (`serveFrames` relays their IPC;
+    `docs/WINDOWS.md`, "Boards as panels"); a board docked since the last
+    change is shown. In Tauri it asks before the main window closes on
+    docked boards still playing when that quits (`guardMainWindow`).
+    `HomeScreen.svelte`: Play and
     analyse (New game, Analysis board with the last analysis engine, Open
     record, Position editor, Puzzles, as cards), a note when arimaa.com
-    has invitations or postal moves due, and Open windows as larger cards
+    has invitations or postal moves due, and the open boards as larger cards
     (`lib/lobbyWindows.ts`'s `listWindow`: players from
     `lib/windowList.ts`'s `gameTitle`, what kind of game, clocks, and
     "Your move" from `waitsOnUser`; `lib/openGames.svelte.ts` follows
     every session's view and arimaa.com game, for the lobby and for game
-    windows' Next game). The arimaa.com screen is
-    `lib/gameroom/GameroomScreen.svelte`. Lobby styles shared by the
-    screens (cards, row lists, dots, badges) are in `src/lobby.css`, all
+    boards' Next game). The arimaa.com panels are in `lib/gameroom/`.
+    Lobby styles shared by the panels (cards, row lists, dots, badges) are in `src/lobby.css`, all
     under `.lobby`; `lib/Icon.svelte` has the line icons.
     It follows every session's `game://changed` and `gameroom://watch`
     (`onEvery` in `lib/events.ts`) and `sessions://changed`. It owns the
     app-wide notifications: invitations and postal moves due (flash,
     sound, attention, leaving out games open in a window; the message's
-    Show goes to the arimaa.com screen), and an accepted invitation opens
-    a game window playing it. Everything it
-    starts opens a new game window.
-  - `lib/windows.ts`: windows. `openGameWindow(prepare, handOff)` calls
-    `open_session`, runs `prepare` on the new session (start a match, load
-    a record, take an arimaa.com seat; a failure closes it and opens no
-    window), and opens `index.html?session=<id>`: a `WebviewWindow`
-    labelled `game-<id>` in Tauri, `window.open` in the browser preview
-    (tabs are named, `nameTab`, so `showLobby` and `focusGameWindow` find
-    them). The hand-off (the match spec, for a rematch) goes through
-    localStorage, read once by the window (`takeHandOff`). Game windows
-    also have "New window" (an empty one) and a Lobby button, with what
-    waits there (invitations and postal moves due, from
+    Show goes to the arimaa.com panel), and an accepted invitation opens
+    a board playing it. Everything it starts opens a new board, docked or
+    in a window as the "New boards" setting says.
+  - `lib/windows.ts`: windows and boards. `openBoard(prepare, handOff)`
+    calls `open_session`, runs `prepare` on the new session (start a
+    match, load a record, take an arimaa.com seat; a failure closes it and
+    opens no board), and shows it: from the lobby, docked
+    (`set_session_docked`) or, with the "New boards" setting at their own
+    windows, `openWindowFor(id)`, which opens `index.html?session=<id>`: a
+    `WebviewWindow` labelled `game-<id>` in Tauri, `window.open` in the
+    browser preview (tabs are named, `nameTab`, so `showLobby` and
+    `focusGameWindow` find them); from a game window, a window; from a
+    docked board, as the lobby decides (`askLobby`). `showBoard(id)` shows
+    a board wherever it is; `popOut` (a docked board) and `dockWindow` (a
+    game window) move one. The hand-off (the match spec, for a rematch)
+    goes through localStorage, read once by the board (`takeHandOff`;
+    `saveHandOff`). Boards
+    also have "New board" (an empty one), Pop out (docked) or Lobby and
+    Dock (in a window), with what waits in the lobby on the Lobby button
+    (invitations and postal moves due, from
     `gameroom_last_games` and `gameroom://lobby`), and Next game (`n`;
-    `lib/nextGame.ts`): the next other window waiting on the user's
-    move, else a postal game on their move without a window. One window
+    `lib/nextGame.ts`): the next other board waiting on the user's
+    move, else a postal game on their move without a board. One board
     per arimaa.com game: the lobby asks `gameroom_game_session(gid)` and
-    brings that window forward if there is one. A game window's title
+    shows that board if there is one. A game window's title
     (`setTitle` in `lib/attention.ts`) names the players, with "Your
     move · " in front while it waits on the user. Game windows open at
     the size the last one was resized to (`rememberSize`, localStorage)
@@ -626,8 +650,10 @@ plans the engine test and tournament runner.
     the browser preview gets only `beforeunload`'s prompt, in game
     windows). In Tauri the backend ends the session as the window is
     destroyed; in the browser preview a game window's tab closes it on
-    `pagehide` (`closeSessionWithPage`, a beacon), and a reloaded tab
-    gets a new one (`useSession`). The capability
+    `pagehide` (`closeSessionWithPage`, a beacon; not while docking), and
+    a reloaded tab gets a new one (`useSession`). A docked board's close
+    button asks the board (`requestClose`), which runs `guardClose`'s
+    question and then asks the lobby to close it. The capability
     file (`capabilities/default.json`) covers `main` and `game-*`,
     including creating windows, `destroy` (which `onCloseRequested`
     needs), and showing and focusing them.
@@ -685,20 +711,25 @@ plans the engine test and tournament runner.
   - `CommentBox.svelte`, under the move list (folded away until opened),
     edits the shown move's comment (the game comment at the start; saved on blur or Ctrl+Enter,
     Esc reverts) and toggles its move glyphs.
-  - `lib/gameroom/` (the lobby's arimaa.com screen). Its state is one
+  - `lib/gameroom/` (the lobby's arimaa.com panels). Their state is one
     store, `store.svelte.ts`'s `gameroom` (login, lists, the bots, postal
-    games, the player search, the tab shown, the New game dialog), so it
-    outlasts tab and screen changes; the lobby gives it the opener for
-    game windows (`setOpener`) and gets the lists (`start`).
-    `GameroomScreen.svelte` holds the header (who's logged in, Refresh,
-    Log out), `LoginForm.svelte` until logged in, then tabs: `Overview`
-    (fresh announcements; Your games: invitations, the user's games and
-    invitations sent, with New game and Play a bot; Open games; the first
-    few live and recently finished games and who's online, linking to the
-    other tabs; older announcements), `BotsTab` (the list beside the
-    chosen bot), `WatchTab` (live and postal games, with a player
-    filter), `FinishedTab` (a player's games, a game by id, recently
-    finished) and `PlayersTab` (online, with Games and Invite).
+    games, the player search, the New game dialog), so it outlasts panel
+    changes; the lobby gives it the opener for boards (`setOpener`) and
+    the way to open a panel (`setNavigator`, for `show(panel)`), and gets
+    the lists (`start`). `GameroomFrame.svelte` is every panel's header
+    (who's logged in, Refresh, Log out or Close), `LoginForm.svelte` until
+    logged in, and the last error. `GameroomScreen.svelte` (the arimaa.com
+    panel): buttons opening the other panels (`GAMEROOM_PANELS`), then
+    `Overview` (fresh announcements; Your games: invitations, the user's
+    games and invitations sent, with New game and Play a bot; Open games;
+    the first few live and recently finished games and who's online,
+    linking to the other panels; older announcements).
+    `GameroomPanel.svelte` shows one of the others, each listed under
+    arimaa.com in the sidebar once opened, until closed: `BotsTab` (the
+    list beside the chosen bot), `WatchTab` (live and postal games, with a
+    player filter), `FinishedTab` (a player's games, a game by id,
+    recently finished) and `PlayersTab` (online, with Games and Invite).
+    The gameroom chat (to come) is meant as another such panel.
     `NewGameDialog.svelte` creates a game or, with an opponent, invites
     them (Invite anywhere opens it with the opponent filled in).
     `format.ts` words the rows. The gameroom
@@ -706,15 +737,15 @@ plans the engine test and tournament runner.
     the password field says "Saved password"); live games have Watch,
     finished ones Open; the player search goes straight to an exact
     username's games, with "Older games" paging (a player's Games on the
-    Players tab searches for them); a game id field loads a finished game
+    Players panel searches for them); a game id field loads a finished game
     by its permanent id, or watches by a gameroom id. The user's games
     have Play to take their seat again, Cancel while nobody has sat ("Your
     move" first, from `mygames`' `turn`), the open games others created
     Play as the free side, and the New game dialog takes side, time
     control in the gameroom's format with a few presets, the gameroom's
-    postal ones among them, and rated (kept in localStorage). The Watch tab lists the postal
+    postal ones among them, and rated (kept in localStorage). The Watch panel lists the postal
     games being played (`gameroom_postal_games`, one page fetch, when the
-    Watch tab first opens), to watch. Postal is the server's call from the time control
+    Watch panel first opens), to watch. Postal is the server's call from the time control
     (days per move, or `0/0/0/0/0`, its "No time limit", which `start`
     makes untimed); `WatchView.postal` labels the panel, and clocks of a
     day or more read `Nd h:mm` (`formatClock`). Invitations: the New
@@ -730,14 +761,14 @@ plans the engine test and tournament runner.
     kept in localStorage by `announcementKey`, which an edit changes);
     the rest are under "Older announcements". Links go to `open_url`
     (http(s) only, the system's browser through the `open` crate; from
-    the dev bridge too). The Players tab (and the overview, in brief) lists who's logged in
+    the dev bridge too). The Players panel (and the overview, in brief) lists who's logged in
     (`GameroomGames.online`; idle over `ONLINE_IDLE` left out), with
     Invite, which opens the New game dialog with them as the opponent, for those who
     take invitations and aren't busy (bots may be), once their `idle` has moved since
     first seen (`firstIdle`): only then is `inviteme` their setting, and
-    bots on the bot API never move it. The Bots tab lists the server's bots
+    bots on the bot API never move it. The Bots panel lists the server's bots
     (`gameroom_server_bots`, `ServerBotsView`: every bot and the official
-    ladder, two page fetches, when the tab first opens; "Bot ladder", with the
+    ladder, two page fetches, when the panel first opens; "Bot ladder", with the
     user's place in it, or "All bots"; filter and order); Choose reads the bot's page (`gameroom_bot_info`), and Start
     (`start_gameroom_bot`, the user's side, "Join on creation" and "Keep
     rated", kept in localStorage) starts it and, joining, plays the game
@@ -915,11 +946,12 @@ plans the engine test and tournament runner.
     `set_native_appearance`, since WebKitGTK draws them with the GTK
     theme; theme, coordinates,
     sound and volume, animation speed (`stepMs`, the board's base speed),
-    hover input, and `humanAtBottom`, which turns the board when a match
-    with one human side starts) as one reactive `settings` object,
+    hover input, `humanAtBottom`, which turns the board when a match
+    with one human side starts, and `boardsInWindows`, where the lobby
+    opens new boards) as one reactive `settings` object,
     saved to localStorage as JSON (`parse` validates and reads the older
     `theme`/`muted` keys).
-    `SettingsDialog.svelte` (in the lobby) binds to it directly; add new
+    `SettingsPanel.svelte` (the lobby's Settings panel) binds to it directly; add new
     options to both.
     A `storage` event (another window saved) reloads it, so changes apply
     in every window; App's effects reapply the appearance and sound.

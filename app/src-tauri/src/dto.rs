@@ -21,12 +21,23 @@ impl std::fmt::Display for SessionId {
     }
 }
 
-/// The sessions open now, sent as `sessions://changed` whenever one opens
-/// or closes (each is a game window's).
+/// The sessions open now, sent as `sessions://changed` whenever one opens,
+/// closes, or moves between a window and the lobby. Each is a board: a
+/// game window's, or one docked as a panel in the lobby (`docked`).
 #[derive(Clone, Debug, Serialize, TS)]
 #[ts(export)]
 pub struct SessionsChanged {
     pub sessions: Vec<SessionId>,
+    pub docked: Vec<SessionId>,
+}
+
+/// Asks the lobby to show docked board `board`, sent as `sessions://show`
+/// (a game window's Next game going to it). Named `board`, not `session`,
+/// so every window's `on` passes it.
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ShowBoard {
+    pub board: SessionId,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]

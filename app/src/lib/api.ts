@@ -45,6 +45,10 @@ export let session: SessionId | null = new URLSearchParams(location.search).has(
 /** Whether this is a game window, not the lobby. */
 export const isGameWindow = session != null;
 
+/** Whether this board is docked in the lobby (an iframe there) rather
+ * than a window of its own (`lib/frames.ts`). */
+export const isDocked = isGameWindow && new URLSearchParams(location.search).has('docked');
+
 /** Moves this window to another session, before anything uses it (the
  * browser preview, when a reloaded game window's session is gone). */
 export function useSession(id: SessionId) {
@@ -59,6 +63,13 @@ function makeApi(sid: () => SessionId | null) {
     openSession: () => invoke<SessionId>('open_session'),
     closeSession: (id: SessionId) => invoke<void>('close_session', { session: id }),
     listSessions: () => invoke<SessionId[]>('list_sessions'),
+    /** The sessions docked as panels in the lobby (the rest have windows). */
+    dockedSessions: () => invoke<SessionId[]>('docked_sessions'),
+    /** Docks a session in the lobby (a window closing on it leaves it
+     * open), or undocks it before it gets a window. */
+    setSessionDocked: (id: SessionId, docked: boolean) => invoke<void>('set_session_docked', { session: id, docked }),
+    /** Asks the lobby to show docked board `id` (as `sessions://show`). */
+    showBoard: (id: SessionId) => invoke<void>('show_board', { session: id }),
     getState: () => invoke<SessionView>('get_state', { session: sid() }),
     newGame: () => invoke<void>('new_game', { session: sid() }),
     loadGame: (record: string) => invoke<void>('load_game', { session: sid(), record }),

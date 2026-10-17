@@ -109,19 +109,23 @@ young).
 
 ### Changed
 
-- The lobby is laid out anew: a sidebar switches between Home, arimaa.com
-  and Engine tests, lists the game windows with a small board each, and
-  holds Engines, Settings and Help; it folds to icons and boards. The
-  arimaa.com screen opens on an overview (invitations and your games,
-  open games, and the first of the live, finished and online lists),
-  with tabs for the server's bots, games to watch (live and postal),
-  finished games (a player's games, a game by id) and players online.
-  New games and invitations go through a New game dialog, which Invite
-  opens with the player filled in. Engine tests show as cards, those in
-  progress apart from the finished. Notifications about arimaa.com have
-  a Show button.
-- A game window's buttons are in tidy rows, with Lobby and Next game
-  apart from the game's tools.
+- The lobby is laid out anew: a sidebar lists Home, arimaa.com and
+  Engine tests, the open boards with a small board each, and Engines,
+  Settings and Help, each a panel of the main window; it folds to icons
+  and boards. Games now open as boards in the main window by default:
+  each can pop out to a window of its own and dock back, and the sidebar
+  goes to its panel or its window (Settings has "New boards: in their own
+  windows" for the old way). The arimaa.com panel opens on an overview
+  (invitations and your games, open games, and the first of the live,
+  finished and online lists), with buttons that open its other panels
+  (the server's bots, games to watch, finished games, players online),
+  listed under arimaa.com in the sidebar until closed. New games and
+  invitations go through a New game dialog, which Invite opens with the
+  player filled in. Engine tests show as cards; each test opens in its
+  own panel, listed under Engine tests with its score. Notifications about
+  arimaa.com have a Show button.
+- A board's buttons are in tidy rows, with Lobby, Dock or Pop out and Next
+  game apart from the game's tools; "New window" is "New board".
 - A refused third repetition names the moves after which the position
   stood before ("as after 12g and 14g"), as arimaa.com does.
 - Installing an engine update adds the new version as its own engine,

@@ -2,9 +2,9 @@
 // lobby is the page without `?session=`, and each game window a tab opened
 // with `window.open`, on its own session.
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { bridge, closeAllSessions } from './helpers';
+import { boardsInWindows, bridge, closeAllSessions } from './helpers';
 
-/** Opens the lobby with no game windows. */
+/** Opens the lobby with no boards. */
 async function lobby(page: Page) {
   await closeAllSessions(page);
   await page.goto('/');
@@ -19,11 +19,13 @@ async function opens(context: BrowserContext, click: () => Promise<void>): Promi
 }
 
 const sessionOf = (game: Page) => Number(new URL(game.url()).searchParams.get('session'));
-const openWindows = (page: Page) => page.getByRole('list', { name: 'Open windows' }).getByRole('listitem');
+const openWindows = (page: Page) => page.getByRole('list', { name: 'Boards', exact: true }).getByRole('listitem');
+const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Lobby' });
 
 test('the lobby opens game windows, lists them, and closing one ends its session', async ({ page, context }) => {
+  await boardsInWindows(page);
   await lobby(page);
-  await expect(page.getByText('No games are open')).toBeVisible();
+  await expect(page.getByText('No boards are open')).toBeVisible();
 
   // A game against the test engine: the lobby lists it as waiting on the user.
   const engines = await bridge<{ id: string }[]>(page, 'list_engines');
@@ -38,7 +40,7 @@ test('the lobby opens game windows, lists them, and closing one ends its session
   await expect(openWindows(page).first()).toContainText('Against an engine');
 
   // A second, empty window from the game window's New window.
-  const second = await opens(context, () => first.getByRole('button', { name: 'New window' }).click());
+  const second = await opens(context, () => first.getByRole('button', { name: 'New board' }).click());
   const secondId = sessionOf(second);
   expect(secondId).not.toBe(firstId);
   await expect(openWindows(page)).toHaveCount(2);
@@ -62,10 +64,11 @@ test('the lobby opens game windows, lists them, and closing one ends its session
   // A setting changed in the lobby applies in the game windows.
   const theme = () => second.evaluate(() => document.documentElement.dataset.theme);
   const other = (await theme()) === 'dark' ? 'Light' : 'Dark';
-  await page.getByRole('button', { name: 'Settings' }).click();
-  await page.getByRole('dialog', { name: 'Settings' }).getByLabel(other, { exact: true }).check();
+  await sidebar(page).getByRole('button', { name: 'Settings' }).click();
+  await page.getByLabel(other, { exact: true }).check();
   await expect.poll(theme).toBe(other.toLowerCase());
   await page.evaluate(() => localStorage.removeItem('settings'));
+  await sidebar(page).getByRole('button', { name: 'Home' }).click();
 
   // Closing a window ends its session, and the lobby drops it.
   await second.close({ runBeforeUnload: true });
@@ -74,6 +77,7 @@ test('the lobby opens game windows, lists them, and closing one ends its session
 });
 
 test('the lobby opens a record in a window', async ({ page, context }) => {
+  await boardsInWindows(page);
   await lobby(page);
   await page.getByRole('button', { name: 'Open record' }).click();
   const dialog = page.getByRole('dialog', { name: 'Open a record' });
@@ -84,31 +88,60 @@ test('the lobby opens a record in a window', async ({ page, context }) => {
   await expect(openWindows(page)).toHaveCount(1);
 });
 
-test('the sidebar switches screens, lists game windows, and folds to boards', async ({ page, context }) => {
+test('the sidebar switches panels, lists boards, and folds to boards', async ({ page, context }) => {
+  await boardsInWindows(page);
   await lobby(page);
-  const sidebar = page.getByRole('navigation', { name: 'Lobby' });
-  await sidebar.getByRole('button', { name: 'Engine tests' }).click();
+  await sidebar(page).getByRole('button', { name: 'Engine tests' }).click();
   await expect(page.getByRole('heading', { name: 'Engine tests', level: 1 })).toBeVisible();
-  await sidebar.getByRole('button', { name: 'Home' }).click();
+  await sidebar(page).getByRole('button', { name: 'Home' }).click();
   const game = await opens(context, () => page.getByRole('button', { name: 'Analysis board' }).click());
-  const listed = sidebar.getByRole('list', { name: 'Game windows' }).getByRole('button');
+  const listed = sidebar(page).getByRole('list', { name: 'Open boards' }).getByRole('button', { name: /^Show / });
   await expect(listed).toHaveCount(1);
 
-  // Folded, the sidebar keeps its buttons (by name) and the window's board,
-  // and stays folded after a reload, on the screen last shown.
-  await sidebar.getByRole('button', { name: 'Collapse the sidebar' }).click();
-  await sidebar.getByRole('button', { name: 'Engine tests' }).click();
+  // Folded, the sidebar keeps its buttons (by name) and the board, and
+  // stays folded after a reload, on the panel last shown.
+  await sidebar(page).getByRole('button', { name: 'Collapse the sidebar' }).click();
+  await sidebar(page).getByRole('button', { name: 'Help' }).click();
   await page.reload();
-  await expect(sidebar.getByRole('button', { name: 'Expand the sidebar' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Engine tests', level: 1 })).toBeVisible();
+  await expect(sidebar(page).getByRole('button', { name: 'Expand the sidebar' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Help', level: 1 })).toBeVisible();
   await expect(listed).toHaveCount(1);
-  await sidebar.getByRole('button', { name: 'Expand the sidebar' }).click();
-  await sidebar.getByRole('button', { name: 'Home' }).click();
+  await sidebar(page).getByRole('button', { name: 'Expand the sidebar' }).click();
+  await sidebar(page).getByRole('button', { name: 'Home' }).click();
   await game.close();
   await expect(listed).toHaveCount(0);
 });
 
+test('a board opens as a panel, pops out to a window, docks back, and closes', async ({ page, context }) => {
+  await lobby(page);
+  await page.getByRole('button', { name: 'Analysis board' }).click();
+  const listed = sidebar(page).getByRole('list', { name: 'Open boards' }).getByRole('button', { name: /^Show / });
+  await expect(listed).toHaveCount(1);
+  const docked = page.frameLocator('iframe.docked');
+  await expect(docked.getByRole('application', { name: 'Arimaa board' })).toBeVisible();
+  const [id] = await bridge<number[]>(page, 'list_sessions');
+  expect(await bridge<number[]>(page, 'docked_sessions')).toEqual([id]);
+
+  // Pop out: the board moves to a window, on the same session.
+  const win = await opens(context, () => docked.getByRole('button', { name: 'Pop out' }).click());
+  expect(sessionOf(win)).toBe(id);
+  await expect(page.locator('iframe.docked')).toHaveCount(0);
+  await expect(listed).toHaveCount(1);
+  expect(await bridge<number[]>(page, 'docked_sessions')).toEqual([]);
+
+  // Dock: the window closes and the board is a panel again.
+  await Promise.all([win.waitForEvent('close'), win.getByRole('button', { name: 'Dock' }).click()]);
+  await expect(docked.getByRole('application', { name: 'Arimaa board' })).toBeVisible();
+  expect(await bridge<number[]>(page, 'list_sessions')).toEqual([id]);
+
+  // Close from the sidebar ends the session.
+  await sidebar(page).getByRole('button', { name: /^Close / }).click();
+  await expect(listed).toHaveCount(0);
+  await expect.poll(() => bridge<number[]>(page, 'list_sessions')).toEqual([]);
+});
+
 test("a game window's Lobby button goes back to the lobby tab", async ({ page, context }) => {
+  await boardsInWindows(page);
   await lobby(page);
   const game = await opens(context, () => page.getByRole('button', { name: 'Analysis board' }).click());
   await game.getByRole('button', { name: /^Lobby/ }).click();
@@ -119,6 +152,7 @@ test("a game window's Lobby button goes back to the lobby tab", async ({ page, c
 });
 
 test('titles say whose move it is, and Next game goes to the other waiting game', async ({ page, context }) => {
+  await boardsInWindows(page);
   await lobby(page);
   const engines = await bridge<{ id: string }[]>(page, 'list_engines');
   test.skip(engines.length === 0, 'no test engine (cargo build -p howdah-aei --bin aei-test-engine)');

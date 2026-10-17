@@ -34,8 +34,16 @@ export function savePref(key: string, value: string) {
   }
 }
 
-/** The arimaa.com screen's tabs. */
-export type GameroomTab = 'overview' | 'bots' | 'watch' | 'finished' | 'players';
+/** The arimaa.com panels opened from the overview, each listed under
+ * arimaa.com in the lobby's sidebar once opened. */
+export type GameroomTab = 'bots' | 'watch' | 'finished' | 'players';
+
+export const GAMEROOM_PANELS: { id: GameroomTab; label: string; icon: 'bot' | 'eye' | 'record' | 'users' }[] = [
+  { id: 'bots', label: 'Bots', icon: 'bot' },
+  { id: 'watch', label: 'Watch', icon: 'eye' },
+  { id: 'finished', label: 'Finished games', icon: 'record' },
+  { id: 'players', label: 'Players', icon: 'users' },
+];
 
 /** Opens a game window whose session `start` makes a gameroom game
  * (opening, joining or creating one), or brings forward the window that
@@ -69,7 +77,6 @@ class GameroomStore {
   updatedAt = $state<number | null>(null);
   busy = $state(false);
   error = $state<string | null>(null);
-  tab = $state<GameroomTab>('overview');
 
   /** The server bots, once asked for. */
   bots = $state<ServerBotsView | null>(null);
@@ -95,6 +102,7 @@ class GameroomStore {
   hiddenAnnouncements = $state(new Set(pref('gameroom.hiddenAnnouncements').split('\n').filter((k) => k)));
 
   #opener: Opener = async () => 'No lobby';
+  #navigate: (panel: GameroomTab) => void = () => {};
   #onGames: ((g: GameroomGames) => void) | null = null;
   #started = false;
 
@@ -142,6 +150,16 @@ class GameroomStore {
 
   setOpener(opener: Opener) {
     this.#opener = opener;
+  }
+
+  /** How `show` opens a panel (the lobby's sidebar). */
+  setNavigator(navigate: (panel: GameroomTab) => void) {
+    this.#navigate = navigate;
+  }
+
+  /** Opens one of the arimaa.com panels (and lists it in the sidebar). */
+  show(panel: GameroomTab) {
+    this.#navigate(panel);
   }
 
   /** Asks the backend who is logged in and follows its lobby poll; once.
@@ -366,10 +384,10 @@ class GameroomStore {
     });
   }
 
-  /** Shows a player's games on the Finished tab. */
+  /** Shows a player's games on the Finished games panel. */
   showPlayer(username: string) {
     this.playerQuery = username;
-    this.tab = 'finished';
+    this.show('finished');
     return this.searchPlayers(username);
   }
 

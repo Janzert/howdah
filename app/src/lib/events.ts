@@ -7,6 +7,7 @@ import type { GameroomGames } from './bindings/GameroomGames';
 import type { InvitationAnswer } from './bindings/InvitationAnswer';
 import type { SessionUpdate } from './bindings/SessionUpdate';
 import type { SessionsChanged } from './bindings/SessionsChanged';
+import type { ShowBoard } from './bindings/ShowBoard';
 import type { TourneyUpdate } from './bindings/TourneyUpdate';
 import type { WatchView } from './bindings/WatchView';
 
@@ -21,12 +22,29 @@ export interface EventMap {
   'gameroom://lobby': GameroomGames;
   /** How an invitation the user sent was answered. */
   'gameroom://invitation': InvitationAnswer;
-  /** The sessions open now (one per game window), when one opens or closes. */
+  /** The sessions open now (each a board, in a window or docked in the
+   * lobby), when one opens, closes, docks or pops out. */
   'sessions://changed': SessionsChanged;
+  /** A docked board to show in the lobby. */
+  'sessions://show': ShowBoard;
   /** The engine test daemon: a test changed or finished a game, the
    * connection came or went, or its slots changed. */
   'tourney://changed': TourneyUpdate;
 }
+
+/** Every event name, for the dev bridge and the docked boards' relay,
+ * which pass events on by name. */
+export const EVENT_NAMES: (keyof EventMap)[] = [
+  'game://changed',
+  'engine://output',
+  'analysis://update',
+  'gameroom://watch',
+  'gameroom://lobby',
+  'gameroom://invitation',
+  'sessions://changed',
+  'sessions://show',
+  'tourney://changed',
+];
 
 /** Subscribes to an event. Events from a session carry a `session` field
  * (added by the backend); only this window's session's reach `handler`. */

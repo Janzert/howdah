@@ -1,6 +1,7 @@
-// Every open game window's state, for the lobby's list and a game
-// window's Next game: each session's latest view and followed
-// arimaa.com game, kept up to date from the events every window gets.
+// Every open board's state, for the lobby's list and a board's Next
+// game: each session's latest view and followed arimaa.com game, and
+// which sessions are docked in the lobby (the rest have windows), kept up
+// to date from the events every window gets.
 import { api, apiFor } from './api';
 import type { SessionId } from './bindings/SessionId';
 import type { SessionView } from './bindings/SessionView';
@@ -15,11 +16,16 @@ export class OpenGames {
   views = $state<Record<SessionId, { view: SessionView; at: number }>>({});
   /** Each session's followed arimaa.com game. */
   watches = $state<Record<SessionId, WatchView>>({});
+  /** The sessions docked as panels in the lobby. */
+  docked = $state<SessionId[]>([]);
 
   /** Starts following; returns the function that stops it. */
   follow(): () => void {
     const unlisteners = [
-      on('sessions://changed', (s) => this.#setIds(s.sessions)),
+      on('sessions://changed', (s) => {
+        this.#setIds(s.sessions);
+        this.docked = s.docked;
+      }),
       onEvery('game://changed', (u, id) => id != null && this.#track(id, u.view)),
       onEvery('gameroom://watch', (w, id) => {
         if (id == null) return;
@@ -28,6 +34,7 @@ export class OpenGames {
       }),
     ];
     api.listSessions().then((ids) => this.#setIds(ids));
+    api.dockedSessions().then((ids) => (this.docked = ids));
     return () => unlisteners.forEach((u) => void u.then((f) => f()));
   }
 

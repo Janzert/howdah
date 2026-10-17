@@ -29,6 +29,21 @@ pub fn list_sessions(state: State<Backend>) -> Vec<SessionId> {
 }
 
 #[tauri::command]
+pub fn docked_sessions(state: State<Backend>) -> Vec<SessionId> {
+    state.docked_sessions()
+}
+
+#[tauri::command]
+pub fn set_session_docked(state: State<Backend>, session: SessionId, docked: bool) -> Result<(), ApiError> {
+    state.set_session_docked(session, docked)
+}
+
+#[tauri::command]
+pub fn show_board(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
+    state.show_board(session)
+}
+
+#[tauri::command]
 pub fn get_state(state: State<Backend>, session: SessionId) -> Result<SessionView, ApiError> {
     state.get_state(session)
 }
