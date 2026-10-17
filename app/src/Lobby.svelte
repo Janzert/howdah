@@ -24,8 +24,13 @@
   import CloseWindowDialog from './lib/CloseWindowDialog.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
   import { on } from './lib/events';
-  import { clearAllBoardLoading, clearBoardLoading } from './lib/boardLoading';
-  import { type FrameRequest, requestClose, serveFrames } from './lib/frames';
+  import {
+    type BoardLoading,
+    clearAllBoardLoading,
+    clearBoardLoading,
+    followAllBoardLoading,
+  } from './lib/boardLoading';
+  import { type FrameRequest, type LobbyKey, lobbyKey, requestClose, serveFrames } from './lib/frames';
   import { myTurn } from './lib/gameroom';
   import GameroomPanel from './lib/gameroom/GameroomPanel.svelte';
   import GameroomScreen from './lib/gameroom/GameroomScreen.svelte';
@@ -37,7 +42,7 @@
   import { type ListedWindow, listWindow } from './lib/lobbyWindows';
   import NewGameDialog from './lib/NewGameDialog.svelte';
   import { OpenGames } from './lib/openGames.svelte';
-  import PuzzlesDialog from './lib/PuzzlesDialog.svelte';
+  import PuzzlesPanel from './lib/PuzzlesPanel.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
   import { settings } from './lib/settings.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
@@ -51,7 +56,7 @@
   import { focusGameWindow, inTauri, openBoard, openWindowFor, showBoard } from './lib/windows';
   import './lobby.css';
 
-  /** The panel shown: `home`, `gameroom`, `gameroom:<panel>`, `tests`,
+  /** The panel shown: `home`, `puzzles`, `gameroom`, `gameroom:<panel>`, `tests`,
    * `test:<id>`, `board:<session>`, `engines`, `settings` or `help`. */
   let selected = $state(pref('lobby.panel') || 'home');
   let collapsed = $state(pref('lobby.sidebar') === 'collapsed');
@@ -65,11 +70,33 @@
     }
   }
 
-  /** The arimaa.com panels and tests opened, as the sidebar lists them. */
+  /** Whether Puzzles is open (listed under Home), and the arimaa.com
+   * panels and tests opened, as the sidebar lists them. */
+  let puzzlesOpen = $state(pref('lobby.puzzles') === '1');
+  $effect(() => savePref('lobby.puzzles', puzzlesOpen ? '1' : ''));
   let gameroomOpen = $state(
     readList('lobby.gameroomPanels').filter((p): p is GameroomTab => GAMEROOM_PANELS.some((g) => g.id === p)),
   );
   let testsOpen = $state(readList('lobby.testPanels'));
+  /** The opened tests' names, for the sidebar while the daemon is away. */
+  let testNames = $state<Record<string, string>>(readNames());
+  function readNames(): Record<string, string> {
+    try {
+      const v = JSON.parse(pref('lobby.testNames') || '{}');
+      return v && typeof v === 'object' ? v : {};
+    } catch {
+      return {};
+    }
+  }
+  $effect(() => {
+    const names: Record<string, string> = {};
+    for (const id of testsOpen) {
+      const name = tourney.test(id)?.name ?? testNames[id];
+      if (name) names[id] = name;
+    }
+    if (JSON.stringify(names) !== JSON.stringify(testNames)) testNames = names;
+    savePref('lobby.testNames', JSON.stringify(names));
+  });
   $effect(() => savePref('lobby.gameroomPanels', JSON.stringify(gameroomOpen)));
   $effect(() => savePref('lobby.testPanels', JSON.stringify(testsOpen)));
 
@@ -83,6 +110,12 @@
     // Boards come and go with the backend's sessions; don't come back to one.
     if (!key.startsWith('board:')) savePref('lobby.panel', key);
     if (key.startsWith('board:')) void tick().then(() => frames[Number(key.slice(6))]?.contentWindow?.focus());
+    // A button that opened the panel may be gone with the old one: then
+    // focus goes into the new panel rather than back to the page.
+    else
+      void tick().then(() => {
+        if (!document.activeElement || document.activeElement === document.body) focusPanel();
+      });
   }
 
   /** Leaves panel `key` if it's shown, for the one shown before (or
@@ -98,7 +131,18 @@
     if (key.startsWith('gameroom:')) return gameroomOpen.includes(key.slice(9) as GameroomTab);
     if (key.startsWith('test:')) return testsOpen.includes(key.slice(5));
     if (key.startsWith('board:')) return games.docked.includes(Number(key.slice(6)));
+    if (key === 'puzzles') return puzzlesOpen;
     return ['home', 'gameroom', 'tests', 'engines', 'settings', 'help'].includes(key);
+  }
+
+  function openPuzzles() {
+    puzzlesOpen = true;
+    select('puzzles');
+  }
+
+  function closePuzzles() {
+    puzzlesOpen = false;
+    leave('puzzles', 'home');
   }
 
   function openGameroomPanel(panel: GameroomTab) {
@@ -136,7 +180,6 @@
   let message = $state<{ text: string; action?: { label: string; run: () => void } } | null>(null);
   let messageTimer: ReturnType<typeof setTimeout> | undefined;
   let showNewGame = $state(false);
-  let showPuzzles = $state(false);
   let showRecord = $state(false);
   /** The question before the main window closes on boards still playing. */
   let closing = $state<{ reason: string; answer: (close: boolean) => void } | null>(null);
@@ -178,6 +221,10 @@
     knownDocked = new Set(docked);
     if (selected.startsWith('board:') && !docked.includes(Number(selected.slice(6)))) leave(selected, 'home');
   });
+
+  /** What each board still waits for (an arimaa.com game loading). */
+  let boardsLoading = $state<Record<SessionId, BoardLoading>>({});
+  $effect(() => followAllBoardLoading((all) => (boardsLoading = all)));
 
   // A closed board's loading state goes with it.
   let knownIds: SessionId[] = [];
@@ -318,6 +365,8 @@
         });
       } else if (request.kind === 'close') {
         await api.closeSession(session);
+      } else if (request.kind === 'key') {
+        lobbyNavigate(request.key);
       }
     } catch (e) {
       flash(errorMessage(e));
@@ -449,15 +498,56 @@
   const listed = $derived(
     games.ids
       .filter((id) => games.views[id])
-      .map((id) => listWindow(id, games.views[id], games.watches[id], now))
+      .map((id) => listWindow(id, games.views[id], games.watches[id], now, boardsLoading[id] ?? null))
       .sort((a, b) => Number(b.yourMove) - Number(a.yourMove)),
   );
   const isDockedBoard = (w: ListedWindow) => games.docked.includes(w.id);
 
-  const anyDialog = $derived(showNewGame || showRecord || showPuzzles || closing != null || gameroom.newGame != null);
+  const anyDialog = $derived(showNewGame || showRecord || closing != null || gameroom.newGame != null);
+
+  /** The sidebar's entries in order, as Alt+↑/↓ and Alt+1–9 go through
+   * them (boards in windows aren't panels here, so they're left out). */
+  const entries = $derived([
+    'home',
+    ...(puzzlesOpen ? ['puzzles'] : []),
+    'gameroom',
+    ...gameroomOpen.map((p) => `gameroom:${p}`),
+    'tests',
+    ...testsOpen.map((id) => `test:${id}`),
+    ...listed.filter(isDockedBoard).map((w) => `board:${w.id}`),
+    'engines',
+    'settings',
+    'help',
+  ]);
+
+  /** Goes to a sidebar entry by a lobby key, and into its panel. */
+  function lobbyNavigate(key: LobbyKey) {
+    const at = entries.indexOf(selected);
+    const next = 'step' in key ? entries[(at + key.step + entries.length) % entries.length] : entries[key.index];
+    if (!next) return;
+    select(next);
+    focusPanel();
+  }
+
+  /** Moves focus into the shown panel: a board's frame, else its heading. */
+  function focusPanel() {
+    void tick().then(() => {
+      if (selected.startsWith('board:')) return frames[Number(selected.slice(6))]?.contentWindow?.focus();
+      const heading = document.querySelector<HTMLElement>('main .content h1');
+      if (!heading) return;
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+    });
+  }
 
   function onkeydown(e: KeyboardEvent) {
     if (anyDialog) return;
+    const nav = lobbyKey(e);
+    if (nav) {
+      lobbyNavigate(nav);
+      e.preventDefault();
+      return;
+    }
     if ((e.target as HTMLElement).closest('input, textarea, select')) return;
     if (e.key === '?') {
       select('help');
@@ -539,6 +629,23 @@
         {#each nav as item (item.id)}
           <li>
             {@render navItem(item)}
+            {#if item.id === 'home' && puzzlesOpen}
+              <ul class="sub" aria-label="Home panels">
+                <li class="sub-row" class:on={selected === 'puzzles'}>
+                  <button
+                    class="sub-item bare"
+                    aria-current={selected === 'puzzles' ? 'page' : undefined}
+                    onclick={() => select('puzzles')}
+                    title={collapsed ? 'Puzzles' : undefined}
+                    aria-label="Puzzles"
+                  >
+                    <Icon name="bulb" size={16} />
+                    {#if !collapsed}<span class="label">Puzzles</span>{/if}
+                  </button>
+                  {@render closeButton('Close Puzzles', closePuzzles)}
+                </li>
+              </ul>
+            {/if}
             {#if item.id === 'gameroom' && gameroomOpen.length > 0}
               <ul class="sub" aria-label="arimaa.com panels">
                 {#each gameroomOpen as id (id)}
@@ -564,30 +671,33 @@
                 {#each testsOpen as id (id)}
                   {@const t = tourney.test(id)}
                   {@const pos = t ? llrPosition(t) : null}
+                  {@const name = t?.name ?? testNames[id] ?? id}
                   <li class="sub-row" class:on={selected === `test:${id}`}>
                     <button
                       class="sub-item test bare"
                       aria-current={selected === `test:${id}` ? 'page' : undefined}
                       onclick={() => select(`test:${id}`)}
-                      title={collapsed ? (t?.name ?? id) : undefined}
-                      aria-label="Engine test {t?.name ?? id}"
+                      title={collapsed ? name : undefined}
+                      aria-label="Engine test {name}"
                     >
                       {#if collapsed}
                         <span class="test-dot {t ? testState(t) : ''}"><Icon name="flask" size={16} /></span>
                       {:else}
                         <span class="test-text">
                           <span class="test-title">
-                            <span class="label">{t?.name ?? id}</span>
+                            <span class="label">{name}</span>
                             {#if t}<span class="state {testState(t)}">{testState(t)}</span>{/if}
                           </span>
                           {#if t}
                             <span class="test-meta">{scoreText(t)}{t.running.length > 0 ? `, ${t.running.length} playing` : ''}</span>
                             {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
+                          {:else if tourney.status && !tourney.status.connected}
+                            <span class="test-meta">Test daemon not running</span>
                           {/if}
                         </span>
                       {/if}
                     </button>
-                    {@render closeButton(`Close ${t?.name ?? id}`, () => closeTest(id))}
+                    {@render closeButton(`Close ${name}`, () => closeTest(id))}
                   </li>
                 {/each}
               </ul>
@@ -655,9 +765,14 @@
             onAnalysis={analysisBoard}
             onRecord={() => (showRecord = true)}
             onEditor={positionEditor}
-            onPuzzles={() => (showPuzzles = true)}
+            onPuzzles={openPuzzles}
             onGameroom={showGameroom}
+            {engines}
+            onEnginesChanged={reloadEngines}
+            onEngines={() => select('engines')}
           />
+        {:else if selected === 'puzzles'}
+          <PuzzlesPanel onOpen={(id) => openNew((a) => a.openPuzzle(id))} onClose={closePuzzles} />
         {:else if selected === 'gameroom'}
           <GameroomScreen />
         {:else if selected.startsWith('gameroom:')}
@@ -716,9 +831,6 @@
   {/if}
 </div>
 
-{#if showPuzzles}
-  <PuzzlesDialog onOpen={(id) => openNew((a) => a.openPuzzle(id))} onClose={() => (showPuzzles = false)} />
-{/if}
 {#if showNewGame}
   <NewGameDialog
     {engines}

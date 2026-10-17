@@ -170,12 +170,45 @@ test('forward at the latest move replays it', async ({ page }) => {
   const h8 = () => page.evaluate(() => window.__arimaa!.board().split('\n')[1].slice(-3, -2));
   const h5 = () => page.evaluate(() => window.__arimaa!.board().split('\n')[4].slice(-3, -2));
   expect(await h8()).toBe('.');
-  await page.getByRole('button', { name: 'Forward' }).click();
+  await page.getByRole('button', { name: 'Forward', exact: true }).click();
   // 3s walked the rabbit h8-h5: it jumps back to h8, then walks again.
   await expect.poll(h5, { intervals: [20] }).toBe('.');
   await page.evaluate(() => window.__arimaa!.idle());
   expect(await h5()).toBe('r');
   expect(await page.evaluate(() => window.__arimaa!.state()!.ply)).toBe(6);
+});
+
+test('fast-forward steps through the line to its end, and a second press stops it', async ({ page }) => {
+  await freshGame(page);
+  await load(page, SAMPLE_TO_3S);
+  const ply = () => page.evaluate(() => window.__arimaa!.state()!.ply);
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect.poll(ply).toBe(0);
+  await page.getByRole('button', { name: 'Fast-forward to the end' }).click();
+  await expect.poll(ply, { timeout: 15_000 }).toBe(6);
+  await expect(page.getByRole('button', { name: 'Fast-forward to the end' })).toBeDisabled();
+
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect.poll(ply).toBe(0);
+  await page.keyboard.press('p');
+  await expect.poll(ply).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Stop fast-forward' }).click();
+  const stopped = await ply();
+  await page.waitForTimeout(1500);
+  expect(await ply()).toBe(stopped);
+  expect(stopped).toBeLessThan(6);
+});
+
+test('the move list is one tab stop, on the shown move', async ({ page }) => {
+  await freshGame(page);
+  await load(page, SAMPLE_TO_3S);
+  const moves = page.getByRole('list', { name: 'Moves' });
+  await expect(moves.locator('button[tabindex="0"]')).toHaveCount(1);
+  await expect(moves.locator('button.current')).toHaveAttribute('tabindex', '0');
+  await moves.locator('button.current').focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => page.evaluate(() => document.activeElement?.classList.contains('current'))).toBe(true);
+  await expect(moves.locator('button[tabindex="0"]')).toHaveCount(1);
 });
 
 test('step mode offers the step toward the pointer and a click takes it', async ({ page }) => {

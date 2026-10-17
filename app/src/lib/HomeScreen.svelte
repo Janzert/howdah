@@ -5,6 +5,8 @@
   import type { Theme } from './theme';
   import Icon, { type IconName } from './Icon.svelte';
   import MiniBoard from './board/MiniBoard.svelte';
+  import type { EngineSpec } from './bindings/EngineSpec';
+  import EngineStarter from './EngineStarter.svelte';
   import type { ListedWindow } from './lobbyWindows';
 
   interface Props {
@@ -23,8 +25,11 @@
     onPuzzles: () => void;
     onWindow: (w: ListedWindow) => void;
     onGameroom: () => void;
+    engines: EngineSpec[];
+    onEnginesChanged: () => void;
+    onEngines: () => void;
   }
-  let { windows, theme, docked, invitations, postalTurns, onNewGame, onAnalysis, onRecord, onEditor, onPuzzles, onWindow, onGameroom }:
+  let { windows, theme, docked, invitations, postalTurns, onNewGame, onAnalysis, onRecord, onEditor, onPuzzles, onWindow, onGameroom, engines, onEnginesChanged, onEngines }:
     Props = $props();
 
   const actions = $derived<{ label: string; about: string; icon: IconName; run: () => void; primary?: boolean }[]>([
@@ -52,6 +57,8 @@
       <button onclick={onGameroom}>Show</button>
     </div>
   {/if}
+
+  <EngineStarter {engines} onChanged={onEnginesChanged} onEngines={onEngines} />
 
   <section aria-labelledby="home-title">
     <h2 id="home-title">Play and analyse</h2>

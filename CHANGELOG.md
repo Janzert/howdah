@@ -126,8 +126,21 @@ young).
   the site's names. Engine tests show as cards; each test opens in its
   own panel, listed under Engine tests with its score. Notifications about
   arimaa.com have a Show button.
+- Fast-forward (`p`, between Forward and End) steps through the moves to
+  the end of the shown line, each animated; press again to stop.
+- Home offers to download Sharp or OpFor while no engine is installed.
+- Puzzles is a lobby panel, with a filter and how many of each group are
+  solved.
+- The lobby's keys: Alt+↑/↓ through the sidebar, Alt+1–9 to an entry by
+  number, also from a docked board.
 - An arimaa.com game opens its board at once, with a spinner until the
   game has loaded (or what went wrong, and Close).
+- Boards without players are titled for what they hold (Analysis board,
+  Game record, New board), and a loading one says so in the sidebar.
+- Every dialog has the same frame; arimaa.com's Bots panel picks your
+  side with the same toggle as its New game.
+- A board's move list is one tab stop, and its engine panels take a line
+  each, leaving more room for the moves; the move buttons are icons.
 - A board's buttons are in tidy rows, with Lobby, Dock or Pop out and Next
   game apart from the game's tools; "New window" is "New board".
 - A refused third repetition names the moves after which the position

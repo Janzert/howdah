@@ -140,6 +140,22 @@ test('a board opens as a panel, pops out to a window, docks back, and closes', a
   await expect.poll(() => bridge<number[]>(page, 'list_sessions')).toEqual([]);
 });
 
+test('Alt+arrows and Alt+digits go through the sidebar, from a docked board too', async ({ page }) => {
+  await lobby(page);
+  const current = () => sidebar(page).locator('[aria-current="page"]').getAttribute('aria-label');
+  await page.keyboard.press('Alt+ArrowDown');
+  expect(await current()).toMatch(/^arimaa\.com/);
+  await expect(page.locator('main h1')).toBeFocused();
+  await page.keyboard.press('Alt+1');
+  expect(await current()).toBe('Home');
+  await page.getByRole('button', { name: 'Analysis board' }).click();
+  const docked = page.frameLocator('iframe.docked');
+  await expect(docked.getByRole('application', { name: 'Arimaa board' })).toBeVisible();
+  await docked.getByRole('list', { name: 'Moves' }).locator('button.current').focus();
+  await page.keyboard.press('Alt+ArrowUp');
+  expect(await current()).toBe('Engine tests');
+});
+
 test("a game window's Lobby button goes back to the lobby tab", async ({ page, context }) => {
   await boardsInWindows(page);
   await lobby(page);

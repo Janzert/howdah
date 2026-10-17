@@ -41,6 +41,8 @@
   }
   const empty = (): SideState => ({ depth: null, score: null, pv: [], lines: [] });
   let output = $state<Record<Color, SideState>>({ gold: empty(), silver: empty() });
+  /** Whether each side's log is shown. */
+  let logOpen = $state<Record<Color, boolean>>({ gold: false, silver: false });
   const MAX_LINES = 150;
 
   /** The newest output shown, by its number. */
@@ -117,14 +119,22 @@
 
 <div class="panel">
   {#each sides as side (side)}
+    {@const open = logOpen[side]}
     {@const s = output[side]}
     <section>
       <header>
         <span class="dot {side}"></span>
-        <strong>{players[side].name}</strong>
+        <strong class="name" title={players[side].name}>{players[side].name}</strong>
         {#if s.depth}<span class="stat">depth {s.depth}</span>{/if}
         {#if s.score != null}<span class="stat" title="in rabbits, from this engine's side">eval {formatRabbits(s.score)}</span>{/if}
         <span class="spacer"></span>
+        <button
+          class="options"
+          aria-expanded={open}
+          onclick={() => (logOpen[side] = !open)}
+          title="This engine's output"
+          aria-label="{players[side].name}'s log">Log</button
+        >
         {#if engineOf(side)}
           {@const n = players[side].options.length}
           <button
@@ -137,14 +147,13 @@
       {#if s.pv.length}
         <div class="pv" title="principal variation">{s.pv.join('  |  ')}</div>
       {/if}
-      <details>
-        <summary>Log</summary>
+      {#if open}
         <div class="log" use:scrollToEnd={s.lines.length}>
           {#each s.lines as line, i (i)}
             <div class="line {line.kind}">{line.text}</div>
           {/each}
         </div>
-      </details>
+      {/if}
     </section>
   {/each}
 </div>
@@ -176,8 +185,20 @@
     gap: 3px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 6px;
+    padding: 4px 6px;
     min-height: 0;
+  }
+  .name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  header > :not(.name) {
+    flex: none;
+  }
+  .options[aria-expanded='true'] {
+    background: var(--hover);
   }
   header {
     display: flex;
@@ -213,11 +234,11 @@
     font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
     font-size: 11px;
     word-break: break-word;
-  }
-  details summary {
-    font-size: 12px;
-    color: var(--muted);
-    cursor: pointer;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .log {
     font-family: ui-monospace, 'DejaVu Sans Mono', monospace;

@@ -47,7 +47,9 @@
   import { myTurn, newOpponentChat, watchSounds } from './lib/gameroom';
   import { countNext, pickNext } from './lib/nextGame';
   import { OpenGames } from './lib/openGames.svelte';
-  import { gameTitle, testGameLabel, waitsOnUser } from './lib/windowList';
+  import { boardTitle, testGameLabel, waitsOnUser } from './lib/windowList';
+  import { askLobby, lobbyKey } from './lib/frames';
+  import Icon from './lib/Icon.svelte';
   import { type BoardLoading, followBoardLoading, readBoardLoading } from './lib/boardLoading';
   import { closeThisBoard, dockWindow, guardClose, openBoard, popOut, rememberSize, showBoard, showLobby, takeHandOff } from './lib/windows';
 
@@ -436,7 +438,7 @@
       return;
     }
     if (!view) return;
-    const players = gameTitle(view) ?? 'Untitled game';
+    const players = boardTitle(view);
     const test = testGameLabel(view);
     const name = test ? `${players} · ${test}` : players;
     void setTitle(`${waitsOnUser(view) ? 'Your move · ' : ''}${name} – Howdah`);
@@ -633,8 +635,9 @@
     onRestore: () => play('restore'),
   });
 
-  function goto(ply: number) {
+  function goto(ply: number, fromPlayback = false) {
     if (!view) return;
+    if (!fromPlayback) playing = false;
     // Forward from the latest move replays it, since there's nothing after it.
     if (ply === view.ply + 1 && view.ply === view.moves.length) replayShownMove();
     else if (ply >= 0 && ply <= view.moves.length && ply !== view.ply) run(api.gotoPly(ply));
@@ -643,9 +646,49 @@
   /** End: the live position in a match, otherwise the end of the line. */
   function gotoEnd() {
     if (!view) return;
+    playing = false;
     if (view.players && view.livePly !== view.ply) run(api.gotoLive());
     else goto(view.moves.length);
   }
+
+  /** Playing the shown line through to its end, a move at a time. */
+  let playing = $state(false);
+
+  /** How long each played-back move stays before the next: a beat after
+   * its animation, longer with slower animations. */
+  const playbackPause = () => Math.max(450, settings.stepMs * 3);
+
+  /** Steps forward through the shown line, each move animated, until its
+   * end; again (or any other move through the game) stops it. Stops too if
+   * the board is moved elsewhere or a turn is being entered. */
+  async function playToEnd() {
+    if (playing) {
+      playing = false;
+      return;
+    }
+    if (!view || view.ply >= view.moves.length) return;
+    playing = true;
+    try {
+      while (playing && view && view.ply < view.moves.length && !view.turn?.steps.length) {
+        const target: number = view.ply + 1;
+        goto(target, true);
+        // The move arrives with its animation; wait for both.
+        const deadline = performance.now() + 3000;
+        while (playing && view?.ply !== target && performance.now() < deadline) await sleep(30);
+        if (view?.ply !== target) break;
+        while (playing && model.animating) await sleep(30);
+        if (!playing || view.ply >= view.moves.length) break;
+        const at: unknown = view.cursor;
+        await sleep(playbackPause());
+        // Moved elsewhere meanwhile (a click in the move list, another line).
+        if (view?.cursor !== at) break;
+      }
+    } finally {
+      playing = false;
+    }
+  }
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   async function replayShownMove() {
     if (!view || view.turn?.steps.length || model.animating) return;
@@ -686,6 +729,7 @@
     forward: (v) => goto(v.ply + 1),
     start: () => goto(0),
     end: () => gotoEnd(),
+    playToEnd: () => void playToEnd(),
     prevVariation: () => run(api.gotoSibling(-1)),
     nextVariation: () => run(api.gotoSibling(1)),
     prevBranch: () => run(api.gotoBranch(false)),
@@ -723,6 +767,13 @@
   };
 
   function onkeydown(e: KeyboardEvent) {
+    // A docked board passes the lobby's keys on (Alt+↑/↓, Alt+1–9).
+    const lobby = isDocked ? lobbyKey(e) : null;
+    if (lobby) {
+      askLobby({ kind: 'key', key: lobby });
+      e.preventDefault();
+      return;
+    }
     if (!view || editing || record != null || showNewGame || showEngines || showGameEnd || showHelp || closing) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, select')) return;
@@ -865,10 +916,26 @@
           />
         {/if}
         <div class="nav">
-          <button aria-label="Start" onclick={() => goto(0)} title="Start (Home or 0)">⏮</button>
-          <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (← or k)">◀</button>
-          <button aria-label="Forward" onclick={() => goto(view!.ply + 1)} title="Forward (→ or j); at the latest move, replays it">▶</button>
-          <button aria-label="End" onclick={gotoEnd} title="End (End or $)">⏭</button>
+          <button aria-label="Start" onclick={() => goto(0)} title="Start (Home or 0)">
+            <Icon name="first" size={16} /></button
+          >
+          <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (← or k)">
+            <Icon name="prev" size={16} /></button
+          >
+          <button aria-label="Forward" onclick={() => goto(view!.ply + 1)} title="Forward (→ or j); at the latest move, replays it">
+            <Icon name="next" size={16} /></button
+          >
+          <button
+            aria-label={playing ? 'Stop fast-forward' : 'Fast-forward to the end'}
+            aria-pressed={playing}
+            onclick={playToEnd}
+            disabled={!playing && view.ply >= view.moves.length}
+            title={playing ? 'Stop (p)' : 'Fast-forward: step through the moves to the end of the line (p)'}>
+            <Icon name={playing ? 'pause' : 'fastForward'} size={16} /></button
+          >
+          <button aria-label="End" onclick={gotoEnd} title="End (End or $)">
+            <Icon name="last" size={16} /></button
+          >
         </div>
       {/if}
       <div class="tools" role="toolbar" aria-label="Game tools">
@@ -1039,8 +1106,13 @@
   }
   .nav {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 4px;
+  }
+  .nav button {
+    display: flex;
+    justify-content: center;
+    padding: 4px 0;
   }
   .badge {
     margin-left: 4px;

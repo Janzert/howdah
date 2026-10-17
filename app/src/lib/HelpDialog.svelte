@@ -20,6 +20,14 @@
     }
   }
 
+  /** The lobby window's keys (`lobbyKey` in lib/frames.ts), which also
+   * work from a board docked there. */
+  const lobby: { keys: string[]; effect: string }[] = [
+    { keys: ['Alt+↑', 'Alt+↓'], effect: 'Previous or next entry in the sidebar' },
+    { keys: ['Alt+1…9'], effect: 'The sidebar entry by number, from the top' },
+    { keys: ['Tab'], effect: 'Through the sidebar, then the panel; a board’s move list is one stop' },
+  ];
+
   const mouse: { action: string; effect: string }[] = [
     { action: 'Drag a piece', effect: 'Move it; a longer drag takes a route along the path you drag' },
     { action: 'Drag in setup', effect: 'Swap two pieces' },
@@ -46,6 +54,17 @@
         </dl>
       </section>
     {/each}
+    <section>
+      <h3>Lobby window</h3>
+      <dl>
+        {#each lobby as l (l.effect)}
+          <dt>
+            {#each l.keys as k, i (k)}{#if i > 0}<span class="or">or</span>{/if}<kbd>{k}</kbd>{/each}
+          </dt>
+          <dd>{l.effect}</dd>
+        {/each}
+      </dl>
+    </section>
     <section class="wide">
       <h3>Mouse</h3>
       <dl>
@@ -81,14 +100,6 @@
   dialog {
     width: min(720px, 92vw);
     max-height: 90vh;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    color: var(--text);
-    padding: 16px;
-  }
-  dialog::backdrop {
-    background: rgba(0, 0, 0, 0.4);
   }
   h2 {
     margin: 0 0 8px;

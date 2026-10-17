@@ -37,6 +37,14 @@ export function gameTitle(v: SessionView): string | null {
   return null;
 }
 
+/** A board's title: the players, else what the board holds. */
+export function boardTitle(v: SessionView): string {
+  const players = gameTitle(v);
+  if (players) return players;
+  if (v.analysisEngine) return 'Analysis board';
+  return v.moves.length > 0 ? 'Game record' : 'New board';
+}
+
 /** An engine test's game, as "<test> <pair>.<game>", or null for any
  * other game. */
 export function testGameLabel(v: SessionView): string | null {

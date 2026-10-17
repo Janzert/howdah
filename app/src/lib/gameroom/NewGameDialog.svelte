@@ -4,6 +4,7 @@
   // localStorage, the opponent and message aren't.
   import { untrack } from 'svelte';
   import type { Color } from '../bindings/Color';
+  import SidePicker from '../SidePicker.svelte';
   import TimeControlInput, { NO_TIME_LIMIT } from '../TimeControlInput.svelte';
   import { gameroom, type NewGameSpec, pref, savePref } from './store.svelte';
 
@@ -61,14 +62,7 @@
         <input id="gr-new-message" bind:value={message} placeholder="Optional" autocomplete="off" autofocus />
       {/if}
       <span class="label" id="gr-new-side-label">You play</span>
-      <div class="segmented" role="radiogroup" aria-labelledby="gr-new-side-label">
-        {#each [['random', 'Random'], ['gold', 'Gold'], ['silver', 'Silver']] as [value, label] (value)}
-          <label class:on={side === value}>
-            <input type="radio" name="gr-new-side" {value} bind:group={side} />
-            {#if value !== 'random'}<span class="dot {value}"></span>{/if}{label}
-          </label>
-        {/each}
-      </div>
+      <SidePicker bind:value={side} name="gr-new-side" labelledby="gr-new-side-label" />
       <label for="gr-new-tc">Time control</label>
       <TimeControlInput id="gr-new-tc" bind:value={timeControl} none={NO_TIME_LIMIT} />
       <span></span>
@@ -96,14 +90,6 @@
 <style>
   dialog {
     width: min(460px, 90vw);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--panel);
-    color: var(--text);
-    padding: 18px 20px;
-  }
-  dialog::backdrop {
-    background: rgba(0, 0, 0, 0.4);
   }
   h2 {
     margin: 0 0 14px;
@@ -119,48 +105,6 @@
   .grid input:not([type='checkbox'], [type='radio']) {
     width: 100%;
     box-sizing: border-box;
-  }
-  .segmented {
-    display: inline-flex;
-    justify-self: start;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-  }
-  .segmented label {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 12px;
-    cursor: pointer;
-  }
-  .segmented label + label {
-    border-left: 1px solid var(--border);
-  }
-  .segmented label.on {
-    background: var(--accent);
-    color: var(--accent-text);
-  }
-  .segmented input {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-  }
-  .segmented label:focus-within {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-  }
-  .dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    border: 1px solid rgba(0, 0, 0, 0.4);
-  }
-  .dot.gold {
-    background: #e3b23c;
-  }
-  .dot.silver {
-    background: #c9ced6;
   }
   .check {
     display: flex;

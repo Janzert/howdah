@@ -23,7 +23,22 @@ export type FrameRequest =
   /** Move this board to a window of its own. */
   | { kind: 'popOut' }
   /** Close this board (its own close question, if any, was answered). */
-  | { kind: 'close' };
+  | { kind: 'close' }
+  /** A lobby key pressed in the board (`lobbyKey`). */
+  | { kind: 'key'; key: LobbyKey };
+
+/** The lobby's own keys, which a docked board passes on: Alt+↑/↓ for the
+ * previous or next sidebar entry, Alt+1–9 for one by number. */
+export type LobbyKey = { step: 1 | -1 } | { index: number };
+
+/** The lobby key a key press means, if any. */
+export function lobbyKey(e: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>): LobbyKey | null {
+  if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null;
+  if (e.key === 'ArrowUp') return { step: -1 };
+  if (e.key === 'ArrowDown') return { step: 1 };
+  if (/^[1-9]$/.test(e.key)) return { index: Number(e.key) - 1 };
+  return null;
+}
 
 type ToLobby =
   | { howdah: 'invoke'; id: number; cmd: string; args: unknown }

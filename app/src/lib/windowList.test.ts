@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerKind } from './bindings/PlayerKind';
 import type { SessionView } from './bindings/SessionView';
-import { gameTitle, testGameLabel, waitsOnUser } from './windowList';
+import { boardTitle, gameTitle, testGameLabel, waitsOnUser } from './windowList';
 
 function match(gold: PlayerKind, silver: PlayerKind, livePly: number, extra: Partial<SessionView> = {}): SessionView {
   return {
@@ -42,6 +42,16 @@ describe('gameTitle', () => {
     expect(gameTitle(match('human', 'engine', 2))).toBe('Al - Bob');
     expect(gameTitle({ ...match('human', 'engine', 2), players: null, tagNames: ['Cy', null] })).toBe('Cy - ?');
     expect(gameTitle({ ...match('human', 'engine', 2), players: null })).toBeNull();
+  });
+});
+
+describe('boardTitle', () => {
+  it('names the players, else what the board holds', () => {
+    const plain = { ...match('human', 'engine', 2), players: null, moves: [], analysisEngine: null } as SessionView;
+    expect(boardTitle(match('human', 'engine', 2))).toBe('Al - Bob');
+    expect(boardTitle(plain)).toBe('New board');
+    expect(boardTitle({ ...plain, analysisEngine: 'sharp' } as SessionView)).toBe('Analysis board');
+    expect(boardTitle({ ...plain, moves: [{}] } as unknown as SessionView)).toBe('Game record');
   });
 });
 

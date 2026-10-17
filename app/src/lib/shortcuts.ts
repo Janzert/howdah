@@ -7,6 +7,7 @@ export type ShortcutId =
   | 'forward'
   | 'start'
   | 'end'
+  | 'playToEnd'
   | 'prevVariation'
   | 'nextVariation'
   | 'prevBranch'
@@ -36,6 +37,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'back', group: 'Moves', keys: ['ArrowLeft', 'k'], label: 'Previous move' },
   { id: 'forward', group: 'Moves', keys: ['ArrowRight', 'j'], label: 'Next move; at the latest, replay it' },
   { id: 'start', group: 'Moves', keys: ['Home', '0'], label: 'Start of the game' },
+  { id: 'playToEnd', group: 'Moves', keys: ['p'], label: 'Fast-forward through the moves to the end of the line (again: stop)' },
   { id: 'end', group: 'Moves', keys: ['End', '$'], label: 'Latest move; in a game, back to the live position' },
   { id: 'prevVariation', group: 'Moves', keys: ['ArrowUp'], label: 'Previous alternative to the shown move' },
   { id: 'nextVariation', group: 'Moves', keys: ['ArrowDown'], label: 'Next alternative to the shown move' },

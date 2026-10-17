@@ -30,6 +30,10 @@
       lastCursor = cursor;
       const target = list.querySelector(steps > 0 ? '.pending' : '.current');
       if (moved || steps > 0) target?.scrollIntoView({ block: 'nearest' });
+      // The list is one tab stop, the shown move: focus follows it there.
+      if (moved && list.contains(document.activeElement)) {
+        list.querySelector<HTMLElement>('button.move.current')?.focus({ preventScroll: true });
+      }
     });
   });
 
@@ -96,9 +100,11 @@
 
 <svelte:window onkeydowncapture={onWindowKey} onclick={() => (menu = null)} />
 
-<ol class="moves" class:timed={settings.moveTimes !== 'off'} bind:this={list}>
+<!-- One tab stop, the shown move; the move keys (←/→, ↑/↓, Home, End) go
+     through the game from there, and the menu key opens a move's menu. -->
+<ol class="moves" class:timed={settings.moveTimes !== 'off'} bind:this={list} aria-label="Moves">
   <li class="start">
-    <button class="move" class:current={view.ply === 0} onclick={() => onGoto(0)}>
+    <button class="move" class:current={view.ply === 0} tabindex={view.ply === 0 ? 0 : -1} onclick={() => onGoto(0)}>
       {#if settings.moveTimes !== 'off'}<span class="time"></span>{/if}
       <span class="label">start</span>
     </button>
@@ -116,6 +122,7 @@
       {#if m.collapsible}
         <button
           class="fold"
+          tabindex="-1"
           aria-label={m.folded ? `Unfold the variation from ${m.label}` : `Fold the variation from ${m.label}`}
           aria-expanded={m.folded === 0}
           onclick={() => run(api.toggleCollapsed(m.id))}>{m.folded ? '▸' : '▾'}</button
@@ -125,6 +132,7 @@
         class="move"
         class:current={m.id === view.cursor}
         class:live={m.id === view.live}
+        tabindex={m.id === view.cursor ? 0 : -1}
         onclick={() => onGotoNode(m.id)}
         oncontextmenu={(e) => openMenu(e, m)}
       >

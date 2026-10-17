@@ -676,9 +676,10 @@ plans the engine test and tournament runner.
     `editorBoard.ts` lays pieces out with stable ids and does mirror and
     swap colors. Every change goes to `check_position`; the frontend
     never judges a position.
-  - Puzzles: the lobby's `PuzzlesDialog.svelte` (the list, solved ones
-    ticked from `lib/puzzles.ts`'s localStorage set) opens each in a game
-    window; `PuzzlePanel.svelte` above the move list shows the question,
+  - Puzzles: the lobby's `PuzzlesPanel.svelte` (listed under Home in the
+    sidebar once opened; the list by group with a filter, solved ones
+    ticked from `lib/puzzles.ts`'s localStorage set) opens each on a
+    board; `PuzzlePanel.svelte` above the move list shows the question,
     the status (`puzzleStatus`), Try again, Hint, Show answer and Next
     puzzle. App plays win or illegal as the status changes, keeps the
     game-end dialog away, and turns the board to the solver.
@@ -697,7 +698,9 @@ plans the engine test and tournament runner.
   - `MoveList.svelte` shows the whole game tree from `SessionView.tree`
     (display order, as the record format writes it: each move, then the
     variations replacing it, indented by `depth`). Moves off the shown line
-    are dimmed. A click calls `goto_node`; the right-click menu makes a
+    are dimmed. The list is one tab stop, the shown move (the others and
+    the fold toggles have `tabindex=-1`), and focus follows the shown move
+    while it's in the list. A click calls `goto_node`; the right-click menu makes a
     line main, moves it up or down (`promote`/`demote`), deletes from a
     move (`delete_from`; refused for a running match's line), or copies
     moves. The session refuses edits that would move a running match's
@@ -945,7 +948,28 @@ plans the engine test and tournament runner.
   - Keyboard: `lib/shortcuts.ts` is the one table of shortcuts; the key
     handler in `App.svelte` and the `?` help (`HelpDialog.svelte`) both
     read it. Add a key there, with its action in `shortcutActions`. The
-    help's mouse section is a list in `HelpDialog.svelte`.
+    help's mouse section and the lobby's keys are lists in
+    `HelpDialog.svelte`. The lobby's keys (`lobbyKey` in `lib/frames.ts`:
+    Alt+↑/↓ through the sidebar's entries, Alt+1–9 by number) work in the
+    lobby and from a docked board, which passes them on (`askLobby`); the
+    lobby then focuses the panel (its `h1`, or the board's frame), as it
+    does when the button that opened a panel goes away with the old one.
+    Fast-forward (`p`, the nav row's button between Forward and End,
+    `playToEnd` in App) steps through the shown line to its end, each
+    move animated, a pause after each (`playbackPause`); again, any other
+    move through the game, or the shown move changing, stops it.
+  - Dialogs share one frame (border, corners, padding, shadow, backdrop)
+    from `app.css`'s `dialog` rule; each component sets only its width.
+    `SidePicker.svelte` is the Random/Gold/Silver toggle (arimaa.com's New
+    game and Bots). `EngineStarter.svelte` is Home's first-run card: with
+    no engine but the bundled test engine, Download buttons for the
+    catalog's suggested engines (Sharp, OpFor). `boardTitle`
+    (`lib/windowList.ts`) names a board without players ("Analysis
+    board", "Game record", "New board"); the lobby's list shows a loading
+    board as "Loading…" (`followAllBoardLoading`). The sidebar keeps the
+    opened tests' names (`lobby.testNames`) for while the daemon is away.
+    `EnginePanel.svelte` puts each engine on one line (name truncated,
+    Log as a toggle beside Options).
   - `lib/theme.ts` plus `themes/<dir>/*.theme.json`: data-driven themes
     (image or procedural board/pieces).
   - `lib/settings.svelte.ts`: display preferences (light/dark appearance,

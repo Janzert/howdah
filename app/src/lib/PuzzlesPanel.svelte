@@ -1,9 +1,11 @@
 <script lang="ts">
-  // arimaa.com's puzzle list (fetched once by the backend and kept), by
-  // its headings, with the ones solved here ticked. A puzzle opens in a
-  // window of its own.
+  // The lobby's Puzzles panel: arimaa.com's puzzle list (fetched once by
+  // the backend and kept), by its headings, with the ones solved here
+  // ticked. A puzzle opens on a board of its own. Listed under Home in
+  // the sidebar once opened.
   import { api, errorMessage } from './api';
   import type { PuzzleGroupView } from './bindings/PuzzleGroupView';
+  import Icon from './Icon.svelte';
   import { solvedPuzzles } from './puzzles';
 
   interface Props {
@@ -16,12 +18,8 @@
   let groups = $state<PuzzleGroupView[] | null>(null);
   let error = $state<string | null>(null);
   let opening = $state<string | null>(null);
+  let filter = $state('');
   const solved = solvedPuzzles();
-  let dialog: HTMLDialogElement;
-
-  $effect(() => {
-    dialog.showModal();
-  });
 
   async function load(refresh = false) {
     error = null;
@@ -37,29 +35,61 @@
     opening = id;
     error = await onOpen(id);
     opening = null;
-    if (!error) dialog.close();
   }
+
+  const shown = $derived.by(() => {
+    const words = filter.trim().toLowerCase();
+    return (groups ?? [])
+      .map((g) => ({
+        ...g,
+        puzzles: g.puzzles.filter(
+          (p) => !words || (p.title ?? '').toLowerCase().includes(words) || p.id.toLowerCase().includes(words),
+        ),
+      }))
+      .filter((g) => g.puzzles.length > 0);
+  });
 </script>
 
-<dialog bind:this={dialog} onclose={onClose} aria-labelledby="puzzles-title">
-  <h2 id="puzzles-title">Puzzles</h2>
-  <p class="note">From arimaa.com's puzzle pages. Solve one in its window: your moves are checked against its answer.</p>
+<div class="screen">
+  <header>
+    <h1>Puzzles</h1>
+    <span class="spacer"></span>
+    <input bind:value={filter} placeholder="Filter" aria-label="Filter puzzles" autocomplete="off" />
+    <button class="icon" onclick={() => load(true)} title="Fetch the list again" aria-label="Refresh"
+      ><Icon name="refresh" size={16} /></button
+    >
+    <button onclick={onClose} title="Close this panel">Close</button>
+  </header>
+  <p class="hint intro">
+    From arimaa.com's puzzle pages. Each opens on a board of its own, where your moves are checked against its answer.
+  </p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if groups == null && !error}
-    <p>Loading…</p>
-  {:else if groups}
+    <p class="empty">Fetching the puzzles from arimaa.com…</p>
+  {:else if groups && shown.length === 0}
+    <p class="empty">No puzzle matches.</p>
+  {:else}
     <div class="groups">
-      {#each groups as g (g.name)}
-        <section>
-          <h3>{g.name || 'Puzzles'}</h3>
-          <ul aria-label={g.name || 'Puzzles'}>
+      {#each shown as g (g.name)}
+        {@const done = g.puzzles.filter((p) => solved.has(p.id)).length}
+        <section class="card" aria-labelledby="pz-{g.name}">
+          <div class="card-head">
+            <h2 id="pz-{g.name}">{g.name || 'Puzzles'}</h2>
+            <span class="count">{done > 0 ? `${done} of ${g.puzzles.length} solved` : g.puzzles.length}</span>
+          </div>
+          <ul class="list" aria-label={g.name || 'Puzzles'}>
             {#each g.puzzles as p (p.id)}
               <li>
-                <button class="link" disabled={opening != null} onclick={() => open(p.id)}>
-                  {#if solved.has(p.id)}<span class="done" title="Solved">✓</span>{/if}
-                  {p.title || p.id}
-                </button>
-                <span class="id">{p.id}</span>
+                <span class="row-text">
+                  <span class="row-line">
+                    {#if solved.has(p.id)}<span class="done" title="Solved">✓</span>{/if}
+                    <span class="name">{p.title || p.id}</span>
+                  </span>
+                </span>
+                <span class="meta">{p.id}</span>
+                <button onclick={() => open(p.id)} disabled={opening != null} aria-label="Open puzzle {p.title || p.id}"
+                  >{opening === p.id ? 'Opening…' : 'Open'}</button
+                >
               </li>
             {/each}
           </ul>
@@ -67,87 +97,42 @@
       {/each}
     </div>
   {/if}
-  <div class="buttons">
-    <button onclick={() => load(true)} title="Fetch the list again">Refresh</button>
-    <span class="spacer"></span>
-    <button onclick={() => dialog.close()}>Close</button>
-  </div>
-</dialog>
+</div>
 
 <style>
-  dialog {
-    width: min(620px, 90vw);
-    max-height: 85vh;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel);
-    color: var(--text);
-    padding: 16px;
-  }
-  dialog[open] {
+  header {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    min-height: 30px;
   }
-  dialog::backdrop {
-    background: rgba(0, 0, 0, 0.4);
+  h1 {
+    margin: 0;
+    font-size: 20px;
   }
-  h2 {
-    margin: 0 0 4px;
-    font-size: 16px;
+  header input {
+    width: 12em;
   }
-  h3 {
-    margin: 10px 0 4px;
-    font-size: 14px;
+  header button.icon {
+    padding: 4px 6px;
   }
-  .note {
-    margin: 0 0 8px;
-    font-size: 12px;
-    color: var(--muted);
+  .intro {
+    margin-bottom: 14px;
   }
   .groups {
-    overflow-y: auto;
-    min-height: 0;
-  }
-  ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  li {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-  }
-  .link {
-    border: none;
-    background: none;
-    padding: 2px 0;
-    color: var(--text);
-    text-align: left;
-    cursor: pointer;
-  }
-  .link:hover:not(:disabled) {
-    text-decoration: underline;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+    align-items: start;
   }
   .done {
     color: var(--clock-ok);
-    margin-right: 4px;
   }
-  .id {
-    margin-left: auto;
-    color: var(--muted);
-    font-size: 12px;
+  .meta {
+    flex: none;
   }
   .error {
-    color: var(--warn);
-    font-size: 13px;
-  }
-  .buttons {
-    display: flex;
-    gap: 6px;
-    margin-top: 10px;
-  }
-  .spacer {
-    flex: 1;
+    margin-bottom: 10px;
   }
 </style>

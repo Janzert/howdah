@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import type { Color } from '../bindings/Color';
   import type { ServerBotView } from '../bindings/ServerBotView';
+  import SidePicker from '../SidePicker.svelte';
   import { botRecord } from './format';
   import { gameroom, pref, savePref } from './store.svelte';
 
@@ -136,12 +137,8 @@
         {/if}
         <form onsubmit={start}>
           <div class="fields">
-            <label for="gr-bot-side">You play</label>
-            <select id="gr-bot-side" bind:value={userSide}>
-              <option value="random">Random</option>
-              <option value="gold">Gold</option>
-              <option value="silver">Silver</option>
-            </select>
+            <span id="gr-bot-side-label">You play</span>
+            <SidePicker bind:value={userSide} name="gr-bot-side" labelledby="gr-bot-side-label" />
           </div>
           <label class="check"><input type="checkbox" bind:checked={join} /> Join the game as soon as it opens</label>
           <label class="check" title="Off: join in the gameroom's unrated mode, so a rated bot game isn't rated">

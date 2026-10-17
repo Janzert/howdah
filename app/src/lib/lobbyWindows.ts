@@ -4,7 +4,8 @@ import type { SessionId } from './bindings/SessionId';
 import type { SessionView } from './bindings/SessionView';
 import type { WatchView } from './bindings/WatchView';
 import { formatClock, sideTimes } from './clock';
-import { gameTitle, testGameLabel, waitsOnUser } from './windowList';
+import type { BoardLoading } from './boardLoading';
+import { boardTitle, testGameLabel, waitsOnUser } from './windowList';
 
 export interface ListedWindow {
   id: SessionId;
@@ -31,12 +32,14 @@ function kind(v: SessionView, watch: WatchView | undefined): string {
   return v.moves.length > 0 ? `${v.moves.length} moves` : 'Empty board';
 }
 
-/** One window's entry; `now - at` is how long ago its view arrived. */
+/** One board's entry; `now - at` is how long ago its view arrived, and
+ * `loading` what it waits for (`boardLoading.ts`), if anything. */
 export function listWindow(
   id: SessionId,
   entry: { view: SessionView; at: number },
   watch: WatchView | undefined,
   now: number,
+  loading: BoardLoading | null = null,
 ): ListedWindow {
   const v = entry.view;
   const clock = (side: 'gold' | 'silver') => {
@@ -46,8 +49,8 @@ export function listWindow(
   return {
     id,
     view: v,
-    title: gameTitle(v) ?? 'Untitled game',
-    kind: kind(v, watch),
+    title: loading ? (loading.error ? "Couldn't open the game" : 'Loading…') : boardTitle(v),
+    kind: loading ? (loading.error ?? loading.text) : kind(v, watch),
     yourMove: waitsOnUser(v),
     clocks: v.clock ? { gold: clock('gold'), silver: clock('silver') } : null,
     result: v.result ? `${v.result.winner === 'gold' ? 'Gold' : 'Silver'} won` : null,
