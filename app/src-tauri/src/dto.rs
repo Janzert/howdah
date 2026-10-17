@@ -1093,7 +1093,8 @@ pub struct OnlinePlayerView {
     pub country: Option<String>,
     pub bot: bool,
     /// Whether they take invitations (their gameroom setting), and
-    /// whether they're busy (no invitations, as in the browser lobby).
+    /// whether they're at a table (the browser lobby offers no invitation
+    /// then; Howdah still does to a bot).
     pub invite_me: bool,
     pub busy: bool,
     /// When they last asked the lobby for anything, in Unix seconds. It

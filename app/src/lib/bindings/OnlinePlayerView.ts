@@ -6,7 +6,8 @@
 export type OnlinePlayerView = { username: string, rating: string | null, title: string | null, country: string | null, bot: boolean, 
 /**
  * Whether they take invitations (their gameroom setting), and
- * whether they're busy (no invitations, as in the browser lobby).
+ * whether they're at a table (the browser lobby offers no invitation
+ * then; Howdah still does to a bot).
  */
 inviteMe: boolean, busy: boolean, 
 /**

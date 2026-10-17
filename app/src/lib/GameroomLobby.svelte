@@ -389,11 +389,14 @@
     );
   });
   /** The players to offer Invite for: those who take invitations, aren't
-   * busy, and have used the lobby since they were first seen. */
+   * busy, and have used the lobby since they were first seen. A bot may
+   * be busy: one that passes is run by an invitation controller, which
+   * can play several games at once and turns its own flag off when it's
+   * full. */
   const invitable = $derived(
     new Set(
       online
-        .filter((p) => p.inviteMe && !p.busy && p.username !== user)
+        .filter((p) => p.inviteMe && (!p.busy || p.bot) && p.username !== user)
         .filter((p) => p.idle != null && p.idle > (firstIdle.get(p.username) ?? Infinity))
         .map((p) => p.username),
     ),

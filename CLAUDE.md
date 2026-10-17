@@ -691,7 +691,7 @@ plans the engine test and tournament runner.
     Decline and Cancel. "Online" lists who's logged in
     (`GameroomGames.online`; idle over `ONLINE_IDLE` left out), with
     Invite, which fills in the New game form's Opponent, for those who
-    take invitations and aren't busy, once their `idle` has moved since
+    take invitations and aren't busy (bots may be), once their `idle` has moved since
     first seen (`firstIdle`): only then is `inviteme` their setting, and
     bots on the bot API never move it. "Show server bots" lists the server's bots
     (`gameroom_server_bots`, `ServerBotsView`: every bot and the official

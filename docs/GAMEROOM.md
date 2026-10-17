@@ -140,7 +140,8 @@ architecture. Decided and checked against the live server in October 2026.
   lobby request, `idle`, is over 60 s old, as the browser lobby does)
   has Invite, which fills in the Opponent field, for players who take
   invitations (`inviteme`, the browser lobby's invite icon) and aren't
-  `busy`, once their `idle` has moved since Howdah first saw them. The
+  `busy` (a bot may be: an invitation controller can play several
+  games at once and turns its flag off when full), once their `idle` has moved since Howdah first saw them. The
   flag is only the player's wish (the server takes an invitation to
   anyone), and it isn't their setting until a lobby request of theirs
   applies it: a new login shows it on. A bot on the bot API
