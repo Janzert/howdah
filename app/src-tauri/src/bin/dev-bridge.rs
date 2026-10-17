@@ -81,7 +81,8 @@ async fn main() {
     // preview is separate from the user's.
     let backend = Arc::new(
         Backend::new(registry, catalog, saved_login, Arc::new(Broadcast(tx.clone())))
-            .with_tourney_dir(Some(config_dir.join("tourney"))),
+            .with_tourney_dir(Some(config_dir.join("tourney")))
+            .with_chat_archive_dir(Some(config_dir.join("chat-archive"))),
     );
     let app = App { backend, events: tx };
 

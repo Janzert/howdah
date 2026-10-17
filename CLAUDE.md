@@ -197,7 +197,9 @@ plans the engine test and tournament runner.
     `state`'s `me` (`LobbyGames.chat_auth`; `chat_count` is
     `chatCount`), `ChatEvent`s from the log, and `format_message`, the
     room's formatting as `MessagePart`s (links, faces, piece symbols,
-    `/me` emotes).
+    `/me` emotes). `archive` asks `archsrv.php` (no login) for the 24
+    hours from a moment; `ChatEvent::to_line` writes an event back as a
+    log line.
   - `puzzles`: the puzzle pages (`/arimaa/puzzles/`, no login, the
     same Referer gate as the gameroom): `parse_puzzle_list` (`list.cgi`,
     groups by heading), `parse_puzzle_page` (`show.cgi?p=`: question,
@@ -492,7 +494,23 @@ plans the engine test and tournament runner.
     or an event game) and auto-leave is on (`set_chatroom_auto_leave`,
     from the `leaveChatForGames` setting); bots are `bot_` names or the
     lobby's flagged ones (`Gameroom.bots`). Debug builds take
-    `HOWDAH_CHAT_URL` for a stand-in room.
+    `HOWDAH_CHAT_URL` for a stand-in room. Each fetch's events also go to
+    the chat archive (a visit chunk).
+  - `chat_archive.rs`: the chat room's log kept locally (`ChatArchive`,
+    in `Gameroom.archive`; `chat-archive/` in the app's local data dir,
+    `Backend::with_chat_archive_dir`, the dev bridge's config dir). A set
+    of chunks, each a stretch it covers in full plus its events
+    (`index.json` and `chunks/<id>.tsv` as log lines): archive requests
+    (`fetch_day` asks from the start of each gap in a local day, up to
+    three requests; today only past the last half minute) and visits to
+    the room (`live_begin` from the entry backlog, which is the log's
+    unbroken tail, and `live_extend` with each fetch). Where chunks
+    overlap, archive chunks win over visits, then the newest; events
+    outside every span are merged without duplicates. `month` and `day`
+    give `ChatDaySummary`s (messages, people, coverage with the kept
+    stretches) and a day's events; changes go out as
+    `chatarchive://changed`. `chat_base` is arimaa.com's chat directory,
+    or `HOWDAH_CHAT_URL` in debug builds.
   - `tourney.rs`: engine tests, as a client of howdah-tourney's daemon
     (plan in `docs/TOURNAMENTS.md`; data dir `howdah_tourney::default_data_dir`,
     or `Backend::with_tourney_dir`, which the dev bridge points at
@@ -763,6 +781,15 @@ plans the engine test and tournament runner.
     list beside the chosen bot), `WatchTab` (live and postal games, with a
     player filter), `FinishedTab` (a player's games, a game by id,
     recently finished) and `PlayersTab` (online, with Games and Invite).
+    `ChatArchiveTab` is the chat archive, which needs no login
+    (`NO_LOGIN_PANELS`, `GameroomFrame`'s `noLogin`; logged out, the login
+    form links to it): a month calendar (each day's messages and people,
+    kept or part kept, `chatArchive.svelte.ts`) beside the day open,
+    which asks arimaa.com only for what isn't kept, following
+    `chatarchive://changed`. `ChatLine.svelte` draws one event of the
+    room or the archive (spoilers keep their own shown state), and
+    `darkMode.svelte.ts` follows the appearance for colors worked out in
+    code.
     `ChatRoomTab` is the chat room (store in `chatroom.svelte.ts`:
     the backend's view, unread count for the sidebar's badge, the user's
     color; `lib/chatroom.ts` has the colors, spoilers (exact white,

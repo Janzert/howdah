@@ -14,6 +14,9 @@
 //! - `cmd=msg&color=<rrggbb>&data=<text>`: says something.
 //! - `cmd=out`: leaves.
 //!
+//! The archive, `archsrv.php` ([`archive`]), needs no login: `day=<unix
+//! time>` gets `OK` and the 24 hours of events from then.
+//!
 //! Entering and leaving are archived for good and everyone sees who is
 //! there, so a visit is public. The server times a user out about a
 //! minute after their last request, so a client in the room must ask at
@@ -57,6 +60,24 @@ pub enum ChatKind {
     /// The user said something, in a color (`rrggbb`, lowercase; `None`
     /// if the log's isn't one).
     Message { color: Option<String>, text: String },
+}
+
+impl ChatEvent {
+    /// The event as a line of the room's log, as [`parse_event`] reads it.
+    /// Tabs and line breaks in a message become spaces (the log can't hold
+    /// them).
+    pub fn to_line(&self) -> String {
+        let clean = |s: &str| s.replace(['\t', '\n', '\r'], " ");
+        let (time, user) = (self.time, clean(&self.user));
+        match &self.kind {
+            ChatKind::In => format!("{time}\t{user}\tin"),
+            ChatKind::Out => format!("{time}\t{user}\tout"),
+            ChatKind::Timeout => format!("{time}\t{user}\ttimeout"),
+            ChatKind::Message { color, text } => {
+                format!("{time}\t{user}\tmsg\t{}\t{}", color.as_deref().unwrap_or(""), clean(text))
+            }
+        }
+    }
 }
 
 /// Reads one line of the log: `<time>\t<user>\t<cmd>`, and for `msg`
@@ -124,6 +145,30 @@ pub fn parse_users(reply: &str) -> Result<Vec<String>, Error> {
         .filter(|u| !u.is_empty())
         .map(str::to_string)
         .collect())
+}
+
+/// Reads an archive reply: `OK`, then the events (no pointer).
+pub fn parse_archive(reply: &str) -> Result<Vec<ChatEvent>, Error> {
+    let mut lines = reply.lines();
+    if lines.next().map(str::trim) != Some("OK") {
+        return Err(bad_reply(reply));
+    }
+    Ok(lines.filter_map(parse_event).collect())
+}
+
+/// The room's archive, `archsrv.php`: the events of the 24 hours from
+/// `start` (Unix seconds; the archive's page asks from local midnight).
+/// It needs no login, only the Referer every request carries. Past days
+/// don't change, so callers should keep what they get and ask gently.
+pub async fn archive(http: &Http, base: &str, start: i64) -> Result<Vec<ChatEvent>, Error> {
+    let base = if base.ends_with('/') { base.to_string() } else { format!("{base}/") };
+    let body = encode_request(Format::KeyValue, &[("day", start.to_string())]);
+    let reply = http.page_reply(&format!("{base}archsrv.php"), None, Some(body), REQUEST_TIMEOUT).await?;
+    match reply.status {
+        404 => Err(Error::Refused),
+        s if !(200..300).contains(&s) => Err(Error::Status(s)),
+        _ => parse_archive(&reply.body),
+    }
 }
 
 fn bad_reply(reply: &str) -> Error {
@@ -420,6 +465,19 @@ mod tests {
         let f = format_message("/me");
         assert!(f.emote);
         assert!(f.parts.is_empty());
+    }
+
+    #[test]
+    fn archive_and_lines() {
+        assert_eq!(parse_archive("OK\n").unwrap(), []);
+        let events = parse_archive("OK\n1\ta\tin\n2\ta\tmsg\tF70077\thi\n3\ta\tout\n").unwrap();
+        assert_eq!(events.len(), 3);
+        let lines: Vec<String> = events.iter().map(ChatEvent::to_line).collect();
+        assert_eq!(lines, ["1\ta\tin", "2\ta\tmsg\tf70077\thi", "3\ta\tout"]);
+        for e in &events {
+            assert_eq!(parse_event(&e.to_line()).as_ref(), Some(e));
+        }
+        assert!(parse_archive("Nothing new").is_err());
     }
 
     #[test]

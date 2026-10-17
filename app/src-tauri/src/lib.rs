@@ -5,6 +5,7 @@
 //! it for the UI.
 
 pub mod backend;
+mod chat_archive;
 mod chatroom;
 mod commands;
 mod controller;
@@ -56,7 +57,11 @@ pub fn run() {
                 app.path().app_local_data_dir()?.join("engines"),
             );
             let saved_login = SavedLogin::new(Some(config_dir.join("gameroom-login.json")));
-            app.manage(Backend::new(registry, catalog, saved_login, Arc::new(app.handle().clone())));
+            let archive_dir = app.path().app_local_data_dir()?.join("chat-archive");
+            app.manage(
+                Backend::new(registry, catalog, saved_login, Arc::new(app.handle().clone()))
+                    .with_chat_archive_dir(Some(archive_dir)),
+            );
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -163,6 +168,8 @@ pub fn run() {
             commands::gameroom_last_games,
             commands::open_url,
             commands::chatroom_state,
+            commands::chat_archive_month,
+            commands::chat_archive_day,
             commands::enter_chatroom,
             commands::leave_chatroom,
             commands::say_in_chatroom,

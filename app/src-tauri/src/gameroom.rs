@@ -49,13 +49,14 @@ use std::time::{Duration, Instant};
 
 use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
-    Actions, Announcement, Asip, ChatClient, DEFAULT_CHAT, DEFAULT_GAMEROOM, Error, GameInfo, GameServer,
-    GameState, Http, Invitation, InviteOutcome, Lobby, LobbyGames, OnlinePlayer, Opened, PastGame,
-    RecentGame, Role, ViewerSeat, parse_chat, parse_result,
+    Actions, Announcement, Asip, ChatClient, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http,
+    Invitation, InviteOutcome, Lobby, LobbyGames, OnlinePlayer, Opened, PastGame, RecentGame, Role,
+    ViewerSeat, parse_chat, parse_result,
 };
 use tokio::sync::Notify;
 
 use crate::backend::{Events, emit, emit_session};
+use crate::chat_archive::{ChatArchive, SharedArchive, chat_base};
 use crate::chatroom::ChatRoom;
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
@@ -253,6 +254,9 @@ pub struct Gameroom {
     /// The gameroom's chat room. It has its own HTTP client, so its
     /// requests never hold up a game's.
     pub chat: Arc<ChatRoom>,
+    /// The chat room's log as kept locally: the archive's days and the
+    /// user's visits.
+    pub archive: SharedArchive,
     chat_http: Http,
 }
 
@@ -260,8 +264,10 @@ impl Gameroom {
     pub fn new(saved: SavedLogin, events: Events) -> Gameroom {
         let http = Http::new(&howdah_gameroom::user_agent(), None).expect("an HTTP client");
         let chat_http = Http::new(&howdah_gameroom::user_agent(), None).expect("an HTTP client");
+        let archive = Arc::new(ChatArchive::new(events.clone()));
         Gameroom {
-            chat: Arc::new(ChatRoom::new(events.clone())),
+            chat: Arc::new(ChatRoom::new(events.clone(), archive.clone())),
+            archive,
             chat_http,
             chat_auth: Mutex::new(None),
             bots: Mutex::new(Default::default()),
@@ -433,11 +439,7 @@ impl Gameroom {
         let (Some(user), Some(auth)) = (lock(&self.player).clone(), auth) else {
             return Err(ApiError::state("arimaa.com didn't give a key to its chat room; log in again"));
         };
-        // Debug builds can be pointed at a stand-in room
-        // (`HOWDAH_CHAT_URL`), to check the panel without a public visit.
-        let base = if cfg!(debug_assertions) { std::env::var("HOWDAH_CHAT_URL").ok() } else { None };
-        let client =
-            ChatClient::new(self.chat_http.clone(), base.as_deref().unwrap_or(DEFAULT_CHAT), &user, &auth);
+        let client = ChatClient::new(self.chat_http.clone(), &chat_base(), &user, &auth);
         Ok(self.chat.enter(client))
     }
 

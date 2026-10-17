@@ -30,12 +30,12 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatRoomView, EngineCatalogView, EngineIdentity,
-    EngineOption, EngineOutput, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay,
-    NewTestSpec, PlayerGamesView, PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView,
-    PositionSpec, PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate,
-    SessionView, SessionsChanged, ShowBoard, StartedBotView, StepTarget, TestDetailView, TestGameTag,
-    TestView, TourneyStatusView, WatchView,
+    AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatRoomView,
+    EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames, GameroomStatus,
+    MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PlayerSpec, PositionCheck,
+    PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView, ServerBotsView,
+    SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, StartedBotView, StepTarget,
+    TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -177,6 +177,12 @@ impl Backend {
             following: tokio::sync::Mutex::new(()),
             events,
         }
+    }
+
+    /// Keeps the gameroom chat room's archive in `dir` (None: in memory).
+    pub fn with_chat_archive_dir(self, dir: Option<PathBuf>) -> Backend {
+        self.gameroom.archive.set_dir(dir);
+        self
     }
 
     /// Uses `dir` as the engine test daemon's data directory instead of the
@@ -767,6 +773,17 @@ impl Backend {
         self.gameroom.chat.say(text, color).await
     }
 
+    /// How each day of a month stands in the local chat archive.
+    pub fn chat_archive_month(&self, year: i32, month: u32) -> Result<ChatArchiveMonth, ApiError> {
+        self.gameroom.archive.month(year, month)
+    }
+
+    /// A day (`YYYY-MM-DD`) of the chat archive; with `fetch`, what the
+    /// local archive lacks of it is asked of arimaa.com first.
+    pub async fn chat_archive_day(&self, date: &str, fetch: bool) -> Result<ChatArchiveDay, ApiError> {
+        self.gameroom.archive.day(date, fetch).await
+    }
+
     /// Whether the chat room's panel is in view (it's asked more often).
     pub fn set_chatroom_active(&self, active: bool) {
         self.gameroom.chat.set_active(active);
@@ -1240,6 +1257,10 @@ impl Backend {
             "gameroom_last_games" => ok(self.gameroom_last_games()),
             "open_url" => ok(self.open_url(&arg::<String>(args, "url")?)?),
             "chatroom_state" => ok(self.chatroom_state()),
+            "chat_archive_month" => ok(self.chat_archive_month(arg(args, "year")?, arg(args, "month")?)?),
+            "chat_archive_day" => {
+                ok(self.chat_archive_day(&arg::<String>(args, "date")?, arg(args, "fetch")?).await?)
+            }
             "enter_chatroom" => ok(self.enter_chatroom(arg(args, "autoLeave")?).await?),
             "leave_chatroom" => ok(self.leave_chatroom().await?),
             "say_in_chatroom" => ok(self

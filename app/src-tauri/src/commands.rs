@@ -6,11 +6,11 @@ use tauri::State;
 
 use crate::backend::{self, Backend};
 use crate::dto::{
-    ApiError, ArchivedTestView, BotInfoView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption,
-    EngineOutput, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec,
-    PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec, PositionView, PostalGameView,
-    PuzzleGroupView, ServerBotsView, SessionId, SessionView, StartedBotView, StepTarget, TestDetailView,
-    TestView, TourneyStatusView, WatchView,
+    ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatRoomView,
+    EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames, GameroomStatus,
+    MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec,
+    PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView, StartedBotView,
+    StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
 };
 
 #[tauri::command]
@@ -415,6 +415,24 @@ pub fn gameroom_game_session(state: State<Backend>, gid: String) -> Option<Sessi
 #[tauri::command]
 pub fn open_url(state: State<Backend>, url: String) -> Result<(), ApiError> {
     state.open_url(&url)
+}
+
+#[tauri::command]
+pub fn chat_archive_month(
+    state: State<Backend>,
+    year: i32,
+    month: u32,
+) -> Result<ChatArchiveMonth, ApiError> {
+    state.chat_archive_month(year, month)
+}
+
+#[tauri::command]
+pub async fn chat_archive_day(
+    state: State<'_, Backend>,
+    date: String,
+    fetch: bool,
+) -> Result<ChatArchiveDay, ApiError> {
+    state.chat_archive_day(&date, fetch).await
 }
 
 #[tauri::command]

@@ -14,9 +14,11 @@
     onClose?: () => void;
     /** Beside the title, while logged in. */
     titleExtra?: Snippet;
+    /** Shows the panel logged out too (no login form). */
+    noLogin?: boolean;
     children: Snippet;
   }
-  let { title, onClose, titleExtra, children }: Props = $props();
+  let { title, onClose, titleExtra, noLogin = false, children }: Props = $props();
 
   $effect(() => {
     if (gameroom.user) return gameroom.autoRefresh();
@@ -42,10 +44,16 @@
     {/if}
   </header>
 
-  {#if gameroom.user === undefined}
+  {#if noLogin}
+    {@render children()}
+  {:else if gameroom.user === undefined}
     <p class="empty">…</p>
   {:else if gameroom.user === null}
     <LoginForm />
+    <p class="no-login">
+      The chat room's archive needs no login:
+      <button class="link" onclick={() => gameroom.show('archive')}>Chat archive</button>
+    </p>
   {:else}
     {#if gameroom.error && gameroom.newGame == null}
       <div class="banner" role="alert">
@@ -81,6 +89,11 @@
   }
   header button.icon {
     padding: 4px 6px;
+  }
+  .no-login {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--muted);
   }
   .banner {
     display: flex;

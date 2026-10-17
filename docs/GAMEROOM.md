@@ -156,6 +156,22 @@ architecture. Decided and checked against the live server in October 2026.
   as needed to be readable.
   Unlike the room's script, symbols aren't replaced inside links, and
   every occurrence is replaced, not just the first.
+  - **The archive.** The room's archive (`archsrv.php`) needs no login,
+    only the Referer every request carries, and gives the 24 hours of
+    events from any moment. Howdah keeps the room's log locally: the
+    Chat archive panel (open logged out too) shows a month calendar with
+    each day's messages and people where kept, all of the day or part
+    (a partial day: today, the start of a visit's backlog, or a request
+    cut short), and opening a day asks the archive only for the
+    stretches not yet kept, from the start of each, so a day costs one
+    request (two or three at most, for a 25-hour day or gaps at both
+    ends) and never again. What the user sees in the room is kept too:
+    the room's first reply is the unbroken tail of its log, and each
+    poll brings everything since, so a visit covers from just after the
+    backlog's first line until its last poll. Where a visit and an
+    archive request cover the same time, the archive (the server's own
+    record) is read. Days are the computer's local days, as on the
+    archive's own page. Searching the kept log is planned.
   - **Leaving for games.** The custom in the gameroom is to leave the
     chat room while playing a rated game against a person that isn't
     postal, and any event game. With the setting on (the default),

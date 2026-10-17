@@ -35,8 +35,16 @@ class ChatRoomStore {
   start(): () => void {
     if (this.#started) return () => {};
     this.#started = true;
-    const unlisten = on('chatroom://changed', (v) => (this.view = v));
-    api.chatroomState().then((v) => (this.view ??= v));
+    const unlisten = on('chatroom://changed', (v) => {
+      // What the room sends on entering is its recent past, not news.
+      if (v.state === 'in' && this.view?.state !== 'in') this.#seen = v.events.at(-1)?.id ?? -1;
+      this.view = v;
+    });
+    api.chatroomState().then((v) => {
+      if (this.view) return;
+      if (v.state === 'in') this.#seen = v.events.at(-1)?.id ?? -1;
+      this.view = v;
+    });
     const stopSync = $effect.root(() => {
       $effect(() => {
         api.setChatroomAutoLeave(settings.leaveChatForGames).catch(() => {});

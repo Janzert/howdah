@@ -2,6 +2,8 @@
 // Mutating commands resolve with nothing; the new state arrives as a
 // `game://changed` event (see events.ts).
 import { invoke } from '@tauri-apps/api/core';
+import type { ChatArchiveDay } from './bindings/ChatArchiveDay';
+import type { ChatArchiveMonth } from './bindings/ChatArchiveMonth';
 import type { ChatRoomView } from './bindings/ChatRoomView';
 import type { ApiError } from './bindings/ApiError';
 import type { ArchivedTestView } from './bindings/ArchivedTestView';
@@ -201,6 +203,12 @@ function makeApi(sid: () => SessionId | null) {
      * comes and goes). `autoLeave` leaves it for games that call for it. */
     enterChatroom: (autoLeave: boolean) => invoke<ChatRoomView>('enter_chatroom', { autoLeave }),
     leaveChatroom: () => invoke<void>('leave_chatroom'),
+    /** How each day of a month (1–12) stands in the local chat archive. */
+    chatArchiveMonth: (year: number, month: number) =>
+      invoke<ChatArchiveMonth>('chat_archive_month', { year, month }),
+    /** A day (`YYYY-MM-DD`) of the chat archive; with `fetch`, what the
+     * local archive lacks of it is asked of arimaa.com first. */
+    chatArchiveDay: (date: string, fetch: boolean) => invoke<ChatArchiveDay>('chat_archive_day', { date, fetch }),
     /** Says `text` in the chat room in `color` (`rrggbb`). */
     sayInChatroom: (text: string, color: string) => invoke<void>('say_in_chatroom', { text, color }),
     /** Whether the chat room's panel is in view (it's asked more often). */

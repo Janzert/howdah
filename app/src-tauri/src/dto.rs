@@ -1359,6 +1359,72 @@ pub enum ChatPartView {
     },
 }
 
+/// How much of a day the local chat archive holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ChatCoverage {
+    None,
+    Partial,
+    /// All of it (today: up to the last half minute).
+    Full,
+}
+
+/// A day of the chat archive, by the computer's local date.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatDaySummary {
+    /// `YYYY-MM-DD`.
+    pub date: String,
+    pub messages: u32,
+    /// Everyone who came, went or wrote.
+    pub people: u32,
+    pub coverage: ChatCoverage,
+    /// The stretches of the day the archive holds, `[start, end)` (Unix
+    /// seconds; today's only up to now).
+    #[ts(type = "[number, number][]")]
+    pub covered: Vec<[i64; 2]>,
+    pub today: bool,
+    pub future: bool,
+}
+
+/// A month of the chat archive, for the calendar.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatArchiveMonth {
+    pub year: i32,
+    pub month: u32,
+    pub days: Vec<ChatDaySummary>,
+}
+
+/// A day of the chat archive, to read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatArchiveDay {
+    pub summary: ChatDaySummary,
+    /// The day's start and end (Unix seconds).
+    #[ts(type = "number")]
+    pub start: i64,
+    #[ts(type = "number")]
+    pub end: i64,
+    pub events: Vec<ChatEventView>,
+}
+
+/// The chat archive gained events in `start..end` (Unix seconds), sent as
+/// `chatarchive://changed`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatArchiveChanged {
+    #[ts(type = "number")]
+    pub start: i64,
+    #[ts(type = "number")]
+    pub end: i64,
+}
+
 /// The engine test daemon (howdah-tourney), as far as the app can tell.
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

@@ -25,6 +25,7 @@ use howdah_gameroom::{
 use tokio::sync::Notify;
 
 use crate::backend::{Events, emit};
+use crate::chat_archive::SharedArchive;
 use crate::dto::{ApiError, ChatEventKind, ChatEventView, ChatPartView, ChatRoomState, ChatRoomView};
 
 /// Event carrying a [`ChatRoomView`].
@@ -93,14 +94,17 @@ struct Inner {
 /// The user's place in the gameroom's chat room.
 pub struct ChatRoom {
     events: Events,
+    /// Where what the user sees in the room is kept.
+    archive: SharedArchive,
     inner: Mutex<Inner>,
     wake: Arc<Notify>,
 }
 
 impl ChatRoom {
-    pub fn new(events: Events) -> ChatRoom {
+    pub fn new(events: Events, archive: SharedArchive) -> ChatRoom {
         ChatRoom {
             events,
+            archive,
             inner: Mutex::new(Inner {
                 state: ChatRoomState::Out,
                 client: None,
@@ -296,6 +300,9 @@ fn view(inner: &Inner) -> ChatRoomView {
 /// Keeps asking the room for new events, as `generation`'s visit.
 async fn run(room: Arc<ChatRoom>, client: ChatClient, generation: u64) {
     let mut backoff = Duration::from_secs(5);
+    // This visit in the local archive: the log arrives unbroken from the
+    // first reply's backlog on, so the visit covers until its last fetch.
+    let mut visit: Option<u64> = None;
     loop {
         let pointer = {
             let inner = lock(&room.inner);
@@ -309,7 +316,7 @@ async fn run(room: Arc<ChatRoom>, client: ChatClient, generation: u64) {
         match fetched {
             Ok(fetched) => {
                 backoff = Duration::from_secs(5);
-                let ask_users = {
+                let (ask_users, taken) = {
                     let mut inner = lock(&room.inner);
                     if inner.generation != generation {
                         return;
@@ -317,13 +324,18 @@ async fn run(room: Arc<ChatRoom>, client: ChatClient, generation: u64) {
                     let entered = inner.state == ChatRoomState::Entering;
                     let before = (inner.next_id, inner.note.take());
                     inner.state = ChatRoomState::In;
-                    let comings = add_events(&mut inner, fetched);
+                    let (comings, taken) = add_events(&mut inner, fetched);
                     // Most fetches bring nothing new.
                     if entered || before != (inner.next_id, None) {
                         room.changed(&inner);
                     }
-                    entered || comings
+                    (entered || comings, taken)
                 };
+                match visit {
+                    Some(id) => room.archive.live_extend(id, &taken),
+                    None if !taken.is_empty() => visit = Some(room.archive.live_begin(&taken)),
+                    None => {}
+                }
                 if ask_users && let Ok(users) = client.users().await {
                     let mut inner = lock(&room.inner);
                     if inner.generation != generation {
@@ -364,35 +376,35 @@ async fn run(room: Arc<ChatRoom>, client: ChatClient, generation: u64) {
 
 /// Adds a fetch's events to the log, unless its pointer is no newer than
 /// the last (as the room's own client does). Returns whether anyone came
-/// or went.
-fn add_events(inner: &mut Inner, fetched: Fetched) -> bool {
-    let Fetched::Events { pointer, events } = fetched else { return false };
+/// or went, and the events taken.
+fn add_events(inner: &mut Inner, fetched: Fetched) -> (bool, Vec<ChatEvent>) {
+    let Fetched::Events { pointer, events } = fetched else { return (false, Vec::new()) };
     let newer =
         match (inner.pointer.as_deref().and_then(|p| p.parse::<u64>().ok()), pointer.parse::<u64>().ok()) {
             (Some(old), Some(new)) => new > old,
             _ => true,
         };
     if !newer {
-        return false;
+        return (false, Vec::new());
     }
     inner.pointer = Some(pointer);
     let mut comings = false;
     if !events.is_empty() {
         inner.last_activity = Instant::now();
     }
-    for e in events {
+    for e in &events {
         comings |= !matches!(e.kind, ChatKind::Message { .. });
         let id = inner.next_id;
         inner.next_id += 1;
-        inner.events.push_back(event_view(id, e));
+        inner.events.push_back(event_view(id, e.clone()));
     }
     while inner.events.len() > MAX_EVENTS {
         inner.events.pop_front();
     }
-    comings
+    (comings, events)
 }
 
-fn event_view(id: u32, e: ChatEvent) -> ChatEventView {
+pub(crate) fn event_view(id: u32, e: ChatEvent) -> ChatEventView {
     let (kind, color, emote, parts) = match e.kind {
         ChatKind::In => (ChatEventKind::In, None, false, Vec::new()),
         ChatKind::Out => (ChatEventKind::Out, None, false, Vec::new()),
@@ -418,6 +430,10 @@ fn part_view(p: MessagePart) -> ChatPartView {
 mod tests {
     use super::*;
     use howdah_gameroom::Record;
+
+    fn archive() -> SharedArchive {
+        Arc::new(crate::chat_archive::ChatArchive::new(Arc::new(NullSink)))
+    }
 
     struct NullSink;
     impl crate::backend::EventSink for NullSink {
@@ -456,7 +472,7 @@ mod tests {
     /// with the timeout made inside the one `block_on` uses.
     #[test]
     fn leaving_on_exit_runs_outside_a_runtime() {
-        let room = ChatRoom::new(Arc::new(NullSink));
+        let room = ChatRoom::new(Arc::new(NullSink), archive());
         let left = tauri::async_runtime::block_on(async {
             tokio::time::timeout(Duration::from_secs(2), room.leave(None)).await
         });
@@ -465,15 +481,15 @@ mod tests {
 
     #[test]
     fn events_arrive_once_and_in_order() {
-        let room = ChatRoom::new(Arc::new(NullSink));
+        let room = ChatRoom::new(Arc::new(NullSink), archive());
         let mut inner = lock(&room.inner);
         let fetched = |pointer: &str, lines: &str| {
             howdah_gameroom::chat::parse_fetch(&format!("OK\n{pointer}\n{lines}")).unwrap()
         };
-        assert!(add_events(&mut inner, fetched("100", "1\ta\tin\n2\ta\tmsg\t000000\t/me waves :)\n")));
-        assert!(!add_events(&mut inner, fetched("200", "3\ta\tmsg\tffffff\tspoiler\n")));
+        assert!(add_events(&mut inner, fetched("100", "1\ta\tin\n2\ta\tmsg\t000000\t/me waves :)\n")).0);
+        assert!(!add_events(&mut inner, fetched("200", "3\ta\tmsg\tffffff\tspoiler\n")).0);
         // A reply no newer than the last is dropped.
-        assert!(!add_events(&mut inner, fetched("150", "9\tb\tin\n")));
+        assert_eq!(add_events(&mut inner, fetched("150", "9\tb\tin\n")), (false, Vec::new()));
         let ids: Vec<u32> = inner.events.iter().map(|e| e.id).collect();
         assert_eq!(ids, [0, 1, 2]);
         let wave = &inner.events[1];

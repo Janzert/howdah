@@ -4,15 +4,13 @@
   // message box with the user's color, and Leave.
   import { untrack } from 'svelte';
   import { api } from '../api';
-  import type { ChatEventView } from '../bindings/ChatEventView';
-  import PieceGlyph from '../board/PieceGlyph.svelte';
-  import { CHAT_PALETTE, FACE_EMOJI, chatTime, messageColor } from '../chatroom';
-  import { SQ } from '../geometry';
+  import { CHAT_PALETTE, chatTime, messageColor } from '../chatroom';
   import { settings } from '../settings.svelte';
-  import { findTheme } from '../theme';
+  import ChatLine from './ChatLine.svelte';
   import { chatroom } from './chatroom.svelte';
+  import { darkMode } from './darkMode.svelte';
+  import { gameroom } from './store.svelte';
 
-  const theme = $derived(findTheme(settings.theme));
   const view = $derived(chatroom.view);
   const roomState = $derived(view?.state ?? 'out');
 
@@ -20,16 +18,6 @@
   let log: HTMLElement | undefined = $state();
   let input: HTMLInputElement | undefined = $state();
   let picking = $state(false);
-  /** Spoilers the user has revealed, by event id. */
-  let revealed = $state(new Set<number>());
-
-  const isDark = () => document.documentElement.dataset.theme === 'dark';
-  let dark = $state(isDark());
-  $effect(() => {
-    const watch = new MutationObserver(() => (dark = isDark()));
-    watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => watch.disconnect();
-  });
 
   // Asked more often while in view; what's shown counts as read.
   $effect(() => {
@@ -75,57 +63,8 @@
     input?.focus();
   }
 
-  /** Shows or hides a spoiler again; not when the click ends a text
-   * selection in it. */
-  function toggleSpoiler(e: ChatEventView) {
-    if (window.getSelection()?.toString()) return;
-    const next = new Set(revealed);
-    if (!next.delete(e.id)) next.add(e.id);
-    revealed = next;
-  }
-
-  const swatch = (hex: string) => messageColor(hex, dark).color ?? 'var(--text)';
-  const comings = { in: 'came in', out: 'went out', timeout: 'timed out', message: '' } as const;
+  const swatch = (hex: string) => messageColor(hex, darkMode.dark).color ?? 'var(--text)';
 </script>
-
-{#snippet parts(e: ChatEventView)}{#each e.parts as p, i (i)}{#if p.type === 'text'}{p.text}{:else if p.type === 'link'}<a
-        href={p.url}
-        onclick={(ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          api.openUrl(p.url).catch(() => {});
-        }}>{p.url}</a
-      >{:else if p.type === 'face'}<span class="face" title={p.symbol} role="img" aria-label={p.symbol}
-        >{FACE_EMOJI[p.name] ?? p.symbol}</span
-      >{:else}<svg
-        class="piece"
-        viewBox="0 0 {SQ} {SQ}"
-        role="img"
-        aria-label="{p.color} {p.piece}"
-        ><title>{p.color} {p.piece}</title><PieceGlyph piece={{ color: p.color, kind: p.piece }} {theme} /></svg
-      >{/if}{/each}{/snippet}
-
-{#snippet message(e: ChatEventView)}
-  {@const look = messageColor(e.color, dark)}
-  <span class="msg" class:emote={e.emote} style:color={look.color}>
-    <span class="name">{e.user}</span>{#if !e.emote}{' '}{/if}{#if look.spoiler}{@const shown = revealed.has(e.id)}<span
-        class="spoiler"
-        class:hidden={!shown}
-        role="button"
-        tabindex="0"
-        aria-pressed={shown}
-        aria-label={shown ? undefined : 'Spoiler, hidden'}
-        title={shown ? 'Spoiler: click to hide' : 'Spoiler: click to show'}
-        onclick={() => toggleSpoiler(e)}
-        onkeydown={(k) => {
-          if (k.key === 'Enter' || k.key === ' ') {
-            k.preventDefault();
-            toggleSpoiler(e);
-          }
-        }}>{@render parts(e)}</span
-      >{:else}{@render parts(e)}{/if}
-  </span>
-{/snippet}
 
 <div class="room">
   {#if roomState === 'out' || roomState === 'entering'}
@@ -134,6 +73,7 @@
         <h2 id="chat-out-title">Chat room</h2>
         <span class="spacer"></span>
         {#if chatroom.count > 0}<span class="muted">{chatroom.count} in the room</span>{/if}
+        <button onclick={() => gameroom.show('archive')} title="Earlier days of the room, kept here">Archive</button>
       </div>
       {#if view?.note}<p class="note" role="status">{view.note}</p>{/if}
       <p>The gameroom's chat, for everyone logged in to arimaa.com.</p>
@@ -159,6 +99,7 @@
         {/each}
       </ul>
       <span class="spacer"></span>
+      <button onclick={() => gameroom.show('archive')} title="Earlier days of the room, kept here">Archive</button>
       <button
         onclick={() => chatroom.leave()}
         disabled={chatroom.busy}
@@ -168,14 +109,7 @@
     {#if view?.note}<p class="note" role="status">{view.note}</p>{/if}
     <div class="log" bind:this={log} role="log" aria-label="Chat room" aria-live="polite">
       {#each view?.events ?? [] as e (e.id)}
-        <div class="line" class:coming={e.kind !== 'message'}>
-          <time class="time" datetime={new Date(e.time * 1000).toISOString()}>{chatTime(e.time)}</time>
-          {#if e.kind === 'message'}
-            {@render message(e)}
-          {:else}
-            <span><span class="name">{e.user}</span> {comings[e.kind]}</span>
-          {/if}
-        </div>
+        <ChatLine event={e} time={chatTime} />
       {:else}
         <p class="empty">Nothing said lately.</p>
       {/each}
@@ -314,52 +248,6 @@
     font-size: 14px;
     line-height: 1.45;
     overflow-wrap: anywhere;
-  }
-  .line {
-    display: flex;
-    gap: 8px;
-  }
-  .time {
-    flex: none;
-    color: var(--muted);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    padding-top: 1px;
-  }
-  .coming {
-    color: var(--muted);
-    font-style: italic;
-  }
-  .msg .name {
-    font-weight: 600;
-  }
-  .msg.emote {
-    font-style: italic;
-  }
-  .coming .name {
-    font-weight: 600;
-  }
-  .spoiler {
-    cursor: pointer;
-    padding: 0 3px;
-    border-radius: 3px;
-    outline: 1px dashed var(--muted);
-    outline-offset: 0;
-  }
-  .spoiler.hidden {
-    background: var(--muted);
-    color: transparent;
-  }
-  .spoiler.hidden * {
-    visibility: hidden;
-  }
-  .face {
-    font-style: normal;
-  }
-  .piece {
-    width: 1.3em;
-    height: 1.3em;
-    vertical-align: -0.3em;
   }
   .say {
     display: flex;

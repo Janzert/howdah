@@ -9,6 +9,11 @@ young).
 
 ### Added
 
+- The chat room's archive, as a panel that needs no login: a calendar
+  of the days kept here (messages and people each day, with part-kept
+  days marked), and any day to read. Opening a day gets only what isn't
+  kept yet from arimaa.com, and what you see in the chat room is kept
+  as you go.
 - The gameroom's chat room, as a panel in the arimaa.com lobby: enter
   and leave, who's there, the room's log with its faces, piece symbols,
   links, `/me` and colors, and a color of your own. Messages in white,

@@ -36,15 +36,23 @@ export function savePref(key: string, value: string) {
 
 /** The arimaa.com panels opened from the overview, each listed under
  * arimaa.com in the lobby's sidebar once opened. */
-export type GameroomTab = 'bots' | 'watch' | 'finished' | 'players' | 'chat';
+export type GameroomTab = 'bots' | 'watch' | 'finished' | 'players' | 'chat' | 'archive';
 
-export const GAMEROOM_PANELS: { id: GameroomTab; label: string; icon: 'bot' | 'eye' | 'record' | 'users' | 'chat' }[] = [
+export const GAMEROOM_PANELS: {
+  id: GameroomTab;
+  label: string;
+  icon: 'bot' | 'eye' | 'record' | 'users' | 'chat' | 'calendar';
+}[] = [
   { id: 'bots', label: 'Bots', icon: 'bot' },
   { id: 'watch', label: 'Watch', icon: 'eye' },
   { id: 'finished', label: 'Finished games', icon: 'record' },
   { id: 'players', label: 'Players', icon: 'users' },
   { id: 'chat', label: 'Chat room', icon: 'chat' },
+  { id: 'archive', label: 'Chat archive', icon: 'calendar' },
 ];
+
+/** The panels that work without logging in. */
+export const NO_LOGIN_PANELS: GameroomTab[] = ['archive'];
 
 /** Opens a game window whose session `start` makes a gameroom game
  * (opening, joining or creating one), or brings forward the window that
