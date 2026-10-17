@@ -209,7 +209,7 @@ fn link_text(cell: &str) -> Option<String> {
 }
 
 /// `link` made absolute against the page at `base`.
-fn resolve(base: &str, link: &str) -> String {
+pub(crate) fn resolve(base: &str, link: &str) -> String {
     if link.starts_with("http://") || link.starts_with("https://") {
         return link.to_string();
     }

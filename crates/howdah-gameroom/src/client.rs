@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 
 use howdah_arimaa::Color;
 
+use crate::announcements::Announcement;
 use crate::bots::{
     BotInfo, BotLadder, ServerBot, parse_bot_ladder, parse_bot_list, parse_bot_page, start_reply_text,
 };
@@ -545,6 +546,11 @@ pub struct LobbyGames {
     /// logged in with their email address instead.
     pub user_id: Option<String>,
     pub username: Option<String>,
+    /// The gameroom's announcements (`announce`), as the server orders
+    /// them (newest first, as seen).
+    pub announcements: Vec<Announcement>,
+    /// The server's clock at the reply (`time`, Unix seconds).
+    pub time: Option<i64>,
 }
 
 impl LobbyGames {
@@ -585,6 +591,8 @@ impl LobbyGames {
             online,
             user_id: r.object("me").and_then(|me| me.nonempty("id")),
             username: r.object("me").and_then(|me| me.nonempty("username")),
+            announcements: r.list("announce").iter().filter_map(Announcement::from_record).collect(),
+            time: r.int("time"),
         }
     }
 }

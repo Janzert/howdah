@@ -9,6 +9,9 @@ young).
 
 ### Added
 
+- The arimaa.com lobby shows the gameroom's announcements edited in the
+  last 90 days, each with a Hide button; older and hidden ones are under
+  "Older announcements". Their links open in the system's browser.
 - The arimaa.com lobby lists who's logged in to the gameroom, with an
   Invite button for players who take invitations; it fills in the New
   game form's opponent.

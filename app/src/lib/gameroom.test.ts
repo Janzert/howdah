@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveGameView } from './bindings/LiveGameView';
 import type { WatchView } from './bindings/WatchView';
-import { mySide, myTurn, newOpponentChat, watchSounds } from './gameroom';
+import type { AnnouncementView } from './bindings/AnnouncementView';
+import { announcementKey, mySide, myTurn, newOpponentChat, splitAnnouncements, watchSounds } from './gameroom';
 
 function game(gold: string | null, silver: string | null, turn: LiveGameView['turn']): LiveGameView {
   return { gid: '1', gold, silver, timeControl: '1d/30d/100/0/0', rated: false, postal: true, turn };
@@ -85,5 +86,30 @@ describe('watchSounds', () => {
     expect(watchSounds(null, seat({ chat: [line('silver', 'hi')] }))).toEqual([]);
     expect(watchSounds(seat({ gid: '6', waiting: true }), seat())).toEqual([]);
     expect(watchSounds(seat({ side: null }), seat({ side: null, away: [false, true] }))).toEqual([]);
+  });
+});
+
+describe('splitAnnouncements', () => {
+  const DAY = 24 * 3600;
+  const announcement = (age: number | null, text: string): AnnouncementView => ({
+    modified: age == null ? null : 1_000_000_000 - age,
+    age,
+    blocks: [{ item: false, spans: [{ text, bold: false, italic: false, link: null }] }],
+  });
+
+  it('shows only recent ones that are not hidden', () => {
+    const recent = announcement(10 * DAY, 'recent');
+    const hidden = announcement(DAY, 'hidden');
+    const old = announcement(400 * DAY, 'old');
+    const undated = announcement(null, 'undated');
+    const split = splitAnnouncements([hidden, recent, old, undated], new Set([announcementKey(hidden)]));
+    expect(split.fresh).toEqual([recent]);
+    expect(split.older).toEqual([hidden, old, undated]);
+  });
+
+  it('shows a hidden one again once it is edited', () => {
+    const before = announcement(5 * DAY, 'news');
+    const edited = announcement(DAY, 'news');
+    expect(splitAnnouncements([edited], new Set([announcementKey(before)])).fresh).toEqual([edited]);
   });
 });

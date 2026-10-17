@@ -182,7 +182,13 @@ plans the engine test and tournament runner.
     (`state`'s `online`, in `LobbyGames.online`, without those idle over
     `ONLINE_IDLE` as in the browser lobby), with `invite_me` (the
     gameroom's invite icon), `idle` (their last lobby request) and
-    `busy`. `Error::Expired` is a lobby session
+    `busy`. `announcements`: `Announcement` (`state`'s `announce`, in
+    `LobbyGames.announcements`, with the reply's `time`): `modified`
+    (the last edit, not the posting) and the HTML message read into
+    `Block`s of styled `Span`s (`parse_message`: paragraphs, list items,
+    bold, italic, http(s) links resolved from the gameroom; comments,
+    scripts and other markup dropped), so no server HTML reaches the
+    app. `Error::Expired` is a lobby session
     that's gone (an ASIP error or the "Session Expired" page).
   - `puzzles`: the puzzle pages (`/arimaa/puzzles/`, no login, the
     same Referer gate as the gameroom): `parse_puzzle_list` (`list.cgi`,
@@ -688,7 +694,14 @@ plans the engine test and tournament runner.
     as `gameroom://invitation`; accepted, the lobby opens a window playing
     it), and an Invitations section lists them with
     Accept (`accept_gameroom_invitation`, which also takes the seat),
-    Decline and Cancel. "Online" lists who's logged in
+    Decline and Cancel. Announcements (`GameroomGames.announcements`,
+    `AnnouncementView` with `age` by the server's clock) show under the
+    login when edited within `FRESH_ANNOUNCEMENT_S` (90 days,
+    `splitAnnouncements` in `lib/gameroom.ts`) and not hidden (Hide,
+    kept in localStorage by `announcementKey`, which an edit changes);
+    the rest are under "Older announcements". Links go to `open_url`
+    (http(s) only, the system's browser through the `open` crate; from
+    the dev bridge too). "Online" lists who's logged in
     (`GameroomGames.online`; idle over `ONLINE_IDLE` left out), with
     Invite, which fills in the New game form's Opponent, for those who
     take invitations and aren't busy (bots may be), once their `idle` has moved since

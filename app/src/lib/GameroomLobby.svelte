@@ -5,6 +5,7 @@
   // opens a game window for it (`onOpen`).
   import { onMount, tick } from 'svelte';
   import { type Api, api, errorMessage } from './api';
+  import type { AnnouncementView } from './bindings/AnnouncementView';
   import type { BotInfoView } from './bindings/BotInfoView';
   import type { Color } from './bindings/Color';
   import type { GameResult } from './bindings/GameResult';
@@ -20,7 +21,7 @@
   import type { ServerBotsView } from './bindings/ServerBotsView';
   import type { WinReason } from './bindings/WinReason';
   import { on } from './events';
-  import { mySide as sideIn, myTurn as turnIn } from './gameroom';
+  import { announcementKey, mySide as sideIn, splitAnnouncements, myTurn as turnIn } from './gameroom';
 
   interface Props {
     /** Opens a game window whose session `start` makes a gameroom game
@@ -412,6 +413,33 @@
     message?.focus();
   }
 
+  /** Announcements the user hid, by `announcementKey`. */
+  let hiddenAnnouncements = $state(new Set(pref('gameroom.hiddenAnnouncements').split('\n').filter((k) => k)));
+  let showOlderAnnouncements = $state(false);
+  const announcements = $derived(splitAnnouncements(games?.announcements ?? [], hiddenAnnouncements));
+
+  function hideAnnouncement(a: AnnouncementView) {
+    // Only the keys of announcements still listed are kept.
+    const listed = new Set((games?.announcements ?? []).map(announcementKey));
+    hiddenAnnouncements = new Set([...hiddenAnnouncements, announcementKey(a)].filter((k) => listed.has(k)));
+    savePref('gameroom.hiddenAnnouncements', [...hiddenAnnouncements].join('\n'));
+  }
+
+  function announcementDate(a: AnnouncementView): string {
+    return a.modified == null
+      ? 'Undated'
+      : new Date(a.modified * 1000).toLocaleDateString(undefined, { dateStyle: 'medium' });
+  }
+
+  async function openLink(e: MouseEvent, url: string) {
+    e.preventDefault();
+    try {
+      await api.openUrl(url);
+    } catch (err) {
+      error = errorMessage(err);
+    }
+  }
+
   const incoming = $derived(games?.invitations.filter((i) => i.incoming) ?? []);
   const outgoing = $derived(games?.invitations.filter((i) => !i.incoming) ?? []);
 
@@ -490,6 +518,22 @@
   }
 </script>
 
+{#snippet announcement(a: AnnouncementView)}
+  {#each a.blocks as b, i (i)}
+    <p class:item={b.item}>
+      {#each b.spans as s, j (j)}
+        {#if s.link}
+          <a href={s.link} class:bold={s.bold} class:italic={s.italic} onclick={(e) => openLink(e, s.link!)}
+            >{s.text}</a
+          >
+        {:else}
+          <span class:bold={s.bold} class:italic={s.italic}>{s.text}</span>
+        {/if}
+      {/each}
+    </p>
+  {/each}
+{/snippet}
+
 <section aria-labelledby="watch-title">
   <h2 id="watch-title">arimaa.com</h2>
   {#if user === null}
@@ -530,6 +574,29 @@
       Logged in as <strong>{user}</strong>
       <button class="subtle" onclick={logout} disabled={busy}>Log out</button>
     </div>
+    {#each announcements.fresh as a (announcementKey(a))}
+      <aside class="announcement" aria-label="Announcement from arimaa.com">
+        {@render announcement(a)}
+        <div class="announcement-meta">
+          {announcementDate(a)}
+          <button class="subtle" onclick={() => hideAnnouncement(a)}>Hide</button>
+        </div>
+      </aside>
+    {/each}
+    {#if announcements.older.length > 0}
+      <button class="subtle" onclick={() => (showOlderAnnouncements = !showOlderAnnouncements)}
+        aria-expanded={showOlderAnnouncements}
+        >{showOlderAnnouncements ? 'Hide older announcements' : `Older announcements (${announcements.older.length})`}</button
+      >
+      {#if showOlderAnnouncements}
+        {#each announcements.older as a (announcementKey(a))}
+          <aside class="announcement older" aria-label="Older announcement from arimaa.com">
+            {@render announcement(a)}
+            <div class="announcement-meta">{announcementDate(a)}</div>
+          </aside>
+        {/each}
+      {/if}
+    {/if}
     {#if incoming.length > 0 || outgoing.length > 0}
       <h3>Invitations</h3>
       <ul class="games" aria-label="Invitations">
@@ -924,6 +991,39 @@
     align-items: center;
     gap: 6px;
     font-size: 13px;
+  }
+  .announcement {
+    font-size: 13px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+  }
+  .announcement.older {
+    border-left-color: var(--border);
+    margin-top: 6px;
+  }
+  .announcement p {
+    margin: 4px 0;
+    white-space: pre-line;
+  }
+  .announcement p.item {
+    display: list-item;
+    margin-left: 1.2em;
+  }
+  .announcement .bold {
+    font-weight: 600;
+  }
+  .announcement .italic {
+    font-style: italic;
+  }
+  .announcement-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--muted);
   }
   .who {
     display: flex;

@@ -49,19 +49,19 @@ use std::time::{Duration, Instant};
 
 use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
-    Actions, Asip, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http, Invitation, InviteOutcome,
-    Lobby, LobbyGames, OnlinePlayer, Opened, PastGame, RecentGame, Role, ViewerSeat, parse_chat,
-    parse_result,
+    Actions, Announcement, Asip, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http, Invitation,
+    InviteOutcome, Lobby, LobbyGames, OnlinePlayer, Opened, PastGame, RecentGame, Role, ViewerSeat,
+    parse_chat, parse_result,
 };
 use tokio::sync::Notify;
 
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, BotInfoView, ChatLineView, GameroomGames, GameroomStatus, InvitationAnswer,
-    InvitationOutcome, InvitationView, LiveGameView, OnlinePlayerView, PastGameView, PlayerGamesView,
-    PlayerMatchView, PostalGameView, RecentGameView, ServerBotView, ServerBotsView, StartedBotView,
-    WatchState, WatchView,
+    AnimStep, AnnouncementBlock, AnnouncementSpan, AnnouncementView, ApiError, BotInfoView, ChatLineView,
+    GameroomGames, GameroomStatus, InvitationAnswer, InvitationOutcome, InvitationView, LiveGameView,
+    OnlinePlayerView, PastGameView, PlayerGamesView, PlayerMatchView, PostalGameView, RecentGameView,
+    ServerBotView, ServerBotsView, StartedBotView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -375,6 +375,11 @@ impl Gameroom {
             open: views(games.open),
             invitations,
             online: games.online.into_iter().map(online_view).collect(),
+            announcements: games
+                .announcements
+                .into_iter()
+                .map(|a| announcement_view(a, games.time))
+                .collect(),
         };
         *lock(&self.last_games) = Some(games.clone());
         games
@@ -710,6 +715,23 @@ fn invitation_view(i: Invitation, incoming: bool) -> InvitationView {
         other_id: if incoming { i.inviter_id } else { i.invited_id },
         created: i.created,
     }
+}
+
+fn announcement_view(a: Announcement, now: Option<i64>) -> AnnouncementView {
+    let blocks = a
+        .blocks
+        .into_iter()
+        .map(|b| AnnouncementBlock {
+            item: b.item,
+            spans: b
+                .spans
+                .into_iter()
+                .map(|s| AnnouncementSpan { text: s.text, bold: s.bold, italic: s.italic, link: s.link })
+                .collect(),
+        })
+        .collect();
+    let age = a.modified.zip(now).map(|(m, now)| (now - m).max(0));
+    AnnouncementView { modified: a.modified, age, blocks }
 }
 
 fn online_view(p: OnlinePlayer) -> OnlinePlayerView {

@@ -398,6 +398,11 @@ pub fn gameroom_game_session(state: State<Backend>, gid: String) -> Option<Sessi
 }
 
 #[tauri::command]
+pub fn open_url(state: State<Backend>, url: String) -> Result<(), ApiError> {
+    state.open_url(&url)
+}
+
+#[tauri::command]
 pub fn gameroom_last_games(state: State<Backend>) -> Option<GameroomGames> {
     state.gameroom_last_games()
 }

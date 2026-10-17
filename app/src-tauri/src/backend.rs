@@ -695,6 +695,15 @@ impl Backend {
         self.gameroom.games().await
     }
 
+    /// Opens a web page in the system's browser (links in the gameroom's
+    /// announcements). Only http(s) URLs.
+    pub fn open_url(&self, url: &str) -> Result<(), ApiError> {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            return Err(ApiError::state("only web pages can be opened"));
+        }
+        open::that_detached(url).map_err(|e| ApiError::state(format!("couldn't open {url}: {e}")))
+    }
+
     /// The gameroom's lists as last fetched, without asking the server.
     pub fn gameroom_last_games(&self) -> Option<GameroomGames> {
         self.gameroom.last_games()
@@ -1154,6 +1163,7 @@ impl Backend {
             "gameroom_logout" => ok(self.gameroom_logout().await?),
             "gameroom_games" => ok(self.gameroom_games().await?),
             "gameroom_last_games" => ok(self.gameroom_last_games()),
+            "open_url" => ok(self.open_url(&arg::<String>(args, "url")?)?),
             "gameroom_game_session" => ok(self.gameroom_game_session(&arg::<String>(args, "gid")?)),
             "gameroom_postal_games" => ok(self.gameroom_postal_games().await?),
             "invite_gameroom_player" => ok(self

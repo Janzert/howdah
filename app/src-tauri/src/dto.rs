@@ -1080,6 +1080,44 @@ pub struct GameroomGames {
     pub invitations: Vec<InvitationView>,
     /// Who is logged in to the gameroom, the user among them.
     pub online: Vec<OnlinePlayerView>,
+    /// The gameroom's announcements, newest first as the server gives them.
+    pub announcements: Vec<AnnouncementView>,
+}
+
+/// A gameroom announcement, read from its HTML into styled text.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AnnouncementView {
+    /// When it was last edited (Unix seconds). An edit makes an old one
+    /// new again.
+    #[ts(type = "number | null")]
+    pub modified: Option<i64>,
+    /// How long ago that was by the server's clock, in seconds.
+    #[ts(type = "number | null")]
+    pub age: Option<i64>,
+    pub blocks: Vec<AnnouncementBlock>,
+}
+
+/// A paragraph of an announcement, or a list item.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AnnouncementBlock {
+    pub item: bool,
+    pub spans: Vec<AnnouncementSpan>,
+}
+
+/// A run of an announcement's text in one style; `\n` is a line break.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AnnouncementSpan {
+    pub text: String,
+    pub bold: bool,
+    pub italic: bool,
+    /// An http(s) URL, opened in the system's browser (`open_url`).
+    pub link: Option<String>,
 }
 
 /// A player logged in to the gameroom.

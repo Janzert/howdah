@@ -32,6 +32,7 @@
 //!
 //! `examples/probe.rs` runs these against the live server by hand.
 
+pub mod announcements;
 pub mod bots;
 pub mod client;
 pub mod clock_sync;
@@ -42,6 +43,7 @@ pub mod puzzles;
 pub mod state;
 pub mod wire;
 
+pub use announcements::{Announcement, Block, Span};
 pub use bots::{BotInfo, BotLadder, LadderBot, ServerBot};
 pub use client::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog,

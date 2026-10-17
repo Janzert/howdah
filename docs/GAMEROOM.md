@@ -131,6 +131,16 @@ architecture. Decided and checked against the live server in October 2026.
   shown as plain text
   (the server stores them as sent), and empty messages aren't sent (the
   server would add an empty line).
+- **Announcements.** `state`'s `announce` list gives each
+  announcement's HTML and `modified`, the time of its last edit. The
+  gameroom keeps them for years (in 2026 the oldest was from 2018), so
+  Howdah shows only those edited in the last 90 days by the server's
+  clock, each with Hide, and keeps the rest under "Older
+  announcements". An edit makes one new again, hidden or not. The HTML
+  is read in the backend into plain styled text (paragraphs, list
+  items, bold, italic, web links), never shown as HTML, and links open
+  in the system's browser. The `welcome` message (help for new members
+  of the browser lobby) isn't shown.
 - **Invitations.** ASIP has none, so they use the browser lobby's pages:
   the New game form's Opponent field invites a player, a background wait
   on the inviter's waiting page brings the answer (accepted, the game

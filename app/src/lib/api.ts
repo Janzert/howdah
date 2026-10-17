@@ -180,6 +180,8 @@ function makeApi(sid: () => SessionId | null) {
     /** The lists as last fetched (by the lobby's poll or a refresh), without
      * asking the server; null while logged out. */
     gameroomLastGames: () => invoke<GameroomGames | null>('gameroom_last_games'),
+    /** Opens an http(s) URL in the system's browser. */
+    openUrl: (url: string) => invoke<void>('open_url', { url }),
     /** The session following arimaa.com game `gid` (its gameroom id), if
      * one does: that game's window. */
     gameroomGameSession: (gid: string) => invoke<SessionId | null>('gameroom_game_session', { gid }),
