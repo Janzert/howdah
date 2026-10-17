@@ -214,10 +214,11 @@ pub fn run() {
             // timed out of it a minute later (both are in its log).
             if let tauri::RunEvent::Exit = _event {
                 let backend = _app.state::<Backend>();
-                let _ = tauri::async_runtime::block_on(tokio::time::timeout(
-                    std::time::Duration::from_secs(2),
-                    backend.leave_chatroom(),
-                ));
+                // The timeout is made inside the runtime: a tokio timer
+                // made outside one panics.
+                let _ = tauri::async_runtime::block_on(async {
+                    tokio::time::timeout(std::time::Duration::from_secs(2), backend.leave_chatroom()).await
+                });
             }
             // The dock icon brings back a hidden lobby.
             #[cfg(target_os = "macos")]

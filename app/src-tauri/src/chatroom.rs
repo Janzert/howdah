@@ -452,6 +452,17 @@ mod tests {
         assert!(!leaves(&game(r#""rated":"0","event":"Casual game","#)));
     }
 
+    /// As the app's exit hook leaves the room: from outside any runtime,
+    /// with the timeout made inside the one `block_on` uses.
+    #[test]
+    fn leaving_on_exit_runs_outside_a_runtime() {
+        let room = ChatRoom::new(Arc::new(NullSink));
+        let left = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(Duration::from_secs(2), room.leave(None)).await
+        });
+        assert!(matches!(left, Ok(Ok(()))));
+    }
+
     #[test]
     fn events_arrive_once_and_in_order() {
         let room = ChatRoom::new(Arc::new(NullSink));

@@ -159,7 +159,11 @@
         {/each}
       </ul>
       <span class="spacer"></span>
-      <button class="subtle" onclick={() => chatroom.leave()} disabled={chatroom.busy}>Leave</button>
+      <button
+        onclick={() => chatroom.leave()}
+        disabled={chatroom.busy}
+        title="Leave the chat room (the room shows you going out)">Leave the room</button
+      >
     </div>
     {#if view?.note}<p class="note" role="status">{view.note}</p>{/if}
     <div class="log" bind:this={log} role="log" aria-label="Chat room" aria-live="polite">
