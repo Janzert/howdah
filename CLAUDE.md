@@ -721,11 +721,11 @@ plans the engine test and tournament runner.
     the lists (`start`). `GameroomFrame.svelte` is every panel's header
     (who's logged in, Refresh, Log out or Close), `LoginForm.svelte` until
     logged in, and the last error. `GameroomScreen.svelte` (the arimaa.com
-    panel): buttons opening the other panels (`GAMEROOM_PANELS`), then
-    `Overview` (fresh announcements; Your games: invitations, the user's
+    panel): `Overview` (fresh announcements; Your games: invitations, the user's
     games and invitations sent, with New game and Play a bot; Open games;
-    the first few live and recently finished games and who's online,
-    linking to the other panels; older announcements).
+    the first few live and recently finished games and who's online;
+    its sections' buttons open the other panels: Play a bot, Live and
+    postal games, More…, Players; older announcements).
     `GameroomPanel.svelte` shows one of the others, each listed under
     arimaa.com in the sidebar once opened, until closed: `BotsTab` (the
     list beside the chosen bot), `WatchTab` (live and postal games, with a

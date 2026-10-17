@@ -1,7 +1,8 @@
 <script lang="ts">
-  // The arimaa.com screen's first tab: what needs the user (invitations,
+  // The arimaa.com panel's overview: what needs the user (invitations,
   // their games, fresh announcements), ways to start a game, and the top
-  // of each list, with links to the tabs holding the rest.
+  // of each list, with buttons opening the panels holding the rest (Bots,
+  // Watch, Finished games, Players).
   import Icon from '../Icon.svelte';
   import type { Color } from '../bindings/Color';
   import type { LiveGameView } from '../bindings/LiveGameView';
@@ -154,7 +155,7 @@
       <div class="card-head">
         <h2 id="gr-live-title">Live now {#if games}<span class="count">{games.live.length}</span>{/if}</h2>
         <span class="spacer"></span>
-        <button class="link" onclick={() => gameroom.show('watch')}>Live and postal games</button>
+        <button class="icon" onclick={() => gameroom.show('watch')}><Icon name="eye" size={16} /> Live and postal games</button>
       </div>
       {#if !games}
         <p class="empty">…</p>
@@ -165,7 +166,7 @@
           {#each games.live.slice(0, LIVE_SHOWN) as g (g.gid)}<LiveGameRow game={g} />{/each}
         </ul>
         {#if games.live.length > LIVE_SHOWN}
-          <button class="link more" onclick={() => gameroom.show('watch')}>All {games.live.length} live games</button>
+          <button class="more" onclick={() => gameroom.show('watch')}>All {games.live.length} live games</button>
         {/if}
       {/if}
     </section>
@@ -174,7 +175,7 @@
       <div class="card-head">
         <h2 id="gr-recent-title">Recently finished</h2>
         <span class="spacer"></span>
-        <button class="link" onclick={() => gameroom.show('finished')}>More, and a player's games</button>
+        <button class="icon" onclick={() => gameroom.show('finished')}><Icon name="record" size={16} /> More, and a player's games</button>
       </div>
       {#if !games}
         <p class="empty">…</p>
@@ -191,7 +192,7 @@
       <div class="card-head">
         <h2 id="gr-online-title">Online {#if games}<span class="count">{gameroom.online.length}</span>{/if}</h2>
         <span class="spacer"></span>
-        <button class="link" onclick={() => gameroom.show('players')}>Players</button>
+        <button class="icon" onclick={() => gameroom.show('players')}><Icon name="users" size={16} /> Players</button>
       </div>
       {#if games && gameroom.online.length === 0}
         <p class="empty">Nobody is logged in to the gameroom.</p>
@@ -219,7 +220,7 @@
           {/each}
           {#if gameroom.online.length > ONLINE_SHOWN}
             <li>
-              <button class="link" onclick={() => gameroom.show('players')}
+              <button class="more-chip" onclick={() => gameroom.show('players')}
                 >and {gameroom.online.length - ONLINE_SHOWN} more</button
               >
             </li>
@@ -289,6 +290,11 @@
   .chip.invitable {
     color: var(--text);
     border-color: var(--accent);
+  }
+  .more-chip {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 12px;
   }
   .chip .rating {
     margin-left: 2px;
