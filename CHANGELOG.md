@@ -128,7 +128,8 @@ young).
   arimaa.com have a Show button.
 - Fast-forward (`p`, between Forward and End) steps through the moves to
   the end of the shown line, each animated; press again to stop.
-- Home offers to download Sharp or OpFor while no engine is installed.
+- Home offers to download Sharp and OpFor, in one click, while no engine
+  is installed.
 - Puzzles is a lobby panel, with a filter and how many of each group are
   solved.
 - In the lists of games and puzzles, a click anywhere on a row opens it.

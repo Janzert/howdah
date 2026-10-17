@@ -6,8 +6,21 @@
   // it outlasts the panels.
   import GameroomFrame from './GameroomFrame.svelte';
   import Overview from './Overview.svelte';
+  import { gameroom } from './store.svelte';
 </script>
 
-<GameroomFrame title="arimaa.com">
+<GameroomFrame title="arimaa.com" {titleExtra}>
   <Overview />
 </GameroomFrame>
+
+{#snippet titleExtra()}
+  {@const older = gameroom.announcements.older.length}
+  {#if older > 0}
+    <button
+      class="subtle"
+      onclick={() => (gameroom.showOlderAnnouncements = !gameroom.showOlderAnnouncements)}
+      aria-expanded={gameroom.showOlderAnnouncements}
+      >{gameroom.showOlderAnnouncements ? 'Hide older announcements' : `Older announcements (${older})`}</button
+    >
+  {/if}
+{/snippet}

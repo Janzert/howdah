@@ -98,6 +98,9 @@ class GameroomStore {
   /** The New game dialog, open with these starting values. */
   newGame = $state<Partial<NewGameSpec> | null>(null);
 
+  /** Whether the overview shows the older (and hidden) announcements too. */
+  showOlderAnnouncements = $state(false);
+
   /** Announcements the user hid, by `announcementKey`. */
   hiddenAnnouncements = $state(new Set(pref('gameroom.hiddenAnnouncements').split('\n').filter((k) => k)));
 

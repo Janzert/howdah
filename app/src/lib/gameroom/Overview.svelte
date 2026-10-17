@@ -2,7 +2,8 @@
   // The arimaa.com panel's overview: what needs the user (invitations,
   // their games, fresh announcements), ways to start a game, and the top
   // of each list, with buttons opening the panels holding the rest (Bots,
-  // Watch, Finished games, Players).
+  // Watch, Finished games, Players). Older announcements show at the top
+  // too while the header's toggle (GameroomScreen) is on.
   import Icon from '../Icon.svelte';
   import type { Color } from '../bindings/Color';
   import type { LiveGameView } from '../bindings/LiveGameView';
@@ -21,7 +22,6 @@
 
   const games = $derived(gameroom.games);
   const busy = $derived(gameroom.busy);
-  let showOlder = $state(false);
 
   /** The free seat of an open game. */
   const freeSide = (g: LiveGameView): Color => (g.gold == null ? 'gold' : 'silver');
@@ -32,11 +32,16 @@
   );
 </script>
 
-{#if gameroom.announcements.fresh.length > 0}
+{#if gameroom.announcements.fresh.length > 0 || (gameroom.showOlderAnnouncements && gameroom.announcements.older.length > 0)}
   <div class="announcements">
     {#each gameroom.announcements.fresh as a (announcementKey(a))}
       <Announcement announcement={a} />
     {/each}
+    {#if gameroom.showOlderAnnouncements}
+      {#each gameroom.announcements.older as a (announcementKey(a))}
+        <Announcement announcement={a} older />
+      {/each}
+    {/if}
   </div>
 {/if}
 
@@ -232,18 +237,6 @@
   </div>
 </div>
 
-{#if gameroom.announcements.older.length > 0}
-  <div class="older">
-    <button class="subtle" onclick={() => (showOlder = !showOlder)} aria-expanded={showOlder}
-      >{showOlder ? 'Hide older announcements' : `Older announcements (${gameroom.announcements.older.length})`}</button
-    >
-    {#if showOlder}
-      {#each gameroom.announcements.older as a (announcementKey(a))}
-        <Announcement announcement={a} older />
-      {/each}
-    {/if}
-  </div>
-{/if}
 
 <style>
   .announcements {
@@ -299,12 +292,5 @@
   }
   .chip .rating {
     margin-left: 2px;
-  }
-  .older {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    margin-top: 16px;
   }
 </style>

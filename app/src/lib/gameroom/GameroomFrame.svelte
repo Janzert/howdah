@@ -12,9 +12,11 @@
     title: string;
     /** Closes the panel (one opened from the overview). */
     onClose?: () => void;
+    /** Beside the title, while logged in. */
+    titleExtra?: Snippet;
     children: Snippet;
   }
-  let { title, onClose, children }: Props = $props();
+  let { title, onClose, titleExtra, children }: Props = $props();
 
   $effect(() => {
     if (gameroom.user) return gameroom.autoRefresh();
@@ -24,6 +26,7 @@
 <div class="screen">
   <header>
     <h1>{title}</h1>
+    {#if gameroom.user && titleExtra}{@render titleExtra()}{/if}
     <span class="spacer"></span>
     {#if gameroom.user}
       <span class="who">Logged in as <strong>{gameroom.user}</strong></span>

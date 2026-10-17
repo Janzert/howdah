@@ -734,7 +734,7 @@ plans the engine test and tournament runner.
     games and invitations sent, with New game and Play a bot; Open games;
     who's online and the first few live and recently finished games;
     its sections' buttons open the other panels: Play a bot, Live and
-    postal games, More…, Players; older announcements).
+    postal games, More…, Players).
     `GameroomPanel.svelte` shows one of the others, each listed under
     arimaa.com in the sidebar once opened, until closed: `BotsTab` (the
     list beside the chosen bot), `WatchTab` (live and postal games, with a
@@ -771,7 +771,8 @@ plans the engine test and tournament runner.
     of the overview when edited within `FRESH_ANNOUNCEMENT_S` (90 days,
     `splitAnnouncements` in `lib/gameroom.ts`) and not hidden (Hide,
     kept in localStorage by `announcementKey`, which an edit changes);
-    the rest are under "Older announcements". Links go to `open_url`
+    the rest show there too while the header's "Older announcements"
+    toggle, beside the title, is on (`showOlderAnnouncements`). Links go to `open_url`
     (http(s) only, the system's browser through the `open` crate; from
     the dev bridge too). The Players panel (and the overview, in brief) lists who's logged in
     (`GameroomGames.online`; idle over `ONLINE_IDLE` left out), with
@@ -963,8 +964,9 @@ plans the engine test and tournament runner.
     from `app.css`'s `dialog` rule; each component sets only its width.
     `SidePicker.svelte` is the Random/Gold/Silver toggle (arimaa.com's New
     game and Bots). `EngineStarter.svelte` is Home's first-run card: with
-    no engine but the bundled test engine, Download buttons for the
-    catalog's suggested engines (Sharp, OpFor). `boardTitle`
+    no engine but the bundled test engine, one Download button for all the
+    catalog's suggested engines (Sharp and OpFor), installed one after
+    another. `boardTitle`
     (`lib/windowList.ts`) names a board without players ("Analysis
     board", "Game record", "New board"); the lobby's list shows a loading
     board as "Loading…" (`followAllBoardLoading`). The sidebar keeps the
