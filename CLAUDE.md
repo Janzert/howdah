@@ -568,26 +568,39 @@ plans the engine test and tournament runner.
     `isGameWindow`); every session command of `api` passes it, and
     `apiFor(id)` gives the same commands on another session (the lobby
     setting up a game window's).
-  - `lib/TestsSection.svelte` (the lobby's Engine tests, under Open
-    windows), `TestDialog.svelte` (one test: results, controls, games to
+  - `lib/TestsScreen.svelte` (the lobby's Engine tests screen: the
+    daemon's state, then the tests as cards, in progress and finished; kept
+    mounted while hidden, for the sidebar's count of games playing),
+    `TestDialog.svelte` (one test: results, controls, games to
     watch or open, and Follow: a window with `HandOff.follow`, whose
     game-end dialog counts down 15 s to the test's next game),
     `NewTestDialog.svelte` and `ArchiveDialog.svelte` (archived tests to
     restore or delete); `lib/tests.ts` words a
     test's state and SPRT.
-  - `Lobby.svelte`, the main window: Play and analyse (New game, Analysis
-    board with the last analysis engine, Open record), Open windows (each
-    game window's `MiniBoard`, players from `lib/windowList.ts`'s
-    `gameTitle`, clocks, and "Your move" from `waitsOnUser`, those first;
-    a click brings the window forward; `lib/openGames.svelte.ts` follows
+  - `Lobby.svelte`, the main window: a sidebar beside one screen. The
+    sidebar (folds to icons and boards, `lobby.sidebar` in localStorage)
+    has the screens (Home, arimaa.com, Engine tests, with badges: what
+    waits on the user on arimaa.com, test games playing), the game
+    windows (each one's `MiniBoard` and title, "Your move" first; a click
+    brings the window forward), and Engines, Settings and Help. The
+    screen shown is kept as `lobby.screen`. `HomeScreen.svelte`: Play and
+    analyse (New game, Analysis board with the last analysis engine, Open
+    record, Position editor, Puzzles, as cards), a note when arimaa.com
+    has invitations or postal moves due, and Open windows as larger cards
+    (`lib/lobbyWindows.ts`'s `listWindow`: players from
+    `lib/windowList.ts`'s `gameTitle`, what kind of game, clocks, and
+    "Your move" from `waitsOnUser`; `lib/openGames.svelte.ts` follows
     every session's view and arimaa.com game, for the lobby and for game
-    windows' Next game), the arimaa.com section
-    (`GameroomLobby.svelte`), and the Engines, Settings and Help dialogs.
+    windows' Next game). The arimaa.com screen is
+    `lib/gameroom/GameroomScreen.svelte`. Lobby styles shared by the
+    screens (cards, row lists, dots, badges) are in `src/lobby.css`, all
+    under `.lobby`; `lib/Icon.svelte` has the line icons.
     It follows every session's `game://changed` and `gameroom://watch`
     (`onEvery` in `lib/events.ts`) and `sessions://changed`. It owns the
     app-wide notifications: invitations and postal moves due (flash,
-    sound, attention, leaving out games open in a window), and an
-    accepted invitation opens a game window playing it. Everything it
+    sound, attention, leaving out games open in a window; the message's
+    Show goes to the arimaa.com screen), and an accepted invitation opens
+    a game window playing it. Everything it
     starts opens a new game window.
   - `lib/windows.ts`: windows. `openGameWindow(prepare, handOff)` calls
     `open_session`, runs `prepare` on the new session (start a match, load
@@ -672,43 +685,59 @@ plans the engine test and tournament runner.
   - `CommentBox.svelte`, under the move list (folded away until opened),
     edits the shown move's comment (the game comment at the start; saved on blur or Ctrl+Enter,
     Esc reverts) and toggles its move glyphs.
-  - `GameroomLobby.svelte` (the lobby's arimaa.com section): the gameroom
+  - `lib/gameroom/` (the lobby's arimaa.com screen). Its state is one
+    store, `store.svelte.ts`'s `gameroom` (login, lists, the bots, postal
+    games, the player search, the tab shown, the New game dialog), so it
+    outlasts tab and screen changes; the lobby gives it the opener for
+    game windows (`setOpener`) and gets the lists (`start`).
+    `GameroomScreen.svelte` holds the header (who's logged in, Refresh,
+    Log out), `LoginForm.svelte` until logged in, then tabs: `Overview`
+    (fresh announcements; Your games: invitations, the user's games and
+    invitations sent, with New game and Play a bot; Open games; the first
+    few live and recently finished games and who's online, linking to the
+    other tabs; older announcements), `BotsTab` (the list beside the
+    chosen bot), `WatchTab` (live and postal games, with a player
+    filter), `FinishedTab` (a player's games, a game by id, recently
+    finished) and `PlayersTab` (online, with Games and Invite).
+    `NewGameDialog.svelte` creates a game or, with an opponent, invites
+    them (Invite anywhere opens it with the opponent filled in).
+    `format.ts` words the rows. The gameroom
     login (with "Remember password"; a saved login fills the username, and
-    the password field says "Saved password"), then the live games with a
-    Watch button each, the recently finished ones with Open, a player
-    search (an exact username goes straight to their games, with "Older
-    games" paging), and a game id field (a permanent id loads a finished
-    game, a gameroom id watches). Above those: the user's games (Play to
-    take their seat again, Cancel while nobody has sat; "Your move" first,
-    from `mygames`' `turn`), the open games others created (Play as the
-    free side), and a New game form (side, time control in the gameroom's
-    format with a few presets, the gameroom's postal ones among them,
-    rated; kept in localStorage). "Show postal games" lists the postal
-    games being played (`gameroom_postal_games`, one page fetch, only when
-    asked), to watch. Postal is the server's call from the time control
+    the password field says "Saved password"); live games have Watch,
+    finished ones Open; the player search goes straight to an exact
+    username's games, with "Older games" paging (a player's Games on the
+    Players tab searches for them); a game id field loads a finished game
+    by its permanent id, or watches by a gameroom id. The user's games
+    have Play to take their seat again, Cancel while nobody has sat ("Your
+    move" first, from `mygames`' `turn`), the open games others created
+    Play as the free side, and the New game dialog takes side, time
+    control in the gameroom's format with a few presets, the gameroom's
+    postal ones among them, and rated (kept in localStorage). The Watch tab lists the postal
+    games being played (`gameroom_postal_games`, one page fetch, when the
+    Watch tab first opens), to watch. Postal is the server's call from the time control
     (days per move, or `0/0/0/0/0`, its "No time limit", which `start`
     makes untimed); `WatchView.postal` labels the panel, and clocks of a
     day or more read `Nd h:mm` (`formatClock`). Invitations: the New
-    game form's Opponent field invites that player instead
+    game dialog's Opponent field invites that player instead
     (`invite_gameroom_player`; a task waits for the answer and sends it
     as `gameroom://invitation`; accepted, the lobby opens a window playing
-    it), and an Invitations section lists them with
+    it), and Your games lists them with
     Accept (`accept_gameroom_invitation`, which also takes the seat),
     Decline and Cancel. Announcements (`GameroomGames.announcements`,
-    `AnnouncementView` with `age` by the server's clock) show under the
-    login when edited within `FRESH_ANNOUNCEMENT_S` (90 days,
+    `AnnouncementView` with `age` by the server's clock) show at the top
+    of the overview when edited within `FRESH_ANNOUNCEMENT_S` (90 days,
     `splitAnnouncements` in `lib/gameroom.ts`) and not hidden (Hide,
     kept in localStorage by `announcementKey`, which an edit changes);
     the rest are under "Older announcements". Links go to `open_url`
     (http(s) only, the system's browser through the `open` crate; from
-    the dev bridge too). "Online" lists who's logged in
+    the dev bridge too). The Players tab (and the overview, in brief) lists who's logged in
     (`GameroomGames.online`; idle over `ONLINE_IDLE` left out), with
-    Invite, which fills in the New game form's Opponent, for those who
+    Invite, which opens the New game dialog with them as the opponent, for those who
     take invitations and aren't busy (bots may be), once their `idle` has moved since
     first seen (`firstIdle`): only then is `inviteme` their setting, and
-    bots on the bot API never move it. "Show server bots" lists the server's bots
+    bots on the bot API never move it. The Bots tab lists the server's bots
     (`gameroom_server_bots`, `ServerBotsView`: every bot and the official
-    ladder, two page fetches, only when asked; "Bot ladder", with the
+    ladder, two page fetches, when the tab first opens; "Bot ladder", with the
     user's place in it, or "All bots"; filter and order); Choose reads the bot's page (`gameroom_bot_info`), and Start
     (`start_gameroom_bot`, the user's side, "Join on creation" and "Keep
     rated", kept in localStorage) starts it and, joining, plays the game
@@ -720,8 +749,8 @@ plans the engine test and tournament runner.
     `gameroom_last_games`): the lobby counts invitations to the user and
     their postal games waiting on their move (`lib/gameroom.ts`'s
     `myTurn`) and announces new ones, and game windows show the count on
-    their Lobby button. The section takes the poll's lists too, refreshes
-    them every 20 s while the lobby is shown, and after an error checks
+    their Lobby button. The screen takes the poll's lists too, refreshes
+    them every 20 s while it's shown, and after an error checks
     the login, showing the login form if it has expired. `WatchPanel.svelte` under the comment box
     shows the followed game's state (spectators don't get the chat),
     "<Side>'s time is up; waiting for arimaa.com to end the game" while

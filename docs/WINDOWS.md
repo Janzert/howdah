@@ -211,7 +211,9 @@ the client has to trust the user and community norms (Brian,
 - `Lobby.svelte` is the main window's root: "Play and analyse" (New game,
   Analysis board, Open record), "Open windows", and the arimaa.com
   section (`GameroomLobby.svelte`, the old dialog as a page), with
-  Engines, Settings and Help in its header. `MAIN_SESSION` is gone: the
+  Engines, Settings and Help in its header. (Since 2026-10-17 a sidebar
+  switches between Home, arimaa.com and Engine tests screens and lists
+  the game windows; the arimaa.com screen is `lib/gameroom/`, in tabs.) `MAIN_SESSION` is gone: the
   backend starts with no sessions, and every session is a game window's.
 - Everything the lobby starts opens a new game window, set up before
   the window opens (`openGameWindow(prepare)` with `apiFor(id)`), so a

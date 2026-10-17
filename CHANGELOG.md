@@ -109,6 +109,19 @@ young).
 
 ### Changed
 
+- The lobby is laid out anew: a sidebar switches between Home, arimaa.com
+  and Engine tests, lists the game windows with a small board each, and
+  holds Engines, Settings and Help; it folds to icons and boards. The
+  arimaa.com screen opens on an overview (invitations and your games,
+  open games, and the first of the live, finished and online lists),
+  with tabs for the server's bots, games to watch (live and postal),
+  finished games (a player's games, a game by id) and players online.
+  New games and invitations go through a New game dialog, which Invite
+  opens with the player filled in. Engine tests show as cards, those in
+  progress apart from the finished. Notifications about arimaa.com have
+  a Show button.
+- A game window's buttons are in tidy rows, with Lobby and Next game
+  apart from the game's tools.
 - A refused third repetition names the moves after which the position
   stood before ("as after 12g and 14g"), as arimaa.com does.
 - Installing an engine update adds the new version as its own engine,

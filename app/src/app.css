@@ -66,3 +66,20 @@ button.primary {
   border-color: var(--accent);
   color: var(--accent-text);
 }
+
+/* Text fields, unless a component styles its own (`:where` keeps this
+ * weaker than any scoped rule). */
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea) {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+:where(input, select, textarea, button):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

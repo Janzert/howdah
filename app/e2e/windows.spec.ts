@@ -84,6 +84,30 @@ test('the lobby opens a record in a window', async ({ page, context }) => {
   await expect(openWindows(page)).toHaveCount(1);
 });
 
+test('the sidebar switches screens, lists game windows, and folds to boards', async ({ page, context }) => {
+  await lobby(page);
+  const sidebar = page.getByRole('navigation', { name: 'Lobby' });
+  await sidebar.getByRole('button', { name: 'Engine tests' }).click();
+  await expect(page.getByRole('heading', { name: 'Engine tests', level: 1 })).toBeVisible();
+  await sidebar.getByRole('button', { name: 'Home' }).click();
+  const game = await opens(context, () => page.getByRole('button', { name: 'Analysis board' }).click());
+  const listed = sidebar.getByRole('list', { name: 'Game windows' }).getByRole('button');
+  await expect(listed).toHaveCount(1);
+
+  // Folded, the sidebar keeps its buttons (by name) and the window's board,
+  // and stays folded after a reload, on the screen last shown.
+  await sidebar.getByRole('button', { name: 'Collapse the sidebar' }).click();
+  await sidebar.getByRole('button', { name: 'Engine tests' }).click();
+  await page.reload();
+  await expect(sidebar.getByRole('button', { name: 'Expand the sidebar' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Engine tests', level: 1 })).toBeVisible();
+  await expect(listed).toHaveCount(1);
+  await sidebar.getByRole('button', { name: 'Expand the sidebar' }).click();
+  await sidebar.getByRole('button', { name: 'Home' }).click();
+  await game.close();
+  await expect(listed).toHaveCount(0);
+});
+
 test("a game window's Lobby button goes back to the lobby tab", async ({ page, context }) => {
   await lobby(page);
   const game = await opens(context, () => page.getByRole('button', { name: 'Analysis board' }).click());

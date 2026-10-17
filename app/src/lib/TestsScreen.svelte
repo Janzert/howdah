@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The lobby's Engine tests: the howdah-tourney daemon's queue of tests
+  // The lobby window's Engine tests screen: the howdah-tourney daemon's queue of tests
   // (docs/TOURNAMENTS.md). The daemon runs on its own, so tests go on with
   // Howdah closed; this lists them, starts new ones, and opens their games
   // in game windows. Without a daemon it offers to start one. Finished
@@ -12,6 +12,7 @@
   import type { TestView } from './bindings/TestView';
   import type { TourneyStatusView } from './bindings/TourneyStatusView';
   import { on } from './events';
+  import Icon from './Icon.svelte';
   import ArchiveDialog from './ArchiveDialog.svelte';
   import NewTestDialog from './NewTestDialog.svelte';
   import TestDialog from './TestDialog.svelte';
@@ -24,8 +25,11 @@
     onOpenGame: (test: string, pair: number, game: number) => Promise<string | null>;
     /** Opens a game window following a test; resolves as `onOpenGame`. */
     onFollow: (test: string) => Promise<string | null>;
+    /** Gets the number of games playing whenever it changes (the
+     * sidebar's badge). */
+    onPlaying?: (games: number) => void;
   }
-  let { engines, onOpenGame, onFollow }: Props = $props();
+  let { engines, onOpenGame, onFollow, onPlaying }: Props = $props();
 
   let status = $state<TourneyStatusView | null>(null);
   let tests = $state<TestView[]>([]);
@@ -96,6 +100,17 @@
 
   const running = $derived(tests.reduce((n, t) => n + t.running.length, 0));
   const finished = $derived(tests.filter((t) => t.status === 'finished' && t.running.length === 0));
+  $effect(() => onPlaying?.(running));
+
+  /** The tests, newest first: those still going, then the finished. */
+  const groups = $derived.by(() => {
+    const newest = [...tests].reverse();
+    const done = (t: TestView) => t.status === 'finished' && t.running.length === 0;
+    return [
+      { id: 'going', title: 'In progress', tests: newest.filter((t) => !done(t)) },
+      { id: 'finished', title: 'Finished', tests: newest.filter(done) },
+    ];
+  });
 
   function archiveFinished() {
     if (!confirmArchive) {
@@ -132,87 +147,109 @@
   }
 </script>
 
-<section aria-labelledby="tests-title">
-  <h2 id="tests-title">Engine tests</h2>
-  {#if status == null}
-    <p class="hint">Looking for the test daemon…</p>
-  {:else if !status.connected}
-    <p class="hint">
-      Engine tests play two engines against each other until it's clear which is stronger. They run in a test
-      daemon, which goes on with Howdah closed. No daemon is running.
-    </p>
-    {#if status.canStart}
-      <div class="row">
-        <label for="tests-slots">Games at once</label>
-        <input id="tests-slots" type="number" min="1" bind:value={startSlots} />
-        <button onclick={startDaemon} disabled={busy}>Start the test daemon</button>
-      </div>
-    {:else}
-      <p class="hint">Start one with <code>howdah-tourney daemon</code>.</p>
+<div class="screen">
+  <header>
+    <h1>Engine tests</h1>
+    <span class="spacer"></span>
+    {#if status?.connected}
+      <button onclick={() => (showArchive = true)} title="The archived tests, to restore or delete">Archived tests</button>
+      <button class="primary icon" onclick={() => (showNew = true)}><Icon name="plus" size={16} /> New test</button>
     {/if}
-  {:else}
-    <div class="row">
-      <span class="meta">
-        {status.slots ?? '?'} games at once{running > 0 ? `, ${running} playing` : ''}
-      </span>
-      <button class="subtle" onclick={() => setSlots((status?.slots ?? 1) - 1)} disabled={busy || !status.slots}
-        title="One game fewer at once" aria-label="Fewer games at once">−</button>
-      <button class="subtle" onclick={() => setSlots((status?.slots ?? 0) + 1)} disabled={busy}
-        title="One more game at once" aria-label="More games at once">+</button>
-      <span class="spacer"></span>
-      <button class="subtle" onclick={shutdown} disabled={busy}
-        title="Stop the daemon once its running games end; tests carry on when it starts again">Shut down</button>
-      <button class="primary" onclick={() => (showNew = true)}>New test</button>
-    </div>
-    <div class="row">
-      <span class="spacer"></span>
-      <button class="subtle" onclick={() => (showArchive = true)}
-        title="The archived tests, to restore or delete">Archived tests…</button>
-      {#if finished.length > 0}
-        <button
-          class="subtle"
-          class:danger={confirmArchive}
-          onclick={archiveFinished}
-          onblur={() => (confirmArchive = false)}
-          disabled={busy}
-          title="Zip every finished test into the daemon's archive folder and take them off the list"
-          >{confirmArchive ? `Archive ${finished.length} tests?` : `Archive finished (${finished.length})`}</button
-        >
+  </header>
+
+  <section class="card daemon" aria-label="Test daemon">
+    {#if status == null}
+      <p class="empty">Looking for the test daemon…</p>
+    {:else if !status.connected}
+      <p class="about">
+        Engine tests play two engines against each other until it's clear which is stronger. They run in a test
+        daemon, which goes on with Howdah closed. No daemon is running.
+      </p>
+      {#if status.canStart}
+        <div class="fields">
+          <label for="tests-slots">Games at once</label>
+          <input id="tests-slots" type="number" min="1" bind:value={startSlots} />
+          <button class="primary" onclick={startDaemon} disabled={busy}>Start the test daemon</button>
+        </div>
+      {:else}
+        <p class="hint">Start one with <code>howdah-tourney daemon</code>.</p>
       {/if}
-    </div>
-    {#if tests.length === 0}
-      <p class="hint">No tests yet.</p>
     {:else}
-      <ul class="tests" aria-label="Engine tests">
-        {#each [...tests].reverse() as t (t.id)}
-          {@const pos = llrPosition(t)}
-          <li>
-            <button class="test" onclick={() => (shown = t.id)} aria-label="Show test {t.name}">
-              <span class="title">
-                <span class="name">{t.name}</span>
-                <span class="state {testState(t)}">{testState(t)}</span>
-              </span>
-              <span class="meta">{t.engines[0]} vs {t.engines[1]}</span>
-              <span class="meta">
-                {scoreText(t)}{t.elo ? `, Elo ${t.elo}` : ''}{t.running.length > 0
-                  ? `, ${t.running.length} playing`
-                  : ''}
-              </span>
-              {#if pos != null}
-                <span class="llr" title="The SPRT's LLR between its bounds">
-                  <span class="mark" style="left: {pos * 100}%"></span>
-                </span>
+      <div class="fields">
+        <span class="state-dot" aria-hidden="true"></span>
+        <span>Test daemon running</span>
+        <span class="sep">·</span>
+        <span class="slots">
+          <button class="subtle" onclick={() => setSlots((status?.slots ?? 1) - 1)} disabled={busy || !status.slots}
+            title="One game fewer at once" aria-label="Fewer games at once">−</button>
+          <span>{status.slots ?? '?'} {status.slots === 1 ? 'game' : 'games'} at once</span>
+          <button class="subtle" onclick={() => setSlots((status?.slots ?? 0) + 1)} disabled={busy}
+            title="One more game at once" aria-label="More games at once">+</button>
+        </span>
+        {#if running > 0}<span class="sep">·</span><span>{running} playing</span>{/if}
+        <span class="spacer"></span>
+        <button class="subtle" onclick={shutdown} disabled={busy}
+          title="Stop the daemon once its running games end; tests carry on when it starts again">Shut down</button>
+      </div>
+    {/if}
+    {#if status?.dataDir}<p class="hint small">Tests are kept in {status.dataDir}</p>{/if}
+  </section>
+
+  {#if notice}<p class="hint notice" role="status">{notice}</p>{/if}
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
+
+  {#if status?.connected}
+    {#if tests.length === 0}
+      <p class="empty">No tests yet. A new test plays two of your engines against each other.</p>
+    {:else}
+      {#each groups as g (g.title)}
+        {#if g.tests.length > 0}
+          <section class="group" aria-labelledby="tests-{g.id}">
+            <div class="card-head">
+              <h2 id="tests-{g.id}">{g.title} <span class="count">{g.tests.length}</span></h2>
+              <span class="spacer"></span>
+              {#if g.id === 'finished'}
+                <button
+                  class="subtle"
+                  class:danger={confirmArchive}
+                  onclick={archiveFinished}
+                  onblur={() => (confirmArchive = false)}
+                  disabled={busy || finished.length === 0}
+                  title="Zip every finished test into the daemon's archive folder and take them off the list"
+                  >{confirmArchive ? `Archive ${finished.length} tests?` : 'Archive finished'}</button
+                >
               {/if}
-            </button>
-          </li>
-        {/each}
-      </ul>
+            </div>
+            <ul class="tests" aria-label="{g.title} engine tests">
+              {#each g.tests as t (t.id)}
+                {@const pos = llrPosition(t)}
+                <li>
+                  <button class="test" onclick={() => (shown = t.id)} aria-label="Show test {t.name}">
+                    <span class="title">
+                      <span class="name">{t.name}</span>
+                      <span class="state {testState(t)}">{testState(t)}</span>
+                    </span>
+                    <span class="meta">{t.engines[0]} vs {t.engines[1]}</span>
+                    <span class="meta">
+                      {scoreText(t)}{t.elo ? `, Elo ${t.elo}` : ''}{t.running.length > 0
+                        ? `, ${t.running.length} playing`
+                        : ''}
+                    </span>
+                    {#if pos != null}
+                      <span class="llr" title="The SPRT's LLR between its bounds">
+                        <span class="mark" style="left: {pos * 100}%"></span>
+                      </span>
+                    {/if}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
+      {/each}
     {/if}
   {/if}
-  {#if status?.dataDir}<p class="hint small">Tests are kept in {status.dataDir}</p>{/if}
-  {#if notice}<p class="hint small" role="status">{notice}</p>{/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-</section>
+</div>
 
 {#if showArchive}
   <ArchiveDialog
@@ -240,37 +277,72 @@
 {/if}
 
 <style>
-  h2 {
-    margin: 0 0 10px;
-    font-size: 16px;
-  }
-  .row {
+  header {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 8px;
+    gap: 8px;
+    margin-bottom: 14px;
+    min-height: 30px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 20px;
+  }
+  .daemon {
+    margin-bottom: 18px;
+  }
+  .daemon .about {
+    margin: 0 0 10px;
     font-size: 13px;
   }
-  .row input[type='number'] {
+  .daemon input[type='number'] {
+    flex: none;
     width: 4em;
+    min-width: 0;
+  }
+  .state-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--clock-ok);
+  }
+  .sep {
+    color: var(--muted);
+  }
+  .slots {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .small {
+    margin-top: 8px;
+    overflow-wrap: anywhere;
+  }
+  .notice,
+  .error {
+    margin: -6px 0 14px;
+  }
+  .group + .group {
+    margin-top: 20px;
   }
   .tests {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
   }
   .test {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 2px;
+    gap: 3px;
     width: 100%;
-    padding: 6px 8px;
+    height: 100%;
+    padding: 10px 12px;
     text-align: left;
+    border-radius: 10px;
   }
   .title {
     display: flex;
@@ -307,14 +379,10 @@
     color: var(--warn);
     border-color: var(--warn);
   }
-  .meta {
-    color: var(--muted);
-    font-size: 12px;
-  }
   .llr {
     position: relative;
     height: 4px;
-    margin: 4px 0 2px;
+    margin: 6px 0 2px;
     border-radius: 2px;
     background: linear-gradient(to right, var(--warn), var(--border) 50%, var(--clock-ok));
   }
@@ -325,29 +393,5 @@
     height: 10px;
     margin-left: -1px;
     background: var(--text);
-  }
-  .hint {
-    margin: 0 0 8px;
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .small {
-    margin: 8px 0 0;
-    overflow-wrap: anywhere;
-  }
-  .error {
-    color: var(--warn);
-    font-size: 13px;
-  }
-  .spacer {
-    flex: 1;
-  }
-  .subtle {
-    font-size: 12px;
-    padding: 2px 8px;
-    color: var(--muted);
-  }
-  .subtle.danger {
-    color: var(--warn);
   }
 </style>

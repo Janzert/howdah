@@ -1,0 +1,223 @@
+/* Shared by the lobby window's screens (Lobby.svelte and what it shows):
+ * cards, lists of games and players, and their small labels. Everything
+ * is under `.lobby`, so game windows are left alone. */
+
+.lobby .card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.lobby .card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.lobby .card-head h2,
+.lobby .card-head h3 {
+  margin: 0;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lobby .card-head .count {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lobby .spacer {
+  flex: 1;
+}
+
+/* A list of rows: games, players, bots, invitations. */
+.lobby .list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.lobby .list > li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  min-height: 34px;
+}
+
+.lobby .list > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.lobby .list > li.highlight {
+  background: var(--hover);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.lobby .list > li.selected {
+  background: var(--hover);
+}
+
+.lobby .list.scroll {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* A row's text: a main line and a muted line under it. */
+.lobby .row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lobby .row-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.lobby .row-line .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lobby .meta {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lobby .vs {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lobby .rating {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lobby .dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+.lobby .dot.gold {
+  background: #e3b23c;
+}
+
+.lobby .dot.silver {
+  background: #c9ced6;
+}
+
+.lobby .badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.lobby .tag {
+  flex: none;
+  font-size: 11px;
+  line-height: 15px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.lobby .hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lobby .empty {
+  margin: 0;
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.lobby .error {
+  margin: 0;
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.lobby button.subtle {
+  font-size: 12px;
+  padding: 2px 8px;
+  color: var(--muted);
+}
+
+.lobby button.subtle.danger {
+  color: var(--warn);
+}
+
+/* A button that reads as a link: "All 12 live games". */
+.lobby button.link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.lobby button.link:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}
+
+.lobby button.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* A row of form fields. */
+.lobby .fields {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.lobby .fields input:not([type='checkbox'], [type='number']) {
+  flex: 1;
+  min-width: 8em;
+}
+
+.lobby .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
