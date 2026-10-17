@@ -516,6 +516,11 @@ pub enum ViewerSeat {
     Asip { why: String },
 }
 
+/// How long since a player's last lobby request (`idle`) they still count
+/// as online, in seconds. The browser lobby's list leaves out anyone idle
+/// longer; the server keeps them in `online` for about two minutes.
+pub const ONLINE_IDLE: i64 = 60;
+
 /// The lobby's game lists, from one `state` request.
 #[derive(Clone, Debug, Default)]
 pub struct LobbyGames {
@@ -532,7 +537,8 @@ pub struct LobbyGames {
     /// (`iinvitedgames`).
     pub invited_me: Vec<Invitation>,
     pub i_invited: Vec<Invitation>,
-    /// Who is logged in to the gameroom (`online`), the user among them.
+    /// Who is logged in to the gameroom (`online`), the user among them,
+    /// apart from those idle over [`ONLINE_IDLE`] seconds.
     pub online: Vec<OnlinePlayer>,
     /// The user's player id and username (`me`). The username is the
     /// gameroom's name for them, which the lists use; they may have
@@ -557,6 +563,18 @@ impl LobbyGames {
             .filter(|g| !mine.iter().any(|m| m.gid == g.gid))
             .collect();
         let invitations = |key: &str| r.list(key).iter().filter_map(Invitation::from_record).collect();
+        let busy: Vec<String> =
+            r.object("busy").map(|b| b.fields.keys().cloned().collect()).unwrap_or_default();
+        let online = r
+            .list("online")
+            .iter()
+            .filter_map(OnlinePlayer::from_record)
+            .filter(|p| match (r.int("time"), p.idle) {
+                (Some(time), Some(idle)) => time - idle <= ONLINE_IDLE,
+                _ => true,
+            })
+            .map(|p| OnlinePlayer { busy: busy.contains(&p.id), ..p })
+            .collect();
         LobbyGames {
             live: games("livegames"),
             recent: r.list("recentgames").iter().filter_map(RecentGame::from_record).collect(),
@@ -564,7 +582,7 @@ impl LobbyGames {
             open,
             invited_me: invitations("invitedmegames"),
             i_invited: invitations("iinvitedgames"),
-            online: r.list("online").iter().filter_map(OnlinePlayer::from_record).collect(),
+            online,
             user_id: r.object("me").and_then(|me| me.nonempty("id")),
             username: r.object("me").and_then(|me| me.nonempty("username")),
         }
@@ -1465,6 +1483,20 @@ mod tests {
         let open = &games.open[0];
         assert_eq!((open.gid.as_str(), open.rated), ("8", true));
         assert_eq!(open.players, [None, Some("them".into())]);
+    }
+
+    #[test]
+    fn online_leaves_out_the_idle_and_marks_the_busy() {
+        let r = Record::decode(
+            r#"{"time":1000,"busy":{"2":"1"},"online":[
+              {"id":"1","username":"here","idle":"940"},
+              {"id":"2","username":"playing","idle":"999"},
+              {"id":"3","username":"gone","idle":"939"}]}"#,
+        )
+        .unwrap();
+        let online = LobbyGames::from_state(&r).online;
+        let names: Vec<_> = online.iter().map(|p| (p.username.as_str(), p.busy)).collect();
+        assert_eq!(names, [("here", false), ("playing", true)]);
     }
 
     #[test]

@@ -26,9 +26,17 @@ pub struct OnlinePlayer {
     /// Whether they take invitations: the browser lobby shows its invite
     /// icon for `inviteme` above 0 (it has been seen as `"2 "`). A new
     /// login shows it on until its first `state` applies the account's
-    /// setting; see the private notes. The server accepts an invitation
-    /// either way: the flag is only the player's wish.
+    /// setting, and a bot on the bot API never asks for one; see the
+    /// private notes. The server accepts an invitation either way: the
+    /// flag is only the player's wish.
     pub invite_me: bool,
+    /// When they last asked the lobby for anything (`idle`, Unix seconds;
+    /// a login counts). It moves only for clients that poll the lobby, as
+    /// one that answers invitations must.
+    pub idle: Option<i64>,
+    /// Whether the reply's `busy` names them; the browser lobby offers no
+    /// invitation then.
+    pub busy: bool,
 }
 
 impl OnlinePlayer {
@@ -43,6 +51,8 @@ impl OnlinePlayer {
             country: info_field("country"),
             bot: info_field("type").as_deref() == Some("b"),
             invite_me: r.int("inviteme").is_some_and(|n| n > 0),
+            idle: r.int("idle"),
+            busy: false,
         })
     }
 }
@@ -290,6 +300,8 @@ mod tests {
                     country: Some("US".into()),
                     bot: false,
                     invite_me: false,
+                    idle: Some(1792219360),
+                    busy: false,
                 },
                 OnlinePlayer {
                     id: "9".into(),
@@ -299,6 +311,8 @@ mod tests {
                     country: None,
                     bot: true,
                     invite_me: true,
+                    idle: None,
+                    busy: false,
                 },
             ]
         );

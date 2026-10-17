@@ -5,6 +5,13 @@
  */
 export type OnlinePlayerView = { username: string, rating: string | null, title: string | null, country: string | null, bot: boolean, 
 /**
- * Whether they take invitations (their gameroom setting).
+ * Whether they take invitations (their gameroom setting), and
+ * whether they're busy (no invitations, as in the browser lobby).
  */
-inviteMe: boolean, };
+inviteMe: boolean, busy: boolean, 
+/**
+ * When they last asked the lobby for anything, in Unix seconds. It
+ * moves only for clients that poll the lobby (a new login's
+ * `inviteme` isn't its setting until it has).
+ */
+idle: number | null, };

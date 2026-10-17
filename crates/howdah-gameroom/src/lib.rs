@@ -45,7 +45,7 @@ pub mod wire;
 pub use bots::{BotInfo, BotLadder, LadderBot, ServerBot};
 pub use client::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog,
-    Opened, Seat, ViewerSeat,
+    ONLINE_IDLE, Opened, Seat, ViewerSeat,
 };
 pub use clock_sync::ClockSync;
 pub use finished::{FinishedGame, RecentGame};

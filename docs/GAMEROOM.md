@@ -46,7 +46,7 @@ architecture. Decided and checked against the live server in October 2026.
 - One ASIP 2.0 `state` request gives the live games, the last few
   finished, the user's games, the open games and the invitations. The
   lobby window asks every 20 s while it's shown (as the browser lobby
-  does), and a lobby watcher asks every minute while the user is logged
+  does), and a lobby watcher asks every 50 s while the user is logged
   in, also while the lobby is hidden: it counts invitations to the user
   and keeps the login alive. The backend keeps the last lists, so a game
   window opened between polls shows the counts at once.
@@ -136,10 +136,18 @@ architecture. Decided and checked against the live server in October 2026.
   on the inviter's waiting page brings the answer (accepted, the game
   opens in a new window; declined, with the reason), and the lobby lists invitations
   both ways with Accept, Decline and Cancel. The Online list (who's
-  logged in, from `state`'s `online`) has Invite for players who take
-  invitations (`inviteme`, the browser lobby's invite icon), which fills
-  in the Opponent field; the server takes an invitation to anyone, so
-  the flag is only the player's wish.
+  logged in, from `state`'s `online`, leaving out anyone whose last
+  lobby request, `idle`, is over 60 s old, as the browser lobby does)
+  has Invite, which fills in the Opponent field, for players who take
+  invitations (`inviteme`, the browser lobby's invite icon) and aren't
+  `busy`, once their `idle` has moved since Howdah first saw them. The
+  flag is only the player's wish (the server takes an invitation to
+  anyone), and it isn't their setting until a lobby request of theirs
+  applies it: a new login shows it on. A bot on the bot API
+  (`gameroom.py`) never asks the lobby for anything, so its `idle`
+  never moves and it gets no button; the browser lobby leaves bots out
+  altogether. A bot whose controller polls the lobby, as one that
+  answers invitations must, shows with Invite.
 - **Server bots** (4steps's bot launcher): the lobby's "Show server
   bots" fetches, only when asked, the official bot ladder (about 30
   bots, ranked around the user: those above are the ones they have yet
@@ -162,7 +170,7 @@ architecture. Decided and checked against the live server in October 2026.
   move, or the gameroom's "No time limit", `0/0/0/0/0`, which is played
   untimed). The New game form offers the gameroom's postal time controls,
   clocks of a day or more read `Nd h:mm`, and the user's games show which
-  wait on the user's move. While logged in, the lobby check every minute
+  wait on the user's move. While logged in, the lobby check every 50 s
   counts those in the lobby and on the game windows' Lobby button, and the
   lobby announces new ones (games open in a window aside). The lobby's list has no turn before the first
   move, which is taken as gold's setup.

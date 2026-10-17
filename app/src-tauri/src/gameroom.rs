@@ -78,8 +78,10 @@ pub const LOBBY_UPDATE: &str = "gameroom://lobby";
 
 /// How often the lobby watcher asks for the lobby's state (the browser
 /// lobby asks every 20 s while it's open). It also keeps the login from
-/// expiring while idle.
-const LOBBY_POLL: Duration = Duration::from_secs(60);
+/// expiring while idle, and the user in the gameroom's list of who's
+/// online, which leaves out anyone whose last lobby request is over 60 s
+/// old (`howdah_gameroom::ONLINE_IDLE`).
+const LOBBY_POLL: Duration = Duration::from_secs(50);
 
 /// How long a started server bot has to open its game, and how often
 /// the open games are checked meanwhile. A bot starts as a new process,
@@ -718,6 +720,8 @@ fn online_view(p: OnlinePlayer) -> OnlinePlayerView {
         country: p.country,
         bot: p.bot,
         invite_me: p.invite_me,
+        busy: p.busy,
+        idle: p.idle,
     }
 }
 

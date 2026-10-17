@@ -17,7 +17,7 @@ export interface EventMap {
   'analysis://update': AnalysisView;
   /** The followed arimaa.com game's state, when it changes. */
   'gameroom://watch': WatchView;
-  /** The lobby's lists, every minute while logged in to arimaa.com. */
+  /** The lobby's lists, every 50 s while logged in to arimaa.com. */
   'gameroom://lobby': GameroomGames;
   /** How an invitation the user sent was answered. */
   'gameroom://invitation': InvitationAnswer;

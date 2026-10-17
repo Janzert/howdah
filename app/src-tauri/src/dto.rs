@@ -1092,8 +1092,15 @@ pub struct OnlinePlayerView {
     pub title: Option<String>,
     pub country: Option<String>,
     pub bot: bool,
-    /// Whether they take invitations (their gameroom setting).
+    /// Whether they take invitations (their gameroom setting), and
+    /// whether they're busy (no invitations, as in the browser lobby).
     pub invite_me: bool,
+    pub busy: bool,
+    /// When they last asked the lobby for anything, in Unix seconds. It
+    /// moves only for clients that poll the lobby (a new login's
+    /// `inviteme` isn't its setting until it has).
+    #[ts(type = "number | null")]
+    pub idle: Option<i64>,
 }
 
 /// An open invitation to play, to the user (`incoming`) or from them.

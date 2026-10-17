@@ -220,7 +220,7 @@
   const REFRESH_MS = 20_000;
 
   onMount(() => {
-    // The backend's poll, every minute while logged in.
+    // The backend's poll, every 50 s while logged in.
     const unlisten = on('gameroom://lobby', (g) => {
       if (user && g.user === user) games = g;
     });
@@ -364,6 +364,38 @@
   const online = $derived(
     [...(games?.online ?? [])].sort((a, b) =>
       a.username.localeCompare(b.username, undefined, { sensitivity: 'base' }),
+    ),
+  );
+
+  /** Each player's `idle` when first seen in the lists for `seenFor`.
+   * Invite waits until it moves: a client that asks the lobby for
+   * anything gets its account's invitation setting applied (a new login
+   * shows invitations on until then), while a bot on the bot API, which
+   * never sees invitations, never moves it. Not reactive: `invitable`
+   * reads it as each new list arrives, before this effect adds the
+   * newcomers. */
+  let firstIdle = new Map<string, number | null>();
+  let seenFor: string | null = null;
+  $effect(() => {
+    const g = games;
+    if (!g?.user || g.user !== user) {
+      seenFor = null;
+      return;
+    }
+    const known = seenFor === g.user ? firstIdle : new Map<string, number | null>();
+    seenFor = g.user;
+    firstIdle = new Map(
+      g.online.map((p) => [p.username, known.has(p.username) ? known.get(p.username)! : p.idle]),
+    );
+  });
+  /** The players to offer Invite for: those who take invitations, aren't
+   * busy, and have used the lobby since they were first seen. */
+  const invitable = $derived(
+    new Set(
+      online
+        .filter((p) => p.inviteMe && !p.busy && p.username !== user)
+        .filter((p) => p.idle != null && p.idle > (firstIdle.get(p.username) ?? Infinity))
+        .map((p) => p.username),
     ),
   );
 
@@ -595,7 +627,7 @@
               {#if me}<span class="tag">you</span>{/if}
             </span>
             {#if p.country}<span class="meta">{p.country}</span>{/if}
-            {#if p.inviteMe && !me}
+            {#if invitable.has(p.username)}
               <button onclick={() => inviteFromList(p)} disabled={busy} aria-label="Invite {p.username}"
                 title="Fill in the New game form to invite {p.username}">Invite</button
               >
@@ -603,7 +635,7 @@
           </li>
         {/each}
       </ul>
-      <p class="hint">Invite is offered for players who take invitations.</p>
+      <p class="hint">Invite is offered for players who take invitations, once they've been seen using the gameroom lobby.</p>
     {/if}
     <h3>New game</h3>
     <form class="new-game" onsubmit={createGame}>
