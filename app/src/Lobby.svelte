@@ -445,7 +445,9 @@
     }
   }
 
-  const nav = $derived<{ id: string; label: string; icon: IconName; badge: number; badgeTitle: string }[]>([
+  const nav = $derived<
+    { id: string; label: string; icon: IconName; badge: number; badgeTitle: string; offline?: boolean }[]
+  >([
     { id: 'home', label: 'Home', icon: 'home', badge: 0, badgeTitle: '' },
     {
       id: 'gameroom',
@@ -453,6 +455,8 @@
       icon: 'globe',
       badge: invitationCount + postalTurns.length,
       badgeTitle: 'Invitations and postal games waiting on you',
+      // Known to be logged out (not while the backend hasn't said yet).
+      offline: gameroom.user === null,
     },
     { id: 'tests', label: 'Engine tests', icon: 'flask', badge: tourney.playing, badgeTitle: 'Test games playing now' },
   ]);
@@ -466,17 +470,25 @@
 
 <svelte:window {onkeydown} />
 
-{#snippet navItem(item: { id: string; label: string; icon: IconName; badge?: number; badgeTitle?: string })}
+{#snippet navItem(item: {
+  id: string;
+  label: string;
+  icon: IconName;
+  badge?: number;
+  badgeTitle?: string;
+  offline?: boolean;
+})}
   <button
     class="nav-item bare"
     class:on={selected === item.id}
     aria-current={selected === item.id ? 'page' : undefined}
     onclick={() => select(item.id)}
-    title={collapsed ? item.label : undefined}
-    aria-label={item.label}
+    title={collapsed ? `${item.label}${item.offline ? ' (not logged in)' : ''}` : undefined}
+    aria-label={item.offline ? `${item.label}, not logged in` : item.label}
   >
     <Icon name={item.icon} />
     {#if !collapsed}<span class="label">{item.label}</span>{/if}
+    {#if item.offline}<span class="offline" title="Not logged in"><Icon name="offline" size={14} /></span>{/if}
     {#if item.badge}<span class="badge" title={item.badgeTitle}>{item.badge}</span>{/if}
   </button>
 {/snippet}
@@ -823,6 +835,18 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+  .offline {
+    display: flex;
+    color: var(--muted);
+  }
+  .collapsed .offline {
+    position: absolute;
+    bottom: 1px;
+    right: 8px;
+    padding: 1px;
+    border-radius: 50%;
+    background: var(--panel);
   }
   .collapsed .badge {
     position: absolute;

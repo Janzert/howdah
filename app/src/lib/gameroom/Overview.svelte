@@ -151,43 +151,6 @@
   </div>
 
   <div class="column">
-    <section class="card" aria-labelledby="gr-live-title">
-      <div class="card-head">
-        <h2 id="gr-live-title">Live now {#if games}<span class="count">{games.live.length}</span>{/if}</h2>
-        <span class="spacer"></span>
-        <button class="icon" onclick={() => gameroom.show('watch')}><Icon name="eye" size={16} /> Live and postal games</button>
-      </div>
-      {#if !games}
-        <p class="empty">…</p>
-      {:else if games.live.length === 0}
-        <p class="empty">No games are being played right now.</p>
-      {:else}
-        <ul class="list" aria-label="Live games">
-          {#each games.live.slice(0, LIVE_SHOWN) as g (g.gid)}<LiveGameRow game={g} />{/each}
-        </ul>
-        {#if games.live.length > LIVE_SHOWN}
-          <button class="more" onclick={() => gameroom.show('watch')}>All {games.live.length} live games</button>
-        {/if}
-      {/if}
-    </section>
-
-    <section class="card" aria-labelledby="gr-recent-title">
-      <div class="card-head">
-        <h2 id="gr-recent-title">Recently finished</h2>
-        <span class="spacer"></span>
-        <button class="icon" onclick={() => gameroom.show('finished')}><Icon name="record" size={16} /> More, and a player's games</button>
-      </div>
-      {#if !games}
-        <p class="empty">…</p>
-      {:else if games.recent.length === 0}
-        <p class="empty">The gameroom lists no finished games.</p>
-      {:else}
-        <ul class="list" aria-label="Recently finished games">
-          {#each games.recent.slice(0, RECENT_SHOWN) as g (g.gid)}<RecentGameRow game={g} />{/each}
-        </ul>
-      {/if}
-    </section>
-
     <section class="card" aria-labelledby="gr-online-title">
       <div class="card-head">
         <h2 id="gr-online-title">Online {#if games}<span class="count">{gameroom.online.length}</span>{/if}</h2>
@@ -228,6 +191,44 @@
         </ul>
       {/if}
     </section>
+
+    <section class="card" aria-labelledby="gr-live-title">
+      <div class="card-head">
+        <h2 id="gr-live-title">Live now {#if games}<span class="count">{games.live.length}</span>{/if}</h2>
+        <span class="spacer"></span>
+        <button class="icon" onclick={() => gameroom.show('watch')}><Icon name="eye" size={16} /> Live and postal games</button>
+      </div>
+      {#if !games}
+        <p class="empty">…</p>
+      {:else if games.live.length === 0}
+        <p class="empty">No games are being played right now.</p>
+      {:else}
+        <ul class="list" aria-label="Live games">
+          {#each games.live.slice(0, LIVE_SHOWN) as g (g.gid)}<LiveGameRow game={g} />{/each}
+        </ul>
+        {#if games.live.length > LIVE_SHOWN}
+          <button class="more" onclick={() => gameroom.show('watch')}>All {games.live.length} live games</button>
+        {/if}
+      {/if}
+    </section>
+
+    <section class="card" aria-labelledby="gr-recent-title">
+      <div class="card-head">
+        <h2 id="gr-recent-title">Recently finished</h2>
+        <span class="spacer"></span>
+        <button class="icon" onclick={() => gameroom.show('finished')}><Icon name="record" size={16} /> More, and a player's games</button>
+      </div>
+      {#if !games}
+        <p class="empty">…</p>
+      {:else if games.recent.length === 0}
+        <p class="empty">The gameroom lists no finished games.</p>
+      {:else}
+        <ul class="list" aria-label="Recently finished games">
+          {#each games.recent.slice(0, RECENT_SHOWN) as g (g.gid)}<RecentGameRow game={g} />{/each}
+        </ul>
+      {/if}
+    </section>
+
   </div>
 </div>
 

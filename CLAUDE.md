@@ -587,8 +587,8 @@ plans the engine test and tournament runner.
     test's state and SPRT.
   - `Lobby.svelte`, the main window: a sidebar beside one panel. The
     sidebar (folds to icons and boards, `lobby.sidebar` in localStorage)
-    lists the panels: Home, arimaa.com (with the arimaa.com panels opened
-    from its overview indented under it), Engine tests (with the tests
+    lists the panels: Home, arimaa.com (an offline mark while logged
+    out; the arimaa.com panels opened from its overview indented under it), Engine tests (with the tests
     opened under it, each with its state, score and LLR), badges (what
     waits on the user on arimaa.com, test games playing), Open boards
     (each one's `MiniBoard` and title, "Your move" first; a click shows
@@ -723,7 +723,7 @@ plans the engine test and tournament runner.
     logged in, and the last error. `GameroomScreen.svelte` (the arimaa.com
     panel): `Overview` (fresh announcements; Your games: invitations, the user's
     games and invitations sent, with New game and Play a bot; Open games;
-    the first few live and recently finished games and who's online;
+    who's online and the first few live and recently finished games;
     its sections' buttons open the other panels: Play a bot, Live and
     postal games, More…, Players; older announcements).
     `GameroomPanel.svelte` shows one of the others, each listed under
