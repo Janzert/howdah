@@ -126,6 +126,8 @@ young).
   the site's names. Engine tests show as cards; each test opens in its
   own panel, listed under Engine tests with its score. Notifications about
   arimaa.com have a Show button.
+- An arimaa.com game opens its board at once, with a spinner until the
+  game has loaded (or what went wrong, and Close).
 - A board's buttons are in tidy rows, with Lobby, Dock or Pop out and Next
   game apart from the game's tools; "New window" is "New board".
 - A refused third repetition names the moves after which the position

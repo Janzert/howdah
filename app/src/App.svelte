@@ -48,7 +48,8 @@
   import { countNext, pickNext } from './lib/nextGame';
   import { OpenGames } from './lib/openGames.svelte';
   import { gameTitle, testGameLabel, waitsOnUser } from './lib/windowList';
-  import { dockWindow, guardClose, openBoard, popOut, rememberSize, showBoard, showLobby, takeHandOff } from './lib/windows';
+  import { type BoardLoading, followBoardLoading, readBoardLoading } from './lib/boardLoading';
+  import { closeThisBoard, dockWindow, guardClose, openBoard, popOut, rememberSize, showBoard, showLobby, takeHandOff } from './lib/windows';
 
   function pref(key: string): string | null {
     try {
@@ -109,6 +110,10 @@
   // The game-end sound waits for the final move too, with the dialog.
   let gameEndSound: SoundName | null = null;
   const handOff = takeHandOff();
+  /** Set while the board waits for its game (an arimaa.com game opened
+   * before it loaded), or with the error if loading failed. */
+  let loading = $state<BoardLoading | null>(session != null ? readBoardLoading(session) : null);
+  $effect(() => (session != null ? followBoardLoading(session, (l) => (loading = l)) : undefined));
   /** The last match started from the new-game dialog, for a rematch. */
   let lastSpec = $state<MatchSpec | null>(handOff?.spec ?? null);
   /** The position editor's starting position while it's open: the window
@@ -419,7 +424,9 @@
       return;
     }
     const { gid, side } = next;
-    await openBoard((a) => a.playGameroomGame(gid, side)).catch((e) => flash(errorMessage(e)));
+    await openBoard((a) => a.playGameroomGame(gid, side), undefined, 'Taking your seat on arimaa.com…').catch((e) =>
+      flash(errorMessage(e)),
+    );
   }
 
   // The title names the game, and says when it waits on the user.
@@ -803,6 +810,20 @@
         <ChatPanel {watch} {view} />
       {/if}
       {#if message}<div class="message" role="status">{message}</div>{/if}
+      {#if loading}
+        <div class="loading" role={loading.error ? 'alert' : 'status'} aria-live="polite">
+          <div class="loading-box">
+            {#if loading.error}
+              <strong>Couldn't open the game</strong>
+              <span>{loading.error}</span>
+              <button class="primary" onclick={() => closeThisBoard()}>Close</button>
+            {:else}
+              <span class="spinner" aria-hidden="true"></span>
+              <span>{loading.text}</span>
+            {/if}
+          </div>
+        </div>
+      {/if}
     </section>
 
     <aside class="panel">
@@ -1111,6 +1132,46 @@
     }
     100% {
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    }
+  }
+  .loading {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.25);
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+  }
+  .loading-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: min(420px, 80%);
+    padding: 18px 22px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+    font-size: 14px;
+    text-align: center;
+  }
+  .loading-box strong {
+    color: var(--warn);
+  }
+  .spinner {
+    width: 26px;
+    height: 26px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
     }
   }
   .message {

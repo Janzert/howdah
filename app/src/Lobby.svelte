@@ -24,6 +24,7 @@
   import CloseWindowDialog from './lib/CloseWindowDialog.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
   import { on } from './lib/events';
+  import { clearAllBoardLoading, clearBoardLoading } from './lib/boardLoading';
   import { type FrameRequest, requestClose, serveFrames } from './lib/frames';
   import { myTurn } from './lib/gameroom';
   import GameroomPanel from './lib/gameroom/GameroomPanel.svelte';
@@ -178,6 +179,14 @@
     if (selected.startsWith('board:') && !docked.includes(Number(selected.slice(6)))) leave(selected, 'home');
   });
 
+  // A closed board's loading state goes with it.
+  let knownIds: SessionId[] = [];
+  $effect(() => {
+    const ids = games.ids;
+    for (const id of knownIds) if (!ids.includes(id)) clearBoardLoading(id);
+    knownIds = [...ids];
+  });
+
   // Tests archived or deleted elsewhere close their panels.
   $effect(() => {
     if (!tourney.status?.connected) return;
@@ -196,13 +205,15 @@
   }
 
   /** Opens a board set up by `prepare` (a panel or a window, as the
-   * Settings say); resolves to an error message, or null. */
+   * Settings say; with `loading`, shown at once, saying that until it's
+   * set up); resolves to an error message, or null. */
   async function openNew(
     prepare?: (a: Api) => Promise<void>,
     spec: MatchSpec | null = null,
+    loading?: string,
   ): Promise<string | null> {
     try {
-      await openBoard(prepare, { spec });
+      await openBoard(prepare, { spec }, loading);
       return null;
     } catch (e) {
       return errorMessage(e);
@@ -231,7 +242,15 @@
     game?: { gid: string; play: boolean },
   ): Promise<string | null> {
     const id = game ? await api.gameroomGameSession(game.gid).catch(() => null) : null;
-    if (id == null) return openNew(start);
+    if (id == null) {
+      // The board shows at once and waits for arimaa.com there.
+      const loading = game?.play
+        ? 'Taking your seat on arimaa.com…'
+        : game
+          ? `Opening game ${game.gid} from arimaa.com…`
+          : 'Setting up the game on arimaa.com…';
+      return openNew(start, null, loading);
+    }
     try {
       if (game?.play && games.watches[id]?.side == null) await start(apiFor(id));
       showListed(id);
@@ -350,6 +369,7 @@
 
   onMount(() => {
     unlockOnInteraction();
+    clearAllBoardLoading();
     const stopFollowing = games.follow();
     const stopTourney = tourney.start();
     gameroom.setOpener(openGameroom);

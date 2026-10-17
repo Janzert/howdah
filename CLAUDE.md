@@ -630,7 +630,12 @@ plans the engine test and tournament runner.
     `WebviewWindow` labelled `game-<id>` in Tauri, `window.open` in the
     browser preview (tabs are named, `nameTab`, so `showLobby` and
     `focusGameWindow` find them); from a game window, a window; from a
-    docked board, as the lobby decides (`askLobby`). `showBoard(id)` shows
+    docked board, as the lobby decides (`askLobby`). With `loading` (the
+    lobby's arimaa.com games, Next game's postal game) the board is shown
+    first and `prepare` runs after: `lib/boardLoading.ts` keeps the
+    board's state in localStorage, and App shows a spinner with the text,
+    or the error with Close (`closeThisBoard`); the lobby clears it at
+    start and when the board closes. `showBoard(id)` shows
     a board wherever it is; `popOut` (a docked board) and `dockWindow` (a
     game window) move one. The hand-off (the match spec, for a rematch)
     goes through localStorage, read once by the board (`takeHandOff`;

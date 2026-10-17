@@ -9,10 +9,11 @@
 // while game windows are open (`lib.rs`). In the browser preview a window
 // is a tab, named so the others can find it, and a game window's tab
 // closes its session itself on `pagehide`.
-import { type Api, api, apiFor, isDocked, isGameWindow, session } from './api';
+import { type Api, api, apiFor, errorMessage, isDocked, isGameWindow, session } from './api';
 import type { MatchSpec } from './bindings/MatchSpec';
 import type { PositionSpec } from './bindings/PositionSpec';
 import type { SessionId } from './bindings/SessionId';
+import { clearBoardLoading, setBoardLoading } from './boardLoading';
 import { askLobby, onCloseRequest } from './frames';
 import { settings } from './settings.svelte';
 
@@ -48,20 +49,65 @@ export function saveHandOff(id: SessionId, handOff: HandOff) {
  * its own, as the Settings say (from a game window, always a window; from
  * a docked board, the lobby decides). `prepare` sets the session up first
  * (a match, a record, an arimaa.com game), so a failure leaves no board
- * behind; its error is thrown. */
-export async function openBoard(prepare?: (a: Api) => Promise<void>, handOff?: HandOff): Promise<SessionId> {
+ * behind; its error is thrown. With `loading` (what the board waits for,
+ * for setups that wait on the network), the board is shown at once with
+ * that, and `prepare` runs after; if it fails, the board shows the error
+ * (`boardLoading.ts`) and it's thrown too. */
+export async function openBoard(
+  prepare?: (a: Api) => Promise<void>,
+  handOff?: HandOff,
+  loading?: string,
+): Promise<SessionId> {
   const id = await api.openSession();
+  if (loading) {
+    try {
+      if (handOff) saveHandOff(id, handOff);
+      setBoardLoading(id, { text: loading });
+      await present(id);
+    } catch (e) {
+      clearBoardLoading(id);
+      await api.closeSession(id).catch(() => {});
+      throw e;
+    }
+    try {
+      await prepare?.(apiFor(id));
+      clearBoardLoading(id);
+    } catch (e) {
+      setBoardLoading(id, { text: loading, error: errorMessage(e) });
+      throw e;
+    }
+    return id;
+  }
   try {
     await prepare?.(apiFor(id));
     if (handOff) saveHandOff(id, handOff);
-    if (isDocked) askLobby({ kind: 'show', session: id, fresh: true });
-    else if (session == null && !settings.boardsInWindows) await api.setSessionDocked(id, true);
-    else await openWindowFor(id);
+    await present(id);
   } catch (e) {
     await api.closeSession(id).catch(() => {});
     throw e;
   }
   return id;
+}
+
+/** Shows new board `id`, as `openBoard` says. */
+async function present(id: SessionId) {
+  if (isDocked) askLobby({ kind: 'show', session: id, fresh: true });
+  else if (session == null && !settings.boardsInWindows) await api.setSessionDocked(id, true);
+  else await openWindowFor(id);
+}
+
+/** Closes this board (its session ends): a docked one through the lobby,
+ * a window by closing it. Without asking. */
+export async function closeThisBoard() {
+  if (session == null) return;
+  if (isDocked) {
+    askLobby({ kind: 'close' });
+  } else if (inTauri) {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().destroy();
+  } else {
+    window.close();
+  }
 }
 
 /** Opens a game window on session `id`, which is open already (a new
