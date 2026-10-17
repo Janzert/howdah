@@ -172,6 +172,18 @@
     </fieldset>
     <p class="hint">A board can move between the two at any time: Pop out, or Dock in its window.</p>
   </section>
+
+  <section>
+    <h3>arimaa.com chat room</h3>
+    <label class="check">
+      <input type="checkbox" bind:checked={settings.leaveChatForGames} />
+      Leave the chat room for rated and event games
+    </label>
+    <p class="hint">
+      As is the custom in the gameroom: when you play a rated game against a person that isn't postal, or any event
+      game, you leave the chat room as it starts. You can enter again during the game.
+    </p>
+  </section>
   </div>
 </div>
 

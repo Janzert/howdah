@@ -1,8 +1,9 @@
 <script lang="ts">
   // One of the arimaa.com panels opened from the overview (Bots, Watch,
-  // Finished games, Players), listed under arimaa.com in the sidebar until
+  // Finished games, Players, Chat room), listed under arimaa.com in the sidebar until
   // closed.
   import BotsTab from './BotsTab.svelte';
+  import ChatRoomTab from './ChatRoomTab.svelte';
   import FinishedTab from './FinishedTab.svelte';
   import GameroomFrame from './GameroomFrame.svelte';
   import PlayersTab from './PlayersTab.svelte';
@@ -20,6 +21,8 @@
     <WatchTab />
   {:else if panel === 'finished'}
     <FinishedTab />
+  {:else if panel === 'chat'}
+    <ChatRoomTab />
   {:else}
     <PlayersTab />
   {/if}

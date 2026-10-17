@@ -12,6 +12,7 @@ function lists(mine: Partial<LiveGameView>[]): GameroomGames {
     invitations: [],
     online: [],
     announcements: [],
+    chatCount: null,
     mine: mine.map((g) => ({ gold: 'me', silver: 'you', turn: 'gold', postal: true, ...g }) as LiveGameView),
   };
 }

@@ -546,6 +546,12 @@ pub struct LobbyGames {
     /// logged in with their email address instead.
     pub user_id: Option<String>,
     pub username: Option<String>,
+    /// The key to the chat room for the user (`me`'s `auth`; see
+    /// [`ChatClient`](crate::ChatClient)). Keep it out of logs.
+    pub chat_auth: Option<String>,
+    /// How many people are in the chat room (`chatCount`). It lags by up
+    /// to a minute.
+    pub chat_count: Option<u32>,
     /// The gameroom's announcements (`announce`), as the server orders
     /// them (newest first, as seen).
     pub announcements: Vec<Announcement>,
@@ -591,6 +597,8 @@ impl LobbyGames {
             online,
             user_id: r.object("me").and_then(|me| me.nonempty("id")),
             username: r.object("me").and_then(|me| me.nonempty("username")),
+            chat_auth: r.object("me").and_then(|me| me.nonempty("auth")),
+            chat_count: r.int("chatCount").and_then(|n| u32::try_from(n).ok()),
             announcements: r.list("announce").iter().filter_map(Announcement::from_record).collect(),
             time: r.int("time"),
         }
@@ -1472,7 +1480,7 @@ mod tests {
     #[test]
     fn lobby_lists() {
         let r = Record::decode(
-            r#"{"time":1000,"me":{"id":"21","username":"me"},
+            r#"{"time":1000,"me":{"id":"21","username":"me","auth":123456789012},"chatCount":"2",
               "mygames":[{"id":"7","wusername":"me","busername":null,"timecontrol":"2m/5m","rated":"0","turn":"w"}],
               "opengames":[{"id":"7","wusername":"me","busername":""},
                            {"id":"8","wusername":"","busername":"them","timecontrol":"1m/2m","rated":"1","schts":"0"},
@@ -1486,6 +1494,8 @@ mod tests {
         assert_eq!(games.mine[0].players, [Some("me".into()), None]);
         assert_eq!(games.user_id.as_deref(), Some("21"));
         assert_eq!(games.username.as_deref(), Some("me"));
+        assert_eq!(games.chat_auth.as_deref(), Some("123456789012"));
+        assert_eq!(games.chat_count, Some(2));
         assert_eq!(games.mine[0].turn, Some(Color::Gold));
         assert_eq!(games.open.len(), 1);
         let open = &games.open[0];

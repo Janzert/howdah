@@ -41,6 +41,9 @@ export interface SettingsData {
   /** The engine analysis last used (an engine id). */
   analysisEngine: string | null;
   moveTimes: MoveTimes;
+  /** Leave the gameroom's chat room when playing a rated game against a
+   * person that isn't postal, or an event game, as is the custom there. */
+  leaveChatForGames: boolean;
 }
 
 const KEY = 'settings';
@@ -59,6 +62,7 @@ export const DEFAULTS: SettingsData = {
   boardsInWindows: false,
   analysisEngine: null,
   moveTimes: 'off',
+  leaveChatForGames: true,
 };
 
 function read(key: string): string | null {
@@ -101,6 +105,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   if (typeof raw.boardsInWindows === 'boolean') s.boardsInWindows = raw.boardsInWindows;
   if (typeof raw.analysisEngine === 'string') s.analysisEngine = raw.analysisEngine;
   if (raw.moveTimes === 'off' || raw.moveTimes === 'move' || raw.moveTimes === 'game') s.moveTimes = raw.moveTimes;
+  if (typeof raw.leaveChatForGames === 'boolean') s.leaveChatForGames = raw.leaveChatForGames;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
   if (raw.hoverInput === 'off' || raw.hoverInput === 'arrows' || raw.hoverInput === 'step') {
     s.hoverInput = raw.hoverInput;
@@ -181,6 +186,13 @@ class Settings {
   }
   set boardsInWindows(v: boolean) {
     this.update({ boardsInWindows: v });
+  }
+
+  get leaveChatForGames() {
+    return this.#data.leaveChatForGames;
+  }
+  set leaveChatForGames(v: boolean) {
+    this.update({ leaveChatForGames: v });
   }
 
   get analysisEngine() {

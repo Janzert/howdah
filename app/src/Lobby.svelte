@@ -35,6 +35,7 @@
   import GameroomPanel from './lib/gameroom/GameroomPanel.svelte';
   import GameroomScreen from './lib/gameroom/GameroomScreen.svelte';
   import NewGameroomGameDialog from './lib/gameroom/NewGameDialog.svelte';
+  import { chatroom } from './lib/gameroom/chatroom.svelte';
   import { GAMEROOM_PANELS, type GameroomTab, gameroom, pref, savePref } from './lib/gameroom/store.svelte';
   import HelpDialog from './lib/HelpDialog.svelte';
   import HomeScreen from './lib/HomeScreen.svelte';
@@ -151,6 +152,8 @@
   }
 
   function closeGameroomPanel(panel: GameroomTab) {
+    // Nobody should sit in the chat room unseen.
+    if (panel === 'chat' && chatroom.view?.state !== 'out') void chatroom.leave();
     gameroomOpen = gameroomOpen.filter((p) => p !== panel);
     leave(`gameroom:${panel}`, 'gameroom');
   }
@@ -425,6 +428,7 @@
     gameroom.setNavigator(openGameroomPanel);
     // The store passes on the lobby poll's lists (`lobbyGames`).
     const stopGameroom = gameroom.start(lobbyGames);
+    const stopChatroom = chatroom.start();
     const stopFrames = serveFrames(
       () => games.docked.filter((id) => frames[id]).map((id) => ({ session: id, frame: frames[id] })),
       frameRequest,
@@ -457,6 +461,7 @@
       stopFollowing();
       stopTourney();
       stopGameroom();
+      stopChatroom();
       stopFrames();
       unlisteners.forEach((u) => void u.then((f) => f()));
     };
@@ -660,8 +665,15 @@
                     >
                       <Icon name={p.icon} size={16} />
                       {#if !collapsed}<span class="label">{p.label}</span>{/if}
+                      {#if id === 'chat' && chatroom.unread > 0 && selected !== 'gameroom:chat'}<span
+                          class="badge"
+                          title="New messages in the chat room">{chatroom.unread}</span
+                        >{/if}
                     </button>
-                    {@render closeButton(`Close ${p.label}`, () => closeGameroomPanel(id))}
+                    {@render closeButton(
+                      id === 'chat' && chatroom.inRoom ? 'Leave the chat room and close it' : `Close ${p.label}`,
+                      () => closeGameroomPanel(id),
+                    )}
                   </li>
                 {/each}
               </ul>

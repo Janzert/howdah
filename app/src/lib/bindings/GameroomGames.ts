@@ -37,4 +37,9 @@ online: Array<OnlinePlayerView>,
 /**
  * The gameroom's announcements, newest first as the server gives them.
  */
-announcements: Array<AnnouncementView>, };
+announcements: Array<AnnouncementView>, 
+/**
+ * How many people are in the gameroom's chat room (it lags by up to
+ * a minute).
+ */
+chatCount: number | null, };

@@ -2,6 +2,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { session } from './api';
 import type { AnalysisView } from './bindings/AnalysisView';
+import type { ChatRoomView } from './bindings/ChatRoomView';
 import type { EngineOutput } from './bindings/EngineOutput';
 import type { GameroomGames } from './bindings/GameroomGames';
 import type { InvitationAnswer } from './bindings/InvitationAnswer';
@@ -22,6 +23,8 @@ export interface EventMap {
   'gameroom://lobby': GameroomGames;
   /** How an invitation the user sent was answered. */
   'gameroom://invitation': InvitationAnswer;
+  /** The gameroom's chat room, when it changes. */
+  'chatroom://changed': ChatRoomView;
   /** The sessions open now (each a board, in a window or docked in the
    * lobby), when one opens, closes, docks or pops out. */
   'sessions://changed': SessionsChanged;
@@ -41,6 +44,7 @@ export const EVENT_NAMES: (keyof EventMap)[] = [
   'gameroom://watch',
   'gameroom://lobby',
   'gameroom://invitation',
+  'chatroom://changed',
   'sessions://changed',
   'sessions://show',
   'tourney://changed',

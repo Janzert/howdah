@@ -30,12 +30,12 @@ use serde_json::Value;
 
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, ArchivedTestView, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption,
-    EngineOutput, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec,
-    PlayerGamesView, PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView, PositionSpec,
-    PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView,
-    SessionsChanged, ShowBoard, StartedBotView, StepTarget, TestDetailView, TestGameTag, TestView,
-    TourneyStatusView, WatchView,
+    AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatRoomView, EngineCatalogView, EngineIdentity,
+    EngineOption, EngineOutput, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay,
+    NewTestSpec, PlayerGamesView, PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView,
+    PositionSpec, PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate,
+    SessionView, SessionsChanged, ShowBoard, StartedBotView, StepTarget, TestDetailView, TestGameTag,
+    TestView, TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -745,6 +745,37 @@ impl Backend {
         open::that_detached(url).map_err(|e| ApiError::state(format!("couldn't open {url}: {e}")))
     }
 
+    /// The gameroom's chat room as it stands (see `chatroom.rs`).
+    pub fn chatroom_state(&self) -> ChatRoomView {
+        self.gameroom.chat.view()
+    }
+
+    /// Enters the gameroom's chat room. `auto_leave` says whether to leave
+    /// it for games that call for that (rated games between people that
+    /// aren't postal, and event games).
+    pub async fn enter_chatroom(&self, auto_leave: bool) -> Result<ChatRoomView, ApiError> {
+        self.gameroom.chat.set_auto_leave(auto_leave);
+        self.gameroom.enter_chat().await
+    }
+
+    pub async fn leave_chatroom(&self) -> Result<(), ApiError> {
+        self.gameroom.chat.leave(None).await
+    }
+
+    /// Says `text` in the chat room, in `color` (`rrggbb`).
+    pub async fn say_in_chatroom(&self, text: &str, color: &str) -> Result<(), ApiError> {
+        self.gameroom.chat.say(text, color).await
+    }
+
+    /// Whether the chat room's panel is in view (it's asked more often).
+    pub fn set_chatroom_active(&self, active: bool) {
+        self.gameroom.chat.set_active(active);
+    }
+
+    pub fn set_chatroom_auto_leave(&self, on: bool) {
+        self.gameroom.chat.set_auto_leave(on);
+    }
+
     /// The gameroom's lists as last fetched, without asking the server.
     pub fn gameroom_last_games(&self) -> Option<GameroomGames> {
         self.gameroom.last_games()
@@ -1208,6 +1239,20 @@ impl Backend {
             "gameroom_games" => ok(self.gameroom_games().await?),
             "gameroom_last_games" => ok(self.gameroom_last_games()),
             "open_url" => ok(self.open_url(&arg::<String>(args, "url")?)?),
+            "chatroom_state" => ok(self.chatroom_state()),
+            "enter_chatroom" => ok(self.enter_chatroom(arg(args, "autoLeave")?).await?),
+            "leave_chatroom" => ok(self.leave_chatroom().await?),
+            "say_in_chatroom" => ok(self
+                .say_in_chatroom(&arg::<String>(args, "text")?, &arg::<String>(args, "color")?)
+                .await?),
+            "set_chatroom_active" => {
+                self.set_chatroom_active(arg(args, "active")?);
+                ok(())
+            }
+            "set_chatroom_auto_leave" => {
+                self.set_chatroom_auto_leave(arg(args, "on")?);
+                ok(())
+            }
             "gameroom_game_session" => ok(self.gameroom_game_session(&arg::<String>(args, "gid")?)),
             "gameroom_postal_games" => ok(self.gameroom_postal_games().await?),
             "invite_gameroom_player" => ok(self

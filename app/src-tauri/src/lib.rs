@@ -5,6 +5,7 @@
 //! it for the UI.
 
 pub mod backend;
+mod chatroom;
 mod commands;
 mod controller;
 pub mod dto;
@@ -161,6 +162,12 @@ pub fn run() {
             commands::gameroom_games,
             commands::gameroom_last_games,
             commands::open_url,
+            commands::chatroom_state,
+            commands::enter_chatroom,
+            commands::leave_chatroom,
+            commands::say_in_chatroom,
+            commands::set_chatroom_active,
+            commands::set_chatroom_auto_leave,
             commands::gameroom_game_session,
             commands::gameroom_postal_games,
             commands::invite_gameroom_player,
@@ -203,6 +210,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, _event| {
+            // Say goodbye to the gameroom's chat room, rather than being
+            // timed out of it a minute later (both are in its log).
+            if let tauri::RunEvent::Exit = _event {
+                let backend = _app.state::<Backend>();
+                let _ = tauri::async_runtime::block_on(tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    backend.leave_chatroom(),
+                ));
+            }
             // The dock icon brings back a hidden lobby.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event

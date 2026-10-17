@@ -9,6 +9,13 @@ young).
 
 ### Added
 
+- The gameroom's chat room, as a panel in the arimaa.com lobby: enter
+  and leave, who's there, the room's log with its faces, piece symbols,
+  links, `/me` and colors, and a color of your own. Messages in white,
+  the room's spoiler tag, are hidden until clicked, and the color
+  popup's Spoiler sends the next message as one. As is the custom there, Howdah leaves the room when
+  you play a rated game against a person that isn't postal, or an event
+  game (a setting turns this off).
 - The arimaa.com lobby shows the gameroom's announcements edited in the
   last 90 days, each with a Hide button; older and hidden ones are under
   "Older announcements". Their links open in the system's browser.

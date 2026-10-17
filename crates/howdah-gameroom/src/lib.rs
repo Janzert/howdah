@@ -21,6 +21,8 @@
 //!   player's past games ([`PastGames`]). [`Lobby::server_bots`] lists the
 //!   server's bots ([`ServerBot`]), and [`Lobby::start_bot`] starts one,
 //!   which opens a game against the user.
+//! - [`ChatClient`]: the gameroom's chat room (entering, its log, saying
+//!   something, leaving), and [`format_message`], its message formatting.
 //! - [`Puzzles`]: the puzzle pages (the list, each puzzle's answer as
 //!   viewer variables, and its hint), no login needed.
 //! - [`GameServer`]: sit, `gamestate`, and the `updategamestate` long poll
@@ -34,6 +36,7 @@
 
 pub mod announcements;
 pub mod bots;
+pub mod chat;
 pub mod client;
 pub mod clock_sync;
 pub mod finished;
@@ -45,6 +48,9 @@ pub mod wire;
 
 pub use announcements::{Announcement, Block, Span};
 pub use bots::{BotInfo, BotLadder, LadderBot, ServerBot};
+pub use chat::{
+    ChatClient, ChatEvent, ChatKind, DEFAULT_CHAT, Fetched, FormattedMessage, MessagePart, format_message,
+};
 pub use client::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog,
     ONLINE_IDLE, Opened, Seat, ViewerSeat,

@@ -13,6 +13,7 @@
   import LiveGameRow from './LiveGameRow.svelte';
   import Matchup from './Matchup.svelte';
   import RecentGameRow from './RecentGameRow.svelte';
+  import { chatroom } from './chatroom.svelte';
   import { gameroom } from './store.svelte';
 
   /** How many of each list the overview shows. */
@@ -160,6 +161,10 @@
       <div class="card-head">
         <h2 id="gr-online-title">Online {#if games}<span class="count">{gameroom.online.length}</span>{/if}</h2>
         <span class="spacer"></span>
+        <button class="icon" onclick={() => gameroom.show('chat')}
+          ><Icon name="chat" size={16} /> Chat room{#if chatroom.count > 0}<span class="count">{chatroom.count}</span
+            >{/if}</button
+        >
         <button class="icon" onclick={() => gameroom.show('players')}><Icon name="users" size={16} /> Players</button>
       </div>
       {#if games && gameroom.online.length === 0}

@@ -25,6 +25,7 @@ describe('settings parse', () => {
         stepMs: 120,
         continueTurns: false,
         moveTimes: 'game',
+        leaveChatForGames: false,
       }),
       none,
     );
@@ -42,6 +43,7 @@ describe('settings parse', () => {
       stepMs: 120,
       continueTurns: false,
       moveTimes: 'game',
+      leaveChatForGames: false,
     });
     const bad = parse(
       JSON.stringify({ appearance: 'dim', coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3, volume: 'loud', moveTimes: 'all' }),

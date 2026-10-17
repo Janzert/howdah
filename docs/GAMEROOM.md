@@ -131,6 +131,39 @@ architecture. Decided and checked against the live server in October 2026.
   shown as plain text
   (the server stores them as sent), and empty messages aren't sent (the
   server would add an empty line).
+- **The chat room.** The gameroom's room-wide chat (`/arimaa/chat/`,
+  separate from a game's) is the lobby's Chat room panel. Entering is
+  the user's choice and is public: the room shows who comes and goes,
+  and everything is archived, so the panel says so before Enter. The
+  room has no push: its server answers polls, enters the room on the
+  first one, and times out a user who hasn't asked for about a minute
+  (the archive is full of `timeout`/`in` pairs from clients polling
+  slower). Howdah asks every 5 s while the panel is shown and something
+  happened there in the last two minutes, every 10 s while it's shown,
+  and every 30 s otherwise, slower than the room's own page (every
+  second, slowing to ten). It says `out` when the user leaves, closes
+  the panel (nobody should sit in the room unseen), logs out of
+  arimaa.com or quits. Messages get the room's formatting: links, its
+  faces (shown as emoji: its images aren't ours to ship), piece
+  symbols (`:ge`, drawn with the board's pieces), `/me` emotes, and
+  the poster's color. White (`ffffff`) is the room's spoiler tag (its
+  log is white, so the text shows only when selected), so a message in
+  white has its text (not the name) hidden until clicked; a revealed one
+  keeps a dashed outline and hides again with another click. The
+  color popup's "Spoiler (next message)" sends the next message in
+  white, then goes back to the user's color. Only exact white counts: other pale colors
+  are darkened, and in the dark appearance dark colors lightened, as far
+  as needed to be readable.
+  Unlike the room's script, symbols aren't replaced inside links, and
+  every occurrence is replaced, not just the first.
+  - **Leaving for games.** The custom in the gameroom is to leave the
+    chat room while playing a rated game against a person that isn't
+    postal, and any event game. With the setting on (the default),
+    Howdah leaves the room as such a game is seen at the user's seat
+    (once the opponent has sat, to tell a person from a bot: a `bot_`
+    name, or the lobby's bot flag) and says why in the panel. An event
+    game is one whose `event` isn't "Casual game". It does so once per
+    game, so entering again mid-game is the user's call.
 - **Announcements.** `state`'s `announce` list gives each
   announcement's HTML and `modified`, the time of its last edit. The
   gameroom keeps them for years (in 2026 the oldest was from 2018), so

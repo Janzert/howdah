@@ -1093,6 +1093,9 @@ pub struct GameroomGames {
     pub online: Vec<OnlinePlayerView>,
     /// The gameroom's announcements, newest first as the server gives them.
     pub announcements: Vec<AnnouncementView>,
+    /// How many people are in the gameroom's chat room (it lags by up to
+    /// a minute).
+    pub chat_count: Option<u32>,
 }
 
 /// A gameroom announcement, read from its HTML into styled text.
@@ -1264,6 +1267,96 @@ pub struct ChatLineView {
     /// The move it was written at (`6g`), when the server says.
     pub label: Option<String>,
     pub text: String,
+}
+
+/// Where the user is with the gameroom's chat room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ChatRoomState {
+    Out,
+    /// Asking the room for the first time, which enters it.
+    Entering,
+    In,
+}
+
+/// The gameroom's chat room, sent as `chatroom://changed` whenever it
+/// changes.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatRoomView {
+    pub state: ChatRoomState,
+    /// The user's name in the room, while in it.
+    pub user: Option<String>,
+    /// Who is in the room, while the user is.
+    pub users: Vec<String>,
+    /// How many people are in the room by the lobby's count (it lags by
+    /// up to a minute), for while the user isn't.
+    pub count: Option<u32>,
+    /// The room's log since entering (with the backlog the room sends
+    /// first), oldest first, the last few hundred events.
+    pub events: Vec<ChatEventView>,
+    /// Why the user left without asking to (a game the room is left for),
+    /// or a problem reaching the room.
+    pub note: Option<String>,
+    /// Whether the user is left out of the room for games that call for
+    /// it (`set_chatroom_auto_leave`).
+    pub auto_leave: bool,
+}
+
+/// One event in the chat room's log.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatEventView {
+    /// Numbers the events as they arrive, oldest lowest.
+    pub id: u32,
+    /// Unix seconds.
+    #[ts(type = "number")]
+    pub time: i64,
+    pub user: String,
+    pub kind: ChatEventKind,
+    /// A message's color, `rrggbb` (any; white is used for spoilers).
+    pub color: Option<String>,
+    /// A `/me` message: the name followed at once by the parts.
+    pub emote: bool,
+    /// A message's text, formatted as the room does.
+    pub parts: Vec<ChatPartView>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ChatEventKind {
+    In,
+    Out,
+    Timeout,
+    Message,
+}
+
+/// A part of a chat room message.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase", tag = "type")]
+#[ts(export)]
+pub enum ChatPartView {
+    Text {
+        text: String,
+    },
+    /// An http(s) link, opened in the system's browser (`open_url`).
+    Link {
+        url: String,
+    },
+    /// One of the room's faces (`smiley`, `wink`, …) and the symbol typed.
+    Face {
+        name: String,
+        symbol: String,
+    },
+    /// A piece symbol (`:ge`).
+    Piece {
+        color: Color,
+        piece: PieceKind,
+    },
 }
 
 /// The engine test daemon (howdah-tourney), as far as the app can tell.

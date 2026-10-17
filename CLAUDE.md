@@ -190,6 +190,14 @@ plans the engine test and tournament runner.
     scripts and other markup dropped), so no server HTML reaches the
     app. `Error::Expired` is a lobby session
     that's gone (an ASIP error or the "Session Expired" page).
+  - `chat`: the gameroom's chat room (`/arimaa/chat/srv.php`, plain
+    text): `ChatClient` (`fetch`, which enters the room the first time,
+    `users`, `say`, `leave`; its own `Http` in the app so its spacing
+    never delays a game's requests), with `user` and the `auth` from
+    `state`'s `me` (`LobbyGames.chat_auth`; `chat_count` is
+    `chatCount`), `ChatEvent`s from the log, and `format_message`, the
+    room's formatting as `MessagePart`s (links, faces, piece symbols,
+    `/me` emotes).
   - `puzzles`: the puzzle pages (`/arimaa/puzzles/`, no login, the
     same Referer gate as the gameroom): `parse_puzzle_list` (`list.cgi`,
     groups by heading), `parse_puzzle_page` (`show.cgi?p=`: question,
@@ -470,6 +478,21 @@ plans the engine test and tournament runner.
     the final state's `finishedId`, or else `find_id` asks `findgameid` up
     to four times, 2, 4, 6 and 8 s apart, since the server may not know it
     right after the end.
+  - `chatroom.rs`: the gameroom's chat room (`docs/GAMEROOM.md`, "The
+    chat room"). `ChatRoom` (in `Gameroom.chat`) enters with a
+    `ChatClient` from `Gameroom::enter_chat` and runs a task asking the
+    room for new events (5 s while its panel is shown, `set_active`, and
+    busy, 10 s while shown, 30 s otherwise; the room times out at about a
+    minute), keeping the last 400 as `ChatEventView`s, formatted, and
+    sending `chatroom://changed` (`ChatRoomView`) when something
+    changes. `leave` says `out` (also on logout and, from `lib.rs`, on
+    `RunEvent::Exit`). `game_seen`, called from `gameroom.rs`'s `begin`
+    and `follow` with every state at a seat, leaves the room once per
+    game when `leaves_chat_for` (a rated, non-postal game between people,
+    or an event game) and auto-leave is on (`set_chatroom_auto_leave`,
+    from the `leaveChatForGames` setting); bots are `bot_` names or the
+    lobby's flagged ones (`Gameroom.bots`). Debug builds take
+    `HOWDAH_CHAT_URL` for a stand-in room.
   - `tourney.rs`: engine tests, as a client of howdah-tourney's daemon
     (plan in `docs/TOURNAMENTS.md`; data dir `howdah_tourney::default_data_dir`,
     or `Backend::with_tourney_dir`, which the dev bridge points at
@@ -740,7 +763,13 @@ plans the engine test and tournament runner.
     list beside the chosen bot), `WatchTab` (live and postal games, with a
     player filter), `FinishedTab` (a player's games, a game by id,
     recently finished) and `PlayersTab` (online, with Games and Invite).
-    The gameroom chat (to come) is meant as another such panel.
+    `ChatRoomTab` is the chat room (store in `chatroom.svelte.ts`:
+    the backend's view, unread count for the sidebar's badge, the user's
+    color; `lib/chatroom.ts` has the colors, spoilers (exact white,
+    `SPOILER_COLOR`, which the color popup's Spoiler option sends for one
+    message) and
+    times). Closing
+    its panel leaves the room.
     `NewGameDialog.svelte` creates a game or, with an opponent, invites
     them (Invite anywhere opens it with the opponent filled in).
     `format.ts` words the rows. The gameroom

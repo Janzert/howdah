@@ -2,6 +2,7 @@
 // Mutating commands resolve with nothing; the new state arrives as a
 // `game://changed` event (see events.ts).
 import { invoke } from '@tauri-apps/api/core';
+import type { ChatRoomView } from './bindings/ChatRoomView';
 import type { ApiError } from './bindings/ApiError';
 import type { ArchivedTestView } from './bindings/ArchivedTestView';
 import type { BotInfoView } from './bindings/BotInfoView';
@@ -193,6 +194,20 @@ function makeApi(sid: () => SessionId | null) {
     gameroomLastGames: () => invoke<GameroomGames | null>('gameroom_last_games'),
     /** Opens an http(s) URL in the system's browser. */
     openUrl: (url: string) => invoke<void>('open_url', { url }),
+    /** The gameroom's chat room as it stands; changes come as
+     * `chatroom://changed`. */
+    chatroomState: () => invoke<ChatRoomView>('chatroom_state'),
+    /** Enters the chat room (public: the room and its archive show who
+     * comes and goes). `autoLeave` leaves it for games that call for it. */
+    enterChatroom: (autoLeave: boolean) => invoke<ChatRoomView>('enter_chatroom', { autoLeave }),
+    leaveChatroom: () => invoke<void>('leave_chatroom'),
+    /** Says `text` in the chat room in `color` (`rrggbb`). */
+    sayInChatroom: (text: string, color: string) => invoke<void>('say_in_chatroom', { text, color }),
+    /** Whether the chat room's panel is in view (it's asked more often). */
+    setChatroomActive: (active: boolean) => invoke<void>('set_chatroom_active', { active }),
+    /** Whether to leave the chat room for rated games against people that
+     * aren't postal, and for event games. */
+    setChatroomAutoLeave: (on: boolean) => invoke<void>('set_chatroom_auto_leave', { on }),
     /** The session following arimaa.com game `gid` (its gameroom id), if
      * one does: that game's window. */
     gameroomGameSession: (gid: string) => invoke<SessionId | null>('gameroom_game_session', { gid }),

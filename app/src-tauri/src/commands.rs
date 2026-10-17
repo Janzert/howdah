@@ -6,11 +6,11 @@ use tauri::State;
 
 use crate::backend::{self, Backend};
 use crate::dto::{
-    ApiError, ArchivedTestView, BotInfoView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput,
-    EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView,
-    PlayerMatchView, PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
-    ServerBotsView, SessionId, SessionView, StartedBotView, StepTarget, TestDetailView, TestView,
-    TourneyStatusView, WatchView,
+    ApiError, ArchivedTestView, BotInfoView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption,
+    EngineOutput, EngineSpec, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec,
+    PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec, PositionView, PostalGameView,
+    PuzzleGroupView, ServerBotsView, SessionId, SessionView, StartedBotView, StepTarget, TestDetailView,
+    TestView, TourneyStatusView, WatchView,
 };
 
 #[tauri::command]
@@ -415,6 +415,36 @@ pub fn gameroom_game_session(state: State<Backend>, gid: String) -> Option<Sessi
 #[tauri::command]
 pub fn open_url(state: State<Backend>, url: String) -> Result<(), ApiError> {
     state.open_url(&url)
+}
+
+#[tauri::command]
+pub fn chatroom_state(state: State<Backend>) -> ChatRoomView {
+    state.chatroom_state()
+}
+
+#[tauri::command]
+pub async fn enter_chatroom(state: State<'_, Backend>, auto_leave: bool) -> Result<ChatRoomView, ApiError> {
+    state.enter_chatroom(auto_leave).await
+}
+
+#[tauri::command]
+pub async fn leave_chatroom(state: State<'_, Backend>) -> Result<(), ApiError> {
+    state.leave_chatroom().await
+}
+
+#[tauri::command]
+pub async fn say_in_chatroom(state: State<'_, Backend>, text: String, color: String) -> Result<(), ApiError> {
+    state.say_in_chatroom(&text, &color).await
+}
+
+#[tauri::command]
+pub fn set_chatroom_active(state: State<Backend>, active: bool) {
+    state.set_chatroom_active(active)
+}
+
+#[tauri::command]
+pub fn set_chatroom_auto_leave(state: State<Backend>, on: bool) {
+    state.set_chatroom_auto_leave(on)
 }
 
 #[tauri::command]

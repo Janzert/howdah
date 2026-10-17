@@ -1,0 +1,92 @@
+// The gameroom's chat room for the lobby: the backend's view of it
+// (`chatroom://changed`), what the user has read, and their color. One
+// instance, `chatroom`, in the lobby window.
+import { api, errorMessage } from '../api';
+import { SPOILER_COLOR } from '../chatroom';
+import type { ChatRoomView } from '../bindings/ChatRoomView';
+import { on } from '../events';
+import { settings } from '../settings.svelte';
+import { pref, savePref } from './store.svelte';
+
+class ChatRoomStore {
+  view = $state<ChatRoomView | null>(null);
+  error = $state<string | null>(null);
+  busy = $state(false);
+  /** The message color, `rrggbb` (kept in localStorage). */
+  color = $state(/^[0-9a-f]{6}$/.test(pref('gameroom.chatColor')) ? pref('gameroom.chatColor') : '000000');
+  /** The newest event the user has seen in the panel. */
+  #seen = $state(-1);
+  #started = false;
+
+  inRoom = $derived(this.view?.state === 'in');
+  /** Others' messages since the user last looked, while in the room. */
+  unread = $derived(
+    this.view?.state === 'in'
+      ? this.view.events.filter((e) => e.id > this.#seen && e.kind === 'message' && e.user !== this.view?.user)
+          .length
+      : 0,
+  );
+  /** How many are in the room: its list while the user is in, else the
+   * lobby's count. */
+  count = $derived(this.view?.state === 'in' ? this.view.users.length : (this.view?.count ?? 0));
+
+  /** Follows the backend's chat room and keeps its auto-leave setting in
+   * step with the settings; once. */
+  start(): () => void {
+    if (this.#started) return () => {};
+    this.#started = true;
+    const unlisten = on('chatroom://changed', (v) => (this.view = v));
+    api.chatroomState().then((v) => (this.view ??= v));
+    const stopSync = $effect.root(() => {
+      $effect(() => {
+        api.setChatroomAutoLeave(settings.leaveChatForGames).catch(() => {});
+      });
+    });
+    return () => {
+      this.#started = false;
+      stopSync();
+      void unlisten.then((f) => f());
+    };
+  }
+
+  /** Marks everything shown as read. */
+  markSeen() {
+    const last = this.view?.events.at(-1);
+    if (last && last.id > this.#seen) this.#seen = last.id;
+  }
+
+  setColor(hex: string) {
+    this.color = hex;
+    savePref('gameroom.chatColor', hex);
+  }
+
+  async #run(f: () => Promise<unknown>): Promise<boolean> {
+    this.busy = true;
+    this.error = null;
+    try {
+      await f();
+      return true;
+    } catch (e) {
+      this.error = errorMessage(e);
+      return false;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  enter() {
+    return this.#run(async () => (this.view = await api.enterChatroom(settings.leaveChatForGames)));
+  }
+
+  leave() {
+    return this.#run(() => api.leaveChatroom());
+  }
+
+  /** Says `text` in the user's color, or as a spoiler (in white, the
+   * room's spoiler tag). */
+  say(text: string, spoiler = false) {
+    return this.#run(() => api.sayInChatroom(text, spoiler ? SPOILER_COLOR : this.color));
+  }
+}
+
+export const chatroom = new ChatRoomStore();

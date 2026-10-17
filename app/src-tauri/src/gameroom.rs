@@ -49,19 +49,20 @@ use std::time::{Duration, Instant};
 
 use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
-    Actions, Announcement, Asip, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http, Invitation,
-    InviteOutcome, Lobby, LobbyGames, OnlinePlayer, Opened, PastGame, RecentGame, Role, ViewerSeat,
-    parse_chat, parse_result,
+    Actions, Announcement, Asip, ChatClient, DEFAULT_CHAT, DEFAULT_GAMEROOM, Error, GameInfo, GameServer,
+    GameState, Http, Invitation, InviteOutcome, Lobby, LobbyGames, OnlinePlayer, Opened, PastGame,
+    RecentGame, Role, ViewerSeat, parse_chat, parse_result,
 };
 use tokio::sync::Notify;
 
 use crate::backend::{Events, emit, emit_session};
+use crate::chatroom::ChatRoom;
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
     AnimStep, AnnouncementBlock, AnnouncementSpan, AnnouncementView, ApiError, BotInfoView, ChatLineView,
-    GameroomGames, GameroomStatus, InvitationAnswer, InvitationOutcome, InvitationView, LiveGameView,
-    OnlinePlayerView, PastGameView, PlayerGamesView, PlayerMatchView, PostalGameView, RecentGameView,
-    ServerBotView, ServerBotsView, StartedBotView, WatchState, WatchView,
+    ChatRoomView, GameroomGames, GameroomStatus, InvitationAnswer, InvitationOutcome, InvitationView,
+    LiveGameView, OnlinePlayerView, PastGameView, PlayerGamesView, PlayerMatchView, PostalGameView,
+    RecentGameView, ServerBotView, ServerBotsView, StartedBotView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -244,12 +245,26 @@ pub struct Gameroom {
     last_games: Mutex<Option<GameroomGames>>,
     /// The user's player id, from the lobby's lists (for unrated mode).
     user_id: Mutex<Option<String>>,
+    /// The user's key to the chat room, from the lobby's lists.
+    chat_auth: Mutex<Option<String>>,
+    /// Players the lobby's lists have flagged as bots (lowercase), for
+    /// telling games against people from games against bots.
+    bots: Mutex<std::collections::HashSet<String>>,
+    /// The gameroom's chat room. It has its own HTTP client, so its
+    /// requests never hold up a game's.
+    pub chat: Arc<ChatRoom>,
+    chat_http: Http,
 }
 
 impl Gameroom {
     pub fn new(saved: SavedLogin, events: Events) -> Gameroom {
         let http = Http::new(&howdah_gameroom::user_agent(), None).expect("an HTTP client");
+        let chat_http = Http::new(&howdah_gameroom::user_agent(), None).expect("an HTTP client");
         Gameroom {
+            chat: Arc::new(ChatRoom::new(events.clone())),
+            chat_http,
+            chat_auth: Mutex::new(None),
+            bots: Mutex::new(Default::default()),
             http,
             lobby: tokio::sync::Mutex::new(None),
             login: Mutex::new(None),
@@ -299,11 +314,15 @@ impl Gameroom {
         let player = first.as_ref().and_then(|g| g.username.clone()).unwrap_or_else(|| username.to_string());
         let mut slot = self.lobby.lock().await;
         let old_player = self.player();
+        if ends_old_login(old_player.as_deref(), &player) {
+            let _ = self.chat.leave(None).await;
+        }
         if let Some(mut old) = slot.replace(lobby)
             && ends_old_login(old_player.as_deref(), &player)
         {
             let _ = old.logout().await;
         }
+        *lock(&self.chat_auth) = first.as_ref().and_then(|g| g.chat_auth.clone());
         *lock(&self.login) = Some(username.to_string());
         *lock(&self.player) = Some(player);
         *lock(&self.user_id) = first.as_ref().and_then(|g| g.user_id.clone());
@@ -325,6 +344,8 @@ impl Gameroom {
         for (_, w) in lock(&self.waiters).drain() {
             w.abort();
         }
+        let _ = self.chat.leave(None).await;
+        *lock(&self.chat_auth) = None;
         let old = self.lobby.lock().await.take();
         *lock(&self.login) = None;
         *lock(&self.player) = None;
@@ -360,6 +381,8 @@ impl Gameroom {
 
     /// The lists as the frontend sees them, kept as the last ones.
     fn games_view(&self, games: LobbyGames) -> GameroomGames {
+        lock(&self.bots).extend(games.online.iter().filter(|p| p.bot).map(|p| p.username.to_lowercase()));
+        self.chat.set_count(games.chat_count);
         let views = |list: Vec<GameInfo>| list.into_iter().map(game_view).collect();
         let invitations = games
             .invited_me
@@ -380,6 +403,7 @@ impl Gameroom {
                 .into_iter()
                 .map(|a| announcement_view(a, games.time))
                 .collect(),
+            chat_count: games.chat_count,
         };
         *lock(&self.last_games) = Some(games.clone());
         games
@@ -394,7 +418,34 @@ impl Gameroom {
         if games.username.is_some() {
             lock(&self.player).clone_from(&games.username);
         }
+        if games.chat_auth.is_some() {
+            lock(&self.chat_auth).clone_from(&games.chat_auth);
+        }
         Ok(games)
+    }
+
+    /// Enters the gameroom's chat room as the logged-in user.
+    pub async fn enter_chat(&self) -> Result<ChatRoomView, ApiError> {
+        if lock(&self.chat_auth).is_none() {
+            self.lobby_games().await?;
+        }
+        let auth = lock(&self.chat_auth).clone();
+        let (Some(user), Some(auth)) = (lock(&self.player).clone(), auth) else {
+            return Err(ApiError::state("arimaa.com didn't give a key to its chat room; log in again"));
+        };
+        // Debug builds can be pointed at a stand-in room
+        // (`HOWDAH_CHAT_URL`), to check the panel without a public visit.
+        let base = if cfg!(debug_assertions) { std::env::var("HOWDAH_CHAT_URL").ok() } else { None };
+        let client =
+            ChatClient::new(self.chat_http.clone(), base.as_deref().unwrap_or(DEFAULT_CHAT), &user, &auth);
+        Ok(self.chat.enter(client))
+    }
+
+    /// A state of game `gid` at one of the user's seats, for the chat
+    /// room to leave if the game calls for it.
+    fn chat_game_seen(&self, gid: &str, state: &GameState) {
+        let bots = lock(&self.bots).clone();
+        self.chat.game_seen(gid, state, &bots);
     }
 
     /// The lists as [`games`](Self::games) last fetched them, while
@@ -1034,6 +1085,7 @@ async fn begin(
     }));
     set_seat(&mut lock(&view), &seat);
     let next = update(&target, generation, &state, &view);
+    gameroom.chat_game_seen(gid, &state);
     emit(&target.events, WATCH_UPDATE, lock(&view).clone());
     let wake = Arc::new(Notify::new());
     let sender = actions.clone().map(|actions| {
@@ -1338,6 +1390,7 @@ async fn follow(
     let gid = lock(&view).gid.clone();
     // Once an opponent sits, the sender sends the move it held.
     let update = |state: &GameState| {
+        gameroom.chat_game_seen(&gid, state);
         let was_waiting = lock(&view).waiting;
         let next = update(&target, generation, state, &view);
         if let Some(sender) = &sender
