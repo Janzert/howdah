@@ -135,7 +135,11 @@ architecture. Decided and checked against the live server in October 2026.
   the New game form's Opponent field invites a player, a background wait
   on the inviter's waiting page brings the answer (accepted, the game
   opens in a new window; declined, with the reason), and the lobby lists invitations
-  both ways with Accept, Decline and Cancel.
+  both ways with Accept, Decline and Cancel. The Online list (who's
+  logged in, from `state`'s `online`) has Invite for players who take
+  invitations (`inviteme`, the browser lobby's invite icon), which fills
+  in the Opponent field; the server takes an invitation to anyone, so
+  the flag is only the player's wish.
 - **Server bots** (4steps's bot launcher): the lobby's "Show server
   bots" fetches, only when asked, the official bot ladder (about 30
   bots, ranked around the user: those above are the ones they have yet
@@ -219,7 +223,7 @@ architecture. Decided and checked against the live server in October 2026.
 - One window per arimaa.com game: each Play, Watch or Open opens a new
   game window, even for a game that already has one (`WINDOWS.md`,
   phase 3).
-- Inviting from a list of players online, scheduled games, and an
+- Scheduled games, and an
   opponent rating range in the New game form.
 - An engine playing on arimaa.com, and a postal controller for bots (on
   hold). An engine would use the gameroom's bot API, as `gameroom.py`

@@ -9,6 +9,9 @@ young).
 
 ### Added
 
+- The arimaa.com lobby lists who's logged in to the gameroom, with an
+  Invite button for players who take invitations; it fills in the New
+  game form's opponent.
 - `howdah-tourney`, a command line for testing engine changes: it plays
   two engines in colour-swapped pairs, several games at once, keeps every
   game and the results in the test's directory (with copies of the

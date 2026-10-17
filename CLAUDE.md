@@ -178,7 +178,9 @@ plans the engine test and tournament runner.
     leniently from their HTML. The page writes times in the
     session's zone (the login's `timezone`, `Lobby::set_timezone`; the
     app sets the computer's), labelled "YLT", which is dropped. `Lobby::search_players` and
-    `Lobby::player_games` fetch them. `Error::Expired` is a lobby session
+    `Lobby::player_games` fetch them. `OnlinePlayer` is who's logged in
+    (`state`'s `online`, in `LobbyGames.online`), with `invite_me` (the
+    gameroom's invite icon). `Error::Expired` is a lobby session
     that's gone (an ASIP error or the "Session Expired" page).
   - `puzzles`: the puzzle pages (`/arimaa/puzzles/`, no login, the
     same Referer gate as the gameroom): `parse_puzzle_list` (`list.cgi`,
@@ -684,7 +686,9 @@ plans the engine test and tournament runner.
     as `gameroom://invitation`; accepted, the lobby opens a window playing
     it), and an Invitations section lists them with
     Accept (`accept_gameroom_invitation`, which also takes the seat),
-    Decline and Cancel. "Show server bots" lists the server's bots
+    Decline and Cancel. "Online" lists who's logged in
+    (`GameroomGames.online`), with Invite for those who take invitations,
+    which fills in the New game form's Opponent. "Show server bots" lists the server's bots
     (`gameroom_server_bots`, `ServerBotsView`: every bot and the official
     ladder, two page fetches, only when asked; "Bot ladder", with the
     user's place in it, or "All bots"; filter and order); Choose reads the bot's page (`gameroom_bot_info`), and Start

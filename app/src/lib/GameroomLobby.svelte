@@ -3,12 +3,13 @@
   // user's games and invitations, open, live, postal and finished games, a
   // player's games, and a new game. Playing, watching or opening a game
   // opens a game window for it (`onOpen`).
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { type Api, api, errorMessage } from './api';
   import type { BotInfoView } from './bindings/BotInfoView';
   import type { Color } from './bindings/Color';
   import type { GameResult } from './bindings/GameResult';
   import type { LiveGameView } from './bindings/LiveGameView';
+  import type { OnlinePlayerView } from './bindings/OnlinePlayerView';
   import type { GameroomGames } from './bindings/GameroomGames';
   import type { InvitationView } from './bindings/InvitationView';
   import type { PastGameView } from './bindings/PastGameView';
@@ -359,6 +360,23 @@
     enter((a) => a.createGameroomGame(side, newTc.trim(), newRated));
   }
 
+  /** Who is logged in, by name. */
+  const online = $derived(
+    [...(games?.online ?? [])].sort((a, b) =>
+      a.username.localeCompare(b.username, undefined, { sensitivity: 'base' }),
+    ),
+  );
+
+  /** Fills in the New game form to invite `p`, as the gameroom's invite
+   * icon opens its invitation form. */
+  async function inviteFromList(p: OnlinePlayerView) {
+    newOpponent = p.username;
+    await tick();
+    const message = document.getElementById('gr-new-message');
+    message?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    message?.focus();
+  }
+
   const incoming = $derived(games?.invitations.filter((i) => i.incoming) ?? []);
   const outgoing = $derived(games?.invitations.filter((i) => !i.incoming) ?? []);
 
@@ -561,6 +579,32 @@
         {/each}
       </ul>
     {/if}
+    <h3>Online{games ? ` (${online.length})` : ''}</h3>
+    {#if games && online.length === 0}
+      <p class="hint">Nobody is logged in to the gameroom.</p>
+    {:else if games}
+      <ul class="games" aria-label="Players online">
+        {#each online as p (p.username)}
+          {@const me = p.username === user}
+          <li>
+            <span class="players">
+              {p.username}
+              {#if p.title}<span class="tag">{p.title}</span>{/if}
+              {#if p.rating}<span class="rating">{p.rating}</span>{/if}
+              {#if p.bot}<span class="tag">bot</span>{/if}
+              {#if me}<span class="tag">you</span>{/if}
+            </span>
+            {#if p.country}<span class="meta">{p.country}</span>{/if}
+            {#if p.inviteMe && !me}
+              <button onclick={() => inviteFromList(p)} disabled={busy} aria-label="Invite {p.username}"
+                title="Fill in the New game form to invite {p.username}">Invite</button
+              >
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      <p class="hint">Invite is offered for players who take invitations.</p>
+    {/if}
     <h3>New game</h3>
     <form class="new-game" onsubmit={createGame}>
       <label for="gr-new-side">Side</label>
@@ -584,7 +628,13 @@
       <label for="gr-new-opponent">Opponent</label>
       <input id="gr-new-opponent" bind:value={newOpponent} placeholder="Anyone" autocomplete="off" />
       {#if newOpponent.trim()}
-        <input bind:value={newMessage} placeholder="Message (optional)" aria-label="Message" autocomplete="off" />
+        <input
+          id="gr-new-message"
+          bind:value={newMessage}
+          placeholder="Message (optional)"
+          aria-label="Message"
+          autocomplete="off"
+        />
       {/if}
       <button type="submit" disabled={busy || !newTc.trim()}>{newOpponent.trim() ? 'Invite' : 'Create'}</button>
     </form>
@@ -890,6 +940,14 @@
   .rating {
     color: var(--muted);
     font-size: 11px;
+  }
+  .tag {
+    flex: none;
+    font-size: 11px;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
   }
   .badge {
     flex: none;

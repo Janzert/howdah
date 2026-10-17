@@ -50,7 +50,8 @@ use std::time::{Duration, Instant};
 use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http, Invitation, InviteOutcome,
-    Lobby, LobbyGames, Opened, PastGame, RecentGame, Role, ViewerSeat, parse_chat, parse_result,
+    Lobby, LobbyGames, OnlinePlayer, Opened, PastGame, RecentGame, Role, ViewerSeat, parse_chat,
+    parse_result,
 };
 use tokio::sync::Notify;
 
@@ -58,8 +59,9 @@ use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, BotInfoView, ChatLineView, GameroomGames, GameroomStatus, InvitationAnswer,
-    InvitationOutcome, InvitationView, LiveGameView, PastGameView, PlayerGamesView, PlayerMatchView,
-    PostalGameView, RecentGameView, ServerBotView, ServerBotsView, StartedBotView, WatchState, WatchView,
+    InvitationOutcome, InvitationView, LiveGameView, OnlinePlayerView, PastGameView, PlayerGamesView,
+    PlayerMatchView, PostalGameView, RecentGameView, ServerBotView, ServerBotsView, StartedBotView,
+    WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -370,6 +372,7 @@ impl Gameroom {
             mine: views(games.mine),
             open: views(games.open),
             invitations,
+            online: games.online.into_iter().map(online_view).collect(),
         };
         *lock(&self.last_games) = Some(games.clone());
         games
@@ -704,6 +707,17 @@ fn invitation_view(i: Invitation, incoming: bool) -> InvitationView {
         message: i.message,
         other_id: if incoming { i.inviter_id } else { i.invited_id },
         created: i.created,
+    }
+}
+
+fn online_view(p: OnlinePlayer) -> OnlinePlayerView {
+    OnlinePlayerView {
+        username: p.username,
+        rating: p.rating,
+        title: p.title,
+        country: p.country,
+        bot: p.bot,
+        invite_me: p.invite_me,
     }
 }
 

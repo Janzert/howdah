@@ -2,12 +2,50 @@
 //! (`searchPlayers.cgi`, which needs a session) and a player's past games
 //! (`pastgames.cgi?id=<player id>`, 50 a page, newest first); and the
 //! postal games being played (`postalgames.cgi`), which the lobby's live
-//! list leaves out.
+//! list leaves out. Also who is logged in to the gameroom, from the
+//! lobby's `state` (`OnlinePlayer`).
 //!
-//! All are HTML pages made for people, so they're read leniently: a row
+//! The pages are HTML made for people, so they're read leniently: a row
 //! that doesn't parse is skipped rather than failing the page.
 
 use howdah_arimaa::Color;
+
+use crate::wire::Record;
+
+/// A player logged in to the gameroom: an entry of `state`'s `online`
+/// list (seen 2026-10-17).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OnlinePlayer {
+    pub id: String,
+    pub username: String,
+    /// From the entry's `info`.
+    pub rating: Option<String>,
+    pub title: Option<String>,
+    pub country: Option<String>,
+    pub bot: bool,
+    /// Whether they take invitations: the browser lobby shows its invite
+    /// icon for `inviteme` above 0 (it has been seen as `"2 "`). A new
+    /// login shows it on until its first `state` applies the account's
+    /// setting; see the private notes. The server accepts an invitation
+    /// either way: the flag is only the player's wish.
+    pub invite_me: bool,
+}
+
+impl OnlinePlayer {
+    pub fn from_record(r: &Record) -> Option<OnlinePlayer> {
+        let info = r.object("info");
+        let info_field = |key: &str| info.as_ref().and_then(|i| i.nonempty(key));
+        Some(OnlinePlayer {
+            id: r.nonempty("id")?,
+            username: r.nonempty("username")?,
+            rating: info_field("rating"),
+            title: info_field("title"),
+            country: info_field("country"),
+            bot: info_field("type").as_deref() == Some("b"),
+            invite_me: r.int("inviteme").is_some_and(|n| n > 0),
+        })
+    }
+}
 
 /// A player the search found.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -226,6 +264,45 @@ fn text_of(html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn online_players() {
+        // An entry from 2026-10-17, renamed, and a bot's with the trailing
+        // space seen once.
+        let r = Record::decode(
+            r#"{"online":[{"info":{"country":"US","timezone":"14400","fname":"A Person","rating":"1677",
+                "username":"someone","ratingk":"120","playernum":"247","id":"397","title":"","type":"h"},
+                "grid":"0","timezone":"14400","active":"1","inviteme":"","invitemes":"","idle":"1792219360",
+                "username":"someone","realm":"user","wanted":"","id":"397"},
+              {"info":{"rating":"1500","type":"b","title":"GM"},"inviteme":"2 ","username":"bot_x","id":"9"},
+              {"username":"no_id"}]}"#,
+        )
+        .unwrap();
+        let online: Vec<_> = r.list("online").iter().filter_map(OnlinePlayer::from_record).collect();
+        assert_eq!(
+            online,
+            [
+                OnlinePlayer {
+                    id: "397".into(),
+                    username: "someone".into(),
+                    rating: Some("1677".into()),
+                    title: None,
+                    country: Some("US".into()),
+                    bot: false,
+                    invite_me: false,
+                },
+                OnlinePlayer {
+                    id: "9".into(),
+                    username: "bot_x".into(),
+                    rating: Some("1500".into()),
+                    title: Some("GM".into()),
+                    country: None,
+                    bot: true,
+                    invite_me: true,
+                },
+            ]
+        );
+    }
 
     /// `postalgames.cgi` (2026-10-06), trimmed to its first row, with the
     /// players renamed.

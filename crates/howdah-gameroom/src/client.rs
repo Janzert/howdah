@@ -19,7 +19,7 @@ use crate::clock_sync::ClockSync;
 use crate::finished::{FinishedGame, RecentGame};
 use crate::invitations::{Invitation, InviteOutcome, parse_wait};
 use crate::players::{
-    PastGames, PlayerMatch, PostalGame, parse_past_games, parse_postal_games, parse_search,
+    OnlinePlayer, PastGames, PlayerMatch, PostalGame, parse_past_games, parse_postal_games, parse_search,
 };
 use crate::state::{GameState, Role};
 use crate::wire::{Format, Record, encode_request};
@@ -532,6 +532,8 @@ pub struct LobbyGames {
     /// (`iinvitedgames`).
     pub invited_me: Vec<Invitation>,
     pub i_invited: Vec<Invitation>,
+    /// Who is logged in to the gameroom (`online`), the user among them.
+    pub online: Vec<OnlinePlayer>,
     /// The user's player id and username (`me`). The username is the
     /// gameroom's name for them, which the lists use; they may have
     /// logged in with their email address instead.
@@ -562,6 +564,7 @@ impl LobbyGames {
             open,
             invited_me: invitations("invitedmegames"),
             i_invited: invitations("iinvitedgames"),
+            online: r.list("online").iter().filter_map(OnlinePlayer::from_record).collect(),
             user_id: r.object("me").and_then(|me| me.nonempty("id")),
             username: r.object("me").and_then(|me| me.nonempty("username")),
         }

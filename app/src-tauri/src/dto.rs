@@ -1078,6 +1078,22 @@ pub struct GameroomGames {
     pub open: Vec<LiveGameView>,
     /// Open invitations, to the user and from them.
     pub invitations: Vec<InvitationView>,
+    /// Who is logged in to the gameroom, the user among them.
+    pub online: Vec<OnlinePlayerView>,
+}
+
+/// A player logged in to the gameroom.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct OnlinePlayerView {
+    pub username: String,
+    pub rating: Option<String>,
+    pub title: Option<String>,
+    pub country: Option<String>,
+    pub bot: bool,
+    /// Whether they take invitations (their gameroom setting).
+    pub invite_me: bool,
 }
 
 /// An open invitation to play, to the user (`incoming`) or from them.

@@ -50,7 +50,7 @@ pub use client::{
 pub use clock_sync::ClockSync;
 pub use finished::{FinishedGame, RecentGame};
 pub use invitations::{Invitation, InviteOutcome};
-pub use players::{PastGame, PastGames, PlayerMatch, PostalGame};
+pub use players::{OnlinePlayer, PastGame, PastGames, PlayerMatch, PostalGame};
 pub use puzzles::{DEFAULT_PUZZLES, PuzzleEntry, PuzzleGroup, PuzzlePage, Puzzles};
 pub use state::{ChatLine, GameState, Role, ServerClock, parse_chat, parse_result, split_moves};
 pub use wire::{Format, Record};
