@@ -844,11 +844,7 @@
           <button aria-label="End" onclick={gotoEnd} title="End (End or $)">⏭</button>
         </div>
       {/if}
-      <div class="tools">
-        <button onclick={() => (showNewGame = true)} title="A new game in this window">New game</button>
-        <button onclick={() => openGameWindow().catch((e) => flash(errorMessage(e)))} title="Open another window, with a game of its own">
-          New window
-        </button>
+      <div class="tools" role="toolbar" aria-label="Game tools">
         <button
           onclick={toggleAnalysis}
           aria-pressed={analysisShown}
@@ -861,11 +857,26 @@
         >
           Analysis
         </button>
-        <button onclick={openRecord}>Record</button>
         <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
+        <button onclick={openRecord} title="The game record, to copy, save or load">Record</button>
+        <button onclick={() => (showNewGame = true)} title="A new game in this window">New game</button>
+        <button onclick={() => openGameWindow().catch((e) => flash(errorMessage(e)))} title="Open another window, with a game of its own">
+          New window
+        </button>
         <button onclick={editPosition} title="Set up a position from the shown one, in a new window (e)">Edit position</button>
+      </div>
+      <div class="windows" class:single={spectating}>
+        <button
+          onclick={() => showLobby()}
+          title="The lobby: new games, open windows, arimaa.com, engine tests, engines and settings{lobbyWaiting > 0
+            ? ` (${lobbyWaiting} waiting on you)`
+            : ''}"
+        >
+          Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
+        </button>
         {#if !spectating}
           <button
+            class:primary={nextCount > 0}
             onclick={nextGame}
             disabled={nextCount === 0}
             title={nextCount > 0 ? 'The next game waiting on your move (n)' : 'No other game waits on your move (n)'}
@@ -873,14 +884,6 @@
             Next game{#if nextCount > 0}<span class="badge">{nextCount}</span>{/if}
           </button>
         {/if}
-        <button
-          onclick={() => showLobby()}
-          title="The lobby: new games, open windows, arimaa.com, engines and settings{lobbyWaiting > 0
-            ? ` (${lobbyWaiting} waiting on you)`
-            : ''}"
-        >
-          Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
-        </button>
       </div>
     </aside>
   </main>
@@ -1011,9 +1014,30 @@
     color: var(--accent-text);
   }
   .tools {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  .tools button,
+  .windows button {
+    padding: 4px 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .windows {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .windows.single {
+    grid-template-columns: 1fr;
+  }
+  .windows .primary .badge {
+    background: var(--accent-text);
+    color: var(--accent);
   }
   .live-alert {
     position: absolute;
