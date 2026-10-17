@@ -537,7 +537,9 @@ plans the engine test and tournament runner.
     list; `show_board` sends `sessions://show` (`ShowBoard`) for the
     lobby to show a docked board. `lib.rs` also hides the lobby instead of closing it
     while a game window is open (`CloseRequested`), and quits when the
-    last game window goes while the lobby is hidden. Every session command
+    last game window goes while the lobby is hidden, unless boards are
+    docked in it: then it sends `lobby://last-window-closed`, and the
+    lobby quits or comes back to ask if a docked board is still playing. Every session command
     takes a `session` argument, and a session's events carry a `session`
     field (`SessionEvents` adds it).
     Commands are **intents**. Mutating commands return

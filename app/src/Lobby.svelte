@@ -314,23 +314,37 @@
     return `${one ? 'A board' : `${playing.length} boards`} here ${one ? 'has' : 'have'} a match or an arimaa.com game going on. Quitting Howdah stops ${one ? 'it' : 'them'} (an arimaa.com game goes on there, with your clock running).`;
   }
 
-  /** In Tauri: asks before the main window closes on boards still playing
-   * when that quits Howdah. With game windows open it only hides, as
-   * `lib.rs` does, and the boards go on. */
+  /** In Tauri: asks before Howdah quits with docked boards still playing:
+   * when the main window closes with no game windows open (with some, it
+   * only hides, as `lib.rs` does, and the boards go on), and when the last
+   * game window closes while it's hidden (`lib.rs` leaves that to it,
+   * `lobby://last-window-closed`): then it comes back to ask. */
   async function guardMainWindow() {
     if (!inTauri) return;
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const { getAllWebviewWindows } = await import('@tauri-apps/api/webviewWindow');
+    const { listen } = await import('@tauri-apps/api/event');
     const win = getCurrentWindow();
+    const quit = async (reason: string | null) => {
+      if (reason && !(await new Promise<boolean>((answer) => (closing = { reason, answer })))) return;
+      await win.destroy();
+    };
     await win.onCloseRequested(async (e) => {
       e.preventDefault();
       if ((await getAllWebviewWindows()).some((w) => w.label.startsWith('game-'))) {
         await win.hide();
         return;
       }
+      await quit(closeWarning());
+    });
+    await listen('lobby://last-window-closed', async () => {
       const reason = closeWarning();
-      if (reason && !(await new Promise<boolean>((answer) => (closing = { reason, answer })))) return;
-      await win.destroy();
+      if (reason) {
+        await win.show();
+        await win.unminimize();
+        await win.setFocus();
+      }
+      await quit(reason);
     });
   }
 

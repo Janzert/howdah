@@ -34,6 +34,10 @@ impl EventSink for AppHandle {
 }
 
 /// How many game windows are open, leaving out the window `except`.
+/// Tells the hidden lobby that the last game window closed while boards
+/// are docked in it: it quits, or shows itself and asks first.
+const LAST_WINDOW: &str = "lobby://last-window-closed";
+
 fn game_windows(app: &AppHandle, except: Option<&str>) -> usize {
     app.webview_windows()
         .keys()
@@ -65,14 +69,22 @@ pub fn run() {
                 }
             }
             // A game window's session ends with the window, however it
-            // closed. Closing the last one while the lobby is hidden quits.
+            // closed. Closing the last one while the lobby is hidden quits,
+            // unless boards are docked there: then the lobby decides, and
+            // asks first if any of them is still playing (`LAST_WINDOW`).
             WindowEvent::Destroyed => {
-                window.state::<Backend>().window_closed(window.label());
+                let backend = window.state::<Backend>();
+                backend.window_closed(window.label());
                 let app = window.app_handle();
                 let lobby_hidden =
                     app.get_webview_window("main").is_some_and(|w| !w.is_visible().unwrap_or(true));
                 if lobby_hidden && game_windows(app, Some(window.label())) == 0 {
-                    app.exit(0);
+                    if backend.docked_sessions().is_empty() {
+                        app.exit(0);
+                    } else if let Err(e) = Emitter::emit(app, LAST_WINDOW, ()) {
+                        eprintln!("failed to emit {LAST_WINDOW}: {e}");
+                        app.exit(0);
+                    }
                 }
             }
             _ => {}

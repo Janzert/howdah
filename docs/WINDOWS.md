@@ -324,7 +324,11 @@ the sidebar to list every board and go to its panel or window. As built:
   their games, sounds and clocks go on.
 - Closing the main window with docked boards still playing (a match or
   an arimaa.com game) asks first when it would quit Howdah; with game
-  windows open it only hides, as before, and the boards go on.
+  windows open it only hides, as before, and the boards go on. When the
+  last game window then closes, `lib.rs` leaves quitting to the hidden
+  lobby if boards are docked there (`lobby://last-window-closed`): it
+  quits, or comes back and asks if any is still playing (Brian,
+  2026-10-18).
 
 ## Decided
 
