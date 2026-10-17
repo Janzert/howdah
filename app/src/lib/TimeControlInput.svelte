@@ -1,7 +1,7 @@
 <script lang="ts" module>
   /** arimaa.com's preset time controls (as its Create Game form offers
-   * them, names included; parent repo's docs/GAMEROOM-API.md), for local
-   * games and arimaa.com's New game alike. */
+   * them, names included), for local games and arimaa.com's New game
+   * alike. */
   export const PRESETS: { name: string; value: string }[] = [
     { name: 'Lightning 8 sec/move', value: '8s/2m16s/100/0/32m/2m16s' },
     { name: 'Blitz 15 sec/move', value: '15s/2m30s/100/0/1h/2m30s' },
