@@ -23,8 +23,22 @@ export function sprtText(t: TestView): string | null {
   return `LLR ${t.llr.toFixed(2)} (${lo.toFixed(2)}, ${hi.toFixed(2)}) for Elo [${t.sprt.elo0}, ${t.sprt.elo1}]`;
 }
 
-/** The chance below which new tests with a pair limit stop undecided. */
-export const UNDECIDED_BELOW = 0.05;
+/** The chance below which new tests with a pair limit stop undecided, as
+ * a percentage. */
+export const UNDECIDED_PERCENT = 5;
+
+/** A cutoff from a percentage field (empty or 0: off). */
+export function percentCutoff(value: number | string | null | undefined): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n / 100 : null;
+}
+
+/** A test's cutoff as a percentage for its field (null: off). */
+export function cutoffPercent(t: TestView): number | null {
+  const c = t.sprt?.undecidedBelow;
+  return c == null ? null : Math.round(c * 1e6) / 1e4;
+}
 
 /** The chance the SPRT still decides before the pair limit, while it's
  * running: `62% chance to decide within 3000 pairs`, and where the test

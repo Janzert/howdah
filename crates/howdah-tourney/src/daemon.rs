@@ -101,9 +101,24 @@ struct SavedState {
     /// Games at once, when changed from the spec's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     concurrency: Option<u32>,
+    /// The SPRT's `undecided_below`, when changed from the spec's (0:
+    /// off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    undecided_below: Option<f64>,
     /// Seconds since the Unix epoch.
     submitted: u64,
     end: Option<RunEnd>,
+}
+
+impl SavedState {
+    /// The SPRT's chance of deciding within the pair limit below which
+    /// the test ends undecided, if it does.
+    fn undecided_below(&self, spec: &TestSpec) -> Option<f64> {
+        match self.undecided_below {
+            Some(c) => (c > 0.0).then_some(c),
+            None => spec.sprt.and_then(|s| s.undecided_below),
+        }
+    }
 }
 
 /// A test as clients see it.
@@ -124,6 +139,11 @@ pub struct TestInfo {
     pub end: Option<RunEnd>,
     pub submitted: u64,
     pub summary: Summary,
+    /// The SPRT's chance of deciding within the pair limit below which
+    /// the test ends undecided (the spec's `undecided_below`, unless
+    /// changed); None: it plays on to the limit.
+    #[serde(default)]
+    pub undecided_below: Option<f64>,
     /// The chance the SPRT still reaches a bound within the pair limit
     /// ([`crate::stats::decide_chance`]); None without both, or once it
     /// has decided.
@@ -294,6 +314,7 @@ impl Entry {
             end: self.saved.end.clone(),
             submitted: self.saved.submitted,
             summary: self.run.summary(),
+            undecided_below: self.saved.undecided_below(spec),
             decide_chance: None,
             path: self.run.dir.path.clone(),
         }
@@ -306,6 +327,27 @@ impl Entry {
         let json = serde_json::to_string_pretty(&self.saved).expect("state always serializes");
         std::fs::write(&tmp, json).map_err(TourneyError::io(&tmp))?;
         std::fs::rename(&tmp, &path).map_err(TourneyError::io(&path))
+    }
+
+    /// After a change to the pair limit or the cutoff: a test that ended
+    /// for want of room (all pairs played, or unlikely to decide) carries
+    /// on if it now has some, and an active one that now can't decide in
+    /// time ends.
+    fn reconsider(&mut self) {
+        let room = match self.saved.end {
+            Some(RunEnd::MaxPairs) => true,
+            Some(RunEnd::Undecided) => !self.run.unlikely_to_decide() && self.run.clear_halt(),
+            _ => false,
+        };
+        if self.saved.status == TestStatus::Finished && room {
+            self.saved.status = TestStatus::Active;
+            self.saved.end = None;
+            self.run.hold.clear();
+        }
+        if self.saved.status == TestStatus::Active {
+            self.run.end_if_unlikely();
+        }
+        self.settle();
     }
 
     /// Marks an active test finished once it has ended.
@@ -452,6 +494,7 @@ impl Daemon {
             priority,
             max_pairs,
             concurrency: None,
+            undecided_below: None,
             submitted: now(),
             end: None,
         };
@@ -583,17 +626,26 @@ impl Daemon {
             }
             e.run.set_max_pairs(max_pairs);
             e.saved.max_pairs = max_pairs;
-            let carry_on = match e.saved.end {
-                Some(RunEnd::MaxPairs) => true,
-                Some(RunEnd::Undecided) => !e.run.unlikely_to_decide() && e.run.clear_halt(),
-                _ => false,
-            };
-            if e.saved.status == TestStatus::Finished && carry_on {
-                e.saved.status = TestStatus::Active;
-                e.saved.end = None;
-                e.run.hold.clear();
+            e.reconsider();
+            Ok(())
+        })
+    }
+
+    /// Changes the SPRT's chance of deciding within the pair limit below
+    /// which the test ends undecided (None: play on to the limit). A test
+    /// that ended undecided carries on if it's now above it; an active one
+    /// now below it ends.
+    pub fn set_undecided_below(&self, id: &str, cutoff: Option<f64>) -> Result<TestInfo, TourneyError> {
+        self.update(id, |e| {
+            if e.run.dir.spec.sprt.is_none() {
+                return Err(TourneyError::Refused(format!("{id} has no SPRT")));
             }
-            e.settle();
+            if cutoff.is_some_and(|c| !(0.0 < c && c < 1.0)) {
+                return Err(TourneyError::Refused("the chance must be between 0 and 1".into()));
+            }
+            e.run.set_undecided_below(cutoff);
+            e.saved.undecided_below = Some(cutoff.unwrap_or(0.0));
+            e.reconsider();
             Ok(())
         })
     }
@@ -978,6 +1030,10 @@ fn read_archived(zip_path: &Path) -> Result<TestInfo, TourneyError> {
         end: saved.as_ref().and_then(|s| s.end.clone()),
         submitted: saved.as_ref().map_or(0, |s| s.submitted),
         summary: crate::stats::summarize(spec.sprt, &entries),
+        undecided_below: match &saved {
+            Some(s) => s.undecided_below(&spec),
+            None => spec.sprt.and_then(|s| s.undecided_below),
+        },
         decide_chance: None,
         path: zip_path.to_path_buf(),
     }
@@ -1088,6 +1144,7 @@ fn load_entry(inner: &Arc<Inner>, path: &Path) -> Result<Entry, TourneyError> {
             priority: 0,
             max_pairs: TestDir::open(path)?.spec.max_pairs,
             concurrency: None,
+            undecided_below: None,
             submitted: now(),
             end: None,
         },
@@ -1108,6 +1165,7 @@ fn load_entry_with(inner: &Arc<Inner>, path: &Path, saved: SavedState) -> Result
     let concurrency = saved.concurrency.unwrap_or(dir.spec.concurrency);
     let run = TestRun::open(dir, concurrency, event_fn(inner, &id))?;
     run.set_max_pairs(saved.max_pairs);
+    run.set_undecided_below(saved.undecided_below(&run.dir.spec));
     if saved.status != TestStatus::Active {
         run.hold.stop();
     }

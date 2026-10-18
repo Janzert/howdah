@@ -10,7 +10,17 @@
   import type { TestGameView } from './bindings/TestGameView';
   import type { TestView } from './bindings/TestView';
   import { on } from './events';
-  import { decideText, endingText, llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
+  import {
+    cutoffPercent,
+    decideText,
+    endingText,
+    llrPosition,
+    pairCount,
+    percentCutoff,
+    scoreText,
+    sprtText,
+    testState,
+  } from './tests';
 
   interface Props {
     id: string;
@@ -30,6 +40,8 @@
   let busy = $state(false);
   let priority = $state(0);
   let maxPairs = $state<number | null>(null);
+  /** The undecided cutoff in percent (null: off). */
+  let undecided = $state<number | null>(null);
   let concurrency = $state(1);
   /** Delete was clicked once; the second click deletes. */
   let confirmDelete = $state(false);
@@ -38,6 +50,7 @@
     test = t;
     priority = t.priority;
     maxPairs = t.maxPairs;
+    undecided = cutoffPercent(t);
     concurrency = t.concurrency;
   }
 
@@ -73,6 +86,10 @@
       if (priority !== t.priority) t = await api.tourneySetPriority(id, priority);
       const pairs = pairCount(maxPairs);
       if (pairs !== t.maxPairs) t = await api.tourneySetMaxPairs(id, pairs);
+      const cutoff = percentCutoff(undecided);
+      if (t.sprt && (cutoff == null ? null : Number(undecided)) !== cutoffPercent(t)) {
+        t = await api.tourneySetUndecidedBelow(id, cutoff);
+      }
       if (concurrency !== t.concurrency) t = await api.tourneySetConcurrency(id, concurrency);
       return t;
     });
@@ -170,6 +187,14 @@
       <input id="test-priority" type="number" bind:value={priority} />
       <label for="test-pairs">Max pairs</label>
       <input id="test-pairs" type="number" min="1" bind:value={maxPairs} placeholder="none" />
+      {#if test.sprt}
+        <label
+          for="test-undecided"
+          title="End the test undecided once the SPRT's chance of deciding within the max pairs falls below this percentage (empty: play on to the limit)"
+          >Undecided under %</label
+        >
+        <input id="test-undecided" type="number" min="0" max="99" step="any" bind:value={undecided} placeholder="off" />
+      {/if}
       <label for="test-concurrency" title="How many of this test's games may run at once (the daemon's games at once still apply)"
         >At once</label
       >

@@ -316,6 +316,10 @@ function makeApi(sid: () => SessionId | null) {
     /** Changes a test's pair limit (null: until the SPRT decides). */
     tourneySetMaxPairs: (id: string, maxPairs: number | null) =>
       invoke<TestView>('tourney_set_max_pairs', { id, maxPairs }),
+    /** Changes the chance of deciding within the pair limit below which a
+     * test ends undecided (null: it plays on to the limit). */
+    tourneySetUndecidedBelow: (id: string, undecidedBelow: number | null) =>
+      invoke<TestView>('tourney_set_undecided_below', { id, undecidedBelow }),
     /** Opens a test's game in this session: a running one is followed, a
      * finished one loaded. */
     openTourneyGame: (test: string, pair: number, game: number) =>

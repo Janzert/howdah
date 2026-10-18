@@ -274,8 +274,11 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   Elo it changed at most about 1.6% of results).
   The parent repo's SPRT cutoff chart simulates it. The model overstates
   the chance over the first few pairs, which only errs towards playing
-  on. A test ended undecided can't be resumed until a raised pair limit
-  gives it room to decide; raising it that far carries it on.
+  on. The cutoff is a setting beside the pair limit, changeable while
+  the test runs (off: play on to the limit). A test ended undecided
+  can't be resumed until a raised pair limit or a lowered cutoff gives
+  it room to decide, and that change carries it on; one that raises the
+  cutoff past a running test's chance ends it.
 - **Ctrl-C.** The first stops new games and waits for the running ones;
   the second quits, and those games are played again on the next run.
   Engines run in their own process group (`EngineConfig::own_process_group`),
@@ -300,8 +303,8 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
 - The data directory is `$HOWDAH_TOURNEY_DIR`, else `tourney/` in the
   app's local data directory (beside `engines/`), or `--data-dir`.
   Tests are `tests/<NNNN>-<name>/`. Instead of an events file, each
-  test's changes (status, priority, pair limit, games at once when
-  changed from the spec's, end) go in `state.json`
+  test's changes (status, priority, pair limit, games at once and the
+  undecided cutoff when changed from the spec's, end) go in `state.json`
   beside `test.toml`, rewritten whole (written to a temporary file and
   renamed).
 - Statuses are active, paused and finished, a finished test saying why:

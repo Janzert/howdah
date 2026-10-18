@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { TestView } from './bindings/TestView';
-import { decideText, endingText, llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
+import {
+  cutoffPercent,
+  decideText,
+  endingText,
+  llrPosition,
+  pairCount,
+  percentCutoff,
+  scoreText,
+  sprtText,
+  testState,
+} from './tests';
 
 function view(over: Partial<TestView> = {}): TestView {
   return {
@@ -57,6 +67,15 @@ describe('tests', () => {
     expect(decideText(view({ maxPairs: 3000, decideChance: 0.5, status: 'finished' }))).toBeNull();
     const cut = view({ maxPairs: 3000, decideChance: 0.2, sprt: { elo0: 0, elo1: 10, undecidedBelow: 0.05 } });
     expect(decideText(cut)).toBe('20% chance to decide within 3000 pairs (stops under 5%)');
+  });
+
+  it('reads and fills a cutoff field in percent', () => {
+    expect(percentCutoff('')).toBeNull();
+    expect(percentCutoff(0)).toBeNull();
+    expect(percentCutoff(5)).toBe(0.05);
+    expect(percentCutoff('2.5')).toBe(0.025);
+    expect(cutoffPercent(view())).toBeNull();
+    expect(cutoffPercent(view({ sprt: { elo0: 0, elo1: 10, undecidedBelow: 0.07 } }))).toBe(7);
   });
 
   it('reads a pair limit field', () => {

@@ -238,7 +238,8 @@ plans the engine test and tournament runner.
   `decide_chance` (`TestInfo.decide_chance`) the chance an undecided SPRT
   still reaches a bound within the pair limit; below the SPRT's
   `undecided_below` the runner ends the test (`RunEnd::Undecided`,
-  checked after every game). The
+  checked after every game; changeable per test like the pair limit,
+  `Daemon::set_undecided_below`). The
   `howdah-tourney` binary is its command line (`new`, `run`, `show`
   here; the rest through the daemon); engines run in their own process
   group so Ctrl-C reaches only it.

@@ -20,7 +20,8 @@
 //!   ([`TestInfo`]); `DELETE /archive/{file}`: deletes one, `{}`.
 //! - `POST /tests/{id}/pause`, `/resume`, `/stop`; `POST
 //!   /tests/{id}/priority` `{"priority": n}`; `POST /tests/{id}/max-pairs`
-//!   `{"maxPairs": n | null}`; `POST /tests/{id}/concurrency`
+//!   `{"maxPairs": n | null}`; `POST /tests/{id}/undecided-below`
+//!   `{"undecidedBelow": chance | null}`; `POST /tests/{id}/concurrency`
 //!   `{"concurrency": n}` (games at once).
 //! - `POST /slots` `{"slots": n}`; `POST /shutdown` `{"now": bool}`.
 //! - `GET /events`: server-sent events, each a [`DaemonEvent`] named by
@@ -133,6 +134,7 @@ pub async fn serve(daemon: Daemon, listener: TcpListener, info: DaemonInfo) -> R
         .route("/tests/{id}/stop", post(stop))
         .route("/tests/{id}/priority", post(priority))
         .route("/tests/{id}/max-pairs", post(max_pairs))
+        .route("/tests/{id}/undecided-below", post(undecided_below))
         .route("/tests/{id}/concurrency", post(concurrency))
         .route("/archive", get(archived))
         .route("/archive/{file}", axum::routing::delete(delete_archived))
@@ -332,6 +334,21 @@ async fn max_pairs(
 ) -> ApiResult<crate::daemon::TestInfo> {
     let req: MaxPairs = body(&bytes)?;
     Ok(Json(s.daemon.set_max_pairs(&id, req.max_pairs)?))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UndecidedBelow {
+    undecided_below: Option<f64>,
+}
+
+async fn undecided_below(
+    State(s): State<AppState>,
+    UrlPath(id): UrlPath<String>,
+    bytes: Bytes,
+) -> ApiResult<crate::daemon::TestInfo> {
+    let req: UndecidedBelow = body(&bytes)?;
+    Ok(Json(s.daemon.set_undecided_below(&id, req.undecided_below)?))
 }
 
 #[derive(Deserialize)]

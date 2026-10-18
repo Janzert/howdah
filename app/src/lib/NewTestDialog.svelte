@@ -6,7 +6,7 @@
   import { api, errorMessage } from './api';
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { TestView } from './bindings/TestView';
-  import { pairCount, TEST_TIME_CONTROLS, UNDECIDED_BELOW } from './tests';
+  import { pairCount, percentCutoff, TEST_TIME_CONTROLS, UNDECIDED_PERCENT } from './tests';
 
   interface Props {
     engines: EngineSpec[];
@@ -25,7 +25,8 @@
   let elo0 = $state(0);
   let elo1 = $state(10);
   let maxPairs = $state<number | null>(null);
-  let stopUndecided = $state(true);
+  /** The undecided cutoff in percent (empty: off). */
+  let undecided = $state<number | null>(UNDECIDED_PERCENT);
   let concurrency = $state(1);
   let priority = $state(0);
   let error = $state<string | null>(null);
@@ -51,7 +52,7 @@
         engines: [first, second],
         timeControl: timeControl.trim() || null,
         maxPairs: pairs,
-        sprt: useSprt ? { elo0, elo1, undecidedBelow: stopUndecided && pairs != null ? UNDECIDED_BELOW : null } : null,
+        sprt: useSprt ? { elo0, elo1, undecidedBelow: pairs != null ? percentCutoff(undecided) : null } : null,
         concurrency,
         priority,
       });
@@ -102,13 +103,24 @@
     </div>
     <label for="nt-pairs">Max pairs</label>
     <input id="nt-pairs" type="number" min="1" bind:value={maxPairs} placeholder={useSprt ? 'none' : 'needed'} />
-    <span></span>
     <label
-      class="check"
-      title="At most {UNDECIDED_BELOW * 100}% of tests stopped this way would have gone on to pass or fail"
-      ><input type="checkbox" bind:checked={stopUndecided} disabled={!useSprt || pairs == null} /> Stop undecided once
-      the SPRT has under {UNDECIDED_BELOW * 100}% chance of deciding within them</label
+      for="nt-undecided"
+      title="End the test undecided once the SPRT's chance of deciding within the max pairs falls below this percentage. At most about that share of tests ended this way would have gone on to pass or fail. Empty: play on to the limit."
+      >Undecided under</label
     >
+    <div class="stop">
+      <input
+        id="nt-undecided"
+        type="number"
+        min="0"
+        max="99"
+        step="any"
+        bind:value={undecided}
+        placeholder="off"
+        disabled={!useSprt || pairs == null}
+      />
+      <span>% chance of deciding within the max pairs</span>
+    </div>
     <label for="nt-conc">Games at once</label>
     <input id="nt-conc" type="number" min="1" bind:value={concurrency} />
     <label for="nt-priority">Priority</label>

@@ -359,6 +359,23 @@ async fn an_undecided_test_carries_on_when_its_limit_rises() {
     let info = daemon.set_max_pairs(&t.id, Some(3000)).unwrap();
     assert!(info.decide_chance.unwrap() > 0.6, "{:?}", info.decide_chance);
     assert_eq!((info.status, info.end), (TestStatus::Active, None));
+
+    // A cutoff above its chance ends it again (once running games finish).
+    let mut rx = daemon.subscribe();
+    let info = daemon.set_undecided_below(&t.id, Some(0.99)).unwrap();
+    assert_eq!(info.undecided_below, Some(0.99));
+    if info.status != TestStatus::Finished {
+        events_until(&mut rx, |e| finished(e, &t.id)).await;
+    }
+    assert_eq!(daemon.info(&t.id).unwrap().end, Some(RunEnd::Undecided));
+    assert!(matches!(daemon.set_undecided_below(&t.id, Some(1.5)), Err(TourneyError::Refused(_))));
+
+    // With the cutoff off it carries on, and stays off after a restart.
+    let info = daemon.set_undecided_below(&t.id, None).unwrap();
+    assert_eq!((info.status, info.undecided_below), (TestStatus::Active, None));
     daemon.stop(&t.id).unwrap();
+    close(&daemon).await;
+    let daemon = Daemon::start(tmp.path(), 0).unwrap();
+    assert_eq!(daemon.info(&t.id).unwrap().undecided_below, None);
     close(&daemon).await;
 }

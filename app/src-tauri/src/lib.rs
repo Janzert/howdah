@@ -192,6 +192,7 @@ pub fn run() {
             commands::tourney_control,
             commands::tourney_set_priority,
             commands::tourney_set_max_pairs,
+            commands::tourney_set_undecided_below,
             commands::tourney_remove,
             commands::tourney_archived,
             commands::tourney_restore,

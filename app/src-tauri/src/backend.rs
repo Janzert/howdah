@@ -928,6 +928,16 @@ impl Backend {
         self.tourney.set_max_pairs(id, max_pairs).await
     }
 
+    /// Changes the chance of deciding within the pair limit below which a
+    /// test ends undecided (None: it plays on to the limit).
+    pub async fn tourney_set_undecided_below(
+        &self,
+        id: &str,
+        cutoff: Option<f64>,
+    ) -> Result<TestView, ApiError> {
+        self.tourney.set_undecided_below(id, cutoff).await
+    }
+
     /// Archives (zips) or deletes a test that isn't active; the archive's
     /// path, when archived.
     pub async fn tourney_remove(&self, id: &str, archive: bool) -> Result<Option<String>, ApiError> {
@@ -1335,6 +1345,9 @@ impl Backend {
             "tourney_set_max_pairs" => {
                 ok(self.tourney_set_max_pairs(&arg::<String>(args, "id")?, arg(args, "maxPairs")?).await?)
             }
+            "tourney_set_undecided_below" => ok(self
+                .tourney_set_undecided_below(&arg::<String>(args, "id")?, arg(args, "undecidedBelow")?)
+                .await?),
             "tourney_remove" => {
                 ok(self.tourney_remove(&arg::<String>(args, "id")?, arg(args, "archive")?).await?)
             }

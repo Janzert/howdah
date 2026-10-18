@@ -157,6 +157,9 @@ struct State {
     /// The next game in order to consider.
     cursor: (u32, u8),
     max_pairs: Option<u32>,
+    /// The SPRT's chance of deciding within `max_pairs` below which the
+    /// test ends undecided.
+    undecided_below: Option<f64>,
     /// Games each engine has failed in a row.
     failures: [u32; 2],
     end: Option<RunEnd>,
@@ -242,6 +245,7 @@ impl TestRun {
                 retry: VecDeque::new(),
                 cursor: (1, 1),
                 max_pairs: dir.spec.max_pairs,
+                undecided_below: dir.spec.sprt.and_then(|s| s.undecided_below),
                 failures: [0; 2],
                 end,
                 log,
@@ -323,7 +327,7 @@ impl TestRun {
     }
 
     /// Whether the SPRT's chance of deciding within the pair limit is
-    /// below the spec's `undecided_below`, so the test should end
+    /// below the test's `undecided_below`, so the test should end
     /// undecided. Never once every pair is played (that's
     /// [`RunEnd::MaxPairs`]).
     pub(crate) fn unlikely_to_decide(&self) -> bool {
@@ -333,8 +337,23 @@ impl TestRun {
 
     fn below_cutoff(&self, st: &State, summary: &Summary) -> bool {
         let Some(sp) = self.dir.spec.sprt else { return false };
-        let (Some(cutoff), Some(max)) = (sp.undecided_below, st.max_pairs) else { return false };
+        let (Some(cutoff), Some(max)) = (st.undecided_below, st.max_pairs) else { return false };
         summary.pairs < max && decide_chance(sp, summary, max).is_some_and(|c| c < cutoff)
+    }
+
+    /// Ends the test undecided now if it's unlikely to decide in time
+    /// (after a change to its limit or cutoff), rather than after its
+    /// next game.
+    pub(crate) fn end_if_unlikely(&self) {
+        let mut st = self.state.lock().unwrap();
+        let summary = summarize(self.dir.spec.sprt, &st.entries);
+        if st.end.is_none() && self.below_cutoff(&st, &summary) {
+            st.end = Some(RunEnd::Undecided);
+        }
+    }
+
+    pub(crate) fn set_undecided_below(&self, cutoff: Option<f64>) {
+        self.state.lock().unwrap().undecided_below = cutoff;
     }
 
     pub(crate) fn set_max_pairs(&self, max_pairs: Option<u32>) {

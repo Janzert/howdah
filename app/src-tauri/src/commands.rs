@@ -761,6 +761,15 @@ pub async fn tourney_set_max_pairs(
 }
 
 #[tauri::command]
+pub async fn tourney_set_undecided_below(
+    state: State<'_, Backend>,
+    id: String,
+    undecided_below: Option<f64>,
+) -> Result<TestView, ApiError> {
+    state.tourney_set_undecided_below(&id, undecided_below).await
+}
+
+#[tauri::command]
 pub async fn tourney_remove(
     state: State<'_, Backend>,
     id: String,

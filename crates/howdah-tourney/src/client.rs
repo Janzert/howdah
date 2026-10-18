@@ -171,6 +171,12 @@ impl Client {
         self.post(&format!("/tests/{id}/max-pairs"), &json!({ "maxPairs": max_pairs })).await
     }
 
+    /// Changes the chance of deciding below which a test ends undecided
+    /// (None: it plays on to its limit).
+    pub async fn set_undecided_below(&self, id: &str, cutoff: Option<f64>) -> Result<TestInfo, ClientError> {
+        self.post(&format!("/tests/{id}/undecided-below"), &json!({ "undecidedBelow": cutoff })).await
+    }
+
     pub async fn set_slots(&self, slots: u32) -> Result<DaemonStatus, ClientError> {
         self.post("/slots", &json!({ "slots": slots })).await
     }

@@ -137,6 +137,10 @@ impl Tourney {
         Ok(test_view(&self.client()?.set_max_pairs(id, max_pairs).await.map_err(api)?))
     }
 
+    pub async fn set_undecided_below(&self, id: &str, cutoff: Option<f64>) -> Result<TestView, ApiError> {
+        Ok(test_view(&self.client()?.set_undecided_below(id, cutoff).await.map_err(api)?))
+    }
+
     /// Takes a test that isn't active out of the daemon's queue: zipped
     /// into its `archive/` (whose path is returned) if `archive`, else
     /// deleted.
@@ -591,7 +595,7 @@ pub fn test_view(t: &TestInfo) -> TestView {
         priority: t.priority,
         max_pairs: t.max_pairs,
         concurrency: t.concurrency,
-        sprt: t.sprt.map(|s| SprtView { elo0: s.elo0, elo1: s.elo1, undecided_below: s.undecided_below }),
+        sprt: t.sprt.map(|s| SprtView { elo0: s.elo0, elo1: s.elo1, undecided_below: t.undecided_below }),
         running: t.running.iter().map(|&(pair, game)| TestGameRef { pair, game }).collect(),
         games: s.games,
         pairs: s.pairs,
