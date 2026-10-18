@@ -5,10 +5,10 @@
 Howdah is a desktop app for playing and studying
 [Arimaa](https://en.wikipedia.org/wiki/Arimaa). Play against engines on
 your own computer, analyse positions, keep annotated game records, and
-play or watch games on [arimaa.com](http://arimaa.com/). It runs on
+play, watch and chat on [arimaa.com](http://arimaa.com/). It runs on
 Windows, Linux and macOS.
 
-![Howdah analysing a game with Sharp: the board with the engine's best line drawn as arrows, the evaluation bar, the move list and the analysis panel](docs/images/screenshot.png)
+![Howdah's main window: a sidebar listing two open games, and one of them on its board with Sharp analysing it, showing the engine's best line drawn as arrows, the evaluation bar, the move list and the analysis panel](docs/images/screenshot.png)
 
 ## Features
 
@@ -22,7 +22,12 @@ Windows, Linux and macOS.
 - A move tree with variations, comments and move glyphs. Try a line
   anywhere in a game, and it's kept as a variation.
 - Load and copy game records in the PGN-style Arimaa format, including
-  games from the arimaa.com archive.
+  games from the arimaa.com archive. Going through a timed game shows
+  the clocks at each move.
+- Several games at once: each has a board in the main window, which can
+  pop out into a window of its own and dock back.
+- A position editor: set up any position, then analyse it or play from
+  it.
 - Clocks and time controls, sounds, board and piece themes, and light
   and dark colors.
 
@@ -31,7 +36,7 @@ Windows, Linux and macOS.
 - Play against an engine, or watch two engines play each other.
 - [Sharp](https://github.com/Janzert/arimaasharp) and
   [OpFor](https://github.com/Janzert/OpFor) can be installed from the
-  Engines dialog with a click, and kept up to date there. Any other
+  Engines panel with a click, and kept up to date there. Any other
   engine that speaks [AEI](https://github.com/Janzert/AEI) can be added
   by its program path or a manifest.
 - Set an engine's options for every game, for one game, or for analysis.
@@ -42,11 +47,21 @@ Windows, Linux and macOS.
   game, showing its evaluation, its best line on the board, and its
   output. Click a line to add it to the game as a variation.
 
+**Engine tests**
+
+- For engine developers: play two engines against each other in many
+  games, several at once, until an SPRT decides whether a change is
+  better. Tests queue up and carry on after a restart, and each game can
+  be followed live. `howdah-tourney` does the same from the command line.
+
 **arimaa.com**
 
 - Log in to the gameroom to watch live games or open finished ones.
 - Play: create and join games, rated or unrated, live or postal, with
-  invitations, chat and takebacks.
+  invitations, chat and takebacks. See who's online and invite them, or
+  start a game with one of the server's bots.
+- The gameroom's chat room and its archive, and its announcements.
+- Solve arimaa.com's puzzles.
 - Games carry on through network drops and the computer sleeping, and
   you can return to a game in progress.
 
@@ -95,14 +110,15 @@ has new versions, and [CHANGELOG.md](CHANGELOG.md) what changed.
 
 ## Getting started
 
-- **Play an engine:** open *Engines* and install Sharp or OpFor, then
-  start a *New game* with the engine on one side.
-- **Analyse:** turn on *Analysis* and pick an engine. It follows the
-  position as you step through the game.
-- **arimaa.com:** click *arimaa.com* and log in with your gameroom
-  account to play, watch, or start games.
-- **Records:** *Record* loads a game pasted in or opened from a file,
-  and gives the current game's record to copy.
+- **Play an engine:** install Sharp and OpFor from *Home* (or from
+  *Engines*), then start a *New game* with an engine on one side.
+- **Analyse:** on a board, turn on *Analysis* and pick an engine. It
+  follows the position as you step through the game. *Analysis board*
+  on *Home* starts from an empty one.
+- **arimaa.com:** click *arimaa.com* in the sidebar and log in with your
+  gameroom account to play, watch, chat or start games.
+- **Records:** *Open record* on *Home* loads a game pasted in or opened
+  from a file, and a board's *Record* gives its game's record to copy.
 - Press `?` for the keyboard shortcuts.
 
 ## Building from source
@@ -170,6 +186,7 @@ CI runs these on Linux, Windows and macOS and builds the installers.
 - `crates/howdah-gameroom`: the arimaa.com gameroom client.
 - `crates/howdah-render`: draws a position as a PNG or JPEG with the
   classic themes (`cargo run -p howdah-render -- POSITION OUT.png`).
+- `crates/howdah-tourney`: the engine test runner and its daemon.
 - `app/`: the Tauri application. `src-tauri/` is the Rust shell and `src/`
   is the Svelte frontend.
 - `docs/`: design notes (analysis, variations, engines, the gameroom,
