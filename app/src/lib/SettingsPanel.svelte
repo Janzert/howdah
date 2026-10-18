@@ -180,8 +180,8 @@
       Leave the chat room for rated and event games
     </label>
     <p class="hint">
-      As is the custom in the gameroom: when you play a rated game against a person that isn't postal, or any event
-      game, you leave the chat room as it starts. You can enter again during the game.
+      When you play a rated game against a person that isn't postal, or any event game, you leave the chat room as it
+      starts. You can enter again during the game.
     </p>
   </section>
   </div>

@@ -42,7 +42,7 @@ export interface SettingsData {
   analysisEngine: string | null;
   moveTimes: MoveTimes;
   /** Leave the gameroom's chat room when playing a rated game against a
-   * person that isn't postal, or an event game, as is the custom there. */
+   * person that isn't postal, or an event game. */
   leaveChatForGames: boolean;
 }
 

@@ -80,8 +80,7 @@
       <p class="muted">
         Entering is public: the room shows who comes and goes, and it and every message stay in its archive.
         {#if settings.leaveChatForGames}
-          You'll leave it when you play a rated game against a person (not postal) or an event game, as is the custom
-          there (Settings).
+          You'll leave it when you play a rated game against a person (not postal) or an event game (Settings).
         {/if}
       </p>
       <div class="actions">
