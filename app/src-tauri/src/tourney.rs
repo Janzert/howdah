@@ -601,6 +601,7 @@ pub fn test_view(t: &TestInfo) -> TestView {
         los: s.los,
         llr: s.llr,
         llr_bounds: s.llr_bounds,
+        decide_chance: t.decide_chance,
         repeated: s.repeated,
         path: t.path.display().to_string(),
     }

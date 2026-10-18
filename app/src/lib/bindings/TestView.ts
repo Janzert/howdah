@@ -49,6 +49,11 @@ elo: string | null,
  */
 los: number | null, llr: number | null, llrBounds: [number, number] | null, 
 /**
+ * The chance the SPRT still reaches a bound within the pair limit;
+ * None without an SPRT and a limit, or once it has decided.
+ */
+decideChance: number | null, 
+/**
  * Games whose moves repeat an earlier game's.
  */
 repeated: number, path: string, };

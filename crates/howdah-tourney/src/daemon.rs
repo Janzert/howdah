@@ -124,8 +124,23 @@ pub struct TestInfo {
     pub end: Option<RunEnd>,
     pub submitted: u64,
     pub summary: Summary,
+    /// The chance the SPRT still reaches a bound within the pair limit
+    /// ([`crate::stats::decide_chance`]); None without both, or once it
+    /// has decided.
+    #[serde(default)]
+    pub decide_chance: Option<f64>,
     /// The test's directory.
     pub path: PathBuf,
+}
+
+impl TestInfo {
+    fn with_decide_chance(mut self) -> Self {
+        self.decide_chance = self
+            .sprt
+            .zip(self.max_pairs)
+            .and_then(|(sp, max)| crate::stats::decide_chance(sp, &self.summary, max));
+        self
+    }
 }
 
 /// A test in the archive.
@@ -279,8 +294,10 @@ impl Entry {
             end: self.saved.end.clone(),
             submitted: self.saved.submitted,
             summary: self.run.summary(),
+            decide_chance: None,
             path: self.run.dir.path.clone(),
         }
+        .with_decide_chance()
     }
 
     fn save(&self) -> Result<(), TourneyError> {
@@ -951,8 +968,10 @@ fn read_archived(zip_path: &Path) -> Result<TestInfo, TourneyError> {
         end: saved.as_ref().and_then(|s| s.end.clone()),
         submitted: saved.as_ref().map_or(0, |s| s.submitted),
         summary: crate::stats::summarize(spec.sprt, &entries),
+        decide_chance: None,
         path: zip_path.to_path_buf(),
-    })
+    }
+    .with_decide_chance())
 }
 
 /// Unzips an archived test into `tests_dir/<id>/` and returns its id.

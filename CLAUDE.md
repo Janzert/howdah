@@ -234,7 +234,9 @@ plans the engine test and tournament runner.
   `concurrency` slots that each keep a process per engine, and reports
   `RunEvent`s; `StopHandle` starts no more games. `summarize` counts
   complete pairs: Elo, LOS, and the SPRT (variance with one pseudo-pair
-  per outcome, decided at the first crossing in log order). The
+  per outcome, decided at the first crossing in log order), and
+  `decide_chance` (`TestInfo.decide_chance`) the chance an undecided SPRT
+  still reaches a bound within the pair limit. The
   `howdah-tourney` binary is its command line (`new`, `run`, `show`
   here; the rest through the daemon); engines run in their own process
   group so Ctrl-C reaches only it.

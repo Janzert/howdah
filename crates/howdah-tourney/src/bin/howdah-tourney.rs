@@ -41,8 +41,8 @@ use std::process::ExitCode;
 use howdah_tourney::client::Client;
 use howdah_tourney::{
     Daemon, DaemonEvent, DaemonInfo, Decision, GameEntry, RESOURCE_LIMIT, RunEnd, RunEvent, RunOptions,
-    StopHandle, Summary, TestDir, TestInfo, TestSpec, TestStatus, TourneyError, default_data_dir, server,
-    summarize,
+    StopHandle, Summary, TestDir, TestInfo, TestSpec, TestStatus, TourneyError, decide_chance,
+    default_data_dir, server, summarize,
 };
 
 const USAGE: &str = "usage:
@@ -293,6 +293,10 @@ fn show(dir: &Path) -> Result<(), String> {
     print_summary(&names, &summary, test.spec.sprt.is_some());
     if let Some(d) = summary.decision {
         println!("\nSPRT: {}", decision_text(&names, d));
+    } else if let (Some(sp), Some(max)) = (test.spec.sprt, test.spec.max_pairs)
+        && let Some(c) = decide_chance(sp, &summary, max)
+    {
+        println!("Chance the SPRT decides within {max} pairs: {}", percent(c));
     }
     Ok(())
 }
@@ -348,6 +352,15 @@ fn elo_text(s: &Summary) -> String {
         (Some(e), Some((lo, hi))) => format!("Elo {} [{}, {}]", signed(e), signed(lo), signed(hi)),
         (Some(e), None) => format!("Elo {}", signed(e)),
         (None, _) => "Elo -".into(),
+    }
+}
+
+/// A chance as a percentage, without claiming certainty it doesn't have.
+fn percent(c: f64) -> String {
+    match c * 100.0 {
+        p if p > 0.0 && p < 0.1 => "<0.1%".into(),
+        p if p < 100.0 && p > 99.9 => ">99.9%".into(),
+        p => format!("{p:.1}%"),
     }
 }
 
@@ -530,6 +543,9 @@ fn list_line(t: &TestInfo) -> String {
         t.summary.games,
         short_stats(&t.summary)
     );
+    if let Some(c) = t.decide_chance.filter(|_| t.status != TestStatus::Finished) {
+        line += &format!(", {} to decide in time", percent(c));
+    }
     if t.priority != 0 {
         line += &format!(", priority {}", t.priority);
     }

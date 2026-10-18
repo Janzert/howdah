@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TestView } from './bindings/TestView';
-import { endingText, llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
+import { decideText, endingText, llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
 
 function view(over: Partial<TestView> = {}): TestView {
   return {
@@ -25,6 +25,7 @@ function view(over: Partial<TestView> = {}): TestView {
     los: 0.9,
     llr: 0,
     llrBounds: [-2.94, 2.94],
+    decideChance: null,
     repeated: 0,
     path: '/tmp/t',
     ...over,
@@ -46,6 +47,14 @@ describe('tests', () => {
   it('describes the score and the SPRT', () => {
     expect(scoreText(view())).toBe('12–9 in 21 games (10 pairs)');
     expect(sprtText(view({ llr: 1.234 }))).toBe('LLR 1.23 (-2.94, 2.94) for Elo [0, 10]');
+  });
+
+  it('words the chance of deciding in time', () => {
+    expect(decideText(view())).toBeNull();
+    expect(decideText(view({ maxPairs: 3000, decideChance: 0.623 }))).toBe('62% chance to decide within 3000 pairs');
+    expect(decideText(view({ maxPairs: 3000, decideChance: 0.0412 }))).toBe('4.1% chance to decide within 3000 pairs');
+    expect(decideText(view({ maxPairs: 3000, decideChance: 0.00001 }))).toBe('<0.1% chance to decide within 3000 pairs');
+    expect(decideText(view({ maxPairs: 3000, decideChance: 0.5, status: 'finished' }))).toBeNull();
   });
 
   it('reads a pair limit field', () => {

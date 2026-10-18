@@ -23,6 +23,15 @@ export function sprtText(t: TestView): string | null {
   return `LLR ${t.llr.toFixed(2)} (${lo.toFixed(2)}, ${hi.toFixed(2)}) for Elo [${t.sprt.elo0}, ${t.sprt.elo1}]`;
 }
 
+/** The chance the SPRT still decides before the pair limit, while it's
+ * running: `62% chance to decide within 3000 pairs`. */
+export function decideText(t: TestView): string | null {
+  if (t.decideChance == null || t.maxPairs == null || t.status === 'finished') return null;
+  const p = t.decideChance * 100;
+  const pct = p > 0 && p < 0.1 ? '<0.1%' : p > 99.9 && p < 100 ? '>99.9%' : `${p.toFixed(p < 10 ? 1 : 0)}%`;
+  return `${pct} chance to decide within ${t.maxPairs} pairs`;
+}
+
 /** Games, pairs and the score: `12-8 in 20 games (10 pairs)`. */
 export function scoreText(t: TestView): string {
   const pairs = t.pairs === 1 ? '1 pair' : `${t.pairs} pairs`;

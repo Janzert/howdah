@@ -1522,6 +1522,9 @@ pub struct TestView {
     pub los: Option<f64>,
     pub llr: Option<f64>,
     pub llr_bounds: Option<(f64, f64)>,
+    /// The chance the SPRT still reaches a bound within the pair limit;
+    /// None without an SPRT and a limit, or once it has decided.
+    pub decide_chance: Option<f64>,
     /// Games whose moves repeat an earlier game's.
     pub repeated: u32,
     pub path: String,

@@ -210,6 +210,74 @@ fn llr(sp: SprtSpec, counts: [u32; 3]) -> f64 {
     f64::from(n) * (s1 - s0) * (2.0 * m - s0 - s1) / (2.0 * v)
 }
 
+/// The chance that an undecided SPRT still reaches a bound by `max_pairs`;
+/// None once it has decided, or before the first pair.
+///
+/// The rest of the test is taken as a Brownian motion from the current
+/// LLR, with the per-pair drift and variance the LLR has at a true score
+/// `q`, and the chances of crossing each bound within the pairs left (the
+/// first-passage formula) are added, which slightly overstates it. That is
+/// averaged over a normal posterior for `q`: the observed score, with the
+/// LLR's variance over `n`. Checked against a simulation of the exact
+/// test in the parent repo's SPRT cutoff chart.
+pub fn decide_chance(sp: SprtSpec, s: &Summary, max_pairs: u32) -> Option<f64> {
+    if s.decision.is_some() || s.pairs == 0 {
+        return None;
+    }
+    let (lower, upper) = llr_bounds(sp);
+    let l = llr(sp, s.pair_counts);
+    if l >= upper || l <= lower {
+        return Some(1.0);
+    }
+    let left = f64::from(max_pairs.saturating_sub(s.pairs));
+    if left == 0.0 {
+        return Some(0.0);
+    }
+    let (s0, s1) = (score_from_elo(sp.elo0), score_from_elo(sp.elo1));
+    let d = s1 - s0;
+    let hit = |q: f64| {
+        let v = q * (1.0 - q) / 2.0;
+        let (mu, s2) = (d * (2.0 * q - s0 - s1) / (2.0 * v), d * d / v);
+        (cross(upper - l, mu, s2, left) + cross(l - lower, -mu, s2, left)).min(1.0)
+    };
+    let (m, _) = mean_var(s.pair_counts.map(f64::from));
+    let (_, v) = mean_var(s.pair_counts.map(|c| f64::from(c) + 1.0));
+    let sd = (v / f64::from(s.pairs)).sqrt();
+    // A grid over ±4 sd, a third of one apart.
+    let (mut sum, mut weights) = (0.0, 0.0);
+    for i in 0..=24 {
+        let z = -4.0 + f64::from(i) / 3.0;
+        let w = (-z * z / 2.0).exp();
+        sum += w * hit((m + sd * z).clamp(1e-6, 1.0 - 1e-6));
+        weights += w;
+    }
+    Some(sum / weights)
+}
+
+/// The chance that a Brownian motion with drift `mu` and variance `s2` per
+/// pair rises by `h` within `t` pairs.
+fn cross(h: f64, mu: f64, s2: f64, t: f64) -> f64 {
+    let sd = (s2 * t).sqrt();
+    ln_phi((mu * t - h) / sd).exp() + (2.0 * mu * h / s2 + ln_phi((-h - mu * t) / sd)).exp()
+}
+
+/// ln Φ(x), accurate far into the lower tail, where `phi` underflows.
+fn ln_phi(x: f64) -> f64 {
+    // erfc from Numerical Recipes (relative error below 1.2e-7), in logs.
+    let z = x.abs() / std::f64::consts::SQRT_2;
+    let t = 1.0 / (1.0 + 0.5 * z);
+    let poly = -1.265_512_23
+        + t * (1.000_023_68
+            + t * (0.374_091_96
+                + t * (0.096_784_18
+                    + t * (-0.186_288_06
+                        + t * (0.278_868_07
+                            + t * (-1.135_203_98
+                                + t * (1.488_515_87 + t * (-0.822_152_23 + t * 0.170_872_77))))))));
+    let ln_erfc = t.ln() - z * z + poly;
+    if x < 0.0 { 0.5f64.ln() + ln_erfc } else { (-0.5 * ln_erfc.exp()).ln_1p() }
+}
+
 fn decide(sp: SprtSpec, llr: f64) -> Option<Decision> {
     let (lower, upper) = llr_bounds(sp);
     if llr >= upper {
@@ -388,6 +456,42 @@ mod tests {
             let json = serde_json::to_string(&s).unwrap();
             assert_eq!(serde_json::from_str::<Summary>(&json).unwrap(), s, "{json}");
         }
+    }
+
+    /// A summary of `n` pairs of independent games, each won with `q`.
+    fn expected(n: u32, q: f64) -> Summary {
+        let nf = f64::from(n);
+        let won = (nf * q * q).round() as u32;
+        let lost = (nf * (1.0 - q) * (1.0 - q)).round() as u32;
+        Summary { pairs: n, pair_counts: [lost, n - won - lost, won], ..Summary::default() }
+    }
+
+    #[test]
+    fn decide_chance_projects_the_rest_of_the_test() {
+        // 8000 of 10000 games at +5 Elo: a simulation of the exact test
+        // from there decides about 6% of the time (the cutoff chart).
+        let mid = decide_chance(SPRT, &expected(4000, score_from_elo(5.0)), 5000).unwrap();
+        assert!((0.04..0.10).contains(&mid), "{mid}");
+        // Early on the true Elo could be well off the middle, so it likely
+        // decides (though not surely in 6000 games); at the limit it can't.
+        let early = decide_chance(SPRT, &expected(100, score_from_elo(5.0)), 3000).unwrap();
+        assert!((0.8..0.95).contains(&early), "{early}");
+        assert_eq!(decide_chance(SPRT, &expected(3000, score_from_elo(5.0)), 3000), Some(0.0));
+        // Further from the middle it's likelier to get there in time.
+        let off = decide_chance(SPRT, &expected(4000, score_from_elo(8.0)), 5000).unwrap();
+        assert!(off > mid, "{off} vs {mid}");
+        let decided = Summary { decision: Some(Decision::Pass), ..expected(100, 0.6) };
+        assert_eq!(decide_chance(SPRT, &decided, 3000), None);
+        assert_eq!(decide_chance(SPRT, &Summary::default(), 3000), None);
+    }
+
+    #[test]
+    fn ln_phi_follows_phi_into_the_tail() {
+        for x in [-3.0, -1.0, 0.0, 0.5, 2.0] {
+            assert!((ln_phi(x).exp() - phi(x)).abs() < 1e-6, "{x}");
+        }
+        // Φ(−40) is about 3.7e-350, below f64's range; its log isn't.
+        assert!((ln_phi(-40.0) + 804.608).abs() < 0.01, "{}", ln_phi(-40.0));
     }
 
     #[test]

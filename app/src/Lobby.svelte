@@ -49,7 +49,7 @@
   import SettingsPanel from './lib/SettingsPanel.svelte';
   import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
   import TestPanel from './lib/TestPanel.svelte';
-  import { llrPosition, scoreText, testState } from './lib/tests';
+  import { decideText, llrPosition, scoreText, testState } from './lib/tests';
   import TestsScreen from './lib/TestsScreen.svelte';
   import { findTheme } from './lib/theme';
   import { tourney } from './lib/tourney.svelte';
@@ -702,7 +702,7 @@
                           </span>
                           {#if t}
                             <span class="test-meta">{scoreText(t)}{t.running.length > 0 ? `, ${t.running.length} playing` : ''}</span>
-                            {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
+                            {#if pos != null}<span class="llr" title={decideText(t) ?? undefined}><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
                           {:else if tourney.status && !tourney.status.connected}
                             <span class="test-meta">Test daemon not running</span>
                           {/if}

@@ -10,7 +10,7 @@
   import type { TestGameView } from './bindings/TestGameView';
   import type { TestView } from './bindings/TestView';
   import { on } from './events';
-  import { endingText, llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
+  import { decideText, endingText, llrPosition, pairCount, scoreText, sprtText, testState } from './tests';
 
   interface Props {
     id: string;
@@ -140,6 +140,12 @@
         <dd>
           {sprtText(test)}
           {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
+        </dd>
+      {/if}
+      {#if decideText(test)}
+        <dt>In time</dt>
+        <dd title="Projected from the results so far: the chance the LLR reaches a bound before the pair limit">
+          {decideText(test)}
         </dd>
       {/if}
     </dl>
