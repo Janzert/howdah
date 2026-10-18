@@ -5,7 +5,7 @@ Notable changes to Howdah, newest first. The format follows
 follow [semantic versioning](https://semver.org/) (0.x while Howdah is
 young).
 
-## [Unreleased]
+## [0.2.1] - 2026-10-17
 
 ### Added
 
@@ -259,6 +259,7 @@ Gatekeeper.
 - Keeps playing through network drops and sleep, and resumes games in
   progress.
 
-[Unreleased]: https://github.com/Janzert/howdah/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Janzert/howdah/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Janzert/howdah/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Janzert/howdah/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Janzert/howdah/releases/tag/v0.1.0
