@@ -23,13 +23,20 @@ export function sprtText(t: TestView): string | null {
   return `LLR ${t.llr.toFixed(2)} (${lo.toFixed(2)}, ${hi.toFixed(2)}) for Elo [${t.sprt.elo0}, ${t.sprt.elo1}]`;
 }
 
+/** The chance below which new tests with a pair limit stop undecided. */
+export const UNDECIDED_BELOW = 0.05;
+
 /** The chance the SPRT still decides before the pair limit, while it's
- * running: `62% chance to decide within 3000 pairs`. */
+ * running: `62% chance to decide within 3000 pairs`, and where the test
+ * stops undecided if it does: `(stops under 5%)`. */
 export function decideText(t: TestView): string | null {
   if (t.decideChance == null || t.maxPairs == null || t.status === 'finished') return null;
-  const p = t.decideChance * 100;
-  const pct = p > 0 && p < 0.1 ? '<0.1%' : p > 99.9 && p < 100 ? '>99.9%' : `${p.toFixed(p < 10 ? 1 : 0)}%`;
-  return `${pct} chance to decide within ${t.maxPairs} pairs`;
+  const pct = (c: number) => {
+    const p = c * 100;
+    return p > 0 && p < 0.1 ? '<0.1%' : p > 99.9 && p < 100 ? '>99.9%' : `${+p.toFixed(p < 10 ? 1 : 0)}%`;
+  };
+  const cutoff = t.sprt?.undecidedBelow;
+  return `${pct(t.decideChance)} chance to decide within ${t.maxPairs} pairs${cutoff != null ? ` (stops under ${pct(cutoff)})` : ''}`;
 }
 
 /** Games, pairs and the score: `12-8 in 20 games (10 pairs)`. */

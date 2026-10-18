@@ -3,4 +3,9 @@
 /**
  * An SPRT's Elo bounds.
  */
-export type SprtView = { elo0: number, elo1: number, };
+export type SprtView = { elo0: number, elo1: number, 
+/**
+ * With a pair limit, end undecided once the chance of deciding
+ * within it falls below this.
+ */
+undecidedBelow: number | null, };

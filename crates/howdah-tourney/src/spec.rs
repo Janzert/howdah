@@ -121,6 +121,12 @@ pub struct SprtSpec {
     /// Chance of failing a change that's `elo1` better.
     #[serde(default = "five_percent")]
     pub beta: f64,
+    /// With a pair limit, end the test undecided once the chance of the
+    /// SPRT reaching a bound within it falls below this (0.05: at most 5%
+    /// of tests ended this way would have gone on to decide); see
+    /// [`crate::stats::decide_chance`]. None: play on to the limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undecided_below: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -219,6 +225,9 @@ impl TestSpec {
             Some(s) if s.elo1 <= s.elo0 => return bad("the SPRT's elo1 must be above elo0".into()),
             Some(s) if !(0.0 < s.alpha && s.alpha < 0.5 && 0.0 < s.beta && s.beta < 0.5) => {
                 return bad("the SPRT's alpha and beta must be between 0 and 0.5".into());
+            }
+            Some(SprtSpec { undecided_below: Some(u), .. }) if !(0.0 < u && u < 1.0) => {
+                return bad("the SPRT's undecided_below must be between 0 and 1".into());
             }
             _ => {}
         }

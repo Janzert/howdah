@@ -6,7 +6,7 @@
   import { api, errorMessage } from './api';
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { TestView } from './bindings/TestView';
-  import { pairCount, TEST_TIME_CONTROLS } from './tests';
+  import { pairCount, TEST_TIME_CONTROLS, UNDECIDED_BELOW } from './tests';
 
   interface Props {
     engines: EngineSpec[];
@@ -25,6 +25,7 @@
   let elo0 = $state(0);
   let elo1 = $state(10);
   let maxPairs = $state<number | null>(null);
+  let stopUndecided = $state(true);
   let concurrency = $state(1);
   let priority = $state(0);
   let error = $state<string | null>(null);
@@ -50,7 +51,7 @@
         engines: [first, second],
         timeControl: timeControl.trim() || null,
         maxPairs: pairs,
-        sprt: useSprt ? { elo0, elo1 } : null,
+        sprt: useSprt ? { elo0, elo1, undecidedBelow: stopUndecided && pairs != null ? UNDECIDED_BELOW : null } : null,
         concurrency,
         priority,
       });
@@ -101,6 +102,13 @@
     </div>
     <label for="nt-pairs">Max pairs</label>
     <input id="nt-pairs" type="number" min="1" bind:value={maxPairs} placeholder={useSprt ? 'none' : 'needed'} />
+    <span></span>
+    <label
+      class="check"
+      title="At most {UNDECIDED_BELOW * 100}% of tests stopped this way would have gone on to pass or fail"
+      ><input type="checkbox" bind:checked={stopUndecided} disabled={!useSprt || pairs == null} /> Stop undecided once
+      the SPRT has under {UNDECIDED_BELOW * 100}% chance of deciding within them</label
+    >
     <label for="nt-conc">Games at once</label>
     <input id="nt-conc" type="number" min="1" bind:value={concurrency} />
     <label for="nt-priority">Priority</label>

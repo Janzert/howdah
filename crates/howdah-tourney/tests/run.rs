@@ -130,6 +130,19 @@ async fn an_engine_crashing_again_and_again_halts_the_test() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_test_unlikely_to_decide_ends_undecided() {
+    // With 3 pairs the SPRT can't decide, and after any first pair the
+    // projected chance of deciding is under 0.6 (0.57 at most, after a
+    // pair won or lost by both), so the test ends after one pair.
+    let tmp = tempfile::tempdir().unwrap();
+    let test =
+        make_test(tmp.path(), "max_pairs = 3\n[sprt]\nelo0 = 0\nelo1 = 10\nundecided_below = 0.6", &[], "");
+    let (end, _) = play(&test, StopHandle::default(), None).await;
+    assert_eq!(end, RunEnd::Undecided);
+    assert_eq!(test.results().unwrap().len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_sprt_ends_a_one_sided_test() {
     let tmp = tempfile::tempdir().unwrap();
     let test = make_test(

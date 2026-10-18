@@ -1459,6 +1459,9 @@ pub struct TourneyStatusView {
 pub struct SprtView {
     pub elo0: f64,
     pub elo1: f64,
+    /// With a pair limit, end undecided once the chance of deciding
+    /// within it falls below this.
+    pub undecided_below: Option<f64>,
 }
 
 /// A game of a test, by its pair and game number (game 1 has engine 1 as
@@ -1497,7 +1500,8 @@ pub struct TestView {
     /// `active`, `paused` or `finished`.
     pub status: String,
     /// How a finished test ended: `passed`, `failed` (the SPRT), `done`
-    /// (all pairs played), `stopped` or `halted`.
+    /// (all pairs played), `undecided` (the SPRT was unlikely to decide
+    /// within the pair limit), `stopped` or `halted`.
     pub outcome: Option<String>,
     /// Why a halted test stopped.
     pub halted: Option<String>,

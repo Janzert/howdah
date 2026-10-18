@@ -31,7 +31,7 @@ use tokio::task::JoinSet;
 use crate::error::TourneyError;
 use crate::memory::{self, Engines, Limits, size};
 use crate::results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash};
-use crate::stats::{Decision, Summary, summarize};
+use crate::stats::{Decision, Summary, decide_chance, summarize};
 use crate::testdir::TestDir;
 
 /// An engine failing this many games in a row (crashing, or not starting)
@@ -116,6 +116,9 @@ pub enum RunEnd {
     Decided(Decision),
     /// Every pair up to `max_pairs` was played.
     MaxPairs,
+    /// The SPRT was unlikely to decide within `max_pairs`: its chance of
+    /// doing so fell below the spec's `undecided_below`.
+    Undecided,
     /// [`StopHandle::stop`] was called; running games were finished.
     Stopped,
     /// Something went wrong that needs a person (an engine failing again
@@ -319,6 +322,21 @@ impl TestRun {
         self.concurrency.store(n.max(1), Ordering::SeqCst);
     }
 
+    /// Whether the SPRT's chance of deciding within the pair limit is
+    /// below the spec's `undecided_below`, so the test should end
+    /// undecided. Never once every pair is played (that's
+    /// [`RunEnd::MaxPairs`]).
+    pub(crate) fn unlikely_to_decide(&self) -> bool {
+        let st = self.state.lock().unwrap();
+        self.below_cutoff(&st, &summarize(self.dir.spec.sprt, &st.entries))
+    }
+
+    fn below_cutoff(&self, st: &State, summary: &Summary) -> bool {
+        let Some(sp) = self.dir.spec.sprt else { return false };
+        let (Some(cutoff), Some(max)) = (sp.undecided_below, st.max_pairs) else { return false };
+        summary.pairs < max && decide_chance(sp, summary, max).is_some_and(|c| c < cutoff)
+    }
+
     pub(crate) fn set_max_pairs(&self, max_pairs: Option<u32>) {
         let mut st = self.state.lock().unwrap();
         st.max_pairs = max_pairs;
@@ -461,6 +479,8 @@ impl TestRun {
         let summary = summarize(self.dir.spec.sprt, &st.entries);
         if let Some(d) = summary.decision {
             st.end.get_or_insert(RunEnd::Decided(d));
+        } else if st.end.is_none() && self.below_cutoff(&st, &summary) {
+            st.end = Some(RunEnd::Undecided);
         }
         Ok(summary)
     }

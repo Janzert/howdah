@@ -322,7 +322,7 @@ mod tests {
     use super::*;
     use crate::results::entry;
 
-    const SPRT: SprtSpec = SprtSpec { elo0: 0.0, elo1: 10.0, alpha: 0.05, beta: 0.05 };
+    const SPRT: SprtSpec = SprtSpec { elo0: 0.0, elo1: 10.0, alpha: 0.05, beta: 0.05, undecided_below: None };
 
     /// Pairs scoring 0, 1 and 2 wins for engine 0, `counts` of each,
     /// spread evenly through the log (the SPRT decides in log order).

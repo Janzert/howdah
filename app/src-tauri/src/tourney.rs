@@ -566,6 +566,7 @@ pub fn test_view(t: &TestInfo) -> TestView {
         Some(RunEnd::Decided(Decision::Pass)) => (Some("passed"), None),
         Some(RunEnd::Decided(Decision::Fail)) => (Some("failed"), None),
         Some(RunEnd::MaxPairs) => (Some("done"), None),
+        Some(RunEnd::Undecided) => (Some("undecided"), None),
         Some(RunEnd::Stopped) => (Some("stopped"), None),
         Some(RunEnd::Halted(why)) => (Some("halted"), Some(why.clone())),
         None => (None, None),
@@ -590,7 +591,7 @@ pub fn test_view(t: &TestInfo) -> TestView {
         priority: t.priority,
         max_pairs: t.max_pairs,
         concurrency: t.concurrency,
-        sprt: t.sprt.map(|s| SprtView { elo0: s.elo0, elo1: s.elo1 }),
+        sprt: t.sprt.map(|s| SprtView { elo0: s.elo0, elo1: s.elo1, undecided_below: s.undecided_below }),
         running: t.running.iter().map(|&(pair, game)| TestGameRef { pair, game }).collect(),
         games: s.games,
         pairs: s.pairs,
@@ -654,7 +655,13 @@ pub fn test_spec(new: NewTestSpec, engines: [EngineSpec; 2]) -> Result<TestSpec,
         time_control: new.time_control.filter(|t| !t.trim().is_empty()).map(|t| t.trim().to_string()),
         concurrency: new.concurrency,
         max_pairs: new.max_pairs,
-        sprt: new.sprt.map(|s| SprtSpec { elo0: s.elo0, elo1: s.elo1, alpha: 0.05, beta: 0.05 }),
+        sprt: new.sprt.map(|s| SprtSpec {
+            elo0: s.elo0,
+            elo1: s.elo1,
+            alpha: 0.05,
+            beta: 0.05,
+            undecided_below: s.undecided_below,
+        }),
         engine_logs: false,
         engines: specs,
         memory: Default::default(),
@@ -689,7 +696,7 @@ mod tests {
             engines: ["a".into(), "b".into()],
             time_control: Some(" 2s/30s/100/0/80t ".into()),
             max_pairs,
-            sprt: sprt.then_some(SprtView { elo0: 0.0, elo1: 10.0 }),
+            sprt: sprt.then_some(SprtView { elo0: 0.0, elo1: 10.0, undecided_below: Some(0.05) }),
             concurrency: 2,
             priority: 0,
         }
@@ -706,6 +713,7 @@ mod tests {
         assert_eq!(a.working_dir, None);
         assert_eq!(a.options["hash"].to_string(), "64");
         assert_eq!(spec.sprt.unwrap().alpha, 0.05);
+        assert_eq!(spec.sprt.unwrap().undecided_below, Some(0.05));
     }
 
     #[test]

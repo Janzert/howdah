@@ -14,7 +14,7 @@ function view(over: Partial<TestView> = {}): TestView {
     priority: 0,
     maxPairs: null,
     concurrency: 1,
-    sprt: { elo0: 0, elo1: 10 },
+    sprt: { elo0: 0, elo1: 10, undecidedBelow: null },
     running: [],
     games: 21,
     pairs: 10,
@@ -55,6 +55,8 @@ describe('tests', () => {
     expect(decideText(view({ maxPairs: 3000, decideChance: 0.0412 }))).toBe('4.1% chance to decide within 3000 pairs');
     expect(decideText(view({ maxPairs: 3000, decideChance: 0.00001 }))).toBe('<0.1% chance to decide within 3000 pairs');
     expect(decideText(view({ maxPairs: 3000, decideChance: 0.5, status: 'finished' }))).toBeNull();
+    const cut = view({ maxPairs: 3000, decideChance: 0.2, sprt: { elo0: 0, elo1: 10, undecidedBelow: 0.05 } });
+    expect(decideText(cut)).toBe('20% chance to decide within 3000 pairs (stops under 5%)');
   });
 
   it('reads a pair limit field', () => {

@@ -236,7 +236,9 @@ plans the engine test and tournament runner.
   complete pairs: Elo, LOS, and the SPRT (variance with one pseudo-pair
   per outcome, decided at the first crossing in log order), and
   `decide_chance` (`TestInfo.decide_chance`) the chance an undecided SPRT
-  still reaches a bound within the pair limit. The
+  still reaches a bound within the pair limit; below the SPRT's
+  `undecided_below` the runner ends the test (`RunEnd::Undecided`,
+  checked after every game). The
   `howdah-tourney` binary is its command line (`new`, `run`, `show`
   here; the rest through the daemon); engines run in their own process
   group so Ctrl-C reaches only it.

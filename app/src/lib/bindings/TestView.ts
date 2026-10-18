@@ -16,7 +16,8 @@ engines: [string, string], timeControl: string | null,
 status: string, 
 /**
  * How a finished test ended: `passed`, `failed` (the SPRT), `done`
- * (all pairs played), `stopped` or `halted`.
+ * (all pairs played), `undecided` (the SPRT was unlikely to decide
+ * within the pair limit), `stopped` or `halted`.
  */
 outcome: string | null, 
 /**

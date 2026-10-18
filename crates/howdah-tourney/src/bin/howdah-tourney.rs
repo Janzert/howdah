@@ -275,6 +275,7 @@ async fn run(dir: &Path, concurrency: Option<u32>) -> Result<(), String> {
     match end {
         RunEnd::Decided(d) => println!("\nSPRT: {}", decision_text(&names, d)),
         RunEnd::MaxPairs => println!("\nAll pairs played"),
+        RunEnd::Undecided => println!("\nSPRT unlikely to decide within the pair limit"),
         RunEnd::Stopped => println!("\nStopped"),
         RunEnd::Halted(why) => return Err(format!("\nHalted: {why}")),
     }
@@ -531,6 +532,7 @@ fn list_line(t: &TestInfo) -> String {
         (TestStatus::Finished, Some(RunEnd::Decided(Decision::Pass))) => "passed".to_string(),
         (TestStatus::Finished, Some(RunEnd::Decided(Decision::Fail))) => "failed".to_string(),
         (TestStatus::Finished, Some(RunEnd::MaxPairs)) => "done".to_string(),
+        (TestStatus::Finished, Some(RunEnd::Undecided)) => "undecided".to_string(),
         (TestStatus::Finished, Some(RunEnd::Stopped)) => "stopped".to_string(),
         (TestStatus::Finished, Some(RunEnd::Halted(why))) => format!("halted: {why}"),
         (TestStatus::Finished, None) => "finished".to_string(),

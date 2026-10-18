@@ -104,7 +104,9 @@ The spec, in `test.toml`:
 - The time control (the AEI `M/R/P/L/G/T` format), including the turn
   limit.
 - The stopping rule: SPRT bounds (`elo0`, `elo1`, `alpha`, `beta`), a
-  maximum number of pairs, or both.
+  maximum number of pairs, or both. With both, `undecided_below` (the
+  app's new tests use 0.05) ends the test undecided once the SPRT's
+  chance of deciding within the limit falls below it.
 - Its priority in the queue.
 
 **Engine snapshots.** When a test is submitted, each engine's program is
@@ -155,8 +157,9 @@ daemon running.
   and is restarted. If an engine keeps failing (say three games in a
   row), the test is paused with the reason shown, rather than piling up
   losses.
-- When a test's SPRT decides or it reaches its pair limit, games already
-  running finish and are counted, and no more start.
+- When a test's SPRT decides, it reaches its pair limit, or it ends
+  undecided, games already running finish and are counted, and no more
+  start.
 
 ### Statistics
 
@@ -259,6 +262,20 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   decides at the first pair that takes the LLR past a bound, in log
   order, so games still running when it decides are counted in the
   results but can't undo it, and a resumed test stays decided.
+- **Ending undecided.** `decide_chance` projects the rest of the test:
+  the LLR as a Brownian motion from where it is, with the drift and
+  variance of a true score drawn from a normal posterior (the observed
+  score, variance over `n`), and the first-passage chance of each bound
+  within the pairs left, added. Checked after every game against
+  `undecided_below`: since that chance is a martingale, stopping when it
+  falls below 5% means at most about 5% of tests stopped this way would
+  have gone on to decide, however often it's checked (averaged over the
+  flat prior; simulating [0, 10] over 6000 games, at any given true
+  Elo it changed at most about 1.6% of results).
+  The parent repo's SPRT cutoff chart simulates it. The model overstates
+  the chance over the first few pairs, which only errs towards playing
+  on. A test ended undecided can't be resumed until a raised pair limit
+  gives it room to decide; raising it that far carries it on.
 - **Ctrl-C.** The first stops new games and waits for the running ones;
   the second quits, and those games are played again on the next run.
   Engines run in their own process group (`EngineConfig::own_process_group`),
@@ -288,8 +305,8 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   beside `test.toml`, rewritten whole (written to a temporary file and
   renamed).
 - Statuses are active, paused and finished, a finished test saying why:
-  passed or failed (the SPRT), done (all pairs played), stopped or
-  halted. Resuming clears a halt and its failure counts; a decided test
+  passed or failed (the SPRT), done (all pairs played), undecided
+  (unlikely to decide within the pair limit), stopped or halted. Resuming clears a halt and its failure counts; a decided test
   can't be resumed, and one that has played all its pairs is resumed by
   raising its pair limit.
 - A test's `concurrency` caps its games at once in the daemon too. A

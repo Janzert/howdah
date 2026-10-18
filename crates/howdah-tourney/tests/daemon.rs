@@ -340,3 +340,25 @@ async fn finished_tests_can_be_archived_or_deleted() {
     assert!(daemon.archived().is_empty() && !zip.exists());
     close(&daemon).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_undecided_test_carries_on_when_its_limit_rises() {
+    let tmp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::start(tmp.path(), 0).unwrap();
+    // As in run.rs: 3 pairs can't decide, so it ends after the first.
+    let extra = "max_pairs = 3\n[sprt]\nelo0 = 0\nelo1 = 10\nundecided_below = 0.6";
+    let t = daemon.submit(spec("short", extra, &[]), 0).unwrap();
+    let mut rx = daemon.subscribe();
+    daemon.set_slots(1);
+    events_until(&mut rx, |e| finished(e, &t.id)).await;
+    let info = daemon.info(&t.id).unwrap();
+    assert_eq!((info.end, info.summary.games), (Some(RunEnd::Undecided), 2));
+
+    // It can't be resumed as it is, but with room to decide it carries on.
+    assert!(matches!(daemon.resume(&t.id), Err(TourneyError::Refused(_))));
+    let info = daemon.set_max_pairs(&t.id, Some(3000)).unwrap();
+    assert!(info.decide_chance.unwrap() > 0.6, "{:?}", info.decide_chance);
+    assert_eq!((info.status, info.end), (TestStatus::Active, None));
+    daemon.stop(&t.id).unwrap();
+    close(&daemon).await;
+}

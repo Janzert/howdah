@@ -516,6 +516,11 @@ impl Daemon {
             if e.saved.status == TestStatus::Active {
                 return Err(TourneyError::Refused(format!("{id} is already active")));
             }
+            if e.run.unlikely_to_decide() {
+                return Err(TourneyError::Refused(format!(
+                    "{id} is unlikely to decide within its max pairs; raise them"
+                )));
+            }
             if !e.run.clear_halt() {
                 return Err(TourneyError::Refused(format!("the SPRT decided {id}; it can't be resumed")));
             }
@@ -578,7 +583,12 @@ impl Daemon {
             }
             e.run.set_max_pairs(max_pairs);
             e.saved.max_pairs = max_pairs;
-            if e.saved.status == TestStatus::Finished && e.saved.end == Some(RunEnd::MaxPairs) {
+            let carry_on = match e.saved.end {
+                Some(RunEnd::MaxPairs) => true,
+                Some(RunEnd::Undecided) => !e.run.unlikely_to_decide() && e.run.clear_halt(),
+                _ => false,
+            };
+            if e.saved.status == TestStatus::Finished && carry_on {
                 e.saved.status = TestStatus::Active;
                 e.saved.end = None;
                 e.run.hold.clear();
