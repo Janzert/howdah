@@ -5,6 +5,18 @@ Notable changes to Howdah, newest first. The format follows
 follow [semantic versioning](https://semver.org/) (0.x while Howdah is
 young).
 
+## [Unreleased]
+
+### Added
+
+- The chat room's message box previews the message as the room will
+  show it (faces, piece symbols, links, `/me` and your color), and a
+  button at its right end opens the faces and piece symbols to put in
+  the message where the cursor is.
+- A color of your own for the chat room: the color popup's last slot,
+  typed in hex as on the room's page or chosen in the system's color
+  dialog.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added

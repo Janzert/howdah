@@ -172,6 +172,7 @@ pub fn run() {
             commands::chat_archive_day,
             commands::enter_chatroom,
             commands::leave_chatroom,
+            commands::format_chat_message,
             commands::say_in_chatroom,
             commands::set_chatroom_active,
             commands::set_chatroom_auto_leave,

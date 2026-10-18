@@ -1325,6 +1325,16 @@ pub struct ChatEventView {
     pub parts: Vec<ChatPartView>,
 }
 
+/// A message as the chat room will show it (`format_chat_message`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatMessageView {
+    /// A `/me` message: the name followed at once by the parts.
+    pub emote: bool,
+    pub parts: Vec<ChatPartView>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]

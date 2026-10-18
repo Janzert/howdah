@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chatTime, luminance, messageColor } from './chatroom';
+import { chatTime, FACE_EMOJI, luminance, messageColor, parseHex, PIECE_SYMBOLS } from './chatroom';
 
 describe('chat room colors', () => {
   it('hides white, the spoiler tag, and only white', () => {
@@ -34,5 +34,26 @@ describe('chat room times', () => {
     const earlier = chatTime(new Date(2026, 9, 12, 9, 5).getTime() / 1000, now);
     expect(earlier.endsWith(today)).toBe(true);
     expect(earlier.length).toBeGreaterThan(today.length);
+  });
+});
+
+describe('chat room symbols', () => {
+  it('names the piece symbols as the room types them', () => {
+    expect(PIECE_SYMBOLS.map((p) => p.symbol).join(' ')).toBe(':ge :gm :gh :gd :gc :gr :se :sm :sh :sd :sc :sr');
+    expect(PIECE_SYMBOLS[7]).toEqual({ symbol: ':sm', color: 'silver', piece: 'camel' });
+  });
+
+  it('keeps an emoji for each face', () => {
+    expect(FACE_EMOJI.biggrin).toBe('😁');
+    expect(Object.keys(FACE_EMOJI)).toHaveLength(13);
+  });
+});
+
+describe('typed colors', () => {
+  it('reads hex with or without #, short or long', () => {
+    expect(parseHex('#F70077')).toBe('f70077');
+    expect(parseHex(' 0a8 ')).toBe('00aa88');
+    expect(parseHex('12345')).toBeNull();
+    expect(parseHex('red')).toBeNull();
   });
 });

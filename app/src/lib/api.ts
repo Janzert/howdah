@@ -4,6 +4,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ChatArchiveDay } from './bindings/ChatArchiveDay';
 import type { ChatArchiveMonth } from './bindings/ChatArchiveMonth';
+import type { ChatMessageView } from './bindings/ChatMessageView';
 import type { ChatRoomView } from './bindings/ChatRoomView';
 import type { ApiError } from './bindings/ApiError';
 import type { ArchivedTestView } from './bindings/ArchivedTestView';
@@ -209,6 +210,8 @@ function makeApi(sid: () => SessionId | null) {
     /** A day (`YYYY-MM-DD`) of the chat archive; with `fetch`, what the
      * local archive lacks of it is asked of arimaa.com first. */
     chatArchiveDay: (date: string, fetch: boolean) => invoke<ChatArchiveDay>('chat_archive_day', { date, fetch }),
+    /** `text` as the chat room would show it (a preview). */
+    formatChatMessage: (text: string) => invoke<ChatMessageView>('format_chat_message', { text }),
     /** Says `text` in the chat room in `color` (`rrggbb`). */
     sayInChatroom: (text: string, color: string) => invoke<void>('say_in_chatroom', { text, color }),
     /** Whether the chat room's panel is in view (it's asked more often). */

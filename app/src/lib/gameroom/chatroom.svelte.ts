@@ -2,7 +2,7 @@
 // (`chatroom://changed`), what the user has read, and their color. One
 // instance, `chatroom`, in the lobby window.
 import { api, errorMessage } from '../api';
-import { SPOILER_COLOR } from '../chatroom';
+import { CHAT_PALETTE, SPOILER_COLOR } from '../chatroom';
 import type { ChatRoomView } from '../bindings/ChatRoomView';
 import { on } from '../events';
 import { settings } from '../settings.svelte';
@@ -14,6 +14,10 @@ class ChatRoomStore {
   busy = $state(false);
   /** The message color, `rrggbb` (kept in localStorage). */
   color = $state(/^[0-9a-f]{6}$/.test(pref('gameroom.chatColor')) ? pref('gameroom.chatColor') : '000000');
+  /** The user's own color, the palette's last slot (`rrggbb`, never the
+   * spoiler's white; kept in localStorage). It starts as the palette's
+   * last color, or a saved color from outside the palette. */
+  custom = $state(initialCustom(this.color));
   /** The newest event the user has seen in the panel. */
   #seen = $state(-1);
   #started = false;
@@ -68,6 +72,14 @@ class ChatRoomStore {
     savePref('gameroom.chatColor', hex);
   }
 
+  /** Sets the user's own color and uses it. */
+  setCustom(hex: string) {
+    if (hex === SPOILER_COLOR) return;
+    this.custom = hex;
+    savePref('gameroom.chatCustomColor', hex);
+    this.setColor(hex);
+  }
+
   async #run(f: () => Promise<unknown>): Promise<boolean> {
     this.busy = true;
     this.error = null;
@@ -95,6 +107,13 @@ class ChatRoomStore {
   say(text: string, spoiler = false) {
     return this.#run(() => api.sayInChatroom(text, spoiler ? SPOILER_COLOR : this.color));
   }
+}
+
+function initialCustom(color: string): string {
+  const saved = pref('gameroom.chatCustomColor');
+  if (/^[0-9a-f]{6}$/.test(saved) && saved !== SPOILER_COLOR) return saved;
+  if (!CHAT_PALETTE.includes(color) && color !== SPOILER_COLOR) return color;
+  return CHAT_PALETTE[CHAT_PALETTE.length - 1];
 }
 
 export const chatroom = new ChatRoomStore();

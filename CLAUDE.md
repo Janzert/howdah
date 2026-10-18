@@ -792,11 +792,17 @@ plans the engine test and tournament runner.
     code.
     `ChatRoomTab` is the chat room (store in `chatroom.svelte.ts`:
     the backend's view, unread count for the sidebar's badge, the user's
-    color; `lib/chatroom.ts` has the colors, spoilers (exact white,
+    color and their own color, `custom`, which takes the palette's last
+    slot and is typed in hex in the color popup or chosen in the
+    system's color dialog (an `<input type="color">` under its Choose…
+    label; WebKitGTK sends only `change`), never white;
+    `lib/chatroom.ts` has the colors, spoilers (exact white,
     `SPOILER_COLOR`, which the color popup's Spoiler option sends for one
-    message) and
-    times). Closing
-    its panel leaves the room.
+    message), times, and the faces and piece symbols for the message
+    box's picker, `FACES` and `PIECE_SYMBOLS`). The message being written
+    is previewed as the room will show it (`format_chat_message`, the
+    same `format_message` the log uses, drawn by `ChatLine` with
+    `preview`). Closing its panel leaves the room.
     `NewGameDialog.svelte` creates a game or, with an opponent, invites
     them (Invite anywhere opens it with the opponent filled in).
     `format.ts` words the rows. The gameroom

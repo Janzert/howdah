@@ -2,7 +2,9 @@
   // One event of the gameroom chat room's log, in the room's formatting:
   // its time, then a message (links, faces, piece symbols, /me, the
   // poster's color; white is a spoiler, its text hidden until clicked) or
-  // someone coming or going. The chat room and its archive both use it.
+  // someone coming or going. The chat room and its archive both use it,
+  // and the chat room's preview of a message being written (no time, a
+  // spoiler shown).
   import { api } from '../api';
   import type { ChatEventView } from '../bindings/ChatEventView';
   import PieceGlyph from '../board/PieceGlyph.svelte';
@@ -12,18 +14,23 @@
   import { findTheme } from '../theme';
   import { darkMode } from './darkMode.svelte';
 
-  let { event: e, time }: { event: ChatEventView; time: (unix: number) => string } = $props();
+  let {
+    event: e,
+    time,
+    preview = false,
+  }: { event: ChatEventView; time: (unix: number) => string; preview?: boolean } = $props();
 
   const theme = $derived(findTheme(settings.theme));
   const look = $derived(messageColor(e.color, darkMode.dark));
-  let shown = $state(false);
+  let revealed = $state(false);
+  const shown = $derived(preview || revealed);
   const comings = { in: 'came in', out: 'went out', timeout: 'timed out', message: '' } as const;
 
   /** Shows or hides a spoiler again; not when the click ends a text
    * selection in it. */
   function toggle() {
-    if (window.getSelection()?.toString()) return;
-    shown = !shown;
+    if (preview || window.getSelection()?.toString()) return;
+    revealed = !revealed;
   }
 </script>
 
@@ -45,7 +52,9 @@
       >{/if}{/each}{/snippet}
 
 <div class="line" class:coming={e.kind !== 'message'}>
-  <time class="time" datetime={new Date(e.time * 1000).toISOString()}>{time(e.time)}</time>
+  {#if preview}<span class="time">Preview</span>{:else}<time class="time" datetime={new Date(e.time * 1000).toISOString()}
+      >{time(e.time)}</time
+    >{/if}
   {#if e.kind === 'message'}
     <span class="msg" class:emote={e.emote} style:color={look.color}>
       <span class="name">{e.user}</span>{#if !e.emote}{' '}{/if}{#if look.spoiler}<span
@@ -55,7 +64,11 @@
           tabindex="0"
           aria-pressed={shown}
           aria-label={shown ? undefined : 'Spoiler, hidden'}
-          title={shown ? 'Spoiler: click to hide' : 'Spoiler: click to show'}
+          title={preview
+            ? 'Spoiler: hidden in the room until clicked'
+            : shown
+              ? 'Spoiler: click to hide'
+              : 'Spoiler: click to show'}
           onclick={toggle}
           onkeydown={(k) => {
             if (k.key === 'Enter' || k.key === ' ') {

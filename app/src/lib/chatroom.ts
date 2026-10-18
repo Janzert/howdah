@@ -1,10 +1,20 @@
 // The gameroom chat room's look: message colors, spoilers and times.
+import type { Color } from './bindings/Color';
+import type { PieceKind } from './bindings/PieceKind';
 
 /** The room's palette (`chat.js`): black and 18 colors (one twice). */
 export const CHAT_PALETTE = [
   '000000', '800000', 'c00000', 'ff8000', '808000', '80c000', '00c000', '008000', '00c080',
   '00c0c0', '0080ff', '0040c0', '0000c0', '000080', '400080', '8000ff', '800080', '800040',
 ];
+
+/** A color typed as hex (`#` optional; `rgb` is `rrggbb`) as `rrggbb`, or
+ * null if it isn't one. */
+export function parseHex(s: string): string | null {
+  let hex = s.trim().replace(/^#/, '').toLowerCase();
+  if (/^[0-9a-f]{3}$/.test(hex)) hex = [...hex].map((c) => c + c).join('');
+  return /^[0-9a-f]{6}$/.test(hex) ? hex : null;
+}
 
 /** The color that marks a spoiler: the room's log is white, so white
  * text shows only when selected, and people use it as a spoiler tag. */
@@ -66,19 +76,34 @@ export function chatTime(unix: number, now = new Date()): string {
   return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`;
 }
 
-/** The room's faces as emoji (its own images aren't ours to ship). */
-export const FACE_EMOJI: Record<string, string> = {
-  smiley: '🙂',
-  happy: '😊',
-  nice: '😄',
-  laugh: '😆',
-  wink: '😉',
-  tongue: '😛',
-  biggrin: '😁',
-  blank: '😐',
-  shocked: '😲',
-  sad: '🙁',
-  frown: '☹️',
-  angry: '😠',
-  cry: '😢',
-};
+/** The room's faces: the symbol typed, the room's image name and the
+ * emoji shown for it (its own images aren't ours to ship). In the order
+ * of `FACES` in howdah-gameroom's `chat.rs`, which does the replacing. */
+export const FACES: { symbol: string; name: string; emoji: string }[] = [
+  { symbol: ':)', name: 'smiley', emoji: '🙂' },
+  { symbol: '=)', name: 'happy', emoji: '😊' },
+  { symbol: '^^', name: 'nice', emoji: '😄' },
+  { symbol: 'XD', name: 'laugh', emoji: '😆' },
+  { symbol: ';)', name: 'wink', emoji: '😉' },
+  { symbol: ':P', name: 'tongue', emoji: '😛' },
+  { symbol: ':D', name: 'biggrin', emoji: '😁' },
+  { symbol: ':|', name: 'blank', emoji: '😐' },
+  { symbol: ':shocked:', name: 'shocked', emoji: '😲' },
+  { symbol: ':(', name: 'sad', emoji: '🙁' },
+  { symbol: ':frown:', name: 'frown', emoji: '☹️' },
+  { symbol: ':angry:', name: 'angry', emoji: '😠' },
+  { symbol: ':cry:', name: 'cry', emoji: '😢' },
+];
+
+/** Each face's emoji by its image name. */
+export const FACE_EMOJI: Record<string, string> = Object.fromEntries(FACES.map((f) => [f.name, f.emoji]));
+
+const KINDS: PieceKind[] = ['elephant', 'camel', 'horse', 'dog', 'cat', 'rabbit'];
+
+/** The room's piece symbols (`:ge`, gold elephant; camels are `m`),
+ * gold's then silver's, strongest first. */
+export const PIECE_SYMBOLS: { symbol: string; color: Color; piece: PieceKind }[] = (
+  ['gold', 'silver'] as const
+).flatMap((color) =>
+  KINDS.map((piece) => ({ symbol: `:${color[0]}${piece === 'camel' ? 'm' : piece[0]}`, color, piece })),
+);

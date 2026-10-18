@@ -6,7 +6,7 @@ use tauri::State;
 
 use crate::backend::{self, Backend};
 use crate::dto::{
-    ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatRoomView,
+    ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatMessageView, ChatRoomView,
     EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames, GameroomStatus,
     MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec,
     PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView, StartedBotView,
@@ -448,6 +448,11 @@ pub async fn enter_chatroom(state: State<'_, Backend>, auto_leave: bool) -> Resu
 #[tauri::command]
 pub async fn leave_chatroom(state: State<'_, Backend>) -> Result<(), ApiError> {
     state.leave_chatroom().await
+}
+
+#[tauri::command]
+pub fn format_chat_message(state: State<Backend>, text: String) -> ChatMessageView {
+    state.format_chat_message(&text)
 }
 
 #[tauri::command]

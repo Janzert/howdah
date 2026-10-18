@@ -26,7 +26,9 @@ use tokio::sync::Notify;
 
 use crate::backend::{Events, emit};
 use crate::chat_archive::SharedArchive;
-use crate::dto::{ApiError, ChatEventKind, ChatEventView, ChatPartView, ChatRoomState, ChatRoomView};
+use crate::dto::{
+    ApiError, ChatEventKind, ChatEventView, ChatMessageView, ChatPartView, ChatRoomState, ChatRoomView,
+};
 
 /// Event carrying a [`ChatRoomView`].
 pub const CHAT_UPDATE: &str = "chatroom://changed";
@@ -410,11 +412,17 @@ pub(crate) fn event_view(id: u32, e: ChatEvent) -> ChatEventView {
         ChatKind::Out => (ChatEventKind::Out, None, false, Vec::new()),
         ChatKind::Timeout => (ChatEventKind::Timeout, None, false, Vec::new()),
         ChatKind::Message { color, text } => {
-            let f = format_message(&text);
-            (ChatEventKind::Message, color, f.emote, f.parts.into_iter().map(part_view).collect())
+            let m = message_view(&text);
+            (ChatEventKind::Message, color, m.emote, m.parts)
         }
     };
     ChatEventView { id, time: e.time, user: e.user, kind, color, emote, parts }
+}
+
+/// `text` formatted as the room shows it.
+pub(crate) fn message_view(text: &str) -> ChatMessageView {
+    let f = format_message(text);
+    ChatMessageView { emote: f.emote, parts: f.parts.into_iter().map(part_view).collect() }
 }
 
 fn part_view(p: MessagePart) -> ChatPartView {

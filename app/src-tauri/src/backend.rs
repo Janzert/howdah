@@ -28,14 +28,15 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use crate::chatroom;
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatRoomView,
-    EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames, GameroomStatus,
-    MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PlayerSpec, PositionCheck,
-    PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView, ServerBotsView,
-    SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, StartedBotView, StepTarget,
-    TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
+    AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatMessageView,
+    ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames,
+    GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PlayerSpec,
+    PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
+    ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, StartedBotView,
+    StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -768,6 +769,12 @@ impl Backend {
         self.gameroom.chat.leave(None).await
     }
 
+    /// `text` as the chat room would show it, for a preview of a message
+    /// being written.
+    pub fn format_chat_message(&self, text: &str) -> ChatMessageView {
+        chatroom::message_view(text)
+    }
+
     /// Says `text` in the chat room, in `color` (`rrggbb`).
     pub async fn say_in_chatroom(&self, text: &str, color: &str) -> Result<(), ApiError> {
         self.gameroom.chat.say(text, color).await
@@ -1263,6 +1270,7 @@ impl Backend {
             }
             "enter_chatroom" => ok(self.enter_chatroom(arg(args, "autoLeave")?).await?),
             "leave_chatroom" => ok(self.leave_chatroom().await?),
+            "format_chat_message" => ok(self.format_chat_message(&arg::<String>(args, "text")?)),
             "say_in_chatroom" => ok(self
                 .say_in_chatroom(&arg::<String>(args, "text")?, &arg::<String>(args, "color")?)
                 .await?),
