@@ -17,6 +17,11 @@ young).
   typed in hex as on the room's page or chosen in the system's color
   dialog.
 
+### Fixed
+
+- The chat archive keeps days with nothing said between restarts,
+  rather than asking arimaa.com for them again.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added

@@ -152,11 +152,11 @@ impl Store {
         }
     }
 
+    /// Adds `events` to chunk `id`'s file. With none, it only makes sure
+    /// the file is there: `load` drops a chunk without one, so an empty
+    /// stretch (a day nobody spoke) has to have one to stay covered.
     fn append(&self, id: u64, events: &[ChatEvent]) {
         let Some(dir) = &self.dir else { return };
-        if events.is_empty() {
-            return;
-        }
         let _ = std::fs::create_dir_all(dir.join("chunks"));
         let file = std::fs::OpenOptions::new().create(true).append(true).open(chunk_path(dir, id));
         if let Ok(mut f) = file {
@@ -166,6 +166,7 @@ impl Store {
     }
 
     fn add(&mut self, start: i64, end: i64, live: bool, events: Vec<ChatEvent>) -> u64 {
+        // Its file is made before the index names it, even when empty.
         let id = self.next_id;
         self.next_id += 1;
         self.append(id, &events);
@@ -313,7 +314,9 @@ impl ChatArchive {
         let end = now() - CLOCK_MARGIN;
         let changed = {
             let mut store = lock(&self.store);
-            store.append(id, events);
+            if !events.is_empty() {
+                store.append(id, events);
+            }
             let Some(chunk) = store.chunks.iter_mut().find(|c| c.info.id == id) else { return };
             let from = chunk.info.end;
             chunk.events.extend_from_slice(events);
@@ -474,6 +477,12 @@ mod tests {
         assert_eq!((loaded.chunks[0].info.start, loaded.chunks[0].info.end), (100, 200));
         assert_eq!(loaded.next_id, 1);
         assert!(loaded.chunks[0].info.live);
+        // A stretch with nothing said stays covered.
+        let mut s = loaded;
+        s.add(300, 400, false, vec![]);
+        let loaded = Store::load(&dir);
+        assert_eq!(loaded.chunks.len(), 2);
+        assert_eq!(loaded.covered(0, 1000), [(100, 200), (300, 400)]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
