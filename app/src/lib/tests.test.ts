@@ -9,6 +9,7 @@ import {
   percentCutoff,
   scoreText,
   sprtText,
+  testProgress,
   testState,
 } from './tests';
 
@@ -90,5 +91,13 @@ describe('endingText', () => {
     expect(endingText('goal')).toBe('goal');
     expect(endingText('illegalMove')).toBe('illegal move');
     expect(endingText('resourceLimit')).toBe('a memory-limit forfeit');
+  });
+});
+
+describe('testProgress', () => {
+  it('counts games against the pair limit', () => {
+    expect(testProgress(view())).toBeNull();
+    expect(testProgress(view({ maxPairs: 100, games: 21 }))).toBeCloseTo(0.105);
+    expect(testProgress(view({ maxPairs: 10, games: 25 }))).toBe(1);
   });
 });

@@ -48,6 +48,7 @@
   import { settings } from './lib/settings.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
   import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
+  import TestFlask from './lib/TestFlask.svelte';
   import TestPanel from './lib/TestPanel.svelte';
   import { decideText, llrPosition, scoreText, testState } from './lib/tests';
   import TestsScreen from './lib/TestsScreen.svelte';
@@ -684,7 +685,7 @@
                   {@const t = tourney.test(id)}
                   {@const pos = t ? llrPosition(t) : null}
                   {@const name = t?.name ?? testNames[id] ?? id}
-                  <li class="sub-row" class:on={selected === `test:${id}`}>
+                  <li class="sub-row test-row" class:on={selected === `test:${id}`}>
                     <button
                       class="sub-item test bare"
                       aria-current={selected === `test:${id}` ? 'page' : undefined}
@@ -692,16 +693,24 @@
                       title={collapsed ? name : undefined}
                       aria-label="Engine test {name}"
                     >
-                      {#if collapsed}
-                        <span class="test-dot {t ? testState(t) : ''}"><Icon name="flask" size={16} /></span>
-                      {:else}
+                      <span class="test-dot {t ? testState(t) : ''}">
+                        {#if t}<TestFlask test={t} />{:else}<Icon name="flask" />{/if}
+                      </span>
+                      {#if !collapsed}
                         <span class="test-text">
                           <span class="test-title">
                             <span class="label">{name}</span>
-                            {#if t}<span class="state {testState(t)}">{testState(t)}</span>{/if}
+                            {#if t?.status === 'active'}
+                              <span class="state active" title="{t.running.length} {t.running.length === 1 ? 'game' : 'games'} playing"
+                                >{t.running.length}</span
+                              >
+                            {:else if t}<span class="state {testState(t)}">{testState(t)}</span>{/if}
                           </span>
                           {#if t}
-                            <span class="test-meta">{scoreText(t)}{t.running.length > 0 ? `, ${t.running.length} playing` : ''}</span>
+                            <span class="test-meta">{scoreText(t)}{t.status !== 'active' && t.running.length > 0
+                                ? `, ${t.running.length} playing`
+                                : ''}</span
+                            >
                             {#if pos != null}<span class="llr" title={decideText(t) ?? undefined}><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
                           {:else if tourney.status && !tourney.status.connected}
                             <span class="test-meta">Test daemon not running</span>
@@ -1043,6 +1052,34 @@
   .sub-row.on .close {
     opacity: 1;
   }
+  /* A test's row uses the whole width: its close button covers the
+   * row's end on hover or keyboard focus. */
+  .lobby:not(.collapsed) .test-row .sub-item {
+    padding-left: 29px;
+    padding-right: 8px;
+  }
+  .test-row:hover .sub-item {
+    background: var(--hover);
+  }
+  .test-row .close {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    margin: 0;
+    padding: 0 3px;
+    align-items: center;
+    border-left: 1px solid var(--border);
+    border-radius: 0 7px 7px 0;
+    background: var(--hover);
+  }
+  .test-row button.bare.close:hover {
+    background: var(--border);
+    color: var(--text);
+  }
+  .test-row:not(:hover):not(:has(:focus-visible)) .close {
+    opacity: 0;
+  }
   .test-text {
     display: flex;
     flex-direction: column;
@@ -1066,6 +1103,9 @@
     color: var(--muted);
   }
   .state.active {
+    min-width: 16px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
     background: var(--accent);
     border-color: var(--accent);
     color: var(--accent-text);
@@ -1104,10 +1144,6 @@
   .test-dot.active {
     color: var(--accent);
   }
-  .test-dot.passed {
-    color: var(--clock-ok);
-  }
-  .test-dot.failed,
   .test-dot.halted {
     color: var(--warn);
   }

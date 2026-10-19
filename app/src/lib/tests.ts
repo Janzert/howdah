@@ -16,6 +16,13 @@ export function llrPosition(t: TestView): number | null {
   return Math.min(1, Math.max(0, (t.llr - lo) / (hi - lo)));
 }
 
+/** How far a test is through its pair limit, from 0 to 1, by games
+ * played; null without a limit. */
+export function testProgress(t: TestView): number | null {
+  if (t.maxPairs == null || t.maxPairs <= 0) return null;
+  return Math.min(1, t.games / (2 * t.maxPairs));
+}
+
 /** The SPRT in brief: `LLR 1.23 (-2.94, 2.94) for [0, 10]`. */
 export function sprtText(t: TestView): string | null {
   if (t.llr == null || t.llrBounds == null || t.sprt == null) return null;
