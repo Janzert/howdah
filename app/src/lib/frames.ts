@@ -32,7 +32,9 @@ export type FrameRequest =
 export type LobbyKey = { step: 1 | -1 } | { index: number };
 
 /** The lobby key a key press means, if any. */
-export function lobbyKey(e: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>): LobbyKey | null {
+export function lobbyKey(
+  e: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+): LobbyKey | null {
   if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null;
   if (e.key === 'ArrowUp') return { step: -1 };
   if (e.key === 'ArrowDown') return { step: 1 };
@@ -41,8 +43,7 @@ export function lobbyKey(e: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | '
 }
 
 type ToLobby =
-  | { howdah: 'invoke'; id: number; cmd: string; args: unknown }
-  | { howdah: 'request'; request: FrameRequest };
+  { howdah: 'invoke'; id: number; cmd: string; args: unknown } | { howdah: 'request'; request: FrameRequest };
 
 type ToFrame =
   | { howdah: 'reply'; id: number; ok: boolean; value: unknown }
@@ -127,7 +128,10 @@ export function serveFrames(
     const m = e.data;
     if (session == null || !m?.howdah) return;
     const reply = (ok: boolean, value: unknown) =>
-      (e.source as Window).postMessage({ howdah: 'reply', id: (m as { id: number }).id, ok, value } satisfies ToFrame, location.origin);
+      (e.source as Window).postMessage(
+        { howdah: 'reply', id: (m as { id: number }).id, ok, value } satisfies ToFrame,
+        location.origin,
+      );
     if (m.howdah === 'invoke') {
       if (m.cmd.startsWith('plugin:')) return reply(false, refused(m.cmd));
       try {
@@ -143,7 +147,10 @@ export function serveFrames(
   const unlisteners = EVENT_NAMES.map((name) =>
     listen(name, (e) => {
       for (const f of frames()) {
-        f.frame.contentWindow?.postMessage({ howdah: 'event', name, payload: e.payload } satisfies ToFrame, location.origin);
+        f.frame.contentWindow?.postMessage(
+          { howdah: 'event', name, payload: e.payload } satisfies ToFrame,
+          location.origin,
+        );
       }
     }),
   );

@@ -51,7 +51,17 @@
   import { askLobby, lobbyKey } from './lib/frames';
   import Icon from './lib/Icon.svelte';
   import { type BoardLoading, followBoardLoading, readBoardLoading } from './lib/boardLoading';
-  import { closeThisBoard, dockWindow, guardClose, openBoard, popOut, rememberSize, showBoard, showLobby, takeHandOff } from './lib/windows';
+  import {
+    closeThisBoard,
+    dockWindow,
+    guardClose,
+    openBoard,
+    popOut,
+    rememberSize,
+    showBoard,
+    showLobby,
+    takeHandOff,
+  } from './lib/windows';
 
   function pref(key: string): string | null {
     try {
@@ -167,7 +177,10 @@
       flipped = v.puzzle!.solver === 'silver';
       // The list, for Next puzzle (the backend keeps it once fetched).
       if (v.puzzle!.id && puzzleGroups.length === 0) {
-        api.puzzleList().then((g) => (puzzleGroups = g)).catch(() => {});
+        api
+          .puzzleList()
+          .then((g) => (puzzleGroups = g))
+          .catch(() => {});
       }
     }
     shownPuzzle = puzzleSig;
@@ -302,12 +315,14 @@
       // A puzzle says how it went in its panel, not the game-end dialog.
       const ended = justEnded(prev, u.view) && !u.view.puzzle;
       puzzleChanged(prev, u.view);
-      const setupCommitted = view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;
+      const setupCommitted =
+        view != null && view.phase === 'setup' && u.view.ply > view.ply && u.animation.length === 0;
       setView(u.view);
       model.apply(u.view.position.pieces, u.animation, animHooks(u.view.turn != null), u.animationBudgetMs);
       if (ended) {
         const human = loneHuman(u.view);
-        const sound = u.view.result?.reason === 'timeout' ? 'timeout' : human && u.view.result?.winner !== human ? 'loss' : 'win';
+        const sound =
+          u.view.result?.reason === 'timeout' ? 'timeout' : human && u.view.result?.winner !== human ? 'loss' : 'win';
         // A hidden window doesn't animate until it's shown, so it plays now.
         if (document.hidden) play(sound);
         else gameEndSound = sound;
@@ -838,11 +853,14 @@
             {pvMove}
             coordinates={settings.coordinates}
             hoverInput={settings.hoverInput}
-            positionKey={view ? `${view.ply}|${view.position.short}|${view.canInput}|${view.turn?.steps.length ?? 0}` : ''}
+            positionKey={view
+              ? `${view.ply}|${view.position.short}|${view.canInput}|${view.turn?.steps.length ?? 0}`
+              : ''}
             onStep={(from, to) => run(api.tryStep(from, to))}
             {onDrop}
             legalTargets={(from) => api.legalTargets(from)}
-            planRoute={(from, to, path) => (view?.phase === 'setup' ? Promise.resolve(null) : api.planRoute(from, to, path))}
+            planRoute={(from, to, path) =>
+              view?.phase === 'setup' ? Promise.resolve(null) : api.planRoute(from, to, path)}
           />
         </div>
       </div>
@@ -890,9 +908,9 @@
           onEndMatch={() => run(api.endMatch())}
         />
         {#if view.puzzle}
-        <PuzzlePanel {view} {run} next={nextPuzzleId} onNext={openPuzzle} />
-      {/if}
-      <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
+          <PuzzlePanel {view} {run} next={nextPuzzleId} onNext={openPuzzle} />
+        {/if}
+        <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
         <CommentBox {view} {run} />
         {#if watch}
           <WatchPanel {watch} {view} {run} {receivedAt} {now} onNewGame={newOnlineGame} />
@@ -922,7 +940,11 @@
           <button aria-label="Back" onclick={() => goto(view!.ply - 1)} title="Back (← or k)">
             <Icon name="prev" size={16} /></button
           >
-          <button aria-label="Forward" onclick={() => goto(view!.ply + 1)} title="Forward (→ or j); at the latest move, replays it">
+          <button
+            aria-label="Forward"
+            onclick={() => goto(view!.ply + 1)}
+            title="Forward (→ or j); at the latest move, replays it"
+          >
             <Icon name="next" size={16} /></button
           >
           <button
@@ -930,12 +952,11 @@
             aria-pressed={playing}
             onclick={playToEnd}
             disabled={!playing && view.ply >= view.moves.length}
-            title={playing ? 'Stop (p)' : 'Fast-forward: step through the moves to the end of the line (p)'}>
+            title={playing ? 'Stop (p)' : 'Fast-forward: step through the moves to the end of the line (p)'}
+          >
             <Icon name={playing ? 'pause' : 'fastForward'} size={16} /></button
           >
-          <button aria-label="End" onclick={gotoEnd} title="End (End or $)">
-            <Icon name="last" size={16} /></button
-          >
+          <button aria-label="End" onclick={gotoEnd} title="End (End or $)"> <Icon name="last" size={16} /></button>
         </div>
       {/if}
       <div class="tools" role="toolbar" aria-label="Game tools">
@@ -954,15 +975,21 @@
         <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
         <button onclick={openRecord} title="The game record, to copy, save or load">Record</button>
         <button onclick={() => (showNewGame = true)} title="A new game in this window">New game</button>
-        <button onclick={() => openBoard().catch((e) => flash(errorMessage(e)))} title="Another board, with a game of its own">
+        <button
+          onclick={() => openBoard().catch((e) => flash(errorMessage(e)))}
+          title="Another board, with a game of its own"
+        >
           New board
         </button>
-        <button onclick={editPosition} title="Set up a position from the shown one, in a new window (e)">Edit position</button>
+        <button onclick={editPosition} title="Set up a position from the shown one, in a new window (e)"
+          >Edit position</button
+        >
       </div>
       <div class="windows" style:grid-template-columns="repeat({(isDocked ? 1 : 2) + (spectating ? 0 : 1)}, 1fr)">
         {#if isDocked}
-          <button onclick={() => popOut({ spec: lastSpec, follow: following })} title="Move this board to a window of its own"
-            >Pop out</button
+          <button
+            onclick={() => popOut({ spec: lastSpec, follow: following })}
+            title="Move this board to a window of its own">Pop out</button
           >
         {:else}
           <button
@@ -973,8 +1000,9 @@
           >
             Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
           </button>
-          <button onclick={() => dockWindow().catch((e) => flash(errorMessage(e)))} title="Move this board into the lobby window, as a panel there, and close this window"
-            >Dock</button
+          <button
+            onclick={() => dockWindow().catch((e) => flash(errorMessage(e)))}
+            title="Move this board into the lobby window, as a panel there, and close this window">Dock</button
           >
         {/if}
         {#if !spectating}

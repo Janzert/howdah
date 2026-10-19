@@ -137,7 +137,9 @@
           >Leave game</button
         >
       {:else}
-        <button class="subtle" onclick={onEndMatch} title="Stop the match; the game stays for analysis">Stop match</button>
+        <button class="subtle" onclick={onEndMatch} title="Stop the match; the game stays for analysis"
+          >Stop match</button
+        >
       {/if}
     </div>
   {/if}

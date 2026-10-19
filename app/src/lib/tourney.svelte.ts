@@ -57,7 +57,8 @@ class TourneyStore {
 
   /** Adds a test (restored or new) if it isn't listed. */
   add(t: TestView) {
-    if (!this.tests.some((x) => x.id === t.id)) this.tests = [...this.tests, t].sort((a, b) => a.id.localeCompare(b.id));
+    if (!this.tests.some((x) => x.id === t.id))
+      this.tests = [...this.tests, t].sort((a, b) => a.id.localeCompare(b.id));
   }
 }
 

@@ -133,141 +133,154 @@
     <button onclick={onClose} title="Close this panel (the test goes on)">Close</button>
   </header>
   <div class="card">
-  {#if test}
-    <p class="note">
-      <strong>{test.engines[0]}</strong> (tested) vs {test.engines[1]}{test.timeControl
-        ? `, ${test.timeControl}`
-        : ', no clock'}
-    </p>
-    {#if test.halted}<p class="error">Halted: {test.halted}</p>{/if}
-
-    <dl class="stats">
-      <dt>Score</dt>
-      <dd>{scoreText(test)}{test.score != null ? `, ${(test.score * 100).toFixed(1)}%` : ''}</dd>
-      <dt>Pairs</dt>
-      <dd>
-        {test.engines[0]} won both {test.pairCounts[2]}, split {test.pairCounts[1]}, lost both {test.pairCounts[0]}
-      </dd>
-      {#if test.elo}
-        <dt>Elo</dt>
-        <dd>{test.elo}{test.los != null ? `, LOS ${(test.los * 100).toFixed(1)}%` : ''}</dd>
-      {/if}
-      {#if sprtText(test)}
-        <dt>SPRT</dt>
-        <dd>
-          {sprtText(test)}
-          {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
-        </dd>
-      {/if}
-      {#if decideText(test)}
-        <dt>In time</dt>
-        <dd title="Projected from the results so far: the chance the LLR reaches a bound before the pair limit">
-          {decideText(test)}
-        </dd>
-      {/if}
-    </dl>
-    {#if test.repeated > 0}
-      <p class="error">
-        {test.repeated} games repeat an earlier game's moves, so the error bars are narrower than they should be.
-      </p>
-    {/if}
-
-    <div class="row">
-      {#if test.status === 'active'}
-        <button onclick={() => act(() => api.tourneyControl(id, 'pause'))} disabled={busy}>Pause</button>
-      {:else if test.outcome !== 'passed' && test.outcome !== 'failed'}
-        <button onclick={() => act(() => api.tourneyControl(id, 'resume'))} disabled={busy}>Resume</button>
-      {/if}
-      {#if test.status !== 'finished'}
-        <button onclick={() => act(() => api.tourneyControl(id, 'stop'))} disabled={busy}
-          title="End the test; its running games finish">Stop</button>
-      {/if}
-      <span class="spacer"></span>
-      <label for="test-priority">Priority</label>
-      <input id="test-priority" type="number" bind:value={priority} />
-      <label for="test-pairs">Max pairs</label>
-      <input id="test-pairs" type="number" min="1" bind:value={maxPairs} placeholder="none" />
-      {#if test.sprt}
-        <label
-          for="test-undecided"
-          title="End the test undecided once the SPRT's chance of deciding within the max pairs falls below this percentage (empty: play on to the limit)"
-          >Undecided under %</label
-        >
-        <input id="test-undecided" type="number" min="0" max="99" step="any" bind:value={undecided} placeholder="off" />
-      {/if}
-      <label for="test-concurrency" title="How many of this test's games may run at once (the daemon's games at once still apply)"
-        >At once</label
-      >
-      <input id="test-concurrency" type="number" min="1" bind:value={concurrency} />
-      <button onclick={applyLimits} disabled={busy}>Apply</button>
-    </div>
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
-
-    {#if test.running.length > 0}
-      <div class="heading">
-        <h3>Playing now</h3>
-        <button
-          class="subtle"
-          onclick={follow}
-          title="Watch the newest game without a window, and as each game ends, go on to the next one"
-          >Follow</button
-        >
-      </div>
-      <ul class="games" aria-label="Games playing now">
-        {#each test.running as r (`${r.pair}.${r.game}`)}
-          <li>
-            <span class="num">{r.pair}.{r.game}</span>
-            <span>{r.game === 1 ? test.engines[0] : test.engines[1]} (gold) vs {r.game === 1
-                ? test.engines[1]
-                : test.engines[0]}</span>
-            <button class="subtle" onclick={() => open(r.pair, r.game)}>Watch</button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-
-    <h3>Games</h3>
-    {#if games.length === 0}
-      <p class="note">None finished yet.</p>
-    {:else}
-      <ul class="games list" aria-label="Finished games">
-        {#each games as g (`${g.pair}.${g.game}`)}
-          <li>
-            <span class="num">{g.pair}.{g.game}</span>
-            <span class="who">{g.gold} vs {g.silver}</span>
-            <span class="result">{won(g)} ({g.winner}) by {endingText(g.reason)}, {g.plies} plies</span>
-            <button class="subtle" onclick={() => open(g.pair, g.game)}>Open</button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-    <p class="note path">{test.path}</p>
-  {:else if error}
-    <p class="error" role="alert">{error}</p>
-  {:else}
-    <p>Loading…</p>
-  {/if}
-  <div class="buttons">
     {#if test}
-      <button
-        onclick={() => remove(true)}
-        disabled={busy || !removable}
-        title={removable
-          ? "Zip the test's directory into the daemon's archive folder and take it off the list"
-          : 'Stop or pause the test, and let its games finish, first'}>Archive</button
-      >
-      <button
-        class:danger={confirmDelete}
-        onclick={() => remove(false)}
-        onblur={() => (confirmDelete = false)}
-        disabled={busy || !removable}
-        title={removable
-          ? 'Delete the test and all its games, without keeping a copy'
-          : 'Stop or pause the test, and let its games finish, first'}
-        >{confirmDelete ? 'Delete all its games?' : 'Delete'}</button
-      >
+      <p class="note">
+        <strong>{test.engines[0]}</strong> (tested) vs {test.engines[1]}{test.timeControl
+          ? `, ${test.timeControl}`
+          : ', no clock'}
+      </p>
+      {#if test.halted}<p class="error">Halted: {test.halted}</p>{/if}
+
+      <dl class="stats">
+        <dt>Score</dt>
+        <dd>{scoreText(test)}{test.score != null ? `, ${(test.score * 100).toFixed(1)}%` : ''}</dd>
+        <dt>Pairs</dt>
+        <dd>
+          {test.engines[0]} won both {test.pairCounts[2]}, split {test.pairCounts[1]}, lost both {test.pairCounts[0]}
+        </dd>
+        {#if test.elo}
+          <dt>Elo</dt>
+          <dd>{test.elo}{test.los != null ? `, LOS ${(test.los * 100).toFixed(1)}%` : ''}</dd>
+        {/if}
+        {#if sprtText(test)}
+          <dt>SPRT</dt>
+          <dd>
+            {sprtText(test)}
+            {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
+          </dd>
+        {/if}
+        {#if decideText(test)}
+          <dt>In time</dt>
+          <dd title="Projected from the results so far: the chance the LLR reaches a bound before the pair limit">
+            {decideText(test)}
+          </dd>
+        {/if}
+      </dl>
+      {#if test.repeated > 0}
+        <p class="error">
+          {test.repeated} games repeat an earlier game's moves, so the error bars are narrower than they should be.
+        </p>
+      {/if}
+
+      <div class="row">
+        {#if test.status === 'active'}
+          <button onclick={() => act(() => api.tourneyControl(id, 'pause'))} disabled={busy}>Pause</button>
+        {:else if test.outcome !== 'passed' && test.outcome !== 'failed'}
+          <button onclick={() => act(() => api.tourneyControl(id, 'resume'))} disabled={busy}>Resume</button>
+        {/if}
+        {#if test.status !== 'finished'}
+          <button
+            onclick={() => act(() => api.tourneyControl(id, 'stop'))}
+            disabled={busy}
+            title="End the test; its running games finish">Stop</button
+          >
+        {/if}
+        <span class="spacer"></span>
+        <label for="test-priority">Priority</label>
+        <input id="test-priority" type="number" bind:value={priority} />
+        <label for="test-pairs">Max pairs</label>
+        <input id="test-pairs" type="number" min="1" bind:value={maxPairs} placeholder="none" />
+        {#if test.sprt}
+          <label
+            for="test-undecided"
+            title="End the test undecided once the SPRT's chance of deciding within the max pairs falls below this percentage (empty: play on to the limit)"
+            >Undecided under %</label
+          >
+          <input
+            id="test-undecided"
+            type="number"
+            min="0"
+            max="99"
+            step="any"
+            bind:value={undecided}
+            placeholder="off"
+          />
+        {/if}
+        <label
+          for="test-concurrency"
+          title="How many of this test's games may run at once (the daemon's games at once still apply)">At once</label
+        >
+        <input id="test-concurrency" type="number" min="1" bind:value={concurrency} />
+        <button onclick={applyLimits} disabled={busy}>Apply</button>
+      </div>
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+
+      {#if test.running.length > 0}
+        <div class="heading">
+          <h3>Playing now</h3>
+          <button
+            class="subtle"
+            onclick={follow}
+            title="Watch the newest game without a window, and as each game ends, go on to the next one">Follow</button
+          >
+        </div>
+        <ul class="games" aria-label="Games playing now">
+          {#each test.running as r (`${r.pair}.${r.game}`)}
+            <li>
+              <span class="num">{r.pair}.{r.game}</span>
+              <span
+                >{r.game === 1 ? test.engines[0] : test.engines[1]} (gold) vs {r.game === 1
+                  ? test.engines[1]
+                  : test.engines[0]}</span
+              >
+              <button class="subtle" onclick={() => open(r.pair, r.game)}>Watch</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      <h3>Games</h3>
+      {#if games.length === 0}
+        <p class="note">None finished yet.</p>
+      {:else}
+        <ul class="games list" aria-label="Finished games">
+          {#each games as g (`${g.pair}.${g.game}`)}
+            <li>
+              <span class="num">{g.pair}.{g.game}</span>
+              <span class="who">{g.gold} vs {g.silver}</span>
+              <span class="result">{won(g)} ({g.winner}) by {endingText(g.reason)}, {g.plies} plies</span>
+              <button class="subtle" onclick={() => open(g.pair, g.game)}>Open</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      <p class="note path">{test.path}</p>
+    {:else if error}
+      <p class="error" role="alert">{error}</p>
+    {:else}
+      <p>Loading…</p>
     {/if}
-  </div>
+    <div class="buttons">
+      {#if test}
+        <button
+          onclick={() => remove(true)}
+          disabled={busy || !removable}
+          title={removable
+            ? "Zip the test's directory into the daemon's archive folder and take it off the list"
+            : 'Stop or pause the test, and let its games finish, first'}>Archive</button
+        >
+        <button
+          class:danger={confirmDelete}
+          onclick={() => remove(false)}
+          onblur={() => (confirmDelete = false)}
+          disabled={busy || !removable}
+          title={removable
+            ? 'Delete the test and all its games, without keeping a copy'
+            : 'Stop or pause the test, and let its games finish, first'}
+          >{confirmDelete ? 'Delete all its games?' : 'Delete'}</button
+        >
+      {/if}
+    </div>
   </div>
 </div>
 

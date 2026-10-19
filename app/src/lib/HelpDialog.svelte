@@ -82,7 +82,9 @@
     <header><h1 id="help-title">Help</h1></header>
     <div class="card">
       <h2>Keyboard and mouse</h2>
-      <p class="note">The keys work in a board, as a panel here or in its own window; <kbd>?</kbd> there shows this too.</p>
+      <p class="note">
+        The keys work in a board, as a panel here or in its own window; <kbd>?</kbd> there shows this too.
+      </p>
       {@render body()}
     </div>
   </div>
@@ -161,7 +163,10 @@
     color: var(--muted);
   }
   kbd {
-    font: 12px ui-monospace, 'DejaVu Sans Mono', monospace;
+    font:
+      12px ui-monospace,
+      'DejaVu Sans Mono',
+      monospace;
     padding: 1px 5px;
     border: 1px solid var(--border);
     border-bottom-width: 2px;

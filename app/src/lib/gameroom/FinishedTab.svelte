@@ -63,7 +63,9 @@
             {/each}
             {#if picked.next != null}
               <li class="more">
-                <button class="subtle" onclick={() => gameroom.olderGames()} disabled={gameroom.busy}>Older games</button>
+                <button class="subtle" onclick={() => gameroom.olderGames()} disabled={gameroom.busy}
+                  >Older games</button
+                >
               </li>
             {/if}
           </ul>
@@ -109,7 +111,9 @@
 
   <section class="card" aria-labelledby="gr-finished-title">
     <div class="card-head">
-      <h2 id="gr-finished-title">Recently finished {#if games}<span class="count">{games.recent.length}</span>{/if}</h2>
+      <h2 id="gr-finished-title">
+        Recently finished {#if games}<span class="count">{games.recent.length}</span>{/if}
+      </h2>
     </div>
     {#if !games}
       <p class="empty">…</p>

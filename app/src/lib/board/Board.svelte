@@ -166,8 +166,7 @@
       hoverFrom = null;
       return;
     }
-    const keep =
-      hoverFrom != null && (sq === hoverFrom || stepsCache.get(hoverFrom)?.some((a) => a.to === sq));
+    const keep = hoverFrom != null && (sq === hoverFrom || stepsCache.get(hoverFrom)?.some((a) => a.to === sq));
     if (!keep) hoverFrom = hasPiece(sq) ? sq : null;
   }
 
@@ -271,9 +270,7 @@
     if (rightStart) {
       const sq = squareFor(e);
       annotations.preview =
-        sq != null && sq !== rightStart.square
-          ? { from: rightStart.square, to: sq, color: rightStart.color }
-          : null;
+        sq != null && sq !== rightStart.square ? { from: rightStart.square, to: sq, color: rightStart.color } : null;
     }
   }
 
@@ -413,7 +410,15 @@
     <g class="hints">
       {#each marked as sq (sq)}
         {@const p = squareXY(sq, flipped)}
-        <rect class="marked" data-marked={squareName(sq)} x={p.x + 4} y={p.y + 4} width={SQ - 8} height={SQ - 8} rx="10" />
+        <rect
+          class="marked"
+          data-marked={squareName(sq)}
+          x={p.x + 4}
+          y={p.y + 4}
+          width={SQ - 8}
+          height={SQ - 8}
+          rx="10"
+        />
       {/each}
       {#if pushPending != null}
         {@const p = squareXY(pushPending, flipped)}

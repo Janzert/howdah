@@ -60,7 +60,9 @@
 
 <style>
   .coord {
-    font: 600 15px system-ui, sans-serif;
+    font:
+      600 15px system-ui,
+      sans-serif;
     pointer-events: none;
     user-select: none;
   }

@@ -21,7 +21,12 @@ export interface ListedWindow {
 }
 
 function kind(v: SessionView, watch: WatchView | undefined): string {
-  if (watch) return watch.side != null ? (watch.postal ? 'Postal game on arimaa.com' : 'Playing on arimaa.com') : 'Watching on arimaa.com';
+  if (watch)
+    return watch.side != null
+      ? watch.postal
+        ? 'Postal game on arimaa.com'
+        : 'Playing on arimaa.com'
+      : 'Watching on arimaa.com';
   if (v.testGame) return `Engine test ${testGameLabel(v)}`;
   if (v.puzzle) return 'Puzzle';
   if (v.players) {

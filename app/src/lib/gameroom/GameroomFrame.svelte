@@ -32,7 +32,11 @@
     <span class="spacer"></span>
     {#if gameroom.user}
       <span class="who">Logged in as <strong>{gameroom.user}</strong></span>
-      <button class="icon" onclick={() => gameroom.refresh()} disabled={gameroom.busy} title="Refresh the lists"
+      <button
+        class="icon"
+        onclick={() => gameroom.refresh()}
+        disabled={gameroom.busy}
+        title="Refresh the lists"
         aria-label="Refresh"><Icon name="refresh" size={16} /></button
       >
       {#if !onClose}

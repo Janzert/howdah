@@ -46,7 +46,15 @@ describe('settings parse', () => {
       leaveChatForGames: false,
     });
     const bad = parse(
-      JSON.stringify({ appearance: 'dim', coordinates: 'diagonal', sound: 'yes', theme: 'gone', analysisEngine: 3, volume: 'loud', moveTimes: 'all' }),
+      JSON.stringify({
+        appearance: 'dim',
+        coordinates: 'diagonal',
+        sound: 'yes',
+        theme: 'gone',
+        analysisEngine: 3,
+        volume: 'loud',
+        moveTimes: 'all',
+      }),
       none,
     );
     expect(bad).toEqual(DEFAULTS);

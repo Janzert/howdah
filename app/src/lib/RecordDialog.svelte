@@ -65,8 +65,7 @@
         e.preventDefault();
         load();
       }
-    }}
-  ></textarea>
+    }}></textarea>
   {#if error}<p class="error">{error}</p>{/if}
   <div class="buttons">
     <label class="file">Open file… <input type="file" accept=".txt,text/plain" onchange={openFile} /></label>

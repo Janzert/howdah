@@ -47,19 +47,21 @@
     busy = false;
   }
 
-  const startDaemon = () => act(async () => {
-    await api.tourneyStartDaemon(startSlots);
-    await tourney.refresh();
-  });
+  const startDaemon = () =>
+    act(async () => {
+      await api.tourneyStartDaemon(startSlots);
+      await tourney.refresh();
+    });
 
   function setSlots(n: number) {
     if (n < 0) return;
     void act(() => api.tourneySetSlots(n));
   }
 
-  const shutdown = () => act(async () => {
-    await api.tourneyShutdown(false);
-  });
+  const shutdown = () =>
+    act(async () => {
+      await api.tourneyShutdown(false);
+    });
 
   const running = $derived(tourney.playing);
   const finished = $derived(tests.filter((t) => t.status === 'finished' && t.running.length === 0));
@@ -109,7 +111,9 @@
     <h1>Engine tests</h1>
     <span class="spacer"></span>
     {#if status?.connected}
-      <button onclick={() => (showArchive = true)} title="The archived tests, to restore or delete">Archived tests</button>
+      <button onclick={() => (showArchive = true)} title="The archived tests, to restore or delete"
+        >Archived tests</button
+      >
       <button class="primary icon" onclick={() => (showNew = true)}><Icon name="plus" size={16} /> New test</button>
     {/if}
   </header>
@@ -119,8 +123,8 @@
       <p class="empty">Looking for the test daemon…</p>
     {:else if !status.connected}
       <p class="about">
-        Engine tests play two engines against each other until it's clear which is stronger. They run in a test
-        daemon, which goes on with Howdah closed. No daemon is running.
+        Engine tests play two engines against each other until it's clear which is stronger. They run in a test daemon,
+        which goes on with Howdah closed. No daemon is running.
       </p>
       {#if status.canStart}
         <div class="fields">
@@ -137,16 +141,30 @@
         <span>Test daemon running</span>
         <span class="sep">·</span>
         <span class="slots">
-          <button class="subtle" onclick={() => setSlots((status?.slots ?? 1) - 1)} disabled={busy || !status.slots}
-            title="One game fewer at once" aria-label="Fewer games at once">−</button>
+          <button
+            class="subtle"
+            onclick={() => setSlots((status?.slots ?? 1) - 1)}
+            disabled={busy || !status.slots}
+            title="One game fewer at once"
+            aria-label="Fewer games at once">−</button
+          >
           <span>{status.slots ?? '?'} {status.slots === 1 ? 'game' : 'games'} at once</span>
-          <button class="subtle" onclick={() => setSlots((status?.slots ?? 0) + 1)} disabled={busy}
-            title="One more game at once" aria-label="More games at once">+</button>
+          <button
+            class="subtle"
+            onclick={() => setSlots((status?.slots ?? 0) + 1)}
+            disabled={busy}
+            title="One more game at once"
+            aria-label="More games at once">+</button
+          >
         </span>
         {#if running > 0}<span class="sep">·</span><span>{running} playing</span>{/if}
         <span class="spacer"></span>
-        <button class="subtle" onclick={shutdown} disabled={busy}
-          title="Stop the daemon once its running games end; tests carry on when it starts again">Shut down</button>
+        <button
+          class="subtle"
+          onclick={shutdown}
+          disabled={busy}
+          title="Stop the daemon once its running games end; tests carry on when it starts again">Shut down</button
+        >
       </div>
     {/if}
     {#if status?.dataDir}<p class="hint small">Tests are kept in {status.dataDir}</p>{/if}

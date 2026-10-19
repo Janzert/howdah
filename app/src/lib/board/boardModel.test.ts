@@ -23,7 +23,7 @@ describe('BoardModel', () => {
     vi.unstubAllGlobals();
   });
 
-  it("tells the sounds which step is last, and whose piece is captured", async () => {
+  it('tells the sounds which step is last, and whose piece is captured', async () => {
     const m = new BoardModel();
     m.snap(rabbit(0));
     const slides = vi.fn();
@@ -36,7 +36,10 @@ describe('BoardModel', () => {
     const onSlide = vi.fn();
     const onCapture = vi.fn();
     const trapped = { id: 1, piece: { color: 'gold', kind: 'rabbit' }, square: 18 } as const;
-    m.apply([], [{ id: 1, from: 16, to: 18, captured: trapped, restored: null, mover: 'gold' }], { onSlide, onCapture });
+    m.apply([], [{ id: 1, from: 16, to: 18, captured: trapped, restored: null, mover: 'gold' }], {
+      onSlide,
+      onCapture,
+    });
     await vi.advanceTimersByTimeAsync(3 * STEP_MS);
     expect(onSlide.mock.calls).toEqual([[true]]);
     expect(onCapture.mock.calls).toEqual([[true]]);

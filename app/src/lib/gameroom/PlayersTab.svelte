@@ -13,7 +13,9 @@
 
 <section class="card" aria-labelledby="gr-players-title">
   <div class="card-head">
-    <h2 id="gr-players-title">Online {#if gameroom.games}<span class="count">{gameroom.online.length}</span>{/if}</h2>
+    <h2 id="gr-players-title">
+      Online {#if gameroom.games}<span class="count">{gameroom.online.length}</span>{/if}
+    </h2>
     <span class="spacer"></span>
     <input bind:value={filter} placeholder="Filter by name" aria-label="Filter players" autocomplete="off" />
   </div>
@@ -39,7 +41,10 @@
             </span>
             {#if p.country}<span class="meta">{p.country}</span>{/if}
           </span>
-          <button class="subtle" onclick={() => gameroom.showPlayer(p.username)} disabled={gameroom.busy}
+          <button
+            class="subtle"
+            onclick={() => gameroom.showPlayer(p.username)}
+            disabled={gameroom.busy}
             aria-label="Past games of {p.username}">Games</button
           >
           {#if gameroom.invitable.has(p.username)}

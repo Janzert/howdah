@@ -76,8 +76,8 @@
       <h2 id="starter-title">{suggested.length > 1 ? 'Get engines' : 'Get an engine'}</h2>
     </div>
     <p class="hint">
-      Engines play against you and analyse positions. Download {suggested.length > 1 ? 'these' : 'this one'} to
-      start; you can add others, and engines of your own, in Engines.
+      Engines play against you and analyse positions. Download {suggested.length > 1 ? 'these' : 'this one'} to start; you
+      can add others, and engines of your own, in Engines.
     </p>
     <div class="buttons">
       <button class="primary" onclick={downloadAll} disabled={working != null}>

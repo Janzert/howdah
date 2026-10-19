@@ -275,8 +275,8 @@
       {:else}
         Options
       {/if}
-      are one per line, as <code>name = value</code>, sent with <code>setoption</code> for games and analysis. Sharp
-      and OpFor get what analysis needs without any.
+      are one per line, as <code>name = value</code>, sent with <code>setoption</code> for games and analysis. Sharp and OpFor
+      get what analysis needs without any.
     </p>
     {#if status}<p class:ok={status.ok} class="status">{status.text}</p>{/if}
     <div class="buttons">

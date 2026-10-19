@@ -126,7 +126,9 @@
         <span class="dot {side}"></span>
         <strong class="name" title={players[side].name}>{players[side].name}</strong>
         {#if s.depth}<span class="stat">depth {s.depth}</span>{/if}
-        {#if s.score != null}<span class="stat" title="in rabbits, from this engine's side">eval {formatRabbits(s.score)}</span>{/if}
+        {#if s.score != null}<span class="stat" title="in rabbits, from this engine's side"
+            >eval {formatRabbits(s.score)}</span
+          >{/if}
         <span class="spacer"></span>
         <button
           class="options"
@@ -137,10 +139,8 @@
         >
         {#if engineOf(side)}
           {@const n = players[side].options.length}
-          <button
-            class="options"
-            title="Change this engine's options for this game"
-            onclick={() => (optionsFor = side)}>Options{n ? ` (${n})` : ''}</button
+          <button class="options" title="Change this engine's options for this game" onclick={() => (optionsFor = side)}
+            >Options{n ? ` (${n})` : ''}</button
           >
         {/if}
       </header>

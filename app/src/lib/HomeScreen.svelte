@@ -29,11 +29,32 @@
     onEnginesChanged: () => void;
     onEngines: () => void;
   }
-  let { windows, theme, docked, invitations, postalTurns, onNewGame, onAnalysis, onRecord, onEditor, onPuzzles, onWindow, onGameroom, engines, onEnginesChanged, onEngines }:
-    Props = $props();
+  let {
+    windows,
+    theme,
+    docked,
+    invitations,
+    postalTurns,
+    onNewGame,
+    onAnalysis,
+    onRecord,
+    onEditor,
+    onPuzzles,
+    onWindow,
+    onGameroom,
+    engines,
+    onEnginesChanged,
+    onEngines,
+  }: Props = $props();
 
   const actions = $derived<{ label: string; about: string; icon: IconName; run: () => void; primary?: boolean }[]>([
-    { label: 'New game', about: 'Against an engine, a friend, or engines against each other', icon: 'plus', run: onNewGame, primary: true },
+    {
+      label: 'New game',
+      about: 'Against an engine, a friend, or engines against each other',
+      icon: 'plus',
+      run: onNewGame,
+      primary: true,
+    },
     { label: 'Analysis board', about: 'An empty board with an engine analysing', icon: 'board', run: onAnalysis },
     { label: 'Open record', about: 'A game record from a file or pasted text', icon: 'record', run: onRecord },
     { label: 'Position editor', about: 'Set up a position to play or analyse from', icon: 'edit', run: onEditor },
@@ -58,7 +79,7 @@
     </div>
   {/if}
 
-  <EngineStarter {engines} onChanged={onEnginesChanged} onEngines={onEngines} />
+  <EngineStarter {engines} onChanged={onEnginesChanged} {onEngines} />
 
   <section aria-labelledby="home-title">
     <h2 id="home-title">Play and analyse</h2>

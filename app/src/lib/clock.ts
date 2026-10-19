@@ -48,8 +48,8 @@ export function clockLevel(leftMs: number): ClockLevel {
  * and 10 s, then each second, half second and quarter second as time runs
  * out (4steps' schedule). */
 export const TICK_TIMES_MS: readonly number[] = [
-  30_000, 20_000, 10_000, 9000, 8000, 7000, 6000, 5000, 4500, 4000, 3500, 3000, 2500, 2250, 2000, 1750,
-  1500, 1250, 1000, 750, 500, 250,
+  30_000, 20_000, 10_000, 9000, 8000, 7000, 6000, 5000, 4500, 4000, 3500, 3000, 2500, 2250, 2000, 1750, 1500, 1250,
+  1000, 750, 500, 250,
 ];
 
 /** The next tick to play once time left falls to it: the largest tick time

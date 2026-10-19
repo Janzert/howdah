@@ -4,8 +4,24 @@ import type { PieceKind } from './bindings/PieceKind';
 
 /** The room's palette (`chat.js`): black and 18 colors (one twice). */
 export const CHAT_PALETTE = [
-  '000000', '800000', 'c00000', 'ff8000', '808000', '80c000', '00c000', '008000', '00c080',
-  '00c0c0', '0080ff', '0040c0', '0000c0', '000080', '400080', '8000ff', '800080', '800040',
+  '000000',
+  '800000',
+  'c00000',
+  'ff8000',
+  '808000',
+  '80c000',
+  '00c000',
+  '008000',
+  '00c080',
+  '00c0c0',
+  '0080ff',
+  '0040c0',
+  '0000c0',
+  '000080',
+  '400080',
+  '8000ff',
+  '800080',
+  '800040',
 ];
 
 /** A color typed as hex (`#` optional; `rgb` is `rrggbb`) as `rrggbb`, or
@@ -48,7 +64,11 @@ function contrast(a: string, b: string): number {
 
 function mix(hex: string, toward: number, t: number): string {
   return channels(hex)
-    .map((c) => Math.round(c + (toward - c) * t).toString(16).padStart(2, '0'))
+    .map((c) =>
+      Math.round(c + (toward - c) * t)
+        .toString(16)
+        .padStart(2, '0'),
+    )
     .join('');
 }
 

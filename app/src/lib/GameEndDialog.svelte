@@ -100,9 +100,14 @@
       </button>
     {/if}
     <!-- svelte-ignore a11y_autofocus -->
-    <button class="primary" onclick={onClose} autofocus title={follow
+    <button
+      class="primary"
+      onclick={onClose}
+      autofocus
+      title={follow
         ? 'Close and stay on this game, no longer following the test'
-        : 'Close, leaving the game on the board to review'}>
+        : 'Close, leaving the game on the board to review'}
+    >
       Review game
     </button>
   </div>

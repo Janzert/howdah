@@ -31,7 +31,9 @@
 <div class="columns">
   <section class="card" aria-labelledby="gr-watch-live-title">
     <div class="card-head">
-      <h2 id="gr-watch-live-title">Live games {#if games}<span class="count">{games.live.length}</span>{/if}</h2>
+      <h2 id="gr-watch-live-title">
+        Live games {#if games}<span class="count">{games.live.length}</span>{/if}
+      </h2>
     </div>
     {#if !games}
       <p class="empty">…</p>
@@ -48,7 +50,9 @@
 
   <section class="card" aria-labelledby="gr-watch-postal-title">
     <div class="card-head">
-      <h2 id="gr-watch-postal-title">Postal games {#if postal}<span class="count">{postal.length}</span>{/if}</h2>
+      <h2 id="gr-watch-postal-title">
+        Postal games {#if postal}<span class="count">{postal.length}</span>{/if}
+      </h2>
       <span class="spacer"></span>
       <button class="subtle" onclick={() => gameroom.loadPostal()} disabled={gameroom.busy}>Reload</button>
     </div>

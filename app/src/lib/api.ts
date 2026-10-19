@@ -205,8 +205,7 @@ function makeApi(sid: () => SessionId | null) {
     enterChatroom: (autoLeave: boolean) => invoke<ChatRoomView>('enter_chatroom', { autoLeave }),
     leaveChatroom: () => invoke<void>('leave_chatroom'),
     /** How each day of a month (1–12) stands in the local chat archive. */
-    chatArchiveMonth: (year: number, month: number) =>
-      invoke<ChatArchiveMonth>('chat_archive_month', { year, month }),
+    chatArchiveMonth: (year: number, month: number) => invoke<ChatArchiveMonth>('chat_archive_month', { year, month }),
     /** A day (`YYYY-MM-DD`) of the chat archive; with `fetch`, what the
      * local archive lacks of it is asked of arimaa.com first. */
     chatArchiveDay: (date: string, fetch: boolean) => invoke<ChatArchiveDay>('chat_archive_day', { date, fetch }),

@@ -59,8 +59,7 @@
       </div>
       {#if nothingMine}
         <p class="empty">
-          No games in progress. Create a game, sit at one of the open games below, or play one of the server's
-          bots.
+          No games in progress. Create a game, sit at one of the open games below, or play one of the server's bots.
         </p>
       {:else}
         <ul class="list" aria-label="Your games and invitations">
@@ -80,8 +79,10 @@
                 disabled={busy}
                 aria-label="Accept the invitation from {i.opponent}">Accept</button
               >
-              <button onclick={() => gameroom.decline(i)} disabled={busy} aria-label="Decline the invitation from {i.opponent}"
-                >Decline</button
+              <button
+                onclick={() => gameroom.decline(i)}
+                disabled={busy}
+                aria-label="Decline the invitation from {i.opponent}">Decline</button
               >
             </li>
           {/each}
@@ -97,12 +98,18 @@
                 <span class="meta">{gameMeta(g)}</span>
               </span>
               {#if g.gold == null || g.silver == null}
-                <button class="subtle" onclick={() => gameroom.cancelGame(g.gid)} disabled={busy} aria-label="Cancel game {g.gid}"
-                  >Cancel</button
+                <button
+                  class="subtle"
+                  onclick={() => gameroom.cancelGame(g.gid)}
+                  disabled={busy}
+                  aria-label="Cancel game {g.gid}">Cancel</button
                 >
               {/if}
               {#if side}
-                <button class:primary={turn} onclick={() => gameroom.play(g.gid, side)} disabled={busy}
+                <button
+                  class:primary={turn}
+                  onclick={() => gameroom.play(g.gid, side)}
+                  disabled={busy}
                   aria-label="Play game {g.gid}">Play</button
                 >
               {/if}
@@ -114,7 +121,10 @@
                 <span class="row-line">Waiting for <span class="name">{i.opponent ?? '?'}</span> to answer</span>
                 <span class="meta">{invitationMeta(i)}</span>
               </span>
-              <button class="subtle" onclick={() => gameroom.cancelInvitation(i)} disabled={busy}
+              <button
+                class="subtle"
+                onclick={() => gameroom.cancelInvitation(i)}
+                disabled={busy}
                 aria-label="Cancel the invitation to {i.opponent}">Cancel</button
               >
             </li>
@@ -146,8 +156,10 @@
                 </span>
                 <span class="meta">{gameMeta(g)}</span>
               </span>
-              <button onclick={() => gameroom.play(g.gid, side)} disabled={busy} aria-label="Sit as {side} in game {g.gid}"
-                >Play as {sideName(side)}</button
+              <button
+                onclick={() => gameroom.play(g.gid, side)}
+                disabled={busy}
+                aria-label="Sit as {side} in game {g.gid}">Play as {sideName(side)}</button
               >
             </li>
           {/each}
@@ -159,7 +171,9 @@
   <div class="column">
     <section class="card" aria-labelledby="gr-online-title">
       <div class="card-head">
-        <h2 id="gr-online-title">Online {#if games}<span class="count">{gameroom.online.length}</span>{/if}</h2>
+        <h2 id="gr-online-title">
+          Online {#if games}<span class="count">{gameroom.online.length}</span>{/if}
+        </h2>
         <span class="spacer"></span>
         <button class="icon" onclick={() => gameroom.show('chat')}
           ><Icon name="chat" size={16} /> Chat room{#if chatroom.count > 0}<span class="count">{chatroom.count}</span
@@ -184,8 +198,8 @@
                 </button>
               {:else}
                 <span class="chip" class:me={p.username === gameroom.user}>
-                  {p.username}{#if p.rating}<span class="rating">{p.rating}</span>{/if}{#if p.bot}<span
-                      class="tag">bot</span
+                  {p.username}{#if p.rating}<span class="rating">{p.rating}</span>{/if}{#if p.bot}<span class="tag"
+                      >bot</span
                     >{/if}
                 </span>
               {/if}
@@ -204,9 +218,13 @@
 
     <section class="card" aria-labelledby="gr-live-title">
       <div class="card-head">
-        <h2 id="gr-live-title">Live now {#if games}<span class="count">{games.live.length}</span>{/if}</h2>
+        <h2 id="gr-live-title">
+          Live now {#if games}<span class="count">{games.live.length}</span>{/if}
+        </h2>
         <span class="spacer"></span>
-        <button class="icon" onclick={() => gameroom.show('watch')}><Icon name="eye" size={16} /> Live and postal games</button>
+        <button class="icon" onclick={() => gameroom.show('watch')}
+          ><Icon name="eye" size={16} /> Live and postal games</button
+        >
       </div>
       {#if !games}
         <p class="empty">…</p>
@@ -226,7 +244,9 @@
       <div class="card-head">
         <h2 id="gr-recent-title">Recently finished</h2>
         <span class="spacer"></span>
-        <button class="icon" onclick={() => gameroom.show('finished')}><Icon name="record" size={16} /> More, and a player's games</button>
+        <button class="icon" onclick={() => gameroom.show('finished')}
+          ><Icon name="record" size={16} /> More, and a player's games</button
+        >
       </div>
       {#if !games}
         <p class="empty">…</p>
@@ -238,10 +258,8 @@
         </ul>
       {/if}
     </section>
-
   </div>
 </div>
-
 
 <style>
   .announcements {

@@ -128,7 +128,9 @@
         </div>
         {#if info}
           <p class="meta">
-            {[info.timeControl ?? '', info.rated == null ? '' : info.rated ? 'rated' : 'unrated'].filter((s) => s).join(' · ')}
+            {[info.timeControl ?? '', info.rated == null ? '' : info.rated ? 'rated' : 'unrated']
+              .filter((s) => s)
+              .join(' · ')}
           </p>
           {#if info.about}<p class="about">{info.about}</p>{/if}
           {#if info.status}<p class="meta">{info.status}</p>{/if}
@@ -153,7 +155,9 @@
             Players can't start this bot now.
           {:else}
             The bot opens a game in the gameroom;
-            {join ? 'you join it as soon as it opens, on a new board.' : 'it waits in the open games for you or anyone.'}
+            {join
+              ? 'you join it as soon as it opens, on a new board.'
+              : 'it waits in the open games for you or anyone.'}
           {/if}
         </p>
       {/if}

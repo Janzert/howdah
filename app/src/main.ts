@@ -23,7 +23,8 @@ if (isDocked) {
   // A game window's tab closes its session as it goes, so a reload (whose
   // close may still be on its way) or a restarted bridge carries on with a
   // new one.
-  const reloaded = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
+  const reloaded =
+    (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
   if (session != null && (reloaded || !(await api.listSessions()).includes(session))) {
     useSession(await api.openSession());
   }

@@ -95,7 +95,9 @@ test('the sidebar switches panels, lists boards, and folds to boards', async ({ 
   await expect(page.getByRole('heading', { name: 'Engine tests', level: 1 })).toBeVisible();
   await sidebar(page).getByRole('button', { name: 'Home' }).click();
   const game = await opens(context, () => page.getByRole('button', { name: 'Analysis board' }).click());
-  const listed = sidebar(page).getByRole('list', { name: 'Open boards' }).getByRole('button', { name: /^Show / });
+  const listed = sidebar(page)
+    .getByRole('list', { name: 'Open boards' })
+    .getByRole('button', { name: /^Show / });
   await expect(listed).toHaveCount(1);
 
   // Folded, the sidebar keeps its buttons (by name) and the board, and
@@ -115,7 +117,9 @@ test('the sidebar switches panels, lists boards, and folds to boards', async ({ 
 test('a board opens as a panel, pops out to a window, docks back, and closes', async ({ page, context }) => {
   await lobby(page);
   await page.getByRole('button', { name: 'Analysis board' }).click();
-  const listed = sidebar(page).getByRole('list', { name: 'Open boards' }).getByRole('button', { name: /^Show / });
+  const listed = sidebar(page)
+    .getByRole('list', { name: 'Open boards' })
+    .getByRole('button', { name: /^Show / });
   await expect(listed).toHaveCount(1);
   const docked = page.frameLocator('iframe.docked');
   await expect(docked.getByRole('application', { name: 'Arimaa board' })).toBeVisible();
@@ -135,7 +139,9 @@ test('a board opens as a panel, pops out to a window, docks back, and closes', a
   expect(await bridge<number[]>(page, 'list_sessions')).toEqual([id]);
 
   // Close from the sidebar ends the session.
-  await sidebar(page).getByRole('button', { name: /^Close / }).click();
+  await sidebar(page)
+    .getByRole('button', { name: /^Close / })
+    .click();
   await expect(listed).toHaveCount(0);
   await expect.poll(() => bridge<number[]>(page, 'list_sessions')).toEqual([]);
 });

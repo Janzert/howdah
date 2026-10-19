@@ -138,10 +138,16 @@
       >
         {#if settings.moveTimes !== 'off'}
           {@const t = timeOf(m)}
-          <span class="time" title={t == null ? 'Time not known' : formatClock(t)}>{t == null ? '' : formatShort(t)}</span>
+          <span class="time" title={t == null ? 'Time not known' : formatClock(t)}
+            >{t == null ? '' : formatShort(t)}</span
+          >
         {/if}
         <span class="label">{m.label}</span>
-        <span class="notation">{m.notation}{#if m.glyphs.length}<span class="glyphs">{m.glyphs.join(' ')}</span>{/if}{#if m.folded}<span class="folded">+{m.folded}</span>{/if}</span>
+        <span class="notation"
+          >{m.notation}{#if m.glyphs.length}<span class="glyphs">{m.glyphs.join(' ')}</span>{/if}{#if m.folded}<span
+              class="folded">+{m.folded}</span
+            >{/if}</span
+        >
       </button>
       {#if m.comment}<div class="comment">{m.comment}</div>{/if}
       {#if m.id === view.cursor && view.turn && view.turn.steps.length > 0}
@@ -178,7 +184,11 @@
       </button>
     {/if}
     <button role="menuitem" disabled={index <= 0} onclick={() => act(() => api.promote(m.id))}>Move up</button>
-    <button role="menuitem" disabled={index < 0 || index === sibs.length - 1} onclick={() => act(() => api.demote(m.id))}>
+    <button
+      role="menuitem"
+      disabled={index < 0 || index === sibs.length - 1}
+      onclick={() => act(() => api.demote(m.id))}
+    >
       Move down
     </button>
     <button role="menuitem" disabled={protectedLine} onclick={() => act(() => api.deleteFrom(m.id))}>

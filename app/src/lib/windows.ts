@@ -193,7 +193,10 @@ export async function rememberSize() {
       if (await win.isMaximized()) return;
       const size = (await win.innerSize()).toLogical(await win.scaleFactor());
       try {
-        localStorage.setItem(SIZE_KEY, JSON.stringify({ width: Math.round(size.width), height: Math.round(size.height) }));
+        localStorage.setItem(
+          SIZE_KEY,
+          JSON.stringify({ width: Math.round(size.width), height: Math.round(size.height) }),
+        );
       } catch {
         /* not kept */
       }

@@ -66,7 +66,9 @@ describe('tests', () => {
     expect(decideText(view())).toBeNull();
     expect(decideText(view({ maxPairs: 3000, decideChance: 0.623 }))).toBe('62% chance to decide within 3000 pairs');
     expect(decideText(view({ maxPairs: 3000, decideChance: 0.0412 }))).toBe('4.1% chance to decide within 3000 pairs');
-    expect(decideText(view({ maxPairs: 3000, decideChance: 0.00001 }))).toBe('<0.1% chance to decide within 3000 pairs');
+    expect(decideText(view({ maxPairs: 3000, decideChance: 0.00001 }))).toBe(
+      '<0.1% chance to decide within 3000 pairs',
+    );
     expect(decideText(view({ maxPairs: 3000, decideChance: 0.5, status: 'finished' }))).toBeNull();
     const cut = view({ maxPairs: 3000, decideChance: 0.2, sprt: { elo0: 0, elo1: 10, undecidedBelow: 0.05 } });
     expect(decideText(cut)).toBe('20% chance to decide within 3000 pairs (stops under 5%)');
@@ -116,7 +118,9 @@ describe('briefText', () => {
 
 describe('detailsText', () => {
   it('gives a line for each detail', () => {
-    expect(detailsText(view({ elo: null, sprt: null, llr: null, llrBounds: null }))).toBe('12–9 in 21 games (10 pairs)');
+    expect(detailsText(view({ elo: null, sprt: null, llr: null, llrBounds: null }))).toBe(
+      '12–9 in 21 games (10 pairs)',
+    );
     expect(detailsText(view({ maxPairs: 3000, decideChance: 0.623 })).split('\n')).toEqual([
       '12–9 in 21 games (10 pairs)',
       'Elo +70.4 [-20.0, +170.0]',

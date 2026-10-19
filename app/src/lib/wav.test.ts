@@ -65,7 +65,20 @@ describe('decodeWav', () => {
 
   it('has a sound for every app-wide event', () => {
     const files = Object.keys(import.meta.glob('../sounds/app/*.wav')).map((p) => p.slice(p.lastIndexOf('/') + 1));
-    const events = ['setupDone', 'illegal', 'yourTurn', 'gameStart', 'win', 'loss', 'timeout', 'tick', 'join', 'leave', 'chat', 'notification'];
+    const events = [
+      'setupDone',
+      'illegal',
+      'yourTurn',
+      'gameStart',
+      'win',
+      'loss',
+      'timeout',
+      'tick',
+      'join',
+      'leave',
+      'chat',
+      'notification',
+    ];
     expect(files.sort()).toEqual(events.map((e) => `${e}.wav`).sort());
   });
 
@@ -74,10 +87,19 @@ describe('decodeWav', () => {
     const header = (dataSize: number) => {
       const b = new DataView(new ArrayBuffer(44));
       const s = (at: number, t: string) => [...t].forEach((c, i) => b.setUint8(at + i, c.charCodeAt(0)));
-      s(0, 'RIFF'); b.setUint32(4, 36 + dataSize, true); s(8, 'WAVE');
-      s(12, 'fmt '); b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 2, true);
-      b.setUint32(24, 8000, true); b.setUint32(28, 32000, true); b.setUint16(32, 4, true); b.setUint16(34, 16, true);
-      s(36, 'data'); b.setUint32(40, dataSize, true);
+      s(0, 'RIFF');
+      b.setUint32(4, 36 + dataSize, true);
+      s(8, 'WAVE');
+      s(12, 'fmt ');
+      b.setUint32(16, 16, true);
+      b.setUint16(20, 1, true);
+      b.setUint16(22, 2, true);
+      b.setUint32(24, 8000, true);
+      b.setUint32(28, 32000, true);
+      b.setUint16(32, 4, true);
+      b.setUint16(34, 16, true);
+      s(36, 'data');
+      b.setUint32(40, dataSize, true);
       return new Uint8Array(b.buffer);
     };
     const samples = new Int16Array([0, 32767, -32768, 0]);

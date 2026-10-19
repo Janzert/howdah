@@ -73,7 +73,8 @@ test('engine vs engine match plays moves', async ({ page }) => {
       }),
     engineId,
   );
-  await expect.poll(() => page.evaluate(() => window.__arimaa!.state()!.moves.length), { timeout: 15_000 })
+  await expect
+    .poll(() => page.evaluate(() => window.__arimaa!.state()!.moves.length), { timeout: 15_000 })
     .toBeGreaterThanOrEqual(6);
   await page.evaluate(() => window.__arimaa!.api.endMatch());
 });
@@ -389,8 +390,14 @@ test('an engine move missed while planning shows an alert; going back replays it
     const a = window.__arimaa!;
     const sq = (n: string) => n.charCodeAt(0) - 97 + 8 * (Number(n[1]) - 1);
     const steps = [
-      ['e2', 'e3'], ['e3', 'e4'], ['e4', 'e5'], ['e5', 'd5'],
-      ['a7', 'a6'], ['a6', 'a5'], ['a5', 'a4'], ['a4', 'a3'],
+      ['e2', 'e3'],
+      ['e3', 'e4'],
+      ['e4', 'e5'],
+      ['e5', 'd5'],
+      ['a7', 'a6'],
+      ['a6', 'a5'],
+      ['a5', 'a4'],
+      ['a4', 'a3'],
       ['d5', 'd6'],
     ];
     for (const [from, to] of steps) await a.api.tryStep(sq(from), sq(to));

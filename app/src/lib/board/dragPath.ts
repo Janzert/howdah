@@ -11,8 +11,7 @@ export interface Point {
 /** Below this segment length (board units) a corner crossing isn't resolved further. */
 const MIN_SEGMENT = 0.5;
 
-const adjacent = (a: Square, b: Square) =>
-  Math.abs(fileOf(a) - fileOf(b)) + Math.abs(rankOf(a) - rankOf(b)) === 1;
+const adjacent = (a: Square, b: Square) => Math.abs(fileOf(a) - fileOf(b)) + Math.abs(rankOf(a) - rankOf(b)) === 1;
 
 /**
  * Records the path as the pointer moves. Moving back onto a square already on

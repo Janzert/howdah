@@ -54,12 +54,14 @@
     <span class="state {watch.state}"></span>
     <span>arimaa.com {watch.postal ? 'postal game' : 'game'} {watch.gid}</span>
     <span class="label">
-      {watch.waiting && watch.state === 'following' ? 'Waiting' : STATES[watch.state]}{#if watch.finishedId}<span title="The game's permanent arimaa.com id"
-          >&nbsp;· #{watch.finishedId}</span
+      {watch.waiting && watch.state === 'following' ? 'Waiting' : STATES[watch.state]}{#if watch.finishedId}<span
+          title="The game's permanent arimaa.com id">&nbsp;· #{watch.finishedId}</span
         >{/if}
     </span>
   </div>
-  <div class="note">{watch.rated ? 'Rated' : 'Unrated'}{#if watch.timeControl}&nbsp;· {watch.timeControl}{/if}</div>
+  <div class="note">
+    {watch.rated ? 'Rated' : 'Unrated'}{#if watch.timeControl}&nbsp;· {watch.timeControl}{/if}
+  </div>
   {#if watch.detail}<div class="note">{watch.detail}</div>{/if}
   {#if playing && watch.side && watch.away[watch.side === 'gold' ? 1 : 0]}
     <div class="note" role="status">Your opponent isn't at the table; their clock keeps running.</div>
@@ -74,13 +76,13 @@
          arimaa.com) refuse; the server may not end the game for it. -->
     {#if view.stuck === watch.side}
       <div class="note warn" role="alert">
-        Every move you have would repeat a position for the third time, so you can't move. That loses by the
-        rules, but arimaa.com may not end the game for it: resign, or your clock runs out.
+        Every move you have would repeat a position for the third time, so you can't move. That loses by the rules, but
+        arimaa.com may not end the game for it: resign, or your clock runs out.
       </div>
     {:else}
       <div class="note" role="status">
-        {sideName(view.stuck)} can't move: every move would repeat a position for the third time. If arimaa.com
-        doesn't end the game, it ends when {sideName(view.stuck)}'s clock runs out.
+        {sideName(view.stuck)} can't move: every move would repeat a position for the third time. If arimaa.com doesn't end
+        the game, it ends when {sideName(view.stuck)}'s clock runs out.
       </div>
     {/if}
   {/if}
@@ -90,8 +92,9 @@
     <div class="takeback" role="status">
       <span>Waiting for an opponent to sit</span>
       <span class="actions">
-        <button title="Take the game off the gameroom's open games" onclick={() => run(api.cancelGameroomGame(watch.gid))}
-          >Cancel game</button
+        <button
+          title="Take the game off the gameroom's open games"
+          onclick={() => run(api.cancelGameroomGame(watch.gid))}>Cancel game</button
         >
       </span>
     </div>

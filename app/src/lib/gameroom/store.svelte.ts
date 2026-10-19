@@ -57,7 +57,10 @@ export const NO_LOGIN_PANELS: GameroomTab[] = ['archive'];
 /** Opens a game window whose session `start` makes a gameroom game
  * (opening, joining or creating one), or brings forward the window that
  * has `game` already. Resolves to an error message, or null. */
-export type Opener = (start: (a: Api) => Promise<void>, game?: { gid: string; play: boolean }) => Promise<string | null>;
+export type Opener = (
+  start: (a: Api) => Promise<void>,
+  game?: { gid: string; play: boolean },
+) => Promise<string | null>;
 
 /** What the New game dialog asks for. */
 export interface NewGameSpec {
@@ -111,7 +114,13 @@ class GameroomStore {
   showOlderAnnouncements = $state(false);
 
   /** Announcements the user hid, by `announcementKey`. */
-  hiddenAnnouncements = $state(new Set(pref('gameroom.hiddenAnnouncements').split('\n').filter((k) => k)));
+  hiddenAnnouncements = $state(
+    new Set(
+      pref('gameroom.hiddenAnnouncements')
+        .split('\n')
+        .filter((k) => k),
+    ),
+  );
 
   #opener: Opener = async () => 'No lobby';
   #navigate: (panel: GameroomTab) => void = () => {};
@@ -425,9 +434,7 @@ class GameroomStore {
   hideAnnouncement(a: AnnouncementView) {
     // Only the keys of announcements still listed are kept.
     const listed = new Set((this.games?.announcements ?? []).map(announcementKey));
-    this.hiddenAnnouncements = new Set(
-      [...this.hiddenAnnouncements, announcementKey(a)].filter((k) => listed.has(k)),
-    );
+    this.hiddenAnnouncements = new Set([...this.hiddenAnnouncements, announcementKey(a)].filter((k) => listed.has(k)));
     savePref('gameroom.hiddenAnnouncements', [...this.hiddenAnnouncements].join('\n'));
   }
 

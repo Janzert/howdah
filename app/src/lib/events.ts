@@ -56,10 +56,7 @@ export const EVENT_NAMES: (keyof EventMap)[] = [
 
 /** Subscribes to an event. Events from a session carry a `session` field
  * (added by the backend); only this window's session's reach `handler`. */
-export function on<K extends keyof EventMap>(
-  name: K,
-  handler: (payload: EventMap[K]) => void,
-): Promise<UnlistenFn> {
+export function on<K extends keyof EventMap>(name: K, handler: (payload: EventMap[K]) => void): Promise<UnlistenFn> {
   return listen<EventMap[K] & { session?: number }>(name, (e) => {
     if (e.payload.session === undefined || e.payload.session === session) handler(e.payload);
   });

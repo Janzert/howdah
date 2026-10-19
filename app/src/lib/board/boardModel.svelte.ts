@@ -143,10 +143,12 @@ export class BoardModel {
     this.pieces = pieces.map((p) => ({ ...p, fading: null, instant: true }));
     const gen = this.generation;
     // Re-enable transitions once the new positions have been painted.
-    frame().then(frame).then(() => {
-      if (gen !== this.generation) return;
-      for (const p of this.pieces) p.instant = false;
-    });
+    frame()
+      .then(frame)
+      .then(() => {
+        if (gen !== this.generation) return;
+        for (const p of this.pieces) p.instant = false;
+      });
   }
 
   /**
@@ -230,8 +232,7 @@ export class BoardModel {
   /** After an animation, match the display to its final state exactly. */
   private settle(final: PieceView[]) {
     const byId = new Map(this.pieces.map((p) => [p.id, p]));
-    const consistent =
-      final.length === this.pieces.length && final.every((f) => byId.get(f.id)?.square === f.square);
+    const consistent = final.length === this.pieces.length && final.every((f) => byId.get(f.id)?.square === f.square);
     if (consistent) this.refreshFlags(final);
     else this.snap(final);
   }

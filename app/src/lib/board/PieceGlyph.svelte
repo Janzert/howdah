@@ -10,13 +10,7 @@
 
 {#if theme.pieces.kind === 'image'}
   {@const size = SQ * (theme.pieces.scale ?? 1)}
-  <image
-    href={theme.pieces.srcs[letter]}
-    x={(SQ - size) / 2}
-    y={(SQ - size) / 2}
-    width={size}
-    height={size}
-  />
+  <image href={theme.pieces.srcs[letter]} x={(SQ - size) / 2} y={(SQ - size) / 2} width={size} height={size} />
 {:else}
   {@const c = piece.color === 'gold' ? theme.pieces.gold : theme.pieces.silver}
   <circle cx={SQ / 2} cy={SQ / 2} r={SQ * 0.4} fill={c.fill} stroke={c.stroke} stroke-width="4" />

@@ -43,17 +43,14 @@
         }}>{p.url}</a
       >{:else if p.type === 'face'}<span class="face" title={p.symbol} role="img" aria-label={p.symbol}
         >{FACE_EMOJI[p.name] ?? p.symbol}</span
-      >{:else}<svg
-        class="piece"
-        viewBox="0 0 {SQ} {SQ}"
-        role="img"
-        aria-label="{p.color} {p.piece}"
+      >{:else}<svg class="piece" viewBox="0 0 {SQ} {SQ}" role="img" aria-label="{p.color} {p.piece}"
         ><title>{p.color} {p.piece}</title><PieceGlyph piece={{ color: p.color, kind: p.piece }} {theme} /></svg
       >{/if}{/each}{/snippet}
 
 <div class="line" class:coming={e.kind !== 'message'}>
-  {#if preview}<span class="time">Preview</span>{:else}<time class="time" datetime={new Date(e.time * 1000).toISOString()}
-      >{time(e.time)}</time
+  {#if preview}<span class="time">Preview</span>{:else}<time
+      class="time"
+      datetime={new Date(e.time * 1000).toISOString()}>{time(e.time)}</time
     >{/if}
   {#if e.kind === 'message'}
     <span class="msg" class:emote={e.emote} style:color={look.color}>

@@ -23,12 +23,8 @@ describe('pickNext', () => {
     expect(pickNext(5, [1, 3, 5], null, new Set())).toEqual({ kind: 'window', session: 1 });
   });
 
-  it('then a postal game on the user\'s move without a window', () => {
-    const games = lists([
-      { gid: '1', turn: 'silver' },
-      { gid: '2' },
-      { gid: '3' },
-    ]);
+  it("then a postal game on the user's move without a window", () => {
+    const games = lists([{ gid: '1', turn: 'silver' }, { gid: '2' }, { gid: '3' }]);
     expect(pickNext(3, [3], games, new Set(['2']))).toEqual({ kind: 'postal', gid: '3', side: 'gold' });
     expect(countNext(3, [3], games, new Set(['2']))).toBe(1);
   });

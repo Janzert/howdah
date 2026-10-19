@@ -106,8 +106,8 @@
       {/each}
     </div>
     <p class="legend">
-      <span class="key full"></span> kept <span class="key partial"></span> part kept · messages · people. Opening a day
-      gets what isn't kept yet from arimaa.com; the days you're in the chat room are kept as you go.
+      <span class="key full"></span> kept <span class="key partial"></span> part kept · messages · people. Opening a day gets
+      what isn't kept yet from arimaa.com; the days you're in the chat room are kept as you go.
     </p>
   </section>
 
@@ -213,11 +213,7 @@
     background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
   .day.partial {
-    background: linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--accent) 22%, transparent) 50%,
-      transparent 50%
-    );
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, transparent) 50%, transparent 50%);
     border: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   }
   .day.today .num {

@@ -26,8 +26,7 @@ class ChatRoomStore {
   /** Others' messages since the user last looked, while in the room. */
   unread = $derived(
     this.view?.state === 'in'
-      ? this.view.events.filter((e) => e.id > this.#seen && e.kind === 'message' && e.user !== this.view?.user)
-          .length
+      ? this.view.events.filter((e) => e.id > this.#seen && e.kind === 'message' && e.user !== this.view?.user).length
       : 0,
   );
   /** How many are in the room: its list while the user is in, else the

@@ -3,7 +3,13 @@ import type { PuzzleView } from './bindings/PuzzleView';
 import { markSolved, nextPuzzle, puzzleStatus, solvedPuzzles } from './puzzles';
 
 const groups = [
-  { name: '1 Move Puzzles', puzzles: [{ id: 'p4', title: 'a' }, { id: 'p5', title: 'b' }] },
+  {
+    name: '1 Move Puzzles',
+    puzzles: [
+      { id: 'p4', title: 'a' },
+      { id: 'p5', title: 'b' },
+    ],
+  },
   { name: '2 Move Puzzles', puzzles: [{ id: 'p7', title: 'c' }] },
 ];
 

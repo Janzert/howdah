@@ -5,14 +5,7 @@
   import type { EngineOption } from './bindings/EngineOption';
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { ManifestOptionView } from './bindings/ManifestOptionView';
-  import {
-    formatOptions,
-    gameOptions,
-    optionError,
-    parseOptions,
-    settingOptions,
-    splitOptions,
-  } from './engineOptions';
+  import { formatOptions, gameOptions, optionError, parseOptions, settingOptions, splitOptions } from './engineOptions';
   import OptionFields from './OptionFields.svelte';
 
   interface Props {
@@ -126,8 +119,7 @@
       <textarea id="go-other" rows="3" bind:value={other} placeholder="e.g. threads = 2"></textarea>
     </div>
     <p class="hint">
-      These apply to {scope === 'game' ? 'this game' : 'analysis in this window'} only, over the engine's saved
-      settings (Engines).
+      These apply to {scope === 'game' ? 'this game' : 'analysis in this window'} only, over the engine's saved settings (Engines).
       {#if described.length}
         Fields show what the engine plays with; a blank one keeps the saved value or the default. Other options
       {:else}

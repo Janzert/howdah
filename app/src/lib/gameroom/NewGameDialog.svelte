@@ -72,8 +72,8 @@
       {#if inviting}
         Invites {opponent.trim()}; if they accept, the game opens on a new board.
       {:else}
-        The game waits in the gameroom's open games until someone sits; it opens on a new board now, and your
-        first move goes once they do.
+        The game waits in the gameroom's open games until someone sits; it opens on a new board now, and your first move
+        goes once they do.
       {/if}
     </p>
     {#if gameroom.error}<p class="error" role="alert">{gameroom.error}</p>{/if}

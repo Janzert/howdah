@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import type { ClockView } from './bindings/ClockView';
 import type { PlayerKind } from './bindings/PlayerKind';
 import type { PlayersView } from './bindings/PlayersView';
-import { clockLevel, formatClock, formatShort, nextTick, sideTimes, TICK_TIMES_MS, ticksFor, turnTimeLeft } from './clock';
+import {
+  clockLevel,
+  formatClock,
+  formatShort,
+  nextTick,
+  sideTimes,
+  TICK_TIMES_MS,
+  ticksFor,
+  turnTimeLeft,
+} from './clock';
 
 describe('turnTimeLeft', () => {
   const clock: ClockView = {
@@ -45,7 +54,7 @@ describe('sideTimes', () => {
     expect(sideTimes(clock, 'silver', 0)).toBeNull();
   });
 
-  it("shows the time a past move took on the side that made it", () => {
+  it('shows the time a past move took on the side that made it', () => {
     const clock: ClockView = {
       gold: { ...side, lastUsedMs: 12_000 },
       silver: { ...side, reserveMs: 5000, turnAllowanceMs: 35_000, lastUsedMs: null },

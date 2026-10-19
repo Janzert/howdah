@@ -33,8 +33,7 @@
     onAdd: (line: AnalysisLine, index: number) => void;
     preview: (line: AnalysisLine, index: number) => Promise<PositionView>;
   }
-  let { view, analysis, line, stored, engines, theme, flipped, sharesCpu, onEngine, onAdd, preview }: Props =
-    $props();
+  let { view, analysis, line, stored, engines, theme, flipped, sharesCpu, onEngine, onAdd, preview }: Props = $props();
 
   const engine = $derived(engines.find((e) => e.id === view.analysisEngine));
   let showOptions = $state(false);

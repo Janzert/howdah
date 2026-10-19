@@ -142,7 +142,9 @@ export function setThemeSounds(theme: Partial<Record<BoardSoundName, string>>, p
  */
 export function unlockOnInteraction() {
   const unlock = () => {
-    init()?.resume().catch(() => {});
+    init()
+      ?.resume()
+      .catch(() => {});
     window.removeEventListener('pointerdown', unlock, true);
     window.removeEventListener('keydown', unlock, true);
   };

@@ -257,11 +257,7 @@
   <section class="board-area">
     {@render palette(flipped ? 'gold' : 'silver')}
     <div class="board-wrap">
-      <div
-        class="board-box"
-        class:placing={tool.kind === 'piece'}
-        class:deleting={tool.kind === 'delete'}
-      >
+      <div class="board-box" class:placing={tool.kind === 'piece'} class:deleting={tool.kind === 'delete'}>
         <Board
           bind:this={boardRef}
           {model}
@@ -289,10 +285,18 @@
   <aside class="panel">
     <h2>Position editor</h2>
     <div class="tools-row" role="toolbar" aria-label="Tools">
-      <button aria-pressed={isTool({ kind: 'pointer' })} onclick={() => (tool = { kind: 'pointer' })} title="Drag pieces to move them, or off the board to remove them">
+      <button
+        aria-pressed={isTool({ kind: 'pointer' })}
+        onclick={() => (tool = { kind: 'pointer' })}
+        title="Drag pieces to move them, or off the board to remove them"
+      >
         Move
       </button>
-      <button aria-pressed={isTool({ kind: 'delete' })} onclick={() => (tool = { kind: 'delete' })} title="Click pieces to remove them (a right click always does)">
+      <button
+        aria-pressed={isTool({ kind: 'delete' })}
+        onclick={() => (tool = { kind: 'delete' })}
+        title="Click pieces to remove them (a right click always does)"
+      >
         Remove
       </button>
     </div>
@@ -302,7 +306,12 @@
       <label><input type="radio" bind:group={side} value="gold" /> <span class="dot gold"></span> Gold</label>
       <label><input type="radio" bind:group={side} value="silver" /> <span class="dot silver"></span> Silver</label>
       <label class="number" title="The move number of the first turn (2 is the first turn after the setups)">
-        Move <input type="number" min="2" bind:value={moveNumber} onchange={() => (moveNumber = Math.max(2, Math.floor(moveNumber || 2)))} />
+        Move <input
+          type="number"
+          min="2"
+          bind:value={moveNumber}
+          onchange={() => (moveNumber = Math.max(2, Math.floor(moveNumber || 2)))}
+        />
       </label>
     </fieldset>
 
@@ -311,7 +320,10 @@
       <button onclick={clear}>Clear board</button>
       <button onclick={() => (flipped = !flipped)} title="Turn the board around">Flip</button>
       <button onclick={mirror} title="Swap the a and h files (the same position, mirrored)">Mirror</button>
-      <button onclick={swapColors} title="Swap gold and silver and turn the board over, with the other side to move: the same position for the other color">
+      <button
+        onclick={swapColors}
+        title="Swap gold and silver and turn the board over, with the other side to move: the same position for the other color"
+      >
         Swap colors
       </button>
     </div>
@@ -346,11 +358,13 @@
             editingText = false;
             positionText = check?.short ?? '';
           }
-        }}
-      ></textarea>
+        }}></textarea>
     </label>
     <div class="tools-row">
-      <button onclick={() => copy(check?.short)} title="Copy the short format, as AEI's setposition and the record's Position tag take it">Copy</button>
+      <button
+        onclick={() => copy(check?.short)}
+        title="Copy the short format, as AEI's setposition and the record's Position tag take it">Copy</button
+      >
       <button onclick={() => copy(check?.long)} title="Copy the board diagram (the long format)">Copy diagram</button>
       <button
         onclick={() => copy(check?.setup)}
@@ -360,8 +374,8 @@
       </button>
     </div>
     <p class="hint">
-      Paste a short position (<code>g [rrrrrrrr…]</code>), a board diagram or setup moves (<code>1g …</code>, <code>1s …</code>),
-      then press Enter.
+      Paste a short position (<code>g [rrrrrrrr…]</code>), a board diagram or setup moves (<code>1g …</code>,
+      <code>1s …</code>), then press Enter.
     </p>
 
     <label class="field">
@@ -376,16 +390,28 @@
         }}
       />
     </label>
-    <p class="hint"><code>Ed4</code> places, <code>Hb2n</code> moves, <code>Ra2x</code> removes, <code>g</code>/<code>s</code> sets the side to move.</p>
+    <p class="hint">
+      <code>Ed4</code> places, <code>Hb2n</code> moves, <code>Ra2x</code> removes, <code>g</code>/<code>s</code> sets the
+      side to move.
+    </p>
 
     {#if error}<p class="error" role="alert">{error}</p>{/if}
 
     <div class="spacer"></div>
     <div class="actions">
-      <button class="primary" disabled={!playable} onclick={analyse} title="Free play from this position, to analyse it">
+      <button
+        class="primary"
+        disabled={!playable}
+        onclick={analyse}
+        title="Free play from this position, to analyse it"
+      >
         Analyse
       </button>
-      <button disabled={!playable} onclick={() => onPlay(spec())} title="A new game from this position: against an engine, or with a clock">
+      <button
+        disabled={!playable}
+        onclick={() => onPlay(spec())}
+        title="A new game from this position: against an engine, or with a clock"
+      >
         Play…
       </button>
       <button onclick={onClose} title="Leave the editor without starting from this position">Cancel</button>
@@ -393,7 +419,13 @@
   </aside>
 
   {#if paletteDrag?.moved}
-    <svg class="ghost" viewBox="0 0 100 100" style:left="{paletteDrag.x}px" style:top="{paletteDrag.y}px" aria-hidden="true">
+    <svg
+      class="ghost"
+      viewBox="0 0 100 100"
+      style:left="{paletteDrag.x}px"
+      style:top="{paletteDrag.y}px"
+      aria-hidden="true"
+    >
       <PieceGlyph piece={paletteDrag.piece} {theme} />
     </svg>
   {/if}

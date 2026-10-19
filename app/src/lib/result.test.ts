@@ -17,9 +17,7 @@ describe('describeResult', () => {
   it('names the winner and the reason', () => {
     expect(describeResult(goal)).toEqual({ title: 'Gold wins', reason: 'A gold rabbit reached the goal.' });
     expect(describeResult({ winner: 'silver', reason: 'timeout' }).reason).toBe('Gold ran out of time.');
-    expect(describeResult({ winner: 'gold', reason: 'elimination' }).reason).toBe(
-      'All silver rabbits were captured.',
-    );
+    expect(describeResult({ winner: 'gold', reason: 'elimination' }).reason).toBe('All silver rabbits were captured.');
   });
 });
 

@@ -84,9 +84,7 @@
 
 <dialog bind:this={dialog} onclose={onClose} aria-labelledby="archive-title">
   <h2 id="archive-title">Archived tests</h2>
-  <p class="note">
-    Restoring puts a test back in the list as it was when archived; deleting removes its zip for good.
-  </p>
+  <p class="note">Restoring puts a test back in the list as it was when archived; deleting removes its zip for good.</p>
   {#if archived == null}
     {#if !error}<p>Loading…</p>{/if}
   {:else if archived.length === 0}
@@ -110,8 +108,11 @@
             <span class="meta">Archived {when(a.archived)}, {size(a.size)} ({a.file})</span>
           </div>
           {#if a.test}
-            <button onclick={() => restore(a.file)} disabled={busy != null}
-              title="Put the test back in the list, as it was when archived">Restore</button>
+            <button
+              onclick={() => restore(a.file)}
+              disabled={busy != null}
+              title="Put the test back in the list, as it was when archived">Restore</button
+            >
           {/if}
           <button
             class:danger={confirmDelete === a.file}

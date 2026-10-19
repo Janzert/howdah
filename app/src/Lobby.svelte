@@ -701,17 +701,22 @@
                           <span class="test-title">
                             <span class="label">{name}</span>
                             {#if t?.status === 'active'}
-                              <span class="state active" title="{t.running.length} {t.running.length === 1 ? 'game' : 'games'} playing"
+                              <span
+                                class="state active"
+                                title="{t.running.length} {t.running.length === 1 ? 'game' : 'games'} playing"
                                 >{t.running.length}</span
                               >
                             {:else if t}<span class="state {testState(t)}">{testState(t)}</span>{/if}
                           </span>
                           {#if t}
-                            <span class="test-meta">{briefText(t)}{t.status !== 'active' && t.running.length > 0
+                            <span class="test-meta"
+                              >{briefText(t)}{t.status !== 'active' && t.running.length > 0
                                 ? `, ${t.running.length} playing`
                                 : ''}</span
                             >
-                            {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
+                            {#if pos != null}<span class="llr"
+                                ><span class="mark" style="left: {pos * 100}%"></span></span
+                              >{/if}
                           {:else if tourney.status && !tourney.status.connected}
                             <span class="test-meta">Test daemon not running</span>
                           {/if}
@@ -753,7 +758,9 @@
                   <span class="board-text">
                     <span class="board-title">{w.title}</span>
                     <span class="board-meta">
-                      {#if !docked}<span class="in-window" title="In its own window"><Icon name="popout" size={11} /></span>{/if}
+                      {#if !docked}<span class="in-window" title="In its own window"
+                          ><Icon name="popout" size={11} /></span
+                        >{/if}
                       {w.yourMove ? 'Your move' : w.kind}
                     </span>
                   </span>
@@ -864,11 +871,7 @@
   />
 {/if}
 {#if showRecord}
-  <RecordDialog
-    initial=""
-    onLoad={(text) => openNew((a) => a.loadGame(text))}
-    onClose={() => (showRecord = false)}
-  />
+  <RecordDialog initial="" onLoad={(text) => openNew((a) => a.loadGame(text))} onClose={() => (showRecord = false)} />
 {/if}
 {#if gameroom.newGame}
   <NewGameroomGameDialog initial={gameroom.newGame} onClose={() => (gameroom.newGame = null)} />

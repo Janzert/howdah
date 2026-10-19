@@ -37,14 +37,25 @@ export function invitationMeta(i: InvitationView): string {
 
 /** "Gold won by goal · 33 moves · Jan 4, 2014 10:38 am · 2m/2m · rated" */
 export function pastMeta(g: PastGameView): string {
-  return join([resultText(g.result), g.moves != null && `${g.moves} moves`, g.finished, g.timeControl, g.rated && 'rated']);
+  return join([
+    resultText(g.result),
+    g.moves != null && `${g.moves} moves`,
+    g.finished,
+    g.timeControl,
+    g.rated && 'rated',
+  ]);
 }
 
 /** "Gold won by goal · 33 moves · Oct 4, 10:23 · rated" */
 export function recentMeta(g: RecentGameView): string {
   const ended =
     g.endedMs != null &&
-    new Date(g.endedMs).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    new Date(g.endedMs).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
   return join([resultText(g.result), g.moves != null && `${g.moves} moves`, ended, g.rated && 'rated']);
 }
 

@@ -4,14 +4,23 @@
 import type { Piece } from './bindings/Piece';
 import type { BoardSoundName } from './sound';
 
-export interface GridRect { x: number; y: number; width: number; height: number }
+export interface GridRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export type BoardSpec =
   | { kind: 'procedural'; light: string; dark: string; trap: string; line?: string }
   /** `grid` locates the 8×8 playing area inside the image, in image pixels. */
   | { kind: 'image'; src: string; width: number; height: number; grid: GridRect };
 
-export interface GlyphColors { fill: string; stroke: string; text: string }
+export interface GlyphColors {
+  fill: string;
+  stroke: string;
+  text: string;
+}
 
 export type PieceSpec =
   | { kind: 'procedural'; gold: GlyphColors; silver: GlyphColors }

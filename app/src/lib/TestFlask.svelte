@@ -36,7 +36,14 @@
   {#if level > 0}
     <rect x="0" y={top} width="24" height={BOTTOM - top + 1} fill={fluid} clip-path="url(#{uid}-inside)" />
   {/if}
-  <path d="M9 3h6{OUTLINE}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+  <path
+    d="M9 3h6{OUTLINE}"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>
 
 <style>

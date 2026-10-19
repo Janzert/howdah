@@ -38,16 +38,22 @@
   {/if}
   <div class="buttons">
     {#if !p.atFrontier && (p.status === 'solving' || p.status === 'wrong')}
-      <button class="primary" onclick={() => run(api.puzzleRetry())} title="Back to the position to solve">Try again</button>
+      <button class="primary" onclick={() => run(api.puzzleRetry())} title="Back to the position to solve"
+        >Try again</button
+      >
     {/if}
     {#if p.hintAvailable}
       <button onclick={hint} disabled={askingHint} title="arimaa.com's hint for this puzzle">Hint</button>
     {/if}
     {#if p.hasSolution && p.status !== 'solved' && p.status !== 'shown'}
-      <button onclick={() => run(api.puzzleAnswer())} title="Add the rest of the solution to the move list">Show answer</button>
+      <button onclick={() => run(api.puzzleAnswer())} title="Add the rest of the solution to the move list"
+        >Show answer</button
+      >
     {/if}
     {#if next}
-      <button class:primary={p.status === 'solved' || p.status === 'shown'} onclick={() => onNext(next!)}>Next puzzle</button>
+      <button class:primary={p.status === 'solved' || p.status === 'shown'} onclick={() => onNext(next!)}
+        >Next puzzle</button
+      >
     {/if}
   </div>
   {#if p.author}<p class="author">Composed by {p.author}</p>{/if}
