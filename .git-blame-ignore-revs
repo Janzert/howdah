@@ -1,0 +1,5 @@
+# Formatting-only commits, for `git blame --ignore-revs-file`
+# (GitHub reads this file on its own).
+
+# style(app): apply Prettier to the frontend
+6e719c2001014e84bb5a853f8ffb7785b4f8c60f
