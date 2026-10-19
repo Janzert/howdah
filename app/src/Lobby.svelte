@@ -50,7 +50,7 @@
   import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
   import TestFlask from './lib/TestFlask.svelte';
   import TestPanel from './lib/TestPanel.svelte';
-  import { decideText, llrPosition, scoreText, testState } from './lib/tests';
+  import { briefText, detailsText, llrPosition, testState } from './lib/tests';
   import TestsScreen from './lib/TestsScreen.svelte';
   import { findTheme } from './lib/theme';
   import { tourney } from './lib/tourney.svelte';
@@ -690,7 +690,7 @@
                       class="sub-item test bare"
                       aria-current={selected === `test:${id}` ? 'page' : undefined}
                       onclick={() => select(`test:${id}`)}
-                      title={collapsed ? name : undefined}
+                      title={t ? `${name}\n${detailsText(t)}` : collapsed ? name : undefined}
                       aria-label="Engine test {name}"
                     >
                       <span class="test-dot {t ? testState(t) : ''}">
@@ -707,11 +707,11 @@
                             {:else if t}<span class="state {testState(t)}">{testState(t)}</span>{/if}
                           </span>
                           {#if t}
-                            <span class="test-meta">{scoreText(t)}{t.status !== 'active' && t.running.length > 0
+                            <span class="test-meta">{briefText(t)}{t.status !== 'active' && t.running.length > 0
                                 ? `, ${t.running.length} playing`
                                 : ''}</span
                             >
-                            {#if pos != null}<span class="llr" title={decideText(t) ?? undefined}><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
+                            {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
                           {:else if tourney.status && !tourney.status.connected}
                             <span class="test-meta">Test daemon not running</span>
                           {/if}

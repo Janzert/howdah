@@ -47,15 +47,17 @@ export function cutoffPercent(t: TestView): number | null {
   return c == null ? null : Math.round(c * 1e6) / 1e4;
 }
 
+/** A chance as a percentage: `62%`, `4.1%`, `<0.1%`. */
+function pct(c: number): string {
+  const p = c * 100;
+  return p > 0 && p < 0.1 ? '<0.1%' : p > 99.9 && p < 100 ? '>99.9%' : `${+p.toFixed(p < 10 ? 1 : 0)}%`;
+}
+
 /** The chance the SPRT still decides before the pair limit, while it's
  * running: `62% chance to decide within 3000 pairs`, and where the test
  * stops undecided if it does: `(stops under 5%)`. */
 export function decideText(t: TestView): string | null {
   if (t.decideChance == null || t.maxPairs == null || t.status === 'finished') return null;
-  const pct = (c: number) => {
-    const p = c * 100;
-    return p > 0 && p < 0.1 ? '<0.1%' : p > 99.9 && p < 100 ? '>99.9%' : `${+p.toFixed(p < 10 ? 1 : 0)}%`;
-  };
   const cutoff = t.sprt?.undecidedBelow;
   return `${pct(t.decideChance)} chance to decide within ${t.maxPairs} pairs${cutoff != null ? ` (stops under ${pct(cutoff)})` : ''}`;
 }
@@ -64,6 +66,22 @@ export function decideText(t: TestView): string | null {
 export function scoreText(t: TestView): string {
   const pairs = t.pairs === 1 ? '1 pair' : `${t.pairs} pairs`;
   return `${t.wins[0]}–${t.wins[1]} in ${t.games} games (${pairs})`;
+}
+
+/** The score, Elo, LLR and chance to decide in brief, for the sidebar:
+ * `118–99 +29.0 0.44 62%` (each left out when the test has none). */
+export function briefText(t: TestView): string {
+  const parts = [`${t.wins[0]}–${t.wins[1]}`];
+  if (t.elo) parts.push(t.elo.split(' [')[0]);
+  if (t.llr != null) parts.push(t.llr.toFixed(2));
+  if (decideText(t) != null) parts.push(pct(t.decideChance!));
+  return parts.join(' ');
+}
+
+/** A test's details, one to a line, for a tooltip: the score, Elo, SPRT
+ * and chance to decide. */
+export function detailsText(t: TestView): string {
+  return [scoreText(t), t.elo && `Elo ${t.elo}`, sprtText(t), decideText(t)].filter(Boolean).join('\n');
 }
 
 /** Fast time controls for engine tests, with a turn limit. */
