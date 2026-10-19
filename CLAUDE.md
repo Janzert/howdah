@@ -1079,7 +1079,10 @@ plans the engine test and tournament runner.
 - Core serde/ts derives are behind the `serde`/`ts` features. Only the app
   enables `ts`.
 - Square serializes as its index (0..63). Enums serialize lowercase/camelCase.
-- rustfmt: `max_width = 110`. Conventional commits.
+- rustfmt: `max_width = 110`. The frontend is formatted with Prettier
+  (`app/.prettierrc.json`: single quotes, width 120, the Svelte plugin;
+  `npm run format`), leaving out the bindings and the themes' and sounds'
+  JSON. Conventional commits.
 - The reference implementation for rules questions is `../AEI/pyrimaa/board.py`.
   `crates/howdah-arimaa/tests/movegen.rs` checks move-generation counts
   against it (both sides to move). To add cases, compute counts with
@@ -1098,6 +1101,7 @@ cargo run -p howdah-gameroom --example probe -- live   # live server; ARIMAA_USE
 cargo clippy --workspace --all-targets
 cd app && npm install
 npm run check                     # svelte-check
+npm run format                    # Prettier (CI runs format:check)
 npm test                          # vitest (frontend unit tests, e.g. BoardModel)
 npm run bindings                  # regenerate TS types
 npm run tauri dev                 # run the app
@@ -1123,7 +1127,8 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
 - CI (`.github/workflows/ci.yml`, Linux, Windows and macOS) runs the
   checks above with clippy's warnings as errors, builds the frontend
   first (the app crate embeds `app/dist`), and on Linux also checks
-  rustfmt, that the TS bindings are regenerated, and the e2e tests. Keep
+  rustfmt, Prettier, that the TS bindings are regenerated, and the e2e
+  tests. Keep
   it free of anything that talks to arimaa.com.
 - Releases (`.github/workflows/release.yml`): a `v*` tag builds the
   installers on Ubuntu 22.04 (for older glibc), Windows and macOS and

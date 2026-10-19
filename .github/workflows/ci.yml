@@ -65,6 +65,10 @@ jobs:
         run: |
           npm run bindings
           git diff --exit-code -- src/lib/bindings
+      - name: Prettier
+        if: runner.os == 'Linux'
+        working-directory: app
+        run: npm run format:check
       - name: svelte-check
         working-directory: app
         run: npm run check
