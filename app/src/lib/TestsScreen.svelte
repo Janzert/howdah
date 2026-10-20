@@ -206,7 +206,7 @@
                     </span>
                     <span class="meta">{t.engines[0]} vs {t.engines[1]}</span>
                     <span class="meta">
-                      {scoreText(t, false)}{t.elo ? `, Elo ${t.elo}` : ''}{t.running.length > 0
+                      {scoreText(t, true)}{t.elo ? `, Elo ${t.elo}` : ''}{t.running.length > 0
                         ? `, ${t.running.length} playing`
                         : ''}
                     </span>

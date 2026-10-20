@@ -93,12 +93,12 @@ export function oddsText(t: TestView): string | null {
   return parts.join(', ');
 }
 
-/** Games, pairs and the score: `12-8 in 20 games (10 pairs)`; without
- * `withPairs`, for a card's narrow line, `12-8 in 20 games`. */
-export function scoreText(t: TestView, withPairs = true): string {
-  const score = `${t.wins[0]}–${t.wins[1]} in ${t.games} games`;
-  if (!withPairs) return score;
-  return `${score} (${t.pairs === 1 ? '1 pair' : `${t.pairs} pairs`})`;
+/** Games, pairs and the score: `12-8 in 20 games (10 pairs)`; `brief`,
+ * for a card's narrow line, `12-8 in 20`. */
+export function scoreText(t: TestView, brief = false): string {
+  if (brief) return `${t.wins[0]}–${t.wins[1]} in ${t.games}`;
+  const pairs = t.pairs === 1 ? '1 pair' : `${t.pairs} pairs`;
+  return `${t.wins[0]}–${t.wins[1]} in ${t.games} games (${pairs})`;
 }
 
 /** The score, Elo, LLR and games left in brief, for the sidebar:

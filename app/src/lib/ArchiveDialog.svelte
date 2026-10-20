@@ -100,7 +100,7 @@
                 <span class="state">{testState(a.test)}</span>
               </span>
               <span class="meta">{a.test.engines[0]} vs {a.test.engines[1]}</span>
-              <span class="meta">{scoreText(a.test, false)}{a.test.elo ? `, Elo ${a.test.elo}` : ''}</span>
+              <span class="meta">{scoreText(a.test, true)}{a.test.elo ? `, Elo ${a.test.elo}` : ''}</span>
             {:else}
               <span class="title"><span class="name">{a.file}</span></span>
               <span class="meta error">Can't be read: {a.error}</span>
