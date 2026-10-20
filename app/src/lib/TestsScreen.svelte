@@ -202,11 +202,17 @@
                   <button class="test" onclick={() => onOpenTest(t.id)} aria-label="Show test {t.name}">
                     <span class="title">
                       <span class="name">{t.name}</span>
-                      <span class="state {testState(t)}">{testState(t)}</span>
+                      {#if t.status === 'active' && t.running.length > 0}
+                        <span
+                          class="state active"
+                          title="{t.running.length} {t.running.length === 1 ? 'game' : 'games'} playing"
+                          >{t.running.length} active</span
+                        >
+                      {:else}<span class="state {testState(t)}">{testState(t)}</span>{/if}
                     </span>
                     <span class="meta">{t.engines[0]} vs {t.engines[1]}</span>
                     <span class="meta">
-                      {scoreText(t, true)}{t.elo ? `, Elo ${t.elo}` : ''}{t.running.length > 0
+                      {scoreText(t, true)}{t.elo ? `, Elo ${t.elo}` : ''}{t.status !== 'active' && t.running.length > 0
                         ? `, ${t.running.length} playing`
                         : ''}
                     </span>
