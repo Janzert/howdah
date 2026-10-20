@@ -224,10 +224,11 @@ async fn refusals() {
 async fn a_viewer_can_join_a_running_game() {
     let tmp = tempfile::tempdir().unwrap();
     let daemon = Daemon::start(tmp.path(), 0).unwrap();
-    // Engine two takes its time over its sixth move, so the game is still
-    // running when the viewer joins after its fifth.
+    // Engine two (silver) takes its time over its fifth move (ply 9), so the
+    // game waits on it when the viewer joins after gold's ply 8. (Joining
+    // after silver's own move instead raced gold's quick reply.)
     let t = daemon
-        .submit(spec("live", "max_pairs = 1", &["--mode", "slow", "--delay-ms", "300", "--after", "5"]), 0)
+        .submit(spec("live", "max_pairs = 1", &["--mode", "slow", "--delay-ms", "1000", "--after", "4"]), 0)
         .unwrap();
     let mut rx = daemon.subscribe();
     daemon.set_slots(1);
@@ -238,7 +239,7 @@ async fn a_viewer_can_join_a_running_game() {
             assert_eq!(test, &t.id);
             assert_eq!(*ply, seen.len());
             seen.push(notation.clone());
-            if *ply == 9 {
+            if *ply == 8 {
                 joined = Some(daemon.live(&t.id, 1, 1).unwrap());
             }
         }
@@ -247,8 +248,8 @@ async fn a_viewer_can_join_a_running_game() {
     .await;
     let live = joined.expect("joined the game");
     assert_eq!((live.gold.as_str(), live.silver.as_str()), ("one", "two"));
-    assert_eq!(live.moves, seen[..10]);
-    assert_eq!(live.used_ms.len(), 10);
+    assert_eq!(live.moves, seen[..9]);
+    assert_eq!(live.used_ms.len(), 9);
     assert!(live.reserves_ms.is_some());
     // A finished game isn't live any more; its record is there instead.
     assert!(daemon.live(&t.id, 1, 1).is_err());
