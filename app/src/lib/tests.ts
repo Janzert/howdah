@@ -98,21 +98,22 @@ export function scoreText(t: TestView): string {
   return `${t.wins[0]}–${t.wins[1]} in ${t.games} games (${pairs})`;
 }
 
-/** The score, Elo, LLR and chance to decide in brief, for the sidebar:
- * `118–99 +29.0 0.44 62%` (each left out when the test has none). */
+/** The score, Elo, LLR and games left in brief, for the sidebar:
+ * `118–99 +29.0 0.44 1800 left` (each left out when the test has none). */
 export function briefText(t: TestView): string {
   const parts = [`${t.wins[0]}–${t.wins[1]}`];
   if (t.elo) parts.push(t.elo.split(' [')[0]);
   if (t.llr != null) parts.push(t.llr.toFixed(2));
-  if (decideText(t) != null) parts.push(pct(t.decideChance!));
+  const left = t.projection?.gamesLeft[1];
+  if (left && t.status !== 'finished') parts.push(`${roughly(left)} left`);
   return parts.join(' ');
 }
 
 /** A test's details, one to a line, for a tooltip: the score, Elo, SPRT,
- * chance to decide and when and how it's likely to end. */
+ * when and how it's likely to end, and the chance to decide in time. */
 export function detailsText(t: TestView): string {
   const ends = endsText(t) && `Ends in ${endsText(t)}: ${oddsText(t)}`;
-  return [scoreText(t), t.elo && `Elo ${t.elo}`, sprtText(t), decideText(t), ends].filter(Boolean).join('\n');
+  return [scoreText(t), t.elo && `Elo ${t.elo}`, sprtText(t), ends, decideText(t)].filter(Boolean).join('\n');
 }
 
 /** Fast time controls for engine tests, with a turn limit. */

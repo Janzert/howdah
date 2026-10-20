@@ -640,7 +640,7 @@ plans the engine test and tournament runner.
     lists the panels: Home, arimaa.com (an offline mark while logged
     out; the arimaa.com panels opened from its overview indented under it), Engine tests (with the tests
     opened under it, each with its state, or the games it's playing while
-    active, score, Elo, LLR and chance to decide (`briefText`; the row's
+    active, score, Elo, LLR and median games left (`briefText`; the row's
     tooltip, folded or not, has `detailsText`), and `TestFlask`, whose fluid shows the LLR by
     color and the share of the pair limit played by level), badges (what
     waits on the user on arimaa.com, test games playing), Open boards

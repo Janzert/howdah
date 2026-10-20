@@ -110,12 +110,24 @@ describe('testProgress', () => {
 });
 
 describe('briefText', () => {
-  it('gives the score, Elo and LLR', () => {
+  it('gives the score, Elo, LLR and games left', () => {
     expect(briefText(view({ llr: 0.4412 }))).toBe('12–9 +70.4 0.44');
     expect(briefText(view({ elo: '+inf', llr: null }))).toBe('12–9 +inf');
     expect(briefText(view({ elo: null, llr: null }))).toBe('12–9');
-    expect(briefText(view({ llr: 0.4412, maxPairs: 3000, decideChance: 0.623 }))).toBe('12–9 +70.4 0.44 62%');
-    expect(briefText(view({ llr: 3, maxPairs: 3000, decideChance: 0.5, status: 'finished' }))).toBe('12–9 +70.4 3.00');
+    const projection = {
+      pass: 0.5,
+      fail: 0.5,
+      undecided: 0,
+      done: 0,
+      gamesLeft: [925, 1843, 3612] as [number, number, number],
+      openEnded: false,
+    };
+    expect(briefText(view({ llr: 0.4412, maxPairs: 3000, decideChance: 0.623 }))).toBe('12–9 +70.4 0.44');
+    expect(briefText(view({ llr: 0.4412, projection }))).toBe('12–9 +70.4 0.44 1800 left');
+    expect(briefText(view({ llr: 0.4412, projection: { ...projection, gamesLeft: [0, 0, 0] } }))).toBe(
+      '12–9 +70.4 0.44',
+    );
+    expect(briefText(view({ llr: 3, projection, status: 'finished' }))).toBe('12–9 +70.4 3.00');
   });
 });
 
@@ -169,5 +181,10 @@ describe('detailsText', () => {
     expect(detailsText(view({ projection })).split('\n').at(-1)).toBe(
       'Ends in about 20 games (10–30): pass 50%, fail 50%',
     );
+    expect(
+      detailsText(view({ projection, maxPairs: 3000, decideChance: 0.623 }))
+        .split('\n')
+        .slice(-2),
+    ).toEqual(['Ends in about 20 games (10–30): pass 50%, fail 50%', '62% chance to decide within 3000 pairs']);
   });
 });

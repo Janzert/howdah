@@ -161,18 +161,26 @@
             {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
           </dd>
         {/if}
-        {#if decideText(test)}
-          <dt>In time</dt>
-          <dd title="Projected from the results so far: the chance the LLR reaches a bound before the pair limit">
-            {decideText(test)}
-          </dd>
-        {/if}
         {#if endsText(test)}
           <dt>Ends in</dt>
           <dd
             title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings"
           >
-            {endsText(test)}<br />{oddsText(test)}
+            {endsText(test)}
+          </dd>
+        {/if}
+        {#if oddsText(test) || decideText(test)}
+          <dt>Outcome</dt>
+          <dd>
+            {#if oddsText(test)}<span title="How often each ending came up in the simulations">{oddsText(test)}</span
+              >{/if}
+            {#if decideText(test)}
+              <span
+                class="aside"
+                title="The chance the LLR reaches a bound before the pair limit, which the undecided cutoff watches"
+                >{decideText(test)}</span
+              >
+            {/if}
           </dd>
         {/if}
       </dl>
@@ -327,6 +335,11 @@
     padding: 0 6px;
     border-radius: 8px;
     border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .aside {
+    display: block;
+    font-size: 12px;
     color: var(--muted);
   }
   .note {
