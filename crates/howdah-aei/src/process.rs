@@ -39,6 +39,15 @@ pub(crate) fn capped_command(program: &Path, args: &[String], limit: u64) -> Opt
     imp::capped_command(program, args, limit)
 }
 
+/// Whether this process has a console window. Without one (the app, a GUI
+/// program), Windows gives every console program it starts a window of
+/// its own unless it's started with `CREATE_NO_WINDOW`.
+#[cfg(windows)]
+pub(crate) fn has_console() -> bool {
+    // SAFETY: GetConsoleWindow takes nothing and only returns a handle.
+    !unsafe { windows_sys::Win32::System::Console::GetConsoleWindow() }.is_null()
+}
+
 /// Kills process group `pgid`. Only call it while the group's leader
 /// hasn't been reaped, or just after: a group id is never handed to a new
 /// process while any member is alive, and pids are reused only after

@@ -157,13 +157,26 @@ impl Engine {
             .kill_on_drop(true);
         #[cfg(target_os = "linux")]
         kill_with_parent(&mut cmd);
+        #[cfg(windows)]
+        let mut flags = 0;
         if config.own_process_group {
             #[cfg(unix)]
             cmd.process_group(0);
             // CREATE_NEW_PROCESS_GROUP, which also turns Ctrl-C off in it.
             #[cfg(windows)]
-            cmd.creation_flags(0x0000_0200);
+            {
+                flags |= 0x0000_0200;
+            }
         }
+        // CREATE_NO_WINDOW when we have no console (the installed app), or
+        // each engine opens a console window. With one (a terminal), the
+        // engine shares it, and its stderr shows there.
+        #[cfg(windows)]
+        if !process::has_console() {
+            flags |= 0x0800_0000;
+        }
+        #[cfg(windows)]
+        cmd.creation_flags(flags);
         if let Some(dir) = &config.working_dir {
             // A missing directory makes spawn fail with the same "not found"
             // error as a missing program, so check it separately.
