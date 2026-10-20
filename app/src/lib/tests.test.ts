@@ -123,7 +123,7 @@ describe('briefText', () => {
       openEnded: false,
     };
     expect(briefText(view({ llr: 0.4412, maxPairs: 3000, decideChance: 0.623 }))).toBe('12–9 +70.4 0.44');
-    expect(briefText(view({ llr: 0.4412, projection }))).toBe('12–9 +70.4 0.44 1800 left');
+    expect(briefText(view({ llr: 0.4412, projection }))).toBe('12–9 +70.4 0.44 1800');
     expect(briefText(view({ llr: 0.4412, projection: { ...projection, gamesLeft: [0, 0, 0] } }))).toBe(
       '12–9 +70.4 0.44',
     );

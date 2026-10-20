@@ -99,13 +99,13 @@ export function scoreText(t: TestView): string {
 }
 
 /** The score, Elo, LLR and games left in brief, for the sidebar:
- * `118–99 +29.0 0.44 1800 left` (each left out when the test has none). */
+ * `118–99 +29.0 0.44 1800` (each left out when the test has none). */
 export function briefText(t: TestView): string {
   const parts = [`${t.wins[0]}–${t.wins[1]}`];
   if (t.elo) parts.push(t.elo.split(' [')[0]);
   if (t.llr != null) parts.push(t.llr.toFixed(2));
   const left = t.projection?.gamesLeft[1];
-  if (left && t.status !== 'finished') parts.push(`${roughly(left)} left`);
+  if (left && t.status !== 'finished') parts.push(`${roughly(left)}`);
   return parts.join(' ');
 }
 
