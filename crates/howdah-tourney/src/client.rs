@@ -185,6 +185,11 @@ impl Client {
         self.post("/shutdown", &json!({ "now": now })).await
     }
 
+    /// Calls off a shutdown that's letting the running games finish.
+    pub async fn cancel_shutdown(&self) -> Result<DaemonStatus, ClientError> {
+        self.post("/shutdown/cancel", &json!({})).await
+    }
+
     /// The daemon's events from now on.
     pub async fn events(&self) -> Result<EventStream, ClientError> {
         let response = self.send(self.http.get(format!("{}/events", self.base))).await?;

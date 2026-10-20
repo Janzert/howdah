@@ -291,6 +291,8 @@ function makeApi(sid: () => SessionId | null) {
     tourneyStartDaemon: (slots: number) => invoke<void>('tourney_start_daemon', { slots }),
     /** Shuts the daemon down: after its running games, or `now`. */
     tourneyShutdown: (now: boolean) => invoke<void>('tourney_shutdown', { now }),
+    /** Calls off a shutdown that's waiting for the running games. */
+    tourneyCancelShutdown: () => invoke<void>('tourney_cancel_shutdown'),
     tourneySetSlots: (slots: number) => invoke<void>('tourney_set_slots', { slots }),
     /** Takes a test that isn't active out of the daemon: zipped into its
      * `archive/` (resolves to the zip's path) if `archive`, else deleted. */

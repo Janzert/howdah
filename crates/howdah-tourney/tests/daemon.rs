@@ -178,6 +178,30 @@ async fn games_at_once_can_change_and_stay_changed() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_shutdown_can_be_called_off() {
+    let tmp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::start(tmp.path(), 0).unwrap();
+    let t = daemon.submit(spec("t", "max_pairs = 2", &[]), 0).unwrap();
+    let mut rx = daemon.subscribe();
+    daemon.set_slots(1);
+    events_until(&mut rx, |e| matches!(e, DaemonEvent::GameStarted { .. })).await;
+    daemon.shutdown(false);
+    assert!(daemon.status().closing);
+    daemon.cancel_shutdown().unwrap();
+    assert!(!daemon.status().closing);
+    // The slot goes on to the test's other games, whether it had already
+    // decided to stop or not.
+    events_until(&mut rx, |e| finished(e, &t.id)).await;
+    assert_eq!(daemon.info(&t.id).unwrap().summary.games, 4);
+
+    // Once the games are abandoned, or the daemon is done, it's too late.
+    daemon.shutdown(true);
+    assert!(daemon.cancel_shutdown().is_err());
+    daemon.closed().await;
+    assert!(daemon.cancel_shutdown().is_err());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn refusals() {
     let tmp = tempfile::tempdir().unwrap();
     let daemon = Daemon::start(tmp.path(), 0).unwrap();

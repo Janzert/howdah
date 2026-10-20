@@ -25,4 +25,8 @@ slots: number | null,
 /**
  * A test taken out of the queue (archived or deleted), by id.
  */
-removed: string | null, };
+removed: string | null, 
+/**
+ * Whether the daemon is shutting down, when that changed.
+ */
+closing: boolean | null, };

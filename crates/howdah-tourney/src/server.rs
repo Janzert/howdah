@@ -23,7 +23,8 @@
 //!   `{"maxPairs": n | null}`; `POST /tests/{id}/undecided-below`
 //!   `{"undecidedBelow": chance | null}`; `POST /tests/{id}/concurrency`
 //!   `{"concurrency": n}` (games at once).
-//! - `POST /slots` `{"slots": n}`; `POST /shutdown` `{"now": bool}`.
+//! - `POST /slots` `{"slots": n}`; `POST /shutdown` `{"now": bool}`;
+//!   `POST /shutdown/cancel` calls off a shutdown that isn't `now`.
 //! - `GET /events`: server-sent events, each a [`DaemonEvent`] named by
 //!   its `type`.
 //!
@@ -141,6 +142,7 @@ pub async fn serve(daemon: Daemon, listener: TcpListener, info: DaemonInfo) -> R
         .route("/archive/{file}/restore", post(restore))
         .route("/slots", post(slots))
         .route("/shutdown", post(shutdown))
+        .route("/shutdown/cancel", post(cancel_shutdown))
         .route("/events", get(events))
         .layer(middleware::from_fn_with_state(state.clone(), authorize))
         .with_state(state);
@@ -371,6 +373,11 @@ struct Shutdown {
 async fn shutdown(State(s): State<AppState>, bytes: Bytes) -> ApiResult<crate::daemon::DaemonStatus> {
     let req: Shutdown = body(&bytes)?;
     s.daemon.shutdown(req.now);
+    Ok(Json(s.daemon.status()))
+}
+
+async fn cancel_shutdown(State(s): State<AppState>) -> ApiResult<crate::daemon::DaemonStatus> {
+    s.daemon.cancel_shutdown()?;
     Ok(Json(s.daemon.status()))
 }
 

@@ -265,6 +265,8 @@ pub enum DaemonEvent {
     ShuttingDown {
         now: bool,
     },
+    /// A shutdown that let the running games finish was called off.
+    ShutdownCancelled,
 }
 
 /// An engine's search output in a running game, from the game's output
@@ -292,6 +294,7 @@ impl DaemonEvent {
             DaemonEvent::TestRemoved { .. } => "testRemoved",
             DaemonEvent::SlotsChanged { .. } => "slotsChanged",
             DaemonEvent::ShuttingDown { .. } => "shuttingDown",
+            DaemonEvent::ShutdownCancelled => "shutdownCancelled",
         }
     }
 }
@@ -425,6 +428,11 @@ struct Slots {
     handles: Vec<JoinHandle<()>>,
     /// Whether slot `i` has a task.
     alive: Vec<bool>,
+    /// The daemon has shut down: [`Daemon::closed`] has returned, or is
+    /// about to.
+    closed: bool,
+    /// The shutdown abandoned the running games, so it can't be called off.
+    abandoned: bool,
 }
 
 struct Inner {
@@ -466,7 +474,13 @@ impl Daemon {
         let inner = Arc::new(Inner {
             data_dir: data_dir.to_path_buf(),
             tests: Mutex::new(Vec::new()),
-            slots: Mutex::new(Slots { target: 0, handles: Vec::new(), alive: Vec::new() }),
+            slots: Mutex::new(Slots {
+                target: 0,
+                handles: Vec::new(),
+                alive: Vec::new(),
+                closed: false,
+                abandoned: false,
+            }),
             wake: Notify::new(),
             events,
             output,
@@ -857,8 +871,18 @@ impl Daemon {
                     s.alive[i] = true;
                     let inner = self.0.clone();
                     s.handles.push(tokio::spawn(async move {
-                        let _ = play_slot(inner.clone(), i).await;
-                        inner.slots.lock().unwrap().alive[i] = false;
+                        loop {
+                            let _ = play_slot(inner.clone(), i).await;
+                            // A cancelled shutdown (or more slots again) can
+                            // come after the slot decided to stop: then it
+                            // carries on, since it's still counted alive.
+                            let mut s = inner.slots.lock().unwrap();
+                            if !inner.closing.load(Ordering::SeqCst) && i < s.target as usize {
+                                continue;
+                            }
+                            s.alive[i] = false;
+                            break;
+                        }
                     }));
                 }
             }
@@ -903,7 +927,9 @@ impl Daemon {
     pub fn shutdown(&self, now: bool) {
         self.0.closing.store(true, Ordering::SeqCst);
         if now {
-            for h in &self.0.slots.lock().unwrap().handles {
+            let mut s = self.0.slots.lock().unwrap();
+            s.abandoned = true;
+            for h in &s.handles {
                 h.abort();
             }
         }
@@ -911,25 +937,59 @@ impl Daemon {
         self.0.wake.notify_waiters();
     }
 
+    /// Calls off a shutdown that's letting the running games finish: the
+    /// daemon goes on as before. Refused once the games were abandoned
+    /// (`now`) or the daemon has shut down.
+    pub fn cancel_shutdown(&self) -> Result<(), TourneyError> {
+        let s = self.0.slots.lock().unwrap();
+        if s.closed {
+            return Err(TourneyError::Refused("the daemon has shut down".into()));
+        }
+        if s.abandoned {
+            return Err(TourneyError::Refused("the daemon is shutting down now".into()));
+        }
+        if !self.0.closing.swap(false, Ordering::SeqCst) {
+            return Ok(());
+        }
+        let target = s.target;
+        drop(s);
+        // Slots that already stopped start again.
+        self.set_slots(target);
+        let _ = self.0.events.send(DaemonEvent::ShutdownCancelled);
+        Ok(())
+    }
+
     /// Waits until the daemon has shut down and every slot has ended.
     pub async fn closed(&self) {
         loop {
-            let notified = self.0.wake.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-            if self.0.closing.load(Ordering::SeqCst) {
-                break;
+            loop {
+                let notified = self.0.wake.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                if self.0.closing.load(Ordering::SeqCst) {
+                    break;
+                }
+                notified.await;
             }
-            notified.await;
-        }
-        loop {
-            let handles: Vec<JoinHandle<()>> = std::mem::take(&mut self.0.slots.lock().unwrap().handles);
-            if handles.is_empty() {
-                break;
+            loop {
+                let handles: Vec<JoinHandle<()>> = {
+                    let mut s = self.0.slots.lock().unwrap();
+                    if s.handles.is_empty() {
+                        // Decided under the lock, so a cancel either comes
+                        // first or is refused.
+                        if self.0.closing.load(Ordering::SeqCst) {
+                            s.closed = true;
+                            return;
+                        }
+                        break;
+                    }
+                    std::mem::take(&mut s.handles)
+                };
+                for h in handles {
+                    let _ = h.await;
+                }
             }
-            for h in handles {
-                let _ = h.await;
-            }
+            // Cancelled with no slots to wait for: wait for the next shutdown.
         }
     }
 

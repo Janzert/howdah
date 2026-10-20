@@ -58,9 +58,17 @@
     void act(() => api.tourneySetSlots(n));
   }
 
+  // Each shows the change at once rather than waiting for the daemon's event.
   const shutdown = () =>
     act(async () => {
       await api.tourneyShutdown(false);
+      if (tourney.status) tourney.status.closing = true;
+    });
+
+  const cancelShutdown = () =>
+    act(async () => {
+      await api.tourneyCancelShutdown();
+      if (tourney.status) tourney.status.closing = false;
     });
 
   const running = $derived(tourney.playing);
@@ -137,8 +145,14 @@
       {/if}
     {:else}
       <div class="fields">
-        <span class="state-dot" aria-hidden="true"></span>
-        <span>Test daemon running</span>
+        <span class="state-dot" class:closing={status.closing} aria-hidden="true"></span>
+        {#if status.closing}
+          <span role="status" title="It starts no more games, and stops once the running ones end"
+            >Test daemon shutting down</span
+          >
+        {:else}
+          <span>Test daemon running</span>
+        {/if}
         <span class="sep">·</span>
         <span class="slots">
           <button
@@ -159,12 +173,21 @@
         </span>
         {#if running > 0}<span class="sep">·</span><span>{running} playing</span>{/if}
         <span class="spacer"></span>
-        <button
-          class="subtle"
-          onclick={shutdown}
-          disabled={busy}
-          title="Stop the daemon once its running games end; tests carry on when it starts again">Shut down</button
-        >
+        {#if status.closing}
+          <button
+            class="subtle"
+            onclick={cancelShutdown}
+            disabled={busy}
+            title="Keep the daemon running and starting games">Cancel shutdown</button
+          >
+        {:else}
+          <button
+            class="subtle"
+            onclick={shutdown}
+            disabled={busy}
+            title="Stop the daemon once its running games end; tests carry on when it starts again">Shut down</button
+          >
+        {/if}
       </div>
     {/if}
     {#if status?.dataDir}<p class="hint small">Tests are kept in {status.dataDir}</p>{/if}
@@ -283,6 +306,9 @@
     height: 9px;
     border-radius: 50%;
     background: var(--clock-ok);
+  }
+  .state-dot.closing {
+    background: var(--muted);
   }
   .sep {
     color: var(--muted);

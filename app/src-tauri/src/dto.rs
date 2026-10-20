@@ -1450,6 +1450,8 @@ pub struct TourneyStatusView {
     /// Whether the app can start a daemon (it found `howdah-tourney`
     /// beside itself).
     pub can_start: bool,
+    /// The daemon is shutting down, once its running games end.
+    pub closing: bool,
 }
 
 /// An SPRT's Elo bounds.
@@ -1632,4 +1634,6 @@ pub struct TourneyUpdate {
     pub slots: Option<u32>,
     /// A test taken out of the queue (archived or deleted), by id.
     pub removed: Option<String>,
+    /// Whether the daemon is shutting down, when that changed.
+    pub closing: Option<bool>,
 }

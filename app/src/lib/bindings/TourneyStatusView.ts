@@ -20,4 +20,8 @@ running: number,
  * Whether the app can start a daemon (it found `howdah-tourney`
  * beside itself).
  */
-canStart: boolean, };
+canStart: boolean, 
+/**
+ * The daemon is shutting down, once its running games end.
+ */
+closing: boolean, };

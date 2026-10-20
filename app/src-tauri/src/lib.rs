@@ -201,6 +201,7 @@ pub fn run() {
             commands::tourney_set_slots,
             commands::tourney_start_daemon,
             commands::tourney_shutdown,
+            commands::tourney_cancel_shutdown,
             commands::open_tourney_game,
             commands::follow_tourney_test,
             commands::engine_output,

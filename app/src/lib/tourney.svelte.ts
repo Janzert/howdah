@@ -45,6 +45,7 @@ class TourneyStore {
         else this.tests = [...this.tests, t];
       }
       if (u.slots != null && this.status) this.status.slots = u.slots;
+      if (u.closing != null && this.status) this.status.closing = u.closing;
       if (u.removed) this.forget(u.removed);
     });
     return () => void unlisten.then((f) => f());

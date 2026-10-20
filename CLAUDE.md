@@ -257,7 +257,9 @@ plans the engine test and tournament runner.
     picker. `TestRun` (`runner.rs`) is one test in play. Clients see
     `TestInfo`s and `DaemonEvent`s (a broadcast). `remove` takes a test
     that isn't active out (`retire` makes slots drop its engines first),
-    zipping it into `archive/` or deleting it; `archived` reads the
+    zipping it into `archive/` or deleting it; `shutdown` starts no more
+    games (`now` abandons the running ones) and `cancel_shutdown` calls off
+    one that isn't `now`, until `closed` returns; `archived` reads the
     zips (`ArchivedTest`), `restore` unzips one back into the queue and
     `delete_archived` deletes one.
   - `server` (feature `server`): the HTTP API on 127.0.0.1, with a

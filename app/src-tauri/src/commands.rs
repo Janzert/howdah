@@ -809,6 +809,11 @@ pub async fn tourney_shutdown(state: State<'_, Backend>, now: bool) -> Result<()
 }
 
 #[tauri::command]
+pub async fn tourney_cancel_shutdown(state: State<'_, Backend>) -> Result<(), ApiError> {
+    state.tourney_cancel_shutdown().await
+}
+
+#[tauri::command]
 pub async fn open_tourney_game(
     state: State<'_, Backend>,
     session: SessionId,

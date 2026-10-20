@@ -22,7 +22,7 @@
 //! howdah-tourney undecided-below ID PERCENT|off  end undecided under this chance of deciding in time
 //! howdah-tourney concurrency ID N
 //! howdah-tourney slots N
-//! howdah-tourney shutdown [--now]
+//! howdah-tourney shutdown [--now|--cancel]
 //! ```
 //!
 //! `--data-dir DIR` (anywhere) picks the daemon's data directory, otherwise
@@ -61,7 +61,7 @@ const USAGE: &str = "usage:
   howdah-tourney undecided-below ID PERCENT|off
   howdah-tourney concurrency ID N
   howdah-tourney slots N
-  howdah-tourney shutdown [--now]
+  howdah-tourney shutdown [--now|--cancel]
 (any command takes --data-dir DIR for the daemon's data directory)";
 
 #[tokio::main]
@@ -206,6 +206,11 @@ async fn command(args: &[String], data: &Path) -> Result<(), String> {
         ["slots", n] => {
             let s = client(data)?.set_slots(number(n, "slots")?).await.map_err(|e| e.to_string())?;
             println!("{} slots", s.slots);
+            Ok(())
+        }
+        ["shutdown", "--cancel"] => {
+            client(data)?.cancel_shutdown().await.map_err(|e| e.to_string())?;
+            println!("Shutdown cancelled");
             Ok(())
         }
         ["shutdown"] | ["shutdown", "--now"] => {
@@ -551,6 +556,7 @@ fn print_daemon_event(
         DaemonEvent::ShuttingDown { now } => {
             println!("{}", if *now { "Shutting down now" } else { "Shutting down after the running games" })
         }
+        DaemonEvent::ShutdownCancelled => println!("Shutdown cancelled"),
     }
 }
 

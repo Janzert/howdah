@@ -970,6 +970,10 @@ impl Backend {
         self.tourney.shutdown(now).await
     }
 
+    pub async fn tourney_cancel_shutdown(&self) -> Result<(), ApiError> {
+        self.tourney.cancel_shutdown().await
+    }
+
     /// Opens a test's game in session `id`: a running one is followed
     /// (moves and clocks from the daemon), a finished one loaded whole.
     pub async fn open_tourney_game(
@@ -1359,6 +1363,7 @@ impl Backend {
             "tourney_set_slots" => ok(self.tourney_set_slots(arg(args, "slots")?).await?),
             "tourney_start_daemon" => ok(self.tourney_start_daemon(arg(args, "slots")?).await?),
             "tourney_shutdown" => ok(self.tourney_shutdown(arg(args, "now")?).await?),
+            "tourney_cancel_shutdown" => ok(self.tourney_cancel_shutdown().await?),
             "open_tourney_game" => ok(self
                 .open_tourney_game(
                     sid()?,

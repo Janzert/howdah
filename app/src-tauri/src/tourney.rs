@@ -91,6 +91,7 @@ impl Tourney {
             slots: status.as_ref().map(|s| s.slots),
             running: status.as_ref().map_or(0, |s| s.running.len() as u32),
             can_start,
+            closing: status.as_ref().is_some_and(|s| s.closing),
         }
     }
 
@@ -183,6 +184,11 @@ impl Tourney {
 
     pub async fn shutdown(&self, now: bool) -> Result<(), ApiError> {
         self.client()?.shutdown(now).await.map_err(api).map(drop)
+    }
+
+    /// Calls off a shutdown that's waiting for the running games.
+    pub async fn cancel_shutdown(&self) -> Result<(), ApiError> {
+        self.client()?.cancel_shutdown().await.map_err(api).map(drop)
     }
 
     /// Starts a daemon with `slots` slots, from the `howdah-tourney`
@@ -365,10 +371,13 @@ impl Tourney {
                                 game: None,
                                 slots: None,
                                 removed: Some(test),
+                                closing: None,
                             };
                             emit(&self.events, TOURNEY_CHANGED, update);
                         }
                         DaemonEvent::SlotsChanged { slots } => self.update(true, None, None, Some(slots)),
+                        DaemonEvent::ShuttingDown { .. } => self.closing(true),
+                        DaemonEvent::ShutdownCancelled => self.closing(false),
                         _ => {}
                     }
                 }
@@ -385,7 +394,23 @@ impl Tourney {
         game: Option<TestGameView>,
         slots: Option<u32>,
     ) {
-        emit(&self.events, TOURNEY_CHANGED, TourneyUpdate { connected, test, game, slots, removed: None });
+        emit(
+            &self.events,
+            TOURNEY_CHANGED,
+            TourneyUpdate { connected, test, game, slots, removed: None, closing: None },
+        );
+    }
+
+    fn closing(&self, closing: bool) {
+        let update = TourneyUpdate {
+            connected: true,
+            test: None,
+            game: None,
+            slots: None,
+            removed: None,
+            closing: Some(closing),
+        };
+        emit(&self.events, TOURNEY_CHANGED, update);
     }
 }
 
