@@ -1106,6 +1106,8 @@
     color: var(--muted);
   }
   .state.active {
+    /* At least as wide as it's tall, padding and border included. */
+    box-sizing: border-box;
     min-width: 16px;
     text-align: center;
     font-variant-numeric: tabular-nums;
