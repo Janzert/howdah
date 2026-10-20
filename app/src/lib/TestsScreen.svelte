@@ -13,7 +13,7 @@
   import Icon from './Icon.svelte';
   import ArchiveDialog from './ArchiveDialog.svelte';
   import NewTestDialog from './NewTestDialog.svelte';
-  import { decideText, llrPosition, scoreText, testState } from './tests';
+  import { endsText, llrPosition, scoreText, testState } from './tests';
   import { tourney } from './tourney.svelte';
 
   interface Props {
@@ -210,7 +210,7 @@
                         ? `, ${t.running.length} playing`
                         : ''}
                     </span>
-                    {#if decideText(t)}<span class="meta">{decideText(t)}</span>{/if}
+                    {#if endsText(t)}<span class="meta">Ends {endsText(t)}</span>{/if}
                     {#if pos != null}
                       <span class="llr" title="The SPRT's LLR between its bounds">
                         <span class="mark" style="left: {pos * 100}%"></span>

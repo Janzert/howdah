@@ -286,8 +286,9 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   well above the cutoff, every pair once it's within three times it,
   with bisection back to the first pair under it). It gives the chance
   of each ending and the games left at the 10th, 50th and 90th
-  percentiles, which the test page shows as "about 1800 games
-  (930–3600)". Each path draws its true Elo from the posterior given the
+  percentiles, which the test page and the test cards show as "Ends in
+  about 1800 games (930–3600)", and the sidebar's test rows as the
+  median alone. Each path draws its true Elo from the posterior given the
   pairs so far, with a prior of 80% N(0, 15) and 20% N(0, 80) Elo:
   most changes are small, a few are far out. With a flat prior the early
   projections expected a quick pass or fail far too often (after 50

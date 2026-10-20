@@ -162,7 +162,7 @@
           </dd>
         {/if}
         {#if endsText(test)}
-          <dt>Ends in</dt>
+          <dt>Ends</dt>
           <dd
             title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings"
           >

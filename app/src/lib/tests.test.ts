@@ -143,10 +143,14 @@ describe('projections', () => {
 
   it('words when a test is likely to end', () => {
     expect(endsText(view())).toBeNull();
-    expect(endsText(view({ projection }))).toBe('about 1800 games (930–3600)');
-    expect(endsText(view({ projection: { ...projection, gamesLeft: [12, 64, 230] } }))).toBe('about 64 games (12–230)');
-    expect(endsText(view({ projection: { ...projection, openEnded: true } }))).toBe('about 1800 games (930–3600+)');
-    expect(endsText(view({ projection: { ...projection, gamesLeft: [0, 0, 0] } }))).toBe('after the games running');
+    expect(endsText(view({ projection }))).toBe('in about 1800 games (930–3600)');
+    expect(endsText(view({ projection: { ...projection, gamesLeft: [12, 64, 230] } }))).toBe(
+      'in about 64 games (12–230)',
+    );
+    expect(endsText(view({ projection: { ...projection, openEnded: true } }))).toBe('in about 1800 games (930–3600+)');
+    expect(endsText(view({ projection: { ...projection, gamesLeft: [0, 0, 0] } }))).toBe(
+      'once the running games finish',
+    );
     expect(endsText(view({ projection, status: 'finished' }))).toBeNull();
   });
 

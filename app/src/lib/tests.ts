@@ -70,14 +70,15 @@ function roughly(n: number): number {
   return Math.round(n / unit) * unit;
 }
 
-/** When a running SPRT test is likely to end, in games: `about 1800 games
- * (920–3600)`, the median and the middle 80%; null without a projection. */
+/** When a running SPRT test is likely to end, in games, to follow "Ends":
+ * `in about 1800 games (920–3600)`, the median and the middle 80%; null
+ * without a projection. */
 export function endsText(t: TestView): string | null {
   const p = t.projection;
   if (p == null || t.status === 'finished') return null;
   const [lo, mid, hi] = p.gamesLeft.map(roughly);
-  if (hi === 0) return 'after the games running';
-  return `about ${mid} games (${lo}–${hi}${p.openEnded ? '+' : ''})`;
+  if (hi === 0) return 'once the running games finish';
+  return `in about ${mid} games (${lo}–${hi}${p.openEnded ? '+' : ''})`;
 }
 
 /** How a running SPRT test is likely to end: `pass 22%, fail 36%,
@@ -112,7 +113,7 @@ export function briefText(t: TestView): string {
 /** A test's details, one to a line, for a tooltip: the score, Elo, SPRT,
  * when and how it's likely to end, and the chance to decide in time. */
 export function detailsText(t: TestView): string {
-  const ends = endsText(t) && `Ends in ${endsText(t)}: ${oddsText(t)}`;
+  const ends = endsText(t) && `Ends ${endsText(t)}: ${oddsText(t)}`;
   return [scoreText(t), t.elo && `Elo ${t.elo}`, sprtText(t), ends, decideText(t)].filter(Boolean).join('\n');
 }
 
