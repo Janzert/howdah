@@ -1529,9 +1529,32 @@ pub struct TestView {
     /// The chance the SPRT still reaches a bound within the pair limit;
     /// None without an SPRT and a limit, or once it has decided.
     pub decide_chance: Option<f64>,
+    /// How an unfinished SPRT test is likely to end, and when; None
+    /// without an SPRT, or once it has decided or finished.
+    pub projection: Option<ProjectionView>,
     /// Games whose moves repeat an earlier game's.
     pub repeated: u32,
     pub path: String,
+}
+
+/// How a test is likely to end, from simulating the rest of it many
+/// times.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProjectionView {
+    /// The chances it passes, fails, ends undecided (unlikely to decide
+    /// in time) and plays every pair (without a pair limit: is still
+    /// going after 20,000 more pairs). They add up to 1.
+    pub pass: f64,
+    pub fail: f64,
+    pub undecided: f64,
+    pub done: f64,
+    /// Games left when it ends, at the 10th, 50th and 90th percentiles.
+    pub games_left: [u32; 3],
+    /// With no pair limit, the 90th percentile is at the simulation's end
+    /// and only a lower bound.
+    pub open_ended: bool,
 }
 
 /// A finished game of a test.

@@ -359,6 +359,8 @@ async fn an_undecided_test_carries_on_when_its_limit_rises() {
     let info = daemon.set_max_pairs(&t.id, Some(3000)).unwrap();
     assert!(info.decide_chance.unwrap() > 0.6, "{:?}", info.decide_chance);
     assert_eq!((info.status, info.end), (TestStatus::Active, None));
+    let p = info.projection.expect("a running SPRT test has a projection");
+    assert!((p.pass + p.fail + p.undecided + p.done - 1.0).abs() < 1e-9, "{p:?}");
 
     // A cutoff above its chance ends it again (once running games finish).
     let mut rx = daemon.subscribe();
@@ -367,7 +369,8 @@ async fn an_undecided_test_carries_on_when_its_limit_rises() {
     if info.status != TestStatus::Finished {
         events_until(&mut rx, |e| finished(e, &t.id)).await;
     }
-    assert_eq!(daemon.info(&t.id).unwrap().end, Some(RunEnd::Undecided));
+    let info = daemon.info(&t.id).unwrap();
+    assert_eq!((info.end, info.projection), (Some(RunEnd::Undecided), None));
     assert!(matches!(daemon.set_undecided_below(&t.id, Some(1.5)), Err(TourneyError::Refused(_))));
 
     // With the cutoff off it carries on, and stays off after a restart.

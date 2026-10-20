@@ -39,5 +39,8 @@ pub use memory::default_budget as default_memory_budget;
 pub use results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash, read_results};
 pub use runner::{EngineLine, LiveGame, RunEnd, RunEvent, RunOptions, StopHandle, run};
 pub use spec::{EngineSpec, MemorySpec, OptionValue, SprtSpec, TestSpec};
-pub use stats::{Decision, Summary, decide_chance, elo_from_score, score_from_elo, summarize};
+pub use stats::{
+    Decision, NO_LIMIT_HORIZON, Projection, Summary, decide_chance, elo_from_score, project, score_from_elo,
+    summarize,
+};
 pub use testdir::TestDir;

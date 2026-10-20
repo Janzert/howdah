@@ -279,6 +279,29 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   can't be resumed until a raised pair limit or a lowered cutoff gives
   it room to decide, and that change carries it on; one that raises the
   cutoff past a running test's chance ends it.
+- **When a test will end.** `project` (`TestInfo.projection`) simulates
+  the rest of an unfinished SPRT test 500 times, pair by pair, with the
+  runner's own endings: the first LLR crossing, the pair limit, and the
+  undecided cutoff (checked about 40 times a path while the chance is
+  well above the cutoff, every pair once it's within three times it,
+  with bisection back to the first pair under it). It gives the chance
+  of each ending and the games left at the 10th, 50th and 90th
+  percentiles, which the test page shows as "about 1800 games
+  (930–3600)". Each path draws its true Elo from the posterior given the
+  pairs so far, with a prior of 80% N(0, 15) and 20% N(0, 80) Elo:
+  most changes are small, a few are far out. With a flat prior the early
+  projections expected a quick pass or fail far too often (after 50
+  pairs, 44% predicted passes against 19% real ones in simulated tests
+  near [0, 10]). Over tests drawn from the prior, projected after 50,
+  250 and 700 pairs, the 80% range held 77% of 769 real endings, 48%
+  ended before the median, and pass, fail and undecided were predicted
+  21%, 36% and 43% against 22%, 34% and 44%
+  (`project_is_calibrated_at_length`, ignored by default). How good the
+  early projections are depends on how well the prior fits the changes
+  being tested; after a few hundred pairs the results outweigh it. A
+  projection takes tens of milliseconds, so the daemon keeps each
+  test's last one and works it out again only when the pair counts,
+  limit or cutoff change, outside the queue's lock.
 - **Ctrl-C.** The first stops new games and waits for the running ones;
   the second quits, and those games are played again on the next run.
   Engines run in their own process group (`EngineConfig::own_process_group`),

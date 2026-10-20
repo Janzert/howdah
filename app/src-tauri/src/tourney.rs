@@ -24,8 +24,8 @@ use howdah_tourney::{
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, ENGINE_OUTPUT, SharedSession, engine_output};
 use crate::dto::{
-    ApiError, ArchivedTestView, EngineOutput, EngineSpec, NewTestSpec, SprtView, TestDetailView, TestGameRef,
-    TestGameTag, TestGameView, TestView, TourneyStatusView, TourneyUpdate,
+    ApiError, ArchivedTestView, EngineOutput, EngineSpec, NewTestSpec, ProjectionView, SprtView,
+    TestDetailView, TestGameRef, TestGameTag, TestGameView, TestView, TourneyStatusView, TourneyUpdate,
 };
 use crate::session::{Player, RemoteClock, Session};
 
@@ -607,6 +607,14 @@ pub fn test_view(t: &TestInfo) -> TestView {
         llr: s.llr,
         llr_bounds: s.llr_bounds,
         decide_chance: t.decide_chance,
+        projection: t.projection.map(|p| ProjectionView {
+            pass: p.pass,
+            fail: p.fail,
+            undecided: p.undecided,
+            done: p.done,
+            games_left: p.games_left,
+            open_ended: t.max_pairs.is_none() && p.pairs_left[2] >= howdah_tourney::NO_LIMIT_HORIZON,
+        }),
         repeated: s.repeated,
         path: t.path.display().to_string(),
     }

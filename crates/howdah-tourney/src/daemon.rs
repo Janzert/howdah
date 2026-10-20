@@ -34,7 +34,7 @@ use crate::memory::{self, Engines};
 use crate::results::{GameEntry, parse_results};
 use crate::runner::{EngineLine, EventFn, LiveGame, Picker, RunEnd, RunEvent, TestRun, play_slot};
 use crate::spec::{SprtSpec, TestSpec};
-use crate::stats::Summary;
+use crate::stats::{Projection, Summary};
 use crate::testdir::{TestDir, slug};
 
 /// Overrides the data directory.
@@ -149,6 +149,11 @@ pub struct TestInfo {
     /// has decided.
     #[serde(default)]
     pub decide_chance: Option<f64>,
+    /// How an unfinished SPRT test is likely to end, and when
+    /// ([`crate::stats::project`]); None without an SPRT, or once it has
+    /// decided or finished.
+    #[serde(default)]
+    pub projection: Option<Projection>,
     /// The test's directory.
     pub path: PathBuf,
 }
@@ -295,10 +300,62 @@ struct Entry {
     id: String,
     run: Arc<TestRun>,
     saved: SavedState,
+    projection: Arc<ProjectionCache>,
+}
+
+/// A test's last projection, kept since it takes a while to work out:
+/// it's worked out again only when what it depends on changes, and
+/// outside the queue's lock.
+#[derive(Default)]
+struct ProjectionCache(Mutex<Option<(ProjectionKey, Option<Projection>)>>);
+
+/// What a projection depends on: the pair counts, games, pair limit,
+/// cutoff, and whether the test can still end by the SPRT.
+type ProjectionKey = ([u32; 3], u32, Option<u32>, Option<u64>, bool);
+
+/// A test's info without its projection, with where to find it.
+struct InfoParts(TestInfo, Arc<ProjectionCache>);
+
+impl InfoParts {
+    /// The info with its projection, worked out if it isn't kept. Call it
+    /// without the queue's lock held.
+    fn finish(self) -> TestInfo {
+        let InfoParts(mut info, cache) = self;
+        let open = info.status != TestStatus::Finished && info.summary.decision.is_none();
+        let key = (
+            info.summary.pair_counts,
+            info.summary.games,
+            info.max_pairs,
+            info.undecided_below.map(f64::to_bits),
+            open,
+        );
+        let mut kept = cache.0.lock().unwrap();
+        info.projection = match &*kept {
+            Some((k, p)) if *k == key => *p,
+            _ => {
+                let p = info.sprt.filter(|_| open).and_then(|sp| {
+                    crate::stats::project(sp, &info.summary, info.max_pairs, info.undecided_below)
+                });
+                *kept = Some((key, p));
+                p
+            }
+        };
+        info
+    }
 }
 
 impl Entry {
     fn info(&self) -> TestInfo {
+        self.info_parts().finish()
+    }
+
+    /// [`Entry::info`] without working out the projection, for use under
+    /// the queue's lock: call [`InfoParts::finish`] once it's released.
+    fn info_parts(&self) -> InfoParts {
+        InfoParts(self.info_base(), self.projection.clone())
+    }
+
+    fn info_base(&self) -> TestInfo {
         let spec = &self.run.dir.spec;
         TestInfo {
             id: self.id.clone(),
@@ -316,6 +373,7 @@ impl Entry {
             summary: self.run.summary(),
             undecided_below: self.saved.undecided_below(spec),
             decide_chance: None,
+            projection: None,
             path: self.run.dir.path.clone(),
         }
         .with_decide_chance()
@@ -507,11 +565,12 @@ impl Daemon {
     }
 
     pub fn list(&self) -> Vec<TestInfo> {
-        self.0.tests.lock().unwrap().iter().map(Entry::info).collect()
+        let parts: Vec<_> = self.0.tests.lock().unwrap().iter().map(Entry::info_parts).collect();
+        parts.into_iter().map(InfoParts::finish).collect()
     }
 
     pub fn info(&self, id: &str) -> Result<TestInfo, TourneyError> {
-        self.with(id, |e| Ok(e.info()))
+        Ok(self.with(id, |e| Ok(e.info_parts()))?.finish())
     }
 
     pub fn games(&self, id: &str) -> Result<Vec<GameEntry>, TourneyError> {
@@ -906,8 +965,9 @@ impl Daemon {
             return Err(e);
         }
         entry.save()?;
-        let info = entry.info();
+        let parts = entry.info_parts();
         drop(tests);
+        let info = parts.finish();
         self.changed(&info);
         Ok(info)
     }
@@ -1035,6 +1095,7 @@ fn read_archived(zip_path: &Path) -> Result<TestInfo, TourneyError> {
             None => spec.sprt.and_then(|s| s.undecided_below),
         },
         decide_chance: None,
+        projection: None,
         path: zip_path.to_path_buf(),
     }
     .with_decide_chance())
@@ -1169,7 +1230,7 @@ fn load_entry_with(inner: &Arc<Inner>, path: &Path, saved: SavedState) -> Result
     if saved.status != TestStatus::Active {
         run.hold.stop();
     }
-    Ok(Entry { id, run: Arc::new(run), saved })
+    Ok(Entry { id, run: Arc::new(run), saved, projection: Arc::default() })
 }
 
 fn event_fn(inner: &Arc<Inner>, id: &str) -> EventFn {
@@ -1247,8 +1308,9 @@ impl Picker for Inner {
         {
             eprintln!("{}: {e}", entry.id);
         }
-        let info = entry.info();
+        let parts = entry.info_parts();
         drop(tests);
+        let info = parts.finish();
         let _ = self.events.send(DaemonEvent::TestChanged { test: Box::new(info) });
         self.wake.notify_waiters();
     }

@@ -14,7 +14,9 @@
     cutoffPercent,
     decideText,
     endingText,
+    endsText,
     llrPosition,
+    oddsText,
     pairCount,
     percentCutoff,
     scoreText,
@@ -163,6 +165,14 @@
           <dt>In time</dt>
           <dd title="Projected from the results so far: the chance the LLR reaches a bound before the pair limit">
             {decideText(test)}
+          </dd>
+        {/if}
+        {#if endsText(test)}
+          <dt>Ends in</dt>
+          <dd
+            title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings"
+          >
+            {endsText(test)}<br />{oddsText(test)}
           </dd>
         {/if}
       </dl>

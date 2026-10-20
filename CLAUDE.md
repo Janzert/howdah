@@ -236,7 +236,11 @@ plans the engine test and tournament runner.
   complete pairs: Elo, LOS, and the SPRT (variance with one pseudo-pair
   per outcome, decided at the first crossing in log order), and
   `decide_chance` (`TestInfo.decide_chance`) the chance an undecided SPRT
-  still reaches a bound within the pair limit; below the SPRT's
+  still reaches a bound within the pair limit, and `project`
+  (`TestInfo.projection`, kept per test until the counts change) a
+  simulation of the rest of the test with its own endings, for the
+  chance of each and the games left (design and calibration in
+  `docs/TOURNAMENTS.md`); below the SPRT's
   `undecided_below` the runner ends the test (`RunEnd::Undecided`,
   checked after every game; changeable per test like the pair limit,
   `Daemon::set_undecided_below`). The

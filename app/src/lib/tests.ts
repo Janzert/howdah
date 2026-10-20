@@ -62,6 +62,36 @@ export function decideText(t: TestView): string | null {
   return `${pct(t.decideChance)} chance to decide within ${t.maxPairs} pairs${cutoff != null ? ` (stops under ${pct(cutoff)})` : ''}`;
 }
 
+/** A count of games to two significant figures (`1843` → `1800`), as
+ * precise as a projection is. */
+function roughly(n: number): number {
+  if (n < 100) return n;
+  const unit = 10 ** (Math.floor(Math.log10(n)) - 1);
+  return Math.round(n / unit) * unit;
+}
+
+/** When a running SPRT test is likely to end, in games: `about 1800 games
+ * (920–3600)`, the median and the middle 80%; null without a projection. */
+export function endsText(t: TestView): string | null {
+  const p = t.projection;
+  if (p == null || t.status === 'finished') return null;
+  const [lo, mid, hi] = p.gamesLeft.map(roughly);
+  if (hi === 0) return 'after the games running';
+  return `about ${mid} games (${lo}–${hi}${p.openEnded ? '+' : ''})`;
+}
+
+/** How a running SPRT test is likely to end: `pass 22%, fail 36%,
+ * undecided 42%`, with every pair played (or, without a pair limit, still
+ * going) when that can happen; null without a projection. */
+export function oddsText(t: TestView): string | null {
+  const p = t.projection;
+  if (p == null || t.status === 'finished') return null;
+  const parts = [`pass ${pct(p.pass)}`, `fail ${pct(p.fail)}`];
+  if (p.undecided > 0) parts.push(`undecided ${pct(p.undecided)}`);
+  if (p.done > 0) parts.push(`${t.maxPairs == null ? 'still going' : 'all pairs played'} ${pct(p.done)}`);
+  return parts.join(', ');
+}
+
 /** Games, pairs and the score: `12-8 in 20 games (10 pairs)`. */
 export function scoreText(t: TestView): string {
   const pairs = t.pairs === 1 ? '1 pair' : `${t.pairs} pairs`;
@@ -78,10 +108,11 @@ export function briefText(t: TestView): string {
   return parts.join(' ');
 }
 
-/** A test's details, one to a line, for a tooltip: the score, Elo, SPRT
- * and chance to decide. */
+/** A test's details, one to a line, for a tooltip: the score, Elo, SPRT,
+ * chance to decide and when and how it's likely to end. */
 export function detailsText(t: TestView): string {
-  return [scoreText(t), t.elo && `Elo ${t.elo}`, sprtText(t), decideText(t)].filter(Boolean).join('\n');
+  const ends = endsText(t) && `Ends in ${endsText(t)}: ${oddsText(t)}`;
+  return [scoreText(t), t.elo && `Elo ${t.elo}`, sprtText(t), decideText(t), ends].filter(Boolean).join('\n');
 }
 
 /** Fast time controls for engine tests, with a turn limit. */

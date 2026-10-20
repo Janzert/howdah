@@ -6,7 +6,9 @@ import {
   decideText,
   detailsText,
   endingText,
+  endsText,
   llrPosition,
+  oddsText,
   pairCount,
   percentCutoff,
   scoreText,
@@ -39,6 +41,7 @@ function view(over: Partial<TestView> = {}): TestView {
     llr: 0,
     llrBounds: [-2.94, 2.94],
     decideChance: null,
+    projection: null,
     repeated: 0,
     path: '/tmp/t',
     ...over,
@@ -116,6 +119,34 @@ describe('briefText', () => {
   });
 });
 
+describe('projections', () => {
+  const projection = {
+    pass: 0.2234,
+    fail: 0.36,
+    undecided: 0.4166,
+    done: 0,
+    gamesLeft: [925, 1843, 3612] as [number, number, number],
+    openEnded: false,
+  };
+
+  it('words when a test is likely to end', () => {
+    expect(endsText(view())).toBeNull();
+    expect(endsText(view({ projection }))).toBe('about 1800 games (930–3600)');
+    expect(endsText(view({ projection: { ...projection, gamesLeft: [12, 64, 230] } }))).toBe('about 64 games (12–230)');
+    expect(endsText(view({ projection: { ...projection, openEnded: true } }))).toBe('about 1800 games (930–3600+)');
+    expect(endsText(view({ projection: { ...projection, gamesLeft: [0, 0, 0] } }))).toBe('after the games running');
+    expect(endsText(view({ projection, status: 'finished' }))).toBeNull();
+  });
+
+  it('words how it is likely to end', () => {
+    expect(oddsText(view())).toBeNull();
+    expect(oddsText(view({ projection, maxPairs: 3000 }))).toBe('pass 22%, fail 36%, undecided 42%');
+    const done = { ...projection, undecided: 0, done: 0.4166 };
+    expect(oddsText(view({ projection: done, maxPairs: 3000 }))).toBe('pass 22%, fail 36%, all pairs played 42%');
+    expect(oddsText(view({ projection: done }))).toBe('pass 22%, fail 36%, still going 42%');
+  });
+});
+
 describe('detailsText', () => {
   it('gives a line for each detail', () => {
     expect(detailsText(view({ elo: null, sprt: null, llr: null, llrBounds: null }))).toBe(
@@ -127,5 +158,16 @@ describe('detailsText', () => {
       'LLR 0.00 (-2.94, 2.94) for Elo [0, 10]',
       '62% chance to decide within 3000 pairs',
     ]);
+    const projection = {
+      pass: 0.5,
+      fail: 0.5,
+      undecided: 0,
+      done: 0,
+      gamesLeft: [10, 20, 30] as [number, number, number],
+      openEnded: false,
+    };
+    expect(detailsText(view({ projection })).split('\n').at(-1)).toBe(
+      'Ends in about 20 games (10–30): pass 50%, fail 50%',
+    );
   });
 });

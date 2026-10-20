@@ -224,14 +224,21 @@ pub fn decide_chance(sp: SprtSpec, s: &Summary, max_pairs: u32) -> Option<f64> {
     if s.decision.is_some() || s.pairs == 0 {
         return None;
     }
+    Some(chance_at(sp, s.pair_counts, max_pairs))
+}
+
+/// [`decide_chance`] for an undecided test with these pair counts (at
+/// least one pair).
+fn chance_at(sp: SprtSpec, counts: [u32; 3], max_pairs: u32) -> f64 {
+    let n: u32 = counts.iter().sum();
     let (lower, upper) = llr_bounds(sp);
-    let l = llr(sp, s.pair_counts);
+    let l = llr(sp, counts);
     if l >= upper || l <= lower {
-        return Some(1.0);
+        return 1.0;
     }
-    let left = f64::from(max_pairs.saturating_sub(s.pairs));
+    let left = f64::from(max_pairs.saturating_sub(n));
     if left == 0.0 {
-        return Some(0.0);
+        return 0.0;
     }
     let (s0, s1) = (score_from_elo(sp.elo0), score_from_elo(sp.elo1));
     let d = s1 - s0;
@@ -240,9 +247,9 @@ pub fn decide_chance(sp: SprtSpec, s: &Summary, max_pairs: u32) -> Option<f64> {
         let (mu, s2) = (d * (2.0 * q - s0 - s1) / (2.0 * v), d * d / v);
         (cross(upper - l, mu, s2, left) + cross(l - lower, -mu, s2, left)).min(1.0)
     };
-    let (m, _) = mean_var(s.pair_counts.map(f64::from));
-    let (_, v) = mean_var(s.pair_counts.map(|c| f64::from(c) + 1.0));
-    let sd = (v / f64::from(s.pairs)).sqrt();
+    let (m, _) = mean_var(counts.map(f64::from));
+    let (_, v) = mean_var(counts.map(|c| f64::from(c) + 1.0));
+    let sd = (v / f64::from(n)).sqrt();
     // A grid over ±4 sd, a third of one apart.
     let (mut sum, mut weights) = (0.0, 0.0);
     for i in 0..=24 {
@@ -251,7 +258,225 @@ pub fn decide_chance(sp: SprtSpec, s: &Summary, max_pairs: u32) -> Option<f64> {
         sum += w * hit((m + sd * z).clamp(1e-6, 1.0 - 1e-6));
         weights += w;
     }
-    Some(sum / weights)
+    sum / weights
+}
+
+/// How an undecided test is likely to end, from simulating the rest of it
+/// ([`project`]).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Projection {
+    /// The chances it passes, fails, ends undecided (the chance to decide
+    /// falling below the cutoff) and plays every pair (without a pair
+    /// limit: is still going after [`NO_LIMIT_HORIZON`] more pairs). They
+    /// add up to 1.
+    pub pass: f64,
+    pub fail: f64,
+    pub undecided: f64,
+    pub done: f64,
+    /// Pairs left to complete when it ends, at the 10th, 50th and 90th
+    /// percentiles.
+    pub pairs_left: [u32; 3],
+    /// The same in games: two a pair, less those already played in
+    /// incomplete pairs. Games running when the test ends still finish,
+    /// so a few more than this are played.
+    pub games_left: [u32; 3],
+}
+
+/// Within this many times the cutoff, [`project`] checks the chance to
+/// decide after every pair.
+const NEAR: f64 = 3.0;
+
+/// How far a test without a pair limit is simulated.
+pub const NO_LIMIT_HORIZON: u32 = 20_000;
+
+/// Paths simulated by [`project`].
+const PATHS: u32 = 500;
+
+/// How an undecided SPRT test is likely to end, and when: None once it
+/// has decided, or before the first pair.
+///
+/// The rest of the test is simulated pair by pair, many times, with the
+/// runner's own rules: the LLR deciding at the first crossing, the pair
+/// limit, and, with `undecided_below`, the [`decide_chance`] cutoff. Each
+/// path draws a true Elo difference from its posterior given the pairs so
+/// far ([`prior`] times the likelihood of the mean score), and splits
+/// pairs as often as they have split, so early on the endings spread over
+/// the Elo the test could still turn out to have. The cutoff is checked
+/// every few pairs, and on falling below it the pair it first did is
+/// found by bisection. Simulations are seeded from the counts, so the
+/// same results give the same projection.
+pub fn project(
+    sp: SprtSpec,
+    s: &Summary,
+    max_pairs: Option<u32>,
+    undecided_below: Option<f64>,
+) -> Option<Projection> {
+    project_paths(sp, s, max_pairs, undecided_below, PATHS)
+}
+
+fn project_paths(
+    sp: SprtSpec,
+    s: &Summary,
+    max_pairs: Option<u32>,
+    undecided_below: Option<f64>,
+    paths: u32,
+) -> Option<Projection> {
+    if s.decision.is_some() || s.pairs == 0 {
+        return None;
+    }
+    let start = s.pairs;
+    let limit = max_pairs.unwrap_or(start + NO_LIMIT_HORIZON);
+    // The runner only stops undecided with a pair limit.
+    let cutoff = undecided_below.filter(|_| max_pairs.is_some());
+    let chance = |counts: [u32; 3]| chance_at(sp, counts, limit);
+    let partial = s.games.saturating_sub(2 * s.pairs);
+    let games = |pairs: u32| (2 * pairs).saturating_sub(partial);
+    let first = cutoff.map(|_| chance(s.pair_counts));
+    if start >= limit || first.zip(cutoff).is_some_and(|(f, c)| f < c) {
+        let p = [0; 3];
+        let (undecided, done) = if start >= limit { (0.0, 1.0) } else { (1.0, 0.0) };
+        return Some(Projection { pass: 0.0, fail: 0.0, undecided, done, pairs_left: p, games_left: p });
+    }
+
+    let (lower, upper) = llr_bounds(sp);
+    let mut rng = Rng::seeded(&[
+        u64::from(s.pair_counts[0]),
+        u64::from(s.pair_counts[1]),
+        u64::from(s.pair_counts[2]),
+        u64::from(limit),
+        cutoff.map_or(0, f64::to_bits),
+        sp.elo0.to_bits() ^ sp.elo1.to_bits().rotate_left(17),
+    ]);
+    // The posterior for the Elo difference on a grid: the prior times the
+    // normal likelihood of the mean pair score (with the LLR's variance).
+    let n = f64::from(s.pairs);
+    let (m, _) = mean_var(s.pair_counts.map(f64::from));
+    let (_, v) = mean_var(s.pair_counts.map(|c| f64::from(c) + 1.0));
+    let elos: Vec<f64> = (-1200..=1200).map(|i| f64::from(i) / 4.0).collect();
+    let weights = elos.iter().map(|&e| prior(e) * (-(m - score_from_elo(e)).powi(2) * n / (2.0 * v)).exp());
+    let cdf: Vec<f64> = weights.scan(0.0, |sum, w| Some(*sum + w).inspect(|&t| *sum = t)).collect();
+    // Split pairs as often as so far (with the extra pair of each).
+    let split = (f64::from(s.pair_counts[1]) + 1.0) / (n + 3.0);
+    let left = limit - start;
+    // The cutoff costs far more to check than a pair: about 40 times a
+    // path while the chance is well above it, every pair once it's near
+    // (the chance moves with the LLR's noise, and the runner catches the
+    // first dip under it).
+    let every = (left / 40).max(1);
+    let mut ends = [0u32; 4];
+    let mut lengths = Vec::with_capacity(paths as usize);
+    let mut path: Vec<[u32; 3]> = Vec::new();
+    for _ in 0..paths {
+        let u = rng.unit() * cdf[cdf.len() - 1];
+        let q = score_from_elo(elos[cdf.partition_point(|&c| c < u)]);
+        let (p0, p01) = ((1.0 - q - split / 2.0).max(0.0), (1.0 - q + split / 2.0).min(1.0));
+        let mut counts = s.pair_counts;
+        let (mut checked, mut last) = (0, first.unwrap_or(1.0));
+        path.clear();
+        let (end, played) = loop {
+            let u = rng.unit();
+            counts[if u < p0 {
+                0
+            } else if u < p01 {
+                1
+            } else {
+                2
+            }] += 1;
+            path.push(counts);
+            let played = path.len() as u32;
+            let l = llr(sp, counts);
+            if l >= upper {
+                break (0, played);
+            }
+            if l <= lower {
+                break (1, played);
+            }
+            if played == left {
+                break (3, played);
+            }
+            let Some(c) = cutoff else { continue };
+            if played - checked < if last < NEAR * c { 1 } else { every } {
+                continue;
+            }
+            last = chance(counts);
+            if last < c {
+                // The first pair since the last check under the cutoff.
+                let (mut lo, mut hi) = (checked, played);
+                while hi - lo > 1 {
+                    let mid = lo + (hi - lo) / 2;
+                    if chance(path[mid as usize - 1]) < c {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                break (2, hi);
+            }
+            checked = played;
+        };
+        ends[end] += 1;
+        lengths.push(played);
+    }
+    lengths.sort_unstable();
+    let at = |p: f64| lengths[((p * f64::from(paths)) as usize).min(lengths.len() - 1)];
+    let pairs_left = [at(0.1), at(0.5), at(0.9)];
+    let share = |k: usize| f64::from(ends[k]) / f64::from(paths);
+    Some(Projection {
+        pass: share(0),
+        fail: share(1),
+        undecided: share(2),
+        done: share(3),
+        pairs_left,
+        games_left: pairs_left.map(games),
+    })
+}
+
+/// The prior for a test's Elo difference in [`project`] (unnormalized): a
+/// change usually moves an engine's strength by a few Elo either way,
+/// but now and then by a lot (a bug, or a fixed one). Without it early
+/// projections would take every Elo the results can't yet rule out as
+/// likely, and so expect a quick pass or fail far too often.
+fn prior(elo: f64) -> f64 {
+    let normal = |sd: f64| (-(elo / sd).powi(2) / 2.0).exp() / sd;
+    0.8 * normal(PRIOR_SD[0]) + 0.2 * normal(PRIOR_SD[1])
+}
+
+/// The spreads of [`prior`]'s two parts, in Elo.
+const PRIOR_SD: [f64; 2] = [15.0, 80.0];
+
+/// SplitMix64, for [`project`]'s simulations: small, and repeatable from
+/// a seed.
+struct Rng(u64);
+
+impl Rng {
+    fn seeded(words: &[u64]) -> Rng {
+        let mut r = Rng(0x05ee_d0fa_71aa);
+        for &w in words {
+            r.0 ^= w;
+            r.next();
+        }
+        r
+    }
+
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    }
+
+    /// Uniform in [0, 1).
+    fn unit(&mut self) -> f64 {
+        (self.next() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    #[cfg(test)]
+    fn normal(&mut self) -> f64 {
+        let u = 1.0 - self.unit();
+        (-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * self.unit()).cos()
+    }
 }
 
 /// The chance that a Brownian motion with drift `mu` and variance `s2` per
@@ -483,6 +708,144 @@ mod tests {
         let decided = Summary { decision: Some(Decision::Pass), ..expected(100, 0.6) };
         assert_eq!(decide_chance(SPRT, &decided, 3000), None);
         assert_eq!(decide_chance(SPRT, &Summary::default(), 3000), None);
+    }
+
+    const CUT: SprtSpec = SprtSpec { undecided_below: Some(0.05), ..SPRT };
+
+    #[test]
+    fn project_covers_every_ending() {
+        // Early on, at +5 Elo (the middle of [0, 10]), any ending is
+        // possible; the cutoff ends many before the limit.
+        let p = project(CUT, &expected(100, score_from_elo(5.0)), Some(3000), Some(0.05)).unwrap();
+        let total = p.pass + p.fail + p.undecided + p.done;
+        assert!((total - 1.0).abs() < 1e-9, "{p:?}");
+        assert!(p.pass > 0.1 && p.fail > 0.1 && p.undecided > 0.1, "{p:?}");
+        assert!(p.pairs_left[0] <= p.pairs_left[1] && p.pairs_left[1] <= p.pairs_left[2], "{p:?}");
+        assert!(p.pairs_left[2] <= 2900, "{p:?}");
+        assert_eq!(p.games_left, p.pairs_left.map(|n| 2 * n), "no partial pairs");
+        // Without the cutoff it plays on to the limit instead.
+        let on = project(SPRT, &expected(100, score_from_elo(5.0)), Some(3000), None).unwrap();
+        assert_eq!(on.undecided, 0.0);
+        assert!(on.done > 0.05, "{on:?}");
+        // Well ahead: it likely passes, and soon (though the prior expects
+        // some of that lead to be luck).
+        let strong = project(CUT, &expected(200, score_from_elo(40.0)), Some(3000), Some(0.05)).unwrap();
+        assert!(strong.pass > 0.8 && strong.pairs_left[1] < 700, "{strong:?}");
+        // The same counts give the same projection.
+        assert_eq!(
+            project(CUT, &expected(100, 0.51), Some(3000), Some(0.05)),
+            project(CUT, &expected(100, 0.51), Some(3000), Some(0.05))
+        );
+    }
+
+    #[test]
+    fn project_edges() {
+        let decided = Summary { decision: Some(Decision::Pass), ..expected(100, 0.6) };
+        assert_eq!(project(SPRT, &decided, Some(3000), None), None);
+        assert_eq!(project(SPRT, &Summary::default(), Some(3000), None), None);
+        // Already below the cutoff (a lowered limit): it ends now.
+        let late = project(CUT, &expected(2900, score_from_elo(5.0)), Some(3000), Some(0.05)).unwrap();
+        assert_eq!((late.undecided, late.pairs_left), (1.0, [0; 3]));
+        // A game played in an unfinished pair is one fewer to play.
+        let odd = Summary { games: 201, ..expected(100, score_from_elo(40.0)) };
+        let p = project(SPRT, &odd, Some(3000), None).unwrap();
+        assert_eq!(p.games_left, p.pairs_left.map(|n| (2 * n).saturating_sub(1)));
+        // Without a limit it runs to the horizon at most.
+        let open = project(SPRT, &expected(100, score_from_elo(5.0)), None, Some(0.05)).unwrap();
+        assert_eq!(open.undecided, 0.0, "no cutoff without a limit");
+        assert!(open.pairs_left[2] <= NO_LIMIT_HORIZON, "{open:?}");
+    }
+
+    /// Plays a whole test at a true score `q` (independent games) by the
+    /// runner's rules, calling `at` with the summary after each pair, and
+    /// returns how it ended (0 pass, 1 fail, 2 undecided, 3 done) and its
+    /// pairs.
+    fn play_test(rng: &mut Rng, q: f64, max: u32, mut at: impl FnMut(&Summary)) -> (usize, u32) {
+        let mut s = Summary::default();
+        loop {
+            let wins = usize::from(rng.unit() < q) + usize::from(rng.unit() < q);
+            s.pair_counts[wins] += 1;
+            s.pairs += 1;
+            s.games += 2;
+            if let Some(d) = decide(CUT, llr(CUT, s.pair_counts)) {
+                return (if d == Decision::Pass { 0 } else { 1 }, s.pairs);
+            }
+            if s.pairs == max {
+                return (3, s.pairs);
+            }
+            if decide_chance(CUT, &s, max).is_some_and(|c| c < 0.05) {
+                return (2, s.pairs);
+            }
+            at(&s);
+        }
+    }
+
+    /// How well projections did over `trials` tests with true Elo drawn
+    /// from the prior, each projected after the pairs in `at` (while still
+    /// running) with `paths` paths: the projections, how often the 80%
+    /// range held the pairs left, how often they were under the median,
+    /// and the mean predicted chance and the share of each ending.
+    fn calibration(trials: u32, max: u32, at: &[u32], paths: u32) -> (f64, f64, f64, [f64; 4], [f64; 4]) {
+        let mut rng = Rng::seeded(&[7]);
+        let (mut n, mut inside, mut under) = (0.0, 0.0, 0.0);
+        let (mut predicted, mut actual) = ([0.0; 4], [0.0; 4]);
+        for _ in 0..trials {
+            let sd = if rng.unit() < 0.8 { PRIOR_SD[0] } else { PRIOR_SD[1] };
+            let elo = sd * rng.normal();
+            let mut seen = Vec::new();
+            let (end, pairs) = play_test(&mut rng, score_from_elo(elo), max, |s| {
+                if at.contains(&s.pairs) {
+                    seen.push((s.pairs, project_paths(CUT, s, Some(max), Some(0.05), paths).unwrap()));
+                }
+            });
+            for (at, p) in seen {
+                let left = pairs - at;
+                n += 1.0;
+                inside += f64::from(u8::from(p.pairs_left[0] <= left && left <= p.pairs_left[2]));
+                under += f64::from(u8::from(left < p.pairs_left[1]));
+                for (k, c) in [p.pass, p.fail, p.undecided, p.done].into_iter().enumerate() {
+                    predicted[k] += c;
+                }
+                actual[end] += 1.0;
+            }
+        }
+        eprintln!("{n} projections: 80% range held {:.3}, under the median {:.3}", inside / n, under / n);
+        for k in 0..4 {
+            eprintln!("ending {k}: predicted {:.3}, actual {:.3}", predicted[k] / n, actual[k] / n);
+        }
+        (n, inside / n, under / n, predicted.map(|c| c / n), actual.map(|c| c / n))
+    }
+
+    /// The projection is calibrated: the 80% range of pairs left holds the
+    /// real number about 80% of the time, the median is above it about
+    /// half the time, and the chances of each ending match how often it
+    /// happens.
+    #[test]
+    fn project_is_calibrated() {
+        let (n, inside, under, predicted, actual) = calibration(200, 1000, &[60, 300], 200);
+        assert!(n > 250.0, "{n}");
+        assert!((0.70..0.90).contains(&inside), "{inside}");
+        assert!((0.40..0.60).contains(&under), "{under}");
+        for k in 0..4 {
+            assert!((predicted[k] - actual[k]).abs() < 0.08, "ending {k}: {predicted:?} vs {actual:?}");
+        }
+    }
+
+    /// The same, with more tests and longer ones (about half a minute in
+    /// a release build): `cargo test --release -p howdah-tourney --
+    /// --ignored calibrated`. When last run: the range held 77% of 769,
+    /// 48% were under the median, and pass, fail and undecided were
+    /// predicted 21%, 36% and 43% against 22%, 34% and 44%.
+    #[test]
+    #[ignore]
+    fn project_is_calibrated_at_length() {
+        let (n, inside, under, predicted, actual) = calibration(300, 1500, &[50, 250, 700], 300);
+        assert!(n > 600.0, "{n}");
+        assert!((0.74..0.86).contains(&inside), "{inside}");
+        assert!((0.44..0.56).contains(&under), "{under}");
+        for k in 0..4 {
+            assert!((predicted[k] - actual[k]).abs() < 0.04, "ending {k}: {predicted:?} vs {actual:?}");
+        }
     }
 
     #[test]

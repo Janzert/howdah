@@ -41,9 +41,9 @@ use std::process::ExitCode;
 
 use howdah_tourney::client::Client;
 use howdah_tourney::{
-    Daemon, DaemonEvent, DaemonInfo, Decision, GameEntry, RESOURCE_LIMIT, RunEnd, RunEvent, RunOptions,
-    StopHandle, Summary, TestDir, TestInfo, TestSpec, TestStatus, TourneyError, decide_chance,
-    default_data_dir, server, summarize,
+    Daemon, DaemonEvent, DaemonInfo, Decision, GameEntry, NO_LIMIT_HORIZON, Projection, RESOURCE_LIMIT,
+    RunEnd, RunEvent, RunOptions, StopHandle, Summary, TestDir, TestInfo, TestSpec, TestStatus, TourneyError,
+    decide_chance, default_data_dir, project, server, summarize,
 };
 
 const USAGE: &str = "usage:
@@ -315,7 +315,34 @@ fn show(dir: &Path) -> Result<(), String> {
     {
         println!("Chance the SPRT decides within {max} pairs: {}", percent(c));
     }
+    if let Some(sp) = test.spec.sprt
+        && let Some(p) = project(sp, &summary, test.spec.max_pairs, sp.undecided_below)
+    {
+        println!("{}", projection_text(&p, test.spec.max_pairs));
+    }
     Ok(())
+}
+
+/// A projection in a line: `Likely to end in 1840 games (920 to 3610):
+/// pass 22%, fail 36%, undecided 42%`.
+fn projection_text(p: &Projection, max_pairs: Option<u32>) -> String {
+    let [lo, mid, hi] = p.games_left;
+    // Without a pair limit, the longest paths stop at the horizon.
+    let open = max_pairs.is_none() && p.pairs_left[2] >= NO_LIMIT_HORIZON;
+    let mut line =
+        format!("Likely to end in {mid} games ({lo} to {hi}{})", if open { " or more" } else { "" });
+    let mut ends = vec![format!("pass {}", percent(p.pass)), format!("fail {}", percent(p.fail))];
+    if p.undecided > 0.0 {
+        ends.push(format!("undecided {}", percent(p.undecided)));
+    }
+    if p.done > 0.0 {
+        ends.push(match max_pairs {
+            Some(_) => format!("every pair played {}", percent(p.done)),
+            None => format!("still going {}", percent(p.done)),
+        });
+    }
+    line += &format!(": {}", ends.join(", "));
+    line
 }
 
 fn print_event(names: &[String; 2], event: &RunEvent) {
@@ -563,6 +590,9 @@ fn list_line(t: &TestInfo) -> String {
     );
     if let Some(c) = t.decide_chance.filter(|_| t.status != TestStatus::Finished) {
         line += &format!(", {} to decide in time", percent(c));
+    }
+    if let Some(p) = &t.projection {
+        line += &format!(", about {} games to go", p.games_left[1]);
     }
     if t.priority != 0 {
         line += &format!(", priority {}", t.priority);
