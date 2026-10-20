@@ -2,7 +2,7 @@
   // One engine test, as a panel of its own in the lobby window (listed
   // under Engine tests in the sidebar): its results, its running and
   // finished games (each opens on a board: a running one followed live), and pausing,
-  // resuming, stopping, its priority and its pair limit. Once it's not
+  // resuming, stopping, and its settings (`TestSettingsDialog`). Once it's not
   // active and has no games running, it can be archived (zipped into the
   // daemon's archive/) or deleted.
   import { onMount } from 'svelte';
@@ -10,6 +10,7 @@
   import type { TestGameView } from './bindings/TestGameView';
   import type { TestView } from './bindings/TestView';
   import { on } from './events';
+  import TestSettingsDialog from './TestSettingsDialog.svelte';
   import {
     cutoffPercent,
     decideText,
@@ -17,8 +18,6 @@
     endsText,
     llrPosition,
     oddsText,
-    pairCount,
-    percentCutoff,
     scoreText,
     sprtText,
     testState,
@@ -40,20 +39,12 @@
   let games = $state<TestGameView[]>([]);
   let error = $state<string | null>(null);
   let busy = $state(false);
-  let priority = $state(0);
-  let maxPairs = $state<number | null>(null);
-  /** The undecided cutoff in percent (null: off). */
-  let undecided = $state<number | null>(null);
-  let concurrency = $state(1);
+  let settingsOpen = $state(false);
   /** Delete was clicked once; the second click deletes. */
   let confirmDelete = $state(false);
 
   function show(t: TestView) {
     test = t;
-    priority = t.priority;
-    maxPairs = t.maxPairs;
-    undecided = cutoffPercent(t);
-    concurrency = t.concurrency;
   }
 
   onMount(() => {
@@ -80,21 +71,6 @@
       error = errorMessage(e);
     }
     busy = false;
-  }
-
-  function applyLimits() {
-    void act(async () => {
-      let t = test!;
-      if (priority !== t.priority) t = await api.tourneySetPriority(id, priority);
-      const pairs = pairCount(maxPairs);
-      if (pairs !== t.maxPairs) t = await api.tourneySetMaxPairs(id, pairs);
-      const cutoff = percentCutoff(undecided);
-      if (t.sprt && (cutoff == null ? null : Number(undecided)) !== cutoffPercent(t)) {
-        t = await api.tourneySetUndecidedBelow(id, cutoff);
-      }
-      if (concurrency !== t.concurrency) t = await api.tourneySetConcurrency(id, concurrency);
-      return t;
-    });
   }
 
   async function remove(archive: boolean) {
@@ -124,6 +100,15 @@
 
   const pos = $derived(test ? llrPosition(test) : null);
   const removable = $derived(test != null && test.status !== 'active' && test.running.length === 0);
+  /** The settings in brief, for beside the Settings button. */
+  const settingsText = $derived.by(() => {
+    if (!test) return '';
+    const parts = [test.maxPairs != null ? `max ${test.maxPairs} pairs` : 'no pair limit'];
+    const cutoff = cutoffPercent(test);
+    if (test.sprt && test.maxPairs != null && cutoff != null) parts.push(`undecided under ${cutoff}%`);
+    parts.push(`${test.concurrency} at once`, `priority ${test.priority}`);
+    return parts.join(' · ');
+  });
   const won = (g: TestGameView) => (g.winner === 'gold' ? g.gold : g.silver);
 </script>
 
@@ -136,11 +121,30 @@
   </header>
   <div class="card">
     {#if test}
-      <p class="note">
-        <strong>{test.engines[0]}</strong> (tested) vs {test.engines[1]}{test.timeControl
-          ? `, ${test.timeControl}`
-          : ', no clock'}
-      </p>
+      <div class="title-row">
+        <p class="note">
+          <strong>{test.engines[0]}</strong> (tested) vs {test.engines[1]}{test.timeControl
+            ? `, ${test.timeControl}`
+            : ', no clock'}
+        </p>
+        <span class="spacer"></span>
+        {#if test.status === 'active'}
+          <button
+            onclick={() => act(() => api.tourneyControl(id, 'pause'))}
+            disabled={busy}
+            title="Start no more games until resumed; the running ones finish">Pause</button
+          >
+        {:else if test.outcome !== 'passed' && test.outcome !== 'failed'}
+          <button onclick={() => act(() => api.tourneyControl(id, 'resume'))} disabled={busy}>Resume</button>
+        {/if}
+        {#if test.status !== 'finished'}
+          <button
+            onclick={() => act(() => api.tourneyControl(id, 'stop'))}
+            disabled={busy}
+            title="End the test; its running games finish">Stop</button
+          >
+        {/if}
+      </div>
       {#if test.halted}<p class="error">Halted: {test.halted}</p>{/if}
 
       <dl class="stats">
@@ -191,45 +195,12 @@
       {/if}
 
       <div class="row">
-        {#if test.status === 'active'}
-          <button onclick={() => act(() => api.tourneyControl(id, 'pause'))} disabled={busy}>Pause</button>
-        {:else if test.outcome !== 'passed' && test.outcome !== 'failed'}
-          <button onclick={() => act(() => api.tourneyControl(id, 'resume'))} disabled={busy}>Resume</button>
-        {/if}
-        {#if test.status !== 'finished'}
-          <button
-            onclick={() => act(() => api.tourneyControl(id, 'stop'))}
-            disabled={busy}
-            title="End the test; its running games finish">Stop</button
-          >
-        {/if}
-        <span class="spacer"></span>
-        <label for="test-priority">Priority</label>
-        <input id="test-priority" type="number" bind:value={priority} />
-        <label for="test-pairs">Max pairs</label>
-        <input id="test-pairs" type="number" min="1" bind:value={maxPairs} placeholder="none" />
-        {#if test.sprt}
-          <label
-            for="test-undecided"
-            title="End the test undecided once the SPRT's chance of deciding within the max pairs falls below this percentage (empty: play on to the limit)"
-            >Undecided under %</label
-          >
-          <input
-            id="test-undecided"
-            type="number"
-            min="0"
-            max="99"
-            step="any"
-            bind:value={undecided}
-            placeholder="off"
-          />
-        {/if}
-        <label
-          for="test-concurrency"
-          title="How many of this test's games may run at once (the daemon's games at once still apply)">At once</label
+        <span class="settings">{settingsText}</span>
+        <button
+          class="subtle"
+          onclick={() => (settingsOpen = true)}
+          title="Change the pair limit, games at once and priority">Settings…</button
         >
-        <input id="test-concurrency" type="number" min="1" bind:value={concurrency} />
-        <button onclick={applyLimits} disabled={busy}>Apply</button>
       </div>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
 
@@ -273,6 +244,9 @@
         </ul>
       {/if}
       <p class="note path">{test.path}</p>
+      {#if settingsOpen}
+        <TestSettingsDialog {test} onSaved={show} onClose={() => (settingsOpen = false)} />
+      {/if}
     {:else if error}
       <p class="error" role="alert">{error}</p>
     {:else}
@@ -387,8 +361,18 @@
     gap: 6px;
     font-size: 13px;
   }
-  .row input[type='number'] {
-    width: 5em;
+  .title-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .title-row .note {
+    margin: 0;
+  }
+  .settings {
+    color: var(--muted);
   }
   .games {
     list-style: none;

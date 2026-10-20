@@ -631,7 +631,9 @@ plans the engine test and tournament runner.
     `TestPanel.svelte` (one test, a panel listed under Engine tests in
     the sidebar with a summary, until closed: results, controls, games to
     watch or open, and Follow: a board with `HandOff.follow`, whose
-    game-end dialog counts down 15 s to the test's next game),
+    game-end dialog counts down 15 s to the test's next game; Pause and
+    Stop beside the engines, the settings in brief with Settings…, which
+    opens `TestSettingsDialog.svelte`),
     `NewTestDialog.svelte` and `ArchiveDialog.svelte` (archived tests to
     restore or delete); `lib/tests.ts` words a
     test's state and SPRT.
