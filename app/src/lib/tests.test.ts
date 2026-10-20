@@ -62,6 +62,7 @@ describe('tests', () => {
 
   it('describes the score and the SPRT', () => {
     expect(scoreText(view())).toBe('12–9 in 21 games (10 pairs)');
+    expect(scoreText(view(), false)).toBe('12–9 in 21 games');
     expect(sprtText(view({ llr: 1.234 }))).toBe('LLR 1.23 (-2.94, 2.94) for Elo [0, 10]');
   });
 
