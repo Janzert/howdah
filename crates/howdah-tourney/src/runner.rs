@@ -487,6 +487,9 @@ impl TestRun {
         let mut st = self.state.lock().unwrap();
         st.log.append(&entry)?;
         st.done.insert((entry.pair, entry.game));
+        // No longer live once logged, before `GameFinished` goes out (the
+        // slot only calls `not_running` after restarting engines).
+        st.live.remove(&(entry.pair, entry.game));
         for i in 0..2 {
             if failed == Some(i) {
                 self.count_failure(&mut st, i, entry.detail.as_deref().unwrap_or("forfeit"));
