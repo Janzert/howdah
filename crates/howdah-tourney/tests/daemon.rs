@@ -251,8 +251,11 @@ async fn a_viewer_can_join_a_running_game() {
     assert_eq!(live.moves, seen[..9]);
     assert_eq!(live.used_ms.len(), 9);
     assert!(live.reserves_ms.is_some());
-    // A finished game isn't live any more; its record is there instead.
+    // A finished game isn't live or running any more, even while its slot
+    // may still be letting engines go; its record is there instead.
     assert!(daemon.live(&t.id, 1, 1).is_err());
+    assert!(!daemon.info(&t.id).unwrap().running.contains(&(1, 1)));
+    assert!(!daemon.status().running.iter().any(|g| g.test == t.id && (g.pair, g.game) == (1, 1)));
     let record = daemon.record(&t.id, 1, 1).unwrap();
     assert!(record.contains(&seen[9]));
     let entry = &daemon.games(&t.id).unwrap()[0];

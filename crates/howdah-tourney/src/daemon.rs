@@ -736,7 +736,7 @@ impl Daemon {
             if e.saved.status == TestStatus::Active {
                 return Err(TourneyError::Refused(format!("{id} is active; stop or pause it first")));
             }
-            if !e.run.running().is_empty() {
+            if e.run.busy() > 0 {
                 return Err(TourneyError::Refused(format!("{id} still has games running")));
             }
             tests.remove(i)
@@ -1335,9 +1335,7 @@ impl Inner {
         let tests = self.tests.lock().unwrap();
         let mut order: Vec<&Entry> = tests.iter().filter(|e| e.saved.status == TestStatus::Active).collect();
         let is_current = |e: &Entry| current.is_some_and(|c| Arc::ptr_eq(c, &e.run));
-        order.sort_by_key(|e| {
-            (Reverse(e.saved.priority), !is_current(e), e.run.running().len(), e.id.clone())
-        });
+        order.sort_by_key(|e| (Reverse(e.saved.priority), !is_current(e), e.run.busy(), e.id.clone()));
         order.into_iter().find_map(|e| e.run.next_game().map(|g| (e.run.clone(), g)))
     }
 }

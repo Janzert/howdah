@@ -304,8 +304,17 @@ impl TestRun {
         g
     }
 
+    /// The games being played: handed out and not yet logged. A slot keeps
+    /// a logged game a little longer while it restarts or quits engines
+    /// (`busy`), but it's finished.
     pub(crate) fn running(&self) -> Vec<(u32, u8)> {
-        self.state.lock().unwrap().running.clone()
+        let st = self.state.lock().unwrap();
+        st.running.iter().filter(|g| !st.done.contains(g)).copied().collect()
+    }
+
+    /// How many slots hold one of the test's games, finished or not.
+    pub(crate) fn busy(&self) -> usize {
+        self.state.lock().unwrap().running.len()
     }
 
     pub(crate) fn entries(&self) -> Vec<GameEntry> {
