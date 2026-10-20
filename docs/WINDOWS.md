@@ -301,8 +301,11 @@ the sidebar to list every board and go to its panel or window. As built:
   (`index.html?session=<id>&docked`; `isDocked` in `api.ts`), so nothing
   in the game view had to change for it. Tauri gives its IPC to a
   window's main frame only (`tauri::manager::webview`, scripts "for the
-  main frame only"), so the frame's IPC is mocked (`lib/frames.ts`,
-  `installFrameRelay`): each command is posted to the lobby, which runs
+  main frame only"), so the frame's IPC is replaced (`lib/frames.ts`,
+  `installFrameRelay`, through `lib/ipc.ts`; not `mockIPC`, which throws
+  on Windows, where WebView2 runs those scripts in iframes too and they
+  define Tauri's globals read-only, and the window functions are off
+  there, `inTauri`): each command is posted to the lobby, which runs
   it with its own IPC and posts the answer back, and the lobby posts
   every event on to every frame (`serveFrames`). Window commands
   (`plugin:…`) aren't relayed; what a board does to windows goes through

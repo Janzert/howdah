@@ -1,5 +1,5 @@
 // Typed event subscription. Event names follow `domain://event`.
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from './ipc';
 import { session } from './api';
 import type { AnalysisView } from './bindings/AnalysisView';
 import type { ChatArchiveChanged } from './bindings/ChatArchiveChanged';

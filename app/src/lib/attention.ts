@@ -3,7 +3,7 @@
 // (a flashing taskbar entry or a bouncing dock icon) in the app, a title
 // prefix in a plain browser. It also keeps the window's title
 // (`setTitle`), which that prefix goes in front of.
-import { isTauri } from '@tauri-apps/api/core';
+import { inTauri } from './windows';
 
 /** The window's title without the attention prefix. */
 let baseTitle = document.title;
@@ -24,7 +24,7 @@ export async function setTitle(title: string) {
   if (title === baseTitle) return;
   baseTitle = title;
   showTitle();
-  if (isTauri()) {
+  if (inTauri) {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     await getCurrentWindow()
       .setTitle(title)
@@ -35,7 +35,7 @@ export async function setTitle(title: string) {
 /** `what` says why, in the browser's title ("Your move" by default). */
 export async function requestAttention(what = 'Your move') {
   if (document.hasFocus()) return;
-  if (isTauri()) {
+  if (inTauri) {
     try {
       const { getCurrentWindow, UserAttentionType } = await import('@tauri-apps/api/window');
       const win = getCurrentWindow();

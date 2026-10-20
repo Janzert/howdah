@@ -1,7 +1,7 @@
 // Typed wrappers for the Tauri commands in src-tauri/src/commands.rs.
 // Mutating commands resolve with nothing; the new state arrives as a
 // `game://changed` event (see events.ts).
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './ipc';
 import type { ChatArchiveDay } from './bindings/ChatArchiveDay';
 import type { ChatArchiveMonth } from './bindings/ChatArchiveMonth';
 import type { ChatMessageView } from './bindings/ChatMessageView';

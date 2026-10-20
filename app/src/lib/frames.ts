@@ -2,18 +2,18 @@
 // each is the game window's page (`App.svelte`) in an iframe,
 // `index.html?session=<id>&docked`. Tauri gives its IPC only to a
 // window's main frame, so a docked board's `invoke` and events go
-// through the lobby: the frame's IPC is mocked (`installFrameRelay`) to
-// post each command to the lobby, which runs it and posts back the
-// result, and the lobby posts every event on to every frame
-// (`serveFrames`). Window commands (`plugin:…`) aren't relayed; what a
+// through the lobby: the frame's IPC (`lib/ipc.ts`) is replaced
+// (`installFrameRelay`) to post each command to the lobby, which runs it
+// and posts back the result, and the lobby posts every event on to every
+// frame (`serveFrames`). Window commands (`plugin:…`) aren't relayed; what a
 // board does to windows (open a board, pop out, close) it asks the lobby
 // for (`askLobby`), which does it as a panel or a window.
 import { invoke } from '@tauri-apps/api/core';
-import { emit, listen } from '@tauri-apps/api/event';
-import { mockIPC } from '@tauri-apps/api/mocks';
+import { type EventCallback, listen } from '@tauri-apps/api/event';
 import type { ApiError } from './bindings/ApiError';
 import type { SessionId } from './bindings/SessionId';
 import { EVENT_NAMES } from './events';
+import { useIpc } from './ipc';
 
 /** What a docked board asks of the lobby. */
 export type FrameRequest =
@@ -66,15 +66,21 @@ function post(message: ToLobby) {
 /** In a docked board, before anything invokes or listens: routes both
  * through the lobby. */
 export function installFrameRelay() {
-  mockIPC(
-    (cmd, args) =>
+  const listeners = new Map<string, Set<EventCallback<unknown>>>();
+  let nextEventId = 1;
+  useIpc({
+    invoke: (cmd, args) =>
       new Promise((resolve, reject) => {
         const id = nextId++;
         pending.set(id, { resolve, reject });
         post({ howdah: 'invoke', id, cmd, args });
       }),
-    { shouldMockEvents: true },
-  );
+    listen: (event, handler) => {
+      if (!listeners.has(event)) listeners.set(event, new Set());
+      listeners.get(event)!.add(handler);
+      return Promise.resolve(() => void listeners.get(event)?.delete(handler));
+    },
+  });
   window.addEventListener('message', (e: MessageEvent<ToFrame>) => {
     if (!mine(e) || e.source !== window.parent) return;
     const m = e.data;
@@ -84,7 +90,8 @@ export function installFrameRelay() {
       if (m.ok) p?.resolve(m.value);
       else p?.reject(m.value);
     } else if (m?.howdah === 'event') {
-      void emit(m.name, m.payload);
+      const event = { event: m.name, id: nextEventId++, payload: m.payload };
+      for (const handler of listeners.get(m.name) ?? []) handler(event);
     } else if (m?.howdah === 'requestClose') {
       if (onRequestClose) onRequestClose();
       else post({ howdah: 'request', request: { kind: 'close' } });

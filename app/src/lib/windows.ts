@@ -17,7 +17,10 @@ import { clearBoardLoading, setBoardLoading } from './boardLoading';
 import { askLobby, onCloseRequest } from './frames';
 import { settings } from './settings.svelte';
 
-export const inTauri = '__TAURI_INTERNALS__' in window;
+/** Whether this window has Tauri's window functions: not in the browser
+ * preview, nor in a docked board, whose frame belongs to the lobby's
+ * window (WebView2 gives iframes Tauri's globals, WebKitGTK doesn't). */
+export const inTauri = '__TAURI_INTERNALS__' in window && !isDocked;
 
 /** The browser preview's tab names, so a tab can bring another forward. */
 const LOBBY_TAB = 'howdah-lobby';
