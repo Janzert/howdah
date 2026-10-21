@@ -81,6 +81,45 @@ export function endsText(t: TestView): string | null {
   return `in about ${mid} games (${lo}–${hi}${p.openEnded ? '+' : ''})`;
 }
 
+/** Games looked back over for the pace. */
+const PACE_GAMES = 30;
+
+/** How fast a test is finishing games, in games an hour, from its newest
+ * games' finish times (seconds, newest first): the games since the last
+ * long gap (a pause, or the daemon not running), a gap over ten times
+ * the median and over a minute. Null with fewer than four such games. */
+export function gamesPerHour(finished: number[]): number | null {
+  const times = finished.slice(0, PACE_GAMES);
+  const gaps = times.slice(1).map((t, i) => times[i] - t);
+  const median = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)] ?? 0;
+  const pause = gaps.findIndex((g) => g > 60 && g > 10 * median);
+  const n = pause < 0 ? times.length : pause + 1;
+  const span = times[0] - times[n - 1];
+  return n < 4 || span <= 0 ? null : ((n - 1) / span) * 3600;
+}
+
+/** A stretch of time in brief, as precise as a projection is: `40 min`,
+ * `6 h`, `3 days`. */
+function roughTime(hours: number): string {
+  const minutes = Math.round((hours * 60) / 5) * 5;
+  if (minutes < 60) return `${Math.max(1, minutes)} min`;
+  if (hours < 48) return `${Math.round(hours)} h`;
+  return `${Math.round(hours / 24)} days`;
+}
+
+/** When an active SPRT test is likely to end, in time, at `perHour`
+ * games an hour: `about 6 h (3–12 h)`, the median and the middle 80%;
+ * null without a projection or a pace. */
+export function endsTimeText(t: TestView, perHour: number | null): string | null {
+  const p = t.projection;
+  if (p == null || perHour == null || t.status !== 'active') return null;
+  if (p.gamesLeft[2] === 0) return null;
+  const [lo, mid, hi] = p.gamesLeft.map((n) => roughTime(n / perHour));
+  const unit = (s: string) => s.split(' ')[1];
+  const from = unit(lo) === unit(hi) ? lo.split(' ')[0] : lo;
+  return `about ${mid} (${from}–${hi}${p.openEnded ? '+' : ''})`;
+}
+
 /** How a running SPRT test is likely to end: `pass 22%, fail 36%,
  * undecided 42%`, with every pair played (or, without a pair limit, still
  * going) when that can happen; null without a projection. */

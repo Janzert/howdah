@@ -7,6 +7,8 @@ import {
   detailsText,
   endingText,
   endsText,
+  endsTimeText,
+  gamesPerHour,
   llrPosition,
   oddsText,
   pairCount,
@@ -191,5 +193,27 @@ describe('detailsText', () => {
         .split('\n')
         .slice(-2),
     ).toEqual(['Ends in about 20 games (10–30): pass 50%, fail 50%', '62% chance to decide within 3000 pairs']);
+  });
+});
+
+describe('time left', () => {
+  it('finds the pace since the last pause', () => {
+    // A game a minute for ten games, after a day's pause.
+    const recent = Array.from({ length: 10 }, (_, i) => 100_000 - 60 * i);
+    expect(gamesPerHour(recent)).toBeCloseTo(60);
+    expect(gamesPerHour([...recent, 10_000, 9_000])).toBeCloseTo(60);
+    expect(gamesPerHour([300, 200, 100])).toBeNull();
+    expect(gamesPerHour([])).toBeNull();
+  });
+
+  it('turns the games left into hours', () => {
+    const projection = { pass: 0.2, fail: 0.3, undecided: 0.5, done: 0, openEnded: false };
+    const t = (gamesLeft: [number, number, number], over: Partial<TestView> = {}) =>
+      view({ projection: { ...projection, gamesLeft }, ...over });
+    expect(endsTimeText(t([60, 360, 720]), 60)).toBe('about 6 h (1–12 h)');
+    expect(endsTimeText(t([20, 60, 4800]), 60)).toBe('about 1 h (20 min–3 days)');
+    expect(endsTimeText(t([20, 60, 4800]), null)).toBeNull();
+    expect(endsTimeText(t([20, 60, 4800], { status: 'paused' }), 60)).toBeNull();
+    expect(endsTimeText(t([0, 0, 0]), 60)).toBeNull();
   });
 });

@@ -1574,6 +1574,9 @@ pub struct TestGameView {
     pub reason: String,
     pub plies: u32,
     pub detail: Option<String>,
+    /// When it ended, in seconds since the Unix epoch.
+    #[ts(type = "number")]
+    pub finished: u64,
 }
 
 /// A test with its finished games, newest first.

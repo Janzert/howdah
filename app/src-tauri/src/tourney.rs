@@ -658,6 +658,7 @@ fn game_view(test: &str, engines: &[String], g: &GameEntry) -> TestGameView {
         reason: g.reason.clone(),
         plies: g.plies,
         detail: g.detail.clone(),
+        finished: g.finished,
     }
 }
 

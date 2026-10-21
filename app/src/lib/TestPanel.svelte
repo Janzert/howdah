@@ -16,6 +16,8 @@
     decideText,
     endingText,
     endsText,
+    endsTimeText,
+    gamesPerHour,
     llrPosition,
     oddsText,
     scoreText,
@@ -99,6 +101,7 @@
   }
 
   const pos = $derived(test ? llrPosition(test) : null);
+  const perHour = $derived(gamesPerHour(games.map((g) => g.finished)));
   const removable = $derived(test != null && test.status !== 'active' && test.running.length === 0);
   /** The settings in brief, for beside the Settings button. */
   const settingsText = $derived.by(() => {
@@ -170,7 +173,10 @@
           <dd
             title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings"
           >
-            {endsText(test)}
+            {endsText(test)}{#if endsTimeText(test, perHour)}<span
+                title="At the pace of the games since the last pause, {perHour?.toFixed(1)} an hour"
+                >, {endsTimeText(test, perHour)}</span
+              >{/if}
           </dd>
         {/if}
         {#if oddsText(test) || decideText(test)}

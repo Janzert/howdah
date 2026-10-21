@@ -8,4 +8,8 @@ export type TestGameView = { test: string, pair: number, game: number, gold: str
 /**
  * How it ended (`goal`, `timeout`, ...).
  */
-reason: string, plies: number, detail: string | null, };
+reason: string, plies: number, detail: string | null, 
+/**
+ * When it ended, in seconds since the Unix epoch.
+ */
+finished: number, };
