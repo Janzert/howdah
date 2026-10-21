@@ -247,6 +247,16 @@ plans the engine test and tournament runner.
   `howdah-tourney` binary is its command line (`new`, `run`, `show`
   here; the rest through the daemon); engines run in their own process
   group so Ctrl-C reaches only it.
+  - SPSA tuning (`spsa.rs`, design in `docs/TOURNAMENTS.md`): a spec
+    with `[spsa]` (iterations, pairs per iteration, OpenBench's gain
+    constants, `[[spsa.params]]` of AEI options) and one engine, which
+    plays both sides (`TestSpec::engine`, `side_names`: `<name>+` at
+    θ + cΔ, `<name>-` at θ − cΔ). `SpsaRun` lives in the `TestRun`'s
+    state: `next_game` draws an iteration's point as its first game goes
+    out (`spsa-points.jsonl`), `play_game` sends each game's values
+    (`game_options`) before it, and `finish` steps θ once an iteration's
+    games are all logged (`spsa-history.jsonl`, θ by name). Its pair
+    limit is `pair_limit()`; `TestInfo.spsa` is `SpsaInfo`.
   - `Daemon` (`daemon.rs`): a queue of tests in a data directory
     (`default_data_dir`: `$HOWDAH_TOURNEY_DIR`, else `tourney/` in the
     app's local data dir), each with a `state.json` (`TestStatus`,

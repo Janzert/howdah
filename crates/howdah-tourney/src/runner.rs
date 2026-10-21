@@ -31,6 +31,8 @@ use tokio::task::JoinSet;
 use crate::error::TourneyError;
 use crate::memory::{self, Engines, Limits, size};
 use crate::results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash};
+use crate::spec::OptionValue;
+use crate::spsa::{SpsaInfo, SpsaRun};
 use crate::stats::{Decision, Summary, decide_chance, summarize};
 use crate::testdir::TestDir;
 
@@ -166,6 +168,8 @@ struct State {
     log: ResultsLog,
     /// The moves and clocks of the games being played.
     live: HashMap<(u32, u8), Live>,
+    /// An SPSA run's parameters.
+    spsa: Option<SpsaRun>,
 }
 
 /// A running game as far as it has got.
@@ -234,6 +238,10 @@ impl TestRun {
         }
         let log = ResultsLog::open(&dir.results_path())?;
         let end = summarize(dir.spec.sprt, &entries).decision.map(RunEnd::Decided);
+        let spsa = match &dir.spec.spsa {
+            Some(spec) => Some(SpsaRun::open(&dir.path, spec, &entries)?),
+            None => None,
+        };
         Ok(TestRun {
             config: MatchConfig { time_control: dir.spec.time_control(), ..MatchConfig::default() },
             limits: Limits::new(&dir.spec.memory),
@@ -244,12 +252,13 @@ impl TestRun {
                 running: Vec::new(),
                 retry: VecDeque::new(),
                 cursor: (1, 1),
-                max_pairs: dir.spec.max_pairs,
+                max_pairs: dir.spec.pair_limit(),
                 undecided_below: dir.spec.sprt.and_then(|s| s.undecided_below),
                 failures: [0; 2],
                 end,
                 log,
                 live: HashMap::new(),
+                spsa,
             }),
             dir,
             hold: StopHandle::default(),
@@ -278,8 +287,28 @@ impl TestRun {
                 }
             },
         };
+        // An SPSA iteration's point is drawn as its first game goes out.
+        if let Some(spsa) = &mut st.spsa
+            && let Err(e) = spsa.open_point(g.0)
+        {
+            st.retry.push_front(g);
+            st.end.get_or_insert(RunEnd::Halted(e.to_string()));
+            return None;
+        }
         st.running.push(g);
         Some(g)
+    }
+
+    /// The options engine `engine` plays pair `pair` with, over its spec's
+    /// (an SPSA run's parameters).
+    fn game_options(&self, pair: u32, engine: usize) -> Vec<(String, OptionValue)> {
+        let st = self.state.lock().unwrap();
+        st.spsa.as_ref().map(|s| s.options(pair, engine)).unwrap_or_default()
+    }
+
+    /// An SPSA run's progress.
+    pub(crate) fn spsa_info(&self) -> Option<SpsaInfo> {
+        self.state.lock().unwrap().spsa.as_ref().map(SpsaRun::info)
     }
 
     /// How the test ended, once it has and its last games are done: None
@@ -403,11 +432,15 @@ impl TestRun {
         let spec = &self.dir.spec;
         let gold = GameEntry::gold_of(game.1);
         let ms = |d: Duration| d.as_millis() as u64;
+        let [gold_name, silver_name] = {
+            let names = spec.side_names();
+            [names[gold].clone(), names[1 - gold].clone()]
+        };
         Some(LiveGame {
             pair: game.0,
             game: game.1,
-            gold: spec.engines[gold].name.clone(),
-            silver: spec.engines[1 - gold].name.clone(),
+            gold: gold_name,
+            silver: silver_name,
             time_control: spec.time_control.clone(),
             moves: live.moves.clone(),
             used_ms: live.used.iter().copied().map(ms).collect(),
@@ -483,7 +516,7 @@ impl TestRun {
     fn count_failure(&self, st: &mut State, engine: usize, why: &str) {
         st.failures[engine] += 1;
         if st.failures[engine] >= MAX_FAILURES && st.end.is_none() {
-            let name = &self.dir.spec.engines[engine].name;
+            let name = &self.dir.spec.side_names()[engine];
             st.end = Some(RunEnd::Halted(format!(
                 "{name} failed {} times in a row; last: {why}",
                 st.failures[engine]
@@ -506,7 +539,13 @@ impl TestRun {
                 st.failures[i] = 0;
             }
         }
+        let pair = entry.pair;
+        let finished = entry.finished;
         st.entries.push(entry);
+        let State { spsa, entries, .. } = &mut *st;
+        if let Some(spsa) = spsa {
+            spsa.game_logged(entries, pair, finished)?;
+        }
         let summary = summarize(self.dir.spec.sprt, &st.entries);
         if let Some(d) = summary.decision {
             st.end.get_or_insert(RunEnd::Decided(d));
@@ -759,6 +798,22 @@ async fn play_game(
             *sink.lock().unwrap() = Some(BufWriter::new(file));
         }
     }
+    // The game's own options (an SPSA run's parameters), over the spec's.
+    for i in 0..2 {
+        let mut failed = None;
+        let engine = &mut engines[i].as_mut().expect("started").engine;
+        for (name, value) in ctx.game_options(pair, i) {
+            if let Err(e) = engine.set_option(&name, &value).await {
+                failed = Some(format!("setting option {name}: {e}"));
+                break;
+            }
+        }
+        if let Some(why) = failed {
+            restart(ctx, engines, tracked, i, &why).await;
+            ctx.give_back((pair, game), &[i], &why);
+            return Ok(());
+        }
+    }
 
     let gold = GameEntry::gold_of(game);
     let ids = [gold, 1 - gold].map(|i| engines[i].as_ref().and_then(|e| e.engine.id().name.clone()));
@@ -827,8 +882,8 @@ async fn play_game(
             for r in &restarts {
                 restart(ctx, engines, tracked, r.engine, &r.reason).await;
             }
-            for (slot, spec) in engines.iter_mut().zip(&ctx.dir.spec.engines) {
-                if spec.restart_each_game
+            for (i, slot) in engines.iter_mut().enumerate() {
+                if ctx.dir.spec.engine(i).restart_each_game
                     && let Some(e) = slot.take()
                 {
                     tracked.remove(e.key);
@@ -876,7 +931,7 @@ async fn play_game(
 /// one to stop, and why: one over its limit, or the largest of all the
 /// engines when they're over the budget together and it's one of ours.
 async fn watch_memory(ctx: &TestRun, tracked: &Engines, keys: [u64; 2]) -> (usize, String) {
-    let names = &ctx.dir.spec.engines;
+    let names = ctx.dir.spec.side_names();
     let limit = ctx.limits.limit;
     loop {
         tokio::time::sleep(memory::POLL).await;
@@ -884,7 +939,7 @@ async fn watch_memory(ctx: &TestRun, tracked: &Engines, keys: [u64; 2]) -> (usiz
             if let Some(rss) = tracked.read(*key)
                 && rss > limit
             {
-                let name = &names[i].name;
+                let name = &names[i];
                 return (i, format!("{name} used {} resident, over its limit of {}", size(rss), size(limit)));
             }
         }
@@ -897,7 +952,7 @@ async fn watch_memory(ctx: &TestRun, tracked: &Engines, keys: [u64; 2]) -> (usiz
                     "the engines used {} together, over the budget of {}; {} was the largest",
                     size(total),
                     size(tracked.budget()),
-                    names[i].name
+                    names[i]
                 ),
             );
         }
@@ -936,7 +991,7 @@ async fn start_engine(ctx: &TestRun, i: usize, sink: LogSink) -> Result<Engine, 
         }) as Box<dyn FnMut(Direction, &str) + Send>
     });
     let mut engine = Engine::start_with_transcript(&config, transcript).await.map_err(|e| e.to_string())?;
-    for (name, value) in &ctx.dir.spec.engines[i].options {
+    for (name, value) in &ctx.dir.spec.engine(i).options {
         engine.set_option(name, value).await.map_err(|e| format!("setting option {name}: {e}"))?;
     }
     Ok(engine)
@@ -956,8 +1011,9 @@ fn write_game(
     let mut record = GameRecord { tags: Vec::new(), tree };
     record.set_tag("Event", spec.name.as_str());
     record.set_tag("Round", format!("{pair}.{game}"));
-    record.set_tag("Gold", spec.engines[gold].name.as_str());
-    record.set_tag("Silver", spec.engines[1 - gold].name.as_str());
+    let names = spec.side_names();
+    record.set_tag("Gold", names[gold].as_str());
+    record.set_tag("Silver", names[1 - gold].as_str());
     if let Some(tc) = &spec.time_control {
         record.set_tag("TimeControl", tc.as_str());
     }

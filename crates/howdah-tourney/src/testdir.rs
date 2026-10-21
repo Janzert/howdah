@@ -6,6 +6,8 @@
 //! - `results.jsonl`: the results log.
 //! - `games/`: a record per game.
 //! - `logs/`: engine transcripts per game, if the spec asks for them.
+//! - `spsa-points.jsonl` and `spsa-history.jsonl`: an SPSA run's state
+//!   (see `spsa`).
 
 use std::path::{Path, PathBuf};
 
@@ -73,6 +75,9 @@ impl TestDir {
                 engine.working_dir = Some(wd);
             }
         }
+        if let Some(spsa) = &mut spec.spsa {
+            spsa.seed.get_or_insert_with(new_seed);
+        }
         let spec_path = path.join(SPEC_FILE);
         std::fs::write(&spec_path, spec.to_toml()).map_err(TourneyError::io(&spec_path))?;
         Ok(TestDir { path, spec })
@@ -99,7 +104,7 @@ impl TestDir {
     /// How to start engine `index`: its snapshot, run in its snapshot's
     /// directory unless the spec names another.
     pub fn engine_config(&self, index: usize) -> EngineConfig {
-        let e = &self.spec.engines[index];
+        let e = self.spec.engine(index);
         let program = self.path.join(&e.program);
         let dir = match &e.working_dir {
             Some(wd) => self.path.join(wd),
@@ -118,7 +123,7 @@ impl TestDir {
 
     /// Where engine `index`'s transcript of a game goes.
     pub fn log_path(&self, pair: u32, game: u8, index: usize) -> PathBuf {
-        self.path.join(format!("logs/{pair:04}-{game}-{}.log", slug(&self.spec.engines[index].name)))
+        self.path.join(format!("logs/{pair:04}-{game}-{}.log", slug(&self.spec.side_names()[index])))
     }
 }
 
@@ -126,6 +131,12 @@ impl TestDir {
 /// (programs and working directories are handed to engines).
 fn absolute(path: &Path) -> Result<PathBuf, TourneyError> {
     std::path::absolute(path).map_err(TourneyError::io(path))
+}
+
+/// A seed for an SPSA run that didn't give one.
+fn new_seed() -> u32 {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    (t.as_nanos() as u32) ^ std::process::id().rotate_left(16)
 }
 
 /// A name made safe for a file name.

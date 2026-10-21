@@ -5,7 +5,10 @@
 use std::path::{Path, PathBuf};
 
 use howdah_arimaa::GameRecord;
-use howdah_tourney::{Decision, RunEnd, RunEvent, RunOptions, StopHandle, TestDir, TestSpec, run};
+use howdah_tourney::{
+    Decision, RunEnd, RunEvent, RunOptions, SPSA_HISTORY_FILE, SPSA_POINTS_FILE, SpsaPoint, SpsaStep,
+    StopHandle, TestDir, TestSpec, run, spsa_step,
+};
 
 fn test_engine() -> PathBuf {
     let exe = std::env::current_exe().unwrap();
@@ -259,4 +262,76 @@ async fn the_largest_engine_forfeits_when_all_are_over_the_budget() {
         let detail = e.detail.unwrap();
         assert!(detail.contains("over the budget of 120 MB; two was the largest"), "{detail}");
     }
+}
+
+/// An SPSA run of the random mover: `iterations` of one pair each.
+fn make_spsa(dir: &Path, iterations: u32) -> TestDir {
+    let program = test_engine().display().to_string().replace('\\', "/");
+    let text = format!(
+        "name = \"tune\"\ntime_control = \"0s/30s/100/0/12t\"\nconcurrency = 2\nengine_logs = true\n\
+         [spsa]\niterations = {iterations}\npairs_per_iteration = 1\nseed = 3\n\
+         [[spsa.params]]\nname = \"weight\"\nstart = 1.0\nmin = 0.0\nmax = 2.0\nc_end = 0.1\nr_end = 0.5\n\
+         [[spsa.params]]\nname = \"depth\"\nstart = 5\nmin = 1\nmax = 9\nint = true\nc_end = 1\n\
+         [[engines]]\nname = \"rand\"\nprogram = \"{program}\"\noptions = {{ hash = 16 }}\n"
+    );
+    let spec = TestSpec::parse(&text).unwrap();
+    TestDir::create(spec, Path::new("."), &dir.join("test")).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_spsa_run_steps_its_parameters_and_resumes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let test = make_spsa(tmp.path(), 3);
+    let spsa = test.spec.spsa.clone().unwrap();
+    let (end, _) = play(&test, StopHandle::default(), Some(2)).await;
+    assert_eq!(end, RunEnd::Stopped);
+    let (end, _) = play(&test, StopHandle::default(), None).await;
+    assert_eq!(end, RunEnd::MaxPairs);
+
+    let mut entries = test.results().unwrap();
+    entries.sort_by_key(|e| (e.pair, e.game));
+    assert_eq!(entries.len(), 6);
+    let read = |name: &str| -> Vec<serde_json::Value> {
+        let text = std::fs::read_to_string(test.path.join(name)).unwrap();
+        text.lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+    };
+    let points: Vec<SpsaPoint> =
+        read(SPSA_POINTS_FILE).into_iter().map(|v| serde_json::from_value(v).unwrap()).collect();
+    let steps: Vec<SpsaStep> =
+        read(SPSA_HISTORY_FILE).into_iter().map(|v| serde_json::from_value(v).unwrap()).collect();
+    assert_eq!(points.iter().map(|p| p.iteration).collect::<Vec<_>>(), [1, 2, 3]);
+    let mut done: Vec<u32> = steps.iter().map(|s| s.iteration).collect();
+    done.sort();
+    assert_eq!(done, [1, 2, 3]);
+
+    // θ follows the games: replaying the steps in the order they were taken
+    // gives the history's last θ.
+    let mut theta = vec![1.0, 5.0];
+    for s in &steps {
+        let point = &points[s.iteration as usize - 1];
+        let games: Vec<_> = entries.iter().filter(|e| e.pair == s.iteration).collect();
+        let wins = games.iter().filter(|e| e.winner == 0).count() as u32;
+        assert_eq!((s.wins, s.losses), (wins, 2 - wins));
+        spsa_step(&spsa, &mut theta, point, i64::from(wins) * 2 - 2);
+        assert_eq!(s.theta["weight"], theta[0]);
+    }
+    let progress = howdah_tourney::spsa_progress(&test.path, &spsa).unwrap();
+    assert_eq!(progress.done, 3);
+    assert_eq!(progress.params[0].value, theta[0]);
+
+    // Each side was sent its point's values, over the spec's options (its
+    // log is named for `rand+`, made safe for a file name).
+    for (pair, point) in points.iter().enumerate() {
+        let pair = pair as u32 + 1;
+        for (side, values) in [("rand_", &point.plus), ("rand-", &point.minus)] {
+            let log = std::fs::read_to_string(test.path.join(format!("logs/{pair:04}-1-{side}.log")))
+                .unwrap_or_else(|_| panic!("no log for {pair} {side}"));
+            assert!(log.contains(&format!("> setoption name weight value {}", values[0])), "{log}");
+            assert!(log.contains(&format!("> setoption name depth value {}", values[1])), "{log}");
+        }
+        assert_eq!(point.plus[1].fract(), 0.0);
+    }
+    let record =
+        GameRecord::parse(&std::fs::read_to_string(test.path.join(&entries[1].record)).unwrap()).unwrap();
+    assert_eq!((record.tag("Gold"), record.tag("Silver")), (Some("rand-"), Some("rand+")));
 }

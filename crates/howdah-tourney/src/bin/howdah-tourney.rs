@@ -27,7 +27,9 @@
 //!
 //! `--data-dir DIR` (anywhere) picks the daemon's data directory, otherwise
 //! `$HOWDAH_TOURNEY_DIR` or `tourney/` in Howdah's local data directory.
-//! The spec format is in `src/spec.rs`. Ctrl-C during `run` or `daemon`
+//! The spec format is in `src/spec.rs`; an SPSA tuning run (`[spsa]`)
+//! is submitted and run the same way, and `show` and `list` give its
+//! iterations and parameters. Ctrl-C during `run` or `daemon`
 //! starts no more games and waits for the running ones; a second Ctrl-C
 //! quits at once (those games are played again next time).
 //!
@@ -42,8 +44,8 @@ use std::process::ExitCode;
 use howdah_tourney::client::Client;
 use howdah_tourney::{
     Daemon, DaemonEvent, DaemonInfo, Decision, GameEntry, NO_LIMIT_HORIZON, Projection, RESOURCE_LIMIT,
-    RunEnd, RunEvent, RunOptions, StopHandle, Summary, TestDir, TestInfo, TestSpec, TestStatus, TourneyError,
-    decide_chance, default_data_dir, project, server, summarize,
+    RunEnd, RunEvent, RunOptions, SpsaInfo, StopHandle, Summary, TestDir, TestInfo, TestSpec, TestStatus,
+    TourneyError, decide_chance, default_data_dir, project, server, spsa_progress, summarize,
 };
 
 const USAGE: &str = "usage:
@@ -252,7 +254,7 @@ fn print_engines(spec: &TestSpec) {
 
 async fn run(dir: &Path, concurrency: Option<u32>) -> Result<(), String> {
     let test = TestDir::open(dir).map_err(|e| e.to_string())?;
-    let names = [test.spec.engines[0].name.clone(), test.spec.engines[1].name.clone()];
+    let names = test.spec.side_names();
     let done = test.results().map_err(|e| e.to_string())?.len();
     println!("{}: {} vs {}", test.spec.name, names[0], names[1]);
     if done > 0 {
@@ -262,6 +264,7 @@ async fn run(dir: &Path, concurrency: Option<u32>) -> Result<(), String> {
     let stop = StopHandle::default();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let sprt = test.spec.sprt;
+    let spsa = test.spec.spsa.is_some();
     let mut runner = Box::pin(howdah_tourney::run(
         test,
         RunOptions { concurrency, ..RunOptions::default() },
@@ -292,9 +295,13 @@ async fn run(dir: &Path, concurrency: Option<u32>) -> Result<(), String> {
     let test = TestDir::open(dir).map_err(|e| e.to_string())?;
     let entries = test.results().map_err(|e| e.to_string())?;
     println!();
-    print_summary(&names, &summarize(sprt, &entries), sprt.is_some());
+    match &test.spec.spsa {
+        Some(sp) => print_spsa(&spsa_progress(&test.path, sp).map_err(|e| e.to_string())?),
+        None => print_summary(&names, &summarize(sprt, &entries), sprt.is_some()),
+    }
     match end {
         RunEnd::Decided(d) => println!("\nSPRT: {}", decision_text(&names, d)),
+        RunEnd::MaxPairs if spsa => println!("\nAll iterations played"),
         RunEnd::MaxPairs => println!("\nAll pairs played"),
         RunEnd::Undecided => println!("\nSPRT unlikely to decide within the pair limit"),
         RunEnd::Stopped => println!("\nStopped"),
@@ -305,11 +312,16 @@ async fn run(dir: &Path, concurrency: Option<u32>) -> Result<(), String> {
 
 fn show(dir: &Path) -> Result<(), String> {
     let test = TestDir::open(dir).map_err(|e| e.to_string())?;
-    let names = [test.spec.engines[0].name.clone(), test.spec.engines[1].name.clone()];
+    let names = test.spec.side_names();
     let entries = test.results().map_err(|e| e.to_string())?;
     println!("{}: {} vs {}", test.spec.name, names[0], names[1]);
     if let Some(tc) = &test.spec.time_control {
         println!("Time control {tc}");
+    }
+    if let Some(sp) = &test.spec.spsa {
+        println!("Games {}", entries.len());
+        print_spsa(&spsa_progress(&test.path, sp).map_err(|e| e.to_string())?);
+        return Ok(());
     }
     let summary = summarize(test.spec.sprt, &entries);
     print_summary(&names, &summary, test.spec.sprt.is_some());
@@ -461,6 +473,19 @@ fn print_summary(names: &[String; 2], s: &Summary, sprt: bool) {
     }
 }
 
+/// An SPSA run's progress and θ, a parameter a line.
+fn print_spsa(s: &SpsaInfo) {
+    println!("SPSA: {} of {} iterations done ({} pairs each)", s.done, s.iterations, s.pairs_per_iteration);
+    let width = s.params.iter().map(|p| p.name.len()).max().unwrap_or(0);
+    for p in &s.params {
+        let sent = if p.int { format!(" ~{}", p.value.round()) } else { String::new() };
+        println!(
+            "  {:width$}  {:>12.4}{sent}  (start {}, range {} to {})",
+            p.name, p.value, p.start, p.min, p.max
+        );
+    }
+}
+
 fn decision_text(names: &[String; 2], d: Decision) -> String {
     match d {
         Decision::Pass => format!("passed ({} is stronger)", names[0]),
@@ -586,14 +611,20 @@ fn list_line(t: &TestInfo) -> String {
         (TestStatus::Finished, Some(RunEnd::Halted(why))) => format!("halted: {why}"),
         (TestStatus::Finished, None) => "finished".to_string(),
     };
-    let mut line = format!(
-        "{}  {} vs {}  games {}, {}",
-        t.id,
-        t.engines[0],
-        t.engines[1],
-        t.summary.games,
-        short_stats(&t.summary)
-    );
+    let mut line = match &t.spsa {
+        Some(s) => format!(
+            "{}  SPSA {}  iteration {}/{}, games {}",
+            t.id, t.name, s.done, s.iterations, t.summary.games
+        ),
+        None => format!(
+            "{}  {} vs {}  games {}, {}",
+            t.id,
+            t.engines[0],
+            t.engines[1],
+            t.summary.games,
+            short_stats(&t.summary)
+        ),
+    };
     if let Some(c) = t.decide_chance.filter(|_| t.status != TestStatus::Finished) {
         line += &format!(", {} to decide in time", percent(c));
     }
@@ -645,7 +676,13 @@ async fn show_remote(data: &Path, id: &str) -> Result<(), String> {
     if let Some(tc) = &t.time_control {
         println!("Time control {tc}");
     }
-    print_summary(&t.engines, &t.summary, t.sprt.is_some());
+    match &t.spsa {
+        Some(s) => {
+            println!("Games {}", t.summary.games);
+            print_spsa(s);
+        }
+        None => print_summary(&t.engines, &t.summary, t.sprt.is_some()),
+    }
     println!(
         "
 {}",

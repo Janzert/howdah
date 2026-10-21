@@ -148,7 +148,12 @@ impl ResultsLog {
     }
 
     pub fn append(&mut self, entry: &GameEntry) -> Result<(), TourneyError> {
-        let mut line = serde_json::to_string(entry).expect("an entry always serializes");
+        self.append_line(entry)
+    }
+
+    /// Appends any value as a line (the SPSA logs work the same way).
+    pub(crate) fn append_line(&mut self, value: &impl Serialize) -> Result<(), TourneyError> {
+        let mut line = serde_json::to_string(value).expect("a log line always serializes");
         line.push('\n');
         self.file.write_all(line.as_bytes()).map_err(TourneyError::io(&self.path))?;
         self.file.sync_data().map_err(TourneyError::io(&self.path))

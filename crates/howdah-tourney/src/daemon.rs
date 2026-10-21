@@ -34,6 +34,7 @@ use crate::memory::{self, Engines};
 use crate::results::{GameEntry, parse_results};
 use crate::runner::{EngineLine, EventFn, LiveGame, Picker, RunEnd, RunEvent, TestRun, play_slot};
 use crate::spec::{SprtSpec, TestSpec};
+use crate::spsa::SpsaInfo;
 use crate::stats::{Projection, Summary};
 use crate::testdir::{TestDir, slug};
 
@@ -154,6 +155,10 @@ pub struct TestInfo {
     /// decided or finished.
     #[serde(default)]
     pub projection: Option<Projection>,
+    /// An SPSA run's iterations and parameters (its `engines` are the two
+    /// sides: θ + cΔ and θ − cΔ).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spsa: Option<SpsaInfo>,
     /// The test's directory.
     pub path: PathBuf,
 }
@@ -363,7 +368,7 @@ impl Entry {
         TestInfo {
             id: self.id.clone(),
             name: spec.name.clone(),
-            engines: [spec.engines[0].name.clone(), spec.engines[1].name.clone()],
+            engines: spec.side_names(),
             time_control: spec.time_control.clone(),
             status: self.saved.status,
             priority: self.saved.priority,
@@ -377,6 +382,7 @@ impl Entry {
             undecided_below: self.saved.undecided_below(spec),
             decide_chance: None,
             projection: None,
+            spsa: self.run.spsa_info(),
             path: self.run.dir.path.clone(),
         }
         .with_decide_chance()
@@ -558,7 +564,7 @@ impl Daemon {
                 }
             }
         };
-        let max_pairs = spec.max_pairs;
+        let max_pairs = spec.pair_limit();
         let path = tests_dir.join(&id);
         TestDir::create(spec, &self.0.data_dir, &path)?;
         let saved = SavedState {
@@ -645,9 +651,8 @@ impl Daemon {
             e.saved.end = None;
             e.settle();
             if e.saved.end == Some(RunEnd::MaxPairs) {
-                return Err(TourneyError::Refused(format!(
-                    "{id} has played all its pairs; raise its max pairs"
-                )));
+                let raise = if e.run.dir.spec.spsa.is_some() { "" } else { "; raise its max pairs" };
+                return Err(TourneyError::Refused(format!("{id} has played all its pairs{raise}")));
             }
             Ok(())
         })
@@ -691,6 +696,9 @@ impl Daemon {
     /// test that had played all its pairs carries on if the limit rises.
     pub fn set_max_pairs(&self, id: &str, max_pairs: Option<u32>) -> Result<TestInfo, TourneyError> {
         self.update(id, |e| {
+            if e.run.dir.spec.spsa.is_some() {
+                return Err(TourneyError::Refused(format!("{id} is an SPSA run; it plays its iterations")));
+            }
             if max_pairs.is_none() && e.run.dir.spec.sprt.is_none() {
                 return Err(TourneyError::Refused(format!("{id} has no SPRT, so it needs a pair limit")));
             }
@@ -896,15 +904,15 @@ impl Daemon {
         let tests = self.0.tests.lock().unwrap();
         let mut running = Vec::new();
         for e in tests.iter() {
-            let names = &e.run.dir.spec.engines;
+            let names = e.run.dir.spec.side_names();
             for (pair, game) in e.run.running() {
                 let gold = GameEntry::gold_of(game);
                 running.push(RunningGame {
                     test: e.id.clone(),
                     pair,
                     game,
-                    gold: names[gold].name.clone(),
-                    silver: names[1 - gold].name.clone(),
+                    gold: names[gold].clone(),
+                    silver: names[1 - gold].clone(),
                 });
             }
         }
@@ -1136,14 +1144,22 @@ fn read_archived(zip_path: &Path) -> Result<TestInfo, TourneyError> {
         Some(text) => parse_results(&text, &zip_path.join(&results_name))?,
         None => Vec::new(),
     };
+    let spsa = match &spec.spsa {
+        Some(sp) => {
+            let name = format!("{id}/{}", crate::spsa::HISTORY_FILE);
+            let text = read_zip_text(&mut zip, zip_path, &name)?.unwrap_or_default();
+            Some(crate::spsa::info_from_history(sp, &text, &zip_path.join(&name))?)
+        }
+        None => None,
+    };
     Ok(TestInfo {
         id,
         name: spec.name.clone(),
-        engines: [spec.engines[0].name.clone(), spec.engines[1].name.clone()],
+        engines: spec.side_names(),
         time_control: spec.time_control.clone(),
         status: saved.as_ref().map_or(TestStatus::Finished, |s| s.status),
         priority: saved.as_ref().map_or(0, |s| s.priority),
-        max_pairs: saved.as_ref().map_or(spec.max_pairs, |s| s.max_pairs),
+        max_pairs: saved.as_ref().map_or(spec.pair_limit(), |s| s.max_pairs),
         sprt: spec.sprt,
         concurrency: saved.as_ref().and_then(|s| s.concurrency).unwrap_or(spec.concurrency),
         running: Vec::new(),
@@ -1156,6 +1172,7 @@ fn read_archived(zip_path: &Path) -> Result<TestInfo, TourneyError> {
         },
         decide_chance: None,
         projection: None,
+        spsa,
         path: zip_path.to_path_buf(),
     }
     .with_decide_chance())
@@ -1263,7 +1280,7 @@ fn load_entry(inner: &Arc<Inner>, path: &Path) -> Result<Entry, TourneyError> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => SavedState {
             status: TestStatus::Active,
             priority: 0,
-            max_pairs: TestDir::open(path)?.spec.max_pairs,
+            max_pairs: TestDir::open(path)?.spec.pair_limit(),
             concurrency: None,
             undecided_below: None,
             submitted: now(),

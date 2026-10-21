@@ -554,8 +554,58 @@ for any engine.
 
 Later, if wanted: eval-based adjudication (resigning for an engine past
 a score threshold for some turns, using `Profile`'s scores), a setup
-book, tests naming git commits that the daemon builds, remote workers
-taking pairs from the daemon, and parameter tuning.
+book, tests naming git commits that the daemon builds, and remote workers
+taking pairs from the daemon.
+
+### SPSA tuning
+
+A spec with `[spsa]` is a tuning run instead of a test (format in
+`spec.rs`, the method in `spsa.rs`). It has one engine, which plays both
+sides of every pair: engine 1 (`<name>+`) at θ + c·Δ and engine 2
+(`<name>-`) at θ − c·Δ, where θ is the parameters (AEI options, each with
+a start, bounds, `c_end` and optionally `r_end` and `int`) and Δ a random
+±1 per parameter, drawn per iteration. After an iteration's
+`pairs_per_iteration` pairs (default 8), θ moves by r·c·(W − L)·Δ per
+parameter, W and L engine 1's wins and losses there, and is clamped to
+the bounds. The schedules and defaults follow OpenBench's code
+(`spsa_utils.py`; its wiki page, "SPSA Tuning Workloads", gives only the
+names): with N iterations, A = `a_ratio`·N (0.1), α 0.602 and γ 0.101,
+iteration k (from 1) uses c_k = c_end·(N/k)^γ (at least 0.5 for an
+integer) and r_k = a_k/c_k², a_k = r_end·c_end²·((A + N)/(A + k))^α, so
+the last iteration steps by `c_end` and `r_end` (default 0.002). As in
+OpenBench, θ stays real and an integer is rounded only for the engine,
+at random (`floor(x + U)`), so a step under 1 still moves it on
+average; its c is at least 0.5 so the two sides differ.
+
+- **In the queue** it's a test like any other: it takes slots by
+  priority, its `concurrency` caps it, and it can be paused, resumed,
+  stopped and archived. Its pair limit is `iterations ×
+  pairs_per_iteration` (`max-pairs` is refused: N is in the schedule),
+  and it ends as `maxPairs` once every iteration is played. `TestInfo.spsa`
+  (`SpsaInfo`) has the iterations done and θ, which `list` and `show`
+  print.
+- **Options per game.** Slots keep engines between games as usual; the
+  game's parameter values are sent with `setoption` before each game,
+  after the spec's options. An engine has to take them between games
+  (OpFor's `tune_*` and `eval_*` do). Its hash and anything else it
+  keeps between games carry over from earlier values; `restart_each_game`
+  avoids that at the cost of a start per game.
+- **State.** An iteration's point (θ as it opened, Δ, c, r and the
+  values each side gets) is drawn when its first game is handed out and
+  appended to `spsa-points.jsonl`; when its last game is logged, its step
+  (W, L, θ after it by name, the time) goes to `spsa-history.jsonl`, the
+  file to plot from. A restart reads θ from the history's last line and
+  steps any iteration whose games were all logged before its step was
+  written. Points come from a seeded generator (`seed`, picked when the
+  test is made if the spec has none), so a point drawn again is the same.
+- **Overlap.** The next iteration opens as soon as every game of the
+  open ones is handed out, from θ as it stands, rather than after their
+  last game ends, so slots don't sit idle at each iteration's end. With
+  `concurrency` up to `2 × pairs_per_iteration` that's at most one
+  iteration behind, which OpenBench's workers (each taking a point from
+  the θ of the moment) accept too.
+- Not done yet: showing a run in the app's Engine tests panel (it shows
+  as `<name>+` against `<name>-`), and plotting the history.
 
 ## Decided
 

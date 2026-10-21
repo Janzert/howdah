@@ -27,6 +27,38 @@
 //!
 //! Engine 1 is the one being tested: scores, Elo and the SPRT are from its
 //! side.
+//!
+//! An SPSA tuning run (see `spsa`) has `[spsa]` and one engine, which
+//! plays both sides: engine 1 at θ + cΔ, engine 2 at θ − cΔ. It has no
+//! SPRT or `max_pairs` (it plays `iterations × pairs_per_iteration`
+//! pairs):
+//!
+//! ```toml
+//! name = "opfor-eval"
+//! time_control = "2s/30s/100/0/100t"
+//! concurrency = 4
+//!
+//! [spsa]
+//! iterations = 2000
+//! pairs_per_iteration = 8   # these are the defaults:
+//! # alpha = 0.602
+//! # gamma = 0.101
+//! # a_ratio = 0.1           # A = 10% of the iterations
+//!
+//! [[spsa.params]]
+//! name = "eval_frozen"      # the AEI option
+//! start = 1.0
+//! min = 0.0
+//! max = 3.0
+//! c_end = 0.1
+//! # r_end = 0.002
+//! # int = false
+//!
+//! [[engines]]
+//! name = "opfor"
+//! program = "../OpFor/bot_opfor"
+//! options = { hash = 64 }
+//! ```
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -36,6 +68,7 @@ use howdah_arimaa::TimeControl;
 use serde::{Deserialize, Serialize};
 
 use crate::error::TourneyError;
+use crate::spsa::SpsaSpec;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -52,10 +85,13 @@ pub struct TestSpec {
     pub max_pairs: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sprt: Option<SprtSpec>,
+    /// An SPSA tuning run instead of a test.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spsa: Option<SpsaSpec>,
     /// Keep each game's engine transcripts in `logs/`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub engine_logs: bool,
-    /// Exactly two.
+    /// Exactly two, or one for SPSA.
     pub engines: Vec<EngineSpec>,
     /// When an engine's memory makes the runner restart it, or forfeit
     /// its game.
@@ -196,15 +232,45 @@ impl TestSpec {
         self.time_control.as_deref().map(|t| t.parse().expect("validated"))
     }
 
+    /// The pair limit: `max_pairs`, or every pair of an SPSA run.
+    pub fn pair_limit(&self) -> Option<u32> {
+        self.max_pairs.or(self.spsa.as_ref().map(SpsaSpec::pairs))
+    }
+
+    /// The engine playing as engine `index` (0 or 1): an SPSA run's one
+    /// engine plays both.
+    pub fn engine(&self, index: usize) -> &EngineSpec {
+        &self.engines[index.min(self.engines.len() - 1)]
+    }
+
+    /// The two sides' names: the engines', or for SPSA the engine's with
+    /// `+` (θ + cΔ) and `-` (θ − cΔ).
+    pub fn side_names(&self) -> [String; 2] {
+        match &self.spsa {
+            Some(_) => ["+", "-"].map(|s| format!("{}{s}", self.engines[0].name)),
+            None => [0, 1].map(|i| self.engines[i].name.clone()),
+        }
+    }
+
     pub fn validate(&self) -> Result<(), TourneyError> {
         let bad = |m: String| Err(TourneyError::Spec(m));
-        if self.engines.len() != 2 {
-            return bad(format!("a test needs two engines, not {}", self.engines.len()));
-        }
         if self.engines.iter().any(|e| e.name.trim().is_empty()) {
             return bad("every engine needs a name".into());
         }
-        if self.engines[0].name == self.engines[1].name {
+        if let Some(spsa) = &self.spsa {
+            if self.engines.len() != 1 {
+                return bad(format!("an SPSA run needs one engine, not {}", self.engines.len()));
+            }
+            if self.sprt.is_some() || self.max_pairs.is_some() {
+                return bad("an SPSA run has no SPRT or max_pairs; it plays its iterations".into());
+            }
+            spsa.validate().map_err(TourneyError::Spec)?;
+            if let Some(p) = spsa.params.iter().find(|p| self.engines[0].options.contains_key(&p.name)) {
+                return bad(format!("{} is both an engine option and an SPSA parameter", p.name));
+            }
+        } else if self.engines.len() != 2 {
+            return bad(format!("a test needs two engines, not {}", self.engines.len()));
+        } else if self.engines[0].name == self.engines[1].name {
             return bad(format!("both engines are named {:?}", self.engines[0].name));
         }
         if let Some(tc) = &self.time_control
@@ -219,7 +285,7 @@ impl TestSpec {
             return bad("max_pairs must be at least 1".into());
         }
         match self.sprt {
-            None if self.max_pairs.is_none() => {
+            None if self.pair_limit().is_none() => {
                 return bad("give an SPRT, max_pairs, or both, so the test ends".into());
             }
             Some(s) if s.elo1 <= s.elo0 => return bad("the SPRT's elo1 must be above elo0".into()),
@@ -308,6 +374,63 @@ mod tests {
         assert!(TestSpec::parse(&growth).unwrap_err().contains("growth"));
         let limits = format!("{SPEC}\n        [memory]\n        restart_mb = 900\n        limit_mb = 800");
         assert!(TestSpec::parse(&limits).unwrap_err().contains("restart_mb"));
+    }
+
+    const SPSA: &str = r#"
+        name = "tune"
+        time_control = "2s/30s/100/0/0/120"
+        [spsa]
+        iterations = 100
+        [[spsa.params]]
+        name = "eval_frozen"
+        start = 1
+        min = 0
+        max = 3
+        c_end = 0.1
+        [[spsa.params]]
+        name = "tune_rhome_first_row"
+        start = 3
+        min = 0
+        max = 10
+        int = true
+        c_end = 1
+        r_end = 0.003
+        [[engines]]
+        name = "opfor"
+        program = "bin/opfor"
+        options = { hash = 64 }
+    "#;
+
+    #[test]
+    fn reads_and_writes_an_spsa_spec() {
+        let spec = TestSpec::parse(SPSA).unwrap();
+        let spsa = spec.spsa.as_ref().unwrap();
+        assert_eq!((spsa.pairs_per_iteration, spsa.alpha, spsa.gamma, spsa.a_ratio), (8, 0.602, 0.101, 0.1));
+        assert_eq!(spsa.params[0].start, 1.0);
+        assert_eq!(spsa.params[0].r_end, 0.002);
+        assert!(spsa.params[1].int && !spsa.params[0].int);
+        assert_eq!(spec.pair_limit(), Some(800));
+        assert_eq!(spec.side_names(), ["opfor+", "opfor-"]);
+        assert_eq!(spec.engine(1).name, "opfor");
+        assert_eq!(TestSpec::parse(&spec.to_toml()).unwrap(), spec);
+    }
+
+    #[test]
+    fn refuses_spsa_specs_that_cannot_run() {
+        let two = format!("{SPSA}\n        [[engines]]\n        name = \"b\"\n        program = \"b\"");
+        assert!(TestSpec::parse(&two).unwrap_err().contains("one engine"));
+        let limit = SPSA.replace("[spsa]", "max_pairs = 5\n        [spsa]");
+        assert!(TestSpec::parse(&limit).unwrap_err().contains("max_pairs"));
+        let bounds = SPSA.replace("start = 3", "start = 30");
+        assert!(TestSpec::parse(&bounds).unwrap_err().contains("start between"));
+        let step = SPSA.replace("c_end = 1\n", "c_end = 0\n");
+        assert!(TestSpec::parse(&step).unwrap_err().contains("c_end"));
+        let twice = SPSA.replace("tune_rhome_first_row", "eval_frozen");
+        assert!(TestSpec::parse(&twice).unwrap_err().contains("twice"));
+        let clash = SPSA.replace("hash = 64", "eval_frozen = 2");
+        assert!(TestSpec::parse(&clash).unwrap_err().contains("both an engine option"));
+        let none = SPSA.replace("iterations = 100", "iterations = 0");
+        assert!(TestSpec::parse(&none).unwrap_err().contains("at least 1"));
     }
 
     #[test]

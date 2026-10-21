@@ -410,3 +410,46 @@ async fn an_undecided_test_carries_on_when_its_limit_rises() {
     assert_eq!(daemon.info(&t.id).unwrap().undecided_below, None);
     close(&daemon).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_spsa_run_carries_on_across_a_restart_and_reports_its_parameters() {
+    let tmp = tempfile::tempdir().unwrap();
+    let program = test_engine().display().to_string();
+    // Long enough, one game at a time, to be paused partway.
+    let spec = TestSpec::parse(&format!(
+        "name = \"tune\"\ntime_control = \"0s/30s/100/0/12t\"\n\
+         [spsa]\niterations = 30\npairs_per_iteration = 1\n\
+         [[spsa.params]]\nname = \"weight\"\nstart = 1.0\nmin = 0.0\nmax = 2.0\nc_end = 0.1\nr_end = 0.5\n\
+         [[engines]]\nname = \"rand\"\nprogram = \"{}\"\n",
+        program.replace(std::path::MAIN_SEPARATOR, "/")
+    ))
+    .unwrap();
+    let daemon = Daemon::start(tmp.path(), 1).unwrap();
+    let mut rx = daemon.subscribe();
+    let t = daemon.submit(spec, 0).unwrap();
+    assert_eq!(t.engines, ["rand+", "rand-"]);
+    assert_eq!(t.max_pairs, Some(30));
+    let spsa = t.spsa.as_ref().unwrap();
+    assert_eq!((spsa.done, spsa.iterations, spsa.params[0].value), (0, 30, 1.0));
+    let refused = daemon.set_max_pairs(&t.id, Some(10)).unwrap_err();
+    assert!(refused.to_string().contains("SPSA"), "{refused}");
+    events_until(&mut rx, |e| changed(e, &t.id).is_some_and(|t| t.spsa.as_ref().unwrap().done >= 1)).await;
+    daemon.pause(&t.id).unwrap();
+    close(&daemon).await;
+
+    let daemon = Daemon::start(tmp.path(), 1).unwrap();
+    let before = daemon.info(&t.id).unwrap().spsa.unwrap();
+    assert!(before.done >= 1);
+    let mut rx = daemon.subscribe();
+    daemon.resume(&t.id).unwrap();
+    let seen = events_until(&mut rx, |e| finished(e, &t.id)).await;
+    let last = seen.iter().rev().find_map(|e| changed(e, &t.id)).unwrap();
+    assert_eq!(last.end, Some(RunEnd::MaxPairs));
+    assert_eq!(last.summary.games, 60);
+    let after = last.spsa.as_ref().unwrap();
+    assert_eq!(after.done, 30);
+    let history = std::fs::read_to_string(last.path.join(howdah_tourney::SPSA_HISTORY_FILE)).unwrap();
+    assert_eq!(history.lines().count(), 30);
+    assert!((0.0..=2.0).contains(&after.params[0].value));
+    close(&daemon).await;
+}
