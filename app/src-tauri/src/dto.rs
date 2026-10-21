@@ -1554,6 +1554,10 @@ pub struct ProjectionView {
     pub done: f64,
     /// Games left when it ends, at the 10th, 50th and 90th percentiles.
     pub games_left: [u32; 3],
+    /// The same among the endings that pass or fail, and among those that
+    /// don't; null when none ended that way.
+    pub games_if_decided: Option<[u32; 3]>,
+    pub games_if_not: Option<[u32; 3]>,
     /// With no pair limit, the 90th percentile is at the simulation's end
     /// and only a lower bound.
     pub open_ended: bool,

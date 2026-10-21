@@ -15,6 +15,7 @@
     cutoffPercent,
     decideText,
     endingText,
+    endsRows,
     endsText,
     endsTimeText,
     gamesPerHour,
@@ -102,6 +103,7 @@
 
   const pos = $derived(test ? llrPosition(test) : null);
   const perHour = $derived(gamesPerHour(games.map((g) => g.finished)));
+  const ends = $derived(test ? endsRows(test) : null);
   const removable = $derived(test != null && test.status !== 'active' && test.running.length === 0);
   /** The settings in brief, for beside the Settings button. */
   const settingsText = $derived.by(() => {
@@ -168,15 +170,20 @@
             {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
           </dd>
         {/if}
-        {#if endsText(test)}
+        {#if ends}
           <dt>Ends</dt>
           <dd
-            title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings"
+            title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings; apart for passing or failing and not, when both are likely"
           >
-            {endsText(test)}{#if endsTimeText(test, perHour)}<span
-                title="At the pace of the games since the last pause, {perHour?.toFixed(1)} an hour"
-                >, {endsTimeText(test, perHour)}</span
-              >{/if}
+            {#each ends as row (row.label)}
+              {@const games = endsText(test, row.gamesLeft)}
+              {@const time = endsTimeText(test, perHour, row.gamesLeft)}
+              <div>
+                {row.label ? `${row.label}: ${games}` : games}{#if time}<span
+                    title="At the pace of the games since the last pause, {perHour?.toFixed(1)} an hour">, {time}</span
+                  >{/if}
+              </div>
+            {/each}
           </dd>
         {/if}
         {#if oddsText(test) || decideText(test)}

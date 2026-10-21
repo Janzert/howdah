@@ -299,7 +299,20 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
   21%, 36% and 43% against 22%, 34% and 44%
   (`project_is_calibrated_at_length`, ignored by default). How good the
   early projections are depends on how well the prior fits the changes
-  being tested; after a few hundred pairs the results outweigh it. A
+  being tested; after a few hundred pairs the results outweigh it.
+  Test lengths fall into two groups, a decision along the way or running
+  on to near the end, so the overall median often sits between them.
+  `project` also gives the percentiles among the paths that pass or fail
+  and among those that don't, and the test page shows the two as rows
+  ("if it decides: …", "if it doesn't: …") when each is at least 15%
+  likely under a pair limit. Replayed on eleven real tests at even
+  spacing, each row held the real ending in its 80% range 79% (deciding)
+  and 100% (not deciding, mostly runs to the limit) of the times it would
+  have shown; over 150 tests drawn from the prior with the 5% cutoff,
+  83% and 79%, each with its median at the real length (×1.01, ×0.98).
+  (Checkpoints for such checks go at even spacing: spacing them by each
+  test's real length packs short tests' checkpoints closer, and makes a
+  calibrated projection look long.) A
   projection takes tens of milliseconds, so the daemon keeps each
   test's last one and works it out again only when the pair counts,
   limit or cutoff change, outside the queue's lock.

@@ -71,14 +71,43 @@ function roughly(n: number): number {
 }
 
 /** When a running SPRT test is likely to end, in games, to follow "Ends":
- * `in about 1800 games (920–3600)`, the median and the middle 80%; null
- * without a projection. */
-export function endsText(t: TestView): string | null {
+ * `in about 1800 games (920–3600)`, the median and the middle 80% of
+ * `gamesLeft` (by default every ending's); null without a projection. */
+export function endsText(t: TestView, gamesLeft = t.projection?.gamesLeft): string | null {
   const p = t.projection;
-  if (p == null || t.status === 'finished') return null;
-  const [lo, mid, hi] = p.gamesLeft.map(roughly);
+  if (p == null || gamesLeft == null || t.status === 'finished') return null;
+  const [lo, mid, hi] = gamesLeft.map(roughly);
   if (hi === 0) return 'once the running games finish';
   return `in about ${mid} games (${lo}–${hi}${p.openEnded ? '+' : ''})`;
+}
+
+/** Below this chance, passing or failing (or not) gets no row of its own
+ * in [`endsRows`]. */
+const LIKELY = 0.15;
+
+/** One of the panel's Ends rows: what it's for (null for the only one) and
+ * the games left at the 10th, 50th and 90th percentiles. */
+export interface EndsRow {
+  label: string | null;
+  gamesLeft: [number, number, number];
+}
+
+/** The panel's Ends rows for a running SPRT test: one for every ending,
+ * or, when it may well decide and may well not (each at least 15%) before
+ * its pair limit, one for each, since the overall median then falls
+ * between a decision along the way and running on to near the end. Null
+ * without a projection. */
+export function endsRows(t: TestView): EndsRow[] | null {
+  const p = t.projection;
+  if (p == null || t.status === 'finished') return null;
+  const decides = p.pass + p.fail;
+  if (t.maxPairs != null && p.gamesIfDecided && p.gamesIfNot && decides >= LIKELY && 1 - decides >= LIKELY) {
+    return [
+      { label: 'if it decides', gamesLeft: p.gamesIfDecided },
+      { label: "if it doesn't", gamesLeft: p.gamesIfNot },
+    ];
+  }
+  return [{ label: null, gamesLeft: p.gamesLeft }];
 }
 
 /** Games looked back over for the pace. */
@@ -108,13 +137,14 @@ function roughTime(hours: number): string {
 }
 
 /** When an active SPRT test is likely to end, in time, at `perHour`
- * games an hour: `about 6 h (3–12 h)`, the median and the middle 80%;
- * null without a projection or a pace. */
-export function endsTimeText(t: TestView, perHour: number | null): string | null {
+ * games an hour: `about 6 h (3–12 h)`, the median and the middle 80% of
+ * `gamesLeft` (by default every ending's); null without a projection or a
+ * pace. */
+export function endsTimeText(t: TestView, perHour: number | null, gamesLeft = t.projection?.gamesLeft): string | null {
   const p = t.projection;
-  if (p == null || perHour == null || t.status !== 'active') return null;
-  if (p.gamesLeft[2] === 0) return null;
-  const [lo, mid, hi] = p.gamesLeft.map((n) => roughTime(n / perHour));
+  if (p == null || gamesLeft == null || perHour == null || t.status !== 'active') return null;
+  if (gamesLeft[2] === 0) return null;
+  const [lo, mid, hi] = gamesLeft.map((n) => roughTime(n / perHour));
   const unit = (s: string) => s.split(' ')[1];
   const from = unit(lo) === unit(hi) ? lo.split(' ')[0] : lo;
   return `about ${mid} (${from}–${hi}${p.openEnded ? '+' : ''})`;

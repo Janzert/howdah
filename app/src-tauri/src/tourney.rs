@@ -638,6 +638,8 @@ pub fn test_view(t: &TestInfo) -> TestView {
             undecided: p.undecided,
             done: p.done,
             games_left: p.games_left,
+            games_if_decided: p.games_if_decided,
+            games_if_not: p.games_if_not,
             open_ended: t.max_pairs.is_none() && p.pairs_left[2] >= howdah_tourney::NO_LIMIT_HORIZON,
         }),
         repeated: s.repeated,

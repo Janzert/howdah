@@ -281,6 +281,14 @@ pub struct Projection {
     /// incomplete pairs. Games running when the test ends still finish,
     /// so a few more than this are played.
     pub games_left: [u32; 3],
+    /// [`Self::games_left`] among the endings that pass or fail, and among
+    /// those that don't (undecided, or every pair played); None when no
+    /// simulation ended that way. The two are often far apart: a test
+    /// either decides along the way or runs on to near its end.
+    #[serde(default)]
+    pub games_if_decided: Option<[u32; 3]>,
+    #[serde(default)]
+    pub games_if_not: Option<[u32; 3]>,
 }
 
 /// Within this many times the cutoff, [`project`] checks the chance to
@@ -336,7 +344,16 @@ fn project_paths(
     if start >= limit || first.zip(cutoff).is_some_and(|(f, c)| f < c) {
         let p = [0; 3];
         let (undecided, done) = if start >= limit { (0.0, 1.0) } else { (1.0, 0.0) };
-        return Some(Projection { pass: 0.0, fail: 0.0, undecided, done, pairs_left: p, games_left: p });
+        return Some(Projection {
+            pass: 0.0,
+            fail: 0.0,
+            undecided,
+            done,
+            pairs_left: p,
+            games_left: p,
+            games_if_decided: None,
+            games_if_not: Some(p),
+        });
     }
 
     let (lower, upper) = llr_bounds(sp);
@@ -366,6 +383,7 @@ fn project_paths(
     let every = (left / 40).max(1);
     let mut ends = [0u32; 4];
     let mut lengths = Vec::with_capacity(paths as usize);
+    let (mut decided, mut not) = (Vec::new(), Vec::new());
     let mut path: Vec<[u32; 3]> = Vec::new();
     for _ in 0..paths {
         let u = rng.unit() * cdf[cdf.len() - 1];
@@ -417,10 +435,9 @@ fn project_paths(
         };
         ends[end] += 1;
         lengths.push(played);
+        if end < 2 { &mut decided } else { &mut not }.push(played);
     }
-    lengths.sort_unstable();
-    let at = |p: f64| lengths[((p * f64::from(paths)) as usize).min(lengths.len() - 1)];
-    let pairs_left = [at(0.1), at(0.5), at(0.9)];
+    let pairs_left = percentiles(&mut lengths).expect("paths simulated");
     let share = |k: usize| f64::from(ends[k]) / f64::from(paths);
     Some(Projection {
         pass: share(0),
@@ -429,7 +446,18 @@ fn project_paths(
         done: share(3),
         pairs_left,
         games_left: pairs_left.map(games),
+        games_if_decided: percentiles(&mut decided).map(|p| p.map(games)),
+        games_if_not: percentiles(&mut not).map(|p| p.map(games)),
     })
+}
+
+/// The 10th, 50th and 90th percentiles of `lengths` (sorting it); None
+/// when it's empty.
+fn percentiles(lengths: &mut [u32]) -> Option<[u32; 3]> {
+    lengths.sort_unstable();
+    let n = lengths.len();
+    let at = |p: f64| lengths[((p * n as f64) as usize).min(n - 1)];
+    (n > 0).then(|| [at(0.1), at(0.5), at(0.9)])
 }
 
 /// The prior for a test's Elo difference in [`project`] (unnormalized): a
@@ -723,6 +751,12 @@ mod tests {
         assert!(p.pairs_left[0] <= p.pairs_left[1] && p.pairs_left[1] <= p.pairs_left[2], "{p:?}");
         assert!(p.pairs_left[2] <= 2900, "{p:?}");
         assert_eq!(p.games_left, p.pairs_left.map(|n| 2 * n), "no partial pairs");
+        // Split by ending: the decided ones come sooner (some of them very
+        // soon), the undecided ones close to the limit.
+        let (yes, no) = (p.games_if_decided.unwrap(), p.games_if_not.unwrap());
+        assert!(yes[0] <= yes[1] && yes[1] <= yes[2] && no[0] <= no[1] && no[1] <= no[2], "{p:?}");
+        assert!(yes[1] < p.games_left[1] && p.games_left[1] < no[1], "{p:?}");
+        assert!(yes[0] <= p.games_left[0] && no[2] >= p.games_left[2], "{p:?}");
         // Without the cutoff it plays on to the limit instead.
         let on = project(SPRT, &expected(100, score_from_elo(5.0)), Some(3000), None).unwrap();
         assert_eq!(on.undecided, 0.0);
@@ -731,6 +765,9 @@ mod tests {
         // some of that lead to be luck).
         let strong = project(CUT, &expected(200, score_from_elo(40.0)), Some(3000), Some(0.05)).unwrap();
         assert!(strong.pass > 0.8 && strong.pairs_left[1] < 700, "{strong:?}");
+        let sure = project(CUT, &expected(400, score_from_elo(80.0)), Some(3000), Some(0.05)).unwrap();
+        assert_eq!((sure.pass, sure.games_if_not), (1.0, None), "{sure:?}");
+        assert_eq!(sure.games_if_decided, Some(sure.games_left));
         // The same counts give the same projection.
         assert_eq!(
             project(CUT, &expected(100, 0.51), Some(3000), Some(0.05)),
@@ -746,6 +783,7 @@ mod tests {
         // Already below the cutoff (a lowered limit): it ends now.
         let late = project(CUT, &expected(2900, score_from_elo(5.0)), Some(3000), Some(0.05)).unwrap();
         assert_eq!((late.undecided, late.pairs_left), (1.0, [0; 3]));
+        assert_eq!((late.games_if_decided, late.games_if_not), (None, Some([0; 3])));
         // A game played in an unfinished pair is one fewer to play.
         let odd = Summary { games: 201, ..expected(100, score_from_elo(40.0)) };
         let p = project(SPRT, &odd, Some(3000), None).unwrap();

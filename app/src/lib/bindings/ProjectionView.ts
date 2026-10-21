@@ -16,6 +16,11 @@ pass: number, fail: number, undecided: number, done: number,
  */
 gamesLeft: [number, number, number], 
 /**
+ * The same among the endings that pass or fail, and among those that
+ * don't; null when none ended that way.
+ */
+gamesIfDecided: [number, number, number] | null, gamesIfNot: [number, number, number] | null, 
+/**
  * With no pair limit, the 90th percentile is at the simulation's end
  * and only a lower bound.
  */

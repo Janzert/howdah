@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ProjectionView } from './bindings/ProjectionView';
 import type { TestView } from './bindings/TestView';
 import {
   briefText,
@@ -6,6 +7,7 @@ import {
   decideText,
   detailsText,
   endingText,
+  endsRows,
   endsText,
   endsTimeText,
   gamesPerHour,
@@ -123,6 +125,8 @@ describe('briefText', () => {
       undecided: 0,
       done: 0,
       gamesLeft: [925, 1843, 3612] as [number, number, number],
+      gamesIfDecided: null,
+      gamesIfNot: null,
       openEnded: false,
     };
     expect(briefText(view({ llr: 0.4412, maxPairs: 3000, decideChance: 0.623 }))).toBe('12–9 +70.4 0.44');
@@ -135,12 +139,14 @@ describe('briefText', () => {
 });
 
 describe('projections', () => {
-  const projection = {
+  const projection: ProjectionView = {
     pass: 0.2234,
     fail: 0.36,
     undecided: 0.4166,
     done: 0,
-    gamesLeft: [925, 1843, 3612] as [number, number, number],
+    gamesLeft: [925, 1843, 3612],
+    gamesIfDecided: [310, 1024, 2650],
+    gamesIfNot: [3800, 4410, 5200],
     openEnded: false,
   };
 
@@ -155,6 +161,24 @@ describe('projections', () => {
       'once the running games finish',
     );
     expect(endsText(view({ projection, status: 'finished' }))).toBeNull();
+    expect(endsText(view({ projection }), [310, 1024, 2650])).toBe('in about 1000 games (310–2700)');
+  });
+
+  it('splits the ends when a test may well decide and may well not', () => {
+    const one = (p: ProjectionView, over: Partial<TestView> = {}) => endsRows(view({ projection: p, ...over }));
+    expect(one(projection, { maxPairs: 3000 })).toEqual([
+      { label: 'if it decides', gamesLeft: [310, 1024, 2650] },
+      { label: "if it doesn't", gamesLeft: [3800, 4410, 5200] },
+    ]);
+    const all = [{ label: null, gamesLeft: [925, 1843, 3612] }];
+    // No pair limit: not deciding is just going on.
+    expect(one(projection)).toEqual(all);
+    // Likely to decide, or likely not to.
+    expect(one({ ...projection, pass: 0.5, fail: 0.4, undecided: 0.1 }, { maxPairs: 3000 })).toEqual(all);
+    expect(one({ ...projection, pass: 0.05, fail: 0.05, undecided: 0.9 }, { maxPairs: 3000 })).toEqual(all);
+    expect(one({ ...projection, gamesIfNot: null }, { maxPairs: 3000 })).toEqual(all);
+    expect(one(projection, { maxPairs: 3000, status: 'finished' })).toBeNull();
+    expect(endsRows(view())).toBeNull();
   });
 
   it('words how it is likely to end', () => {
@@ -183,6 +207,8 @@ describe('detailsText', () => {
       undecided: 0,
       done: 0,
       gamesLeft: [10, 20, 30] as [number, number, number],
+      gamesIfDecided: [10, 20, 30] as [number, number, number],
+      gamesIfNot: null,
       openEnded: false,
     };
     expect(detailsText(view({ projection })).split('\n').at(-1)).toBe(
@@ -207,7 +233,15 @@ describe('time left', () => {
   });
 
   it('turns the games left into hours', () => {
-    const projection = { pass: 0.2, fail: 0.3, undecided: 0.5, done: 0, openEnded: false };
+    const projection = {
+      pass: 0.2,
+      fail: 0.3,
+      undecided: 0.5,
+      done: 0,
+      gamesIfDecided: null,
+      gamesIfNot: null,
+      openEnded: false,
+    };
     const t = (gamesLeft: [number, number, number], over: Partial<TestView> = {}) =>
       view({ projection: { ...projection, gamesLeft }, ...over });
     expect(endsTimeText(t([60, 360, 720]), 60)).toBe('about 6 h (1–12 h)');
@@ -215,5 +249,6 @@ describe('time left', () => {
     expect(endsTimeText(t([20, 60, 4800]), null)).toBeNull();
     expect(endsTimeText(t([20, 60, 4800], { status: 'paused' }), 60)).toBeNull();
     expect(endsTimeText(t([0, 0, 0]), 60)).toBeNull();
+    expect(endsTimeText(t([0, 0, 0]), 60, [600, 1200, 2400])).toBe('about 20 h (10–40 h)');
   });
 });
