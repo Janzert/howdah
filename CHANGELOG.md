@@ -5,6 +5,21 @@ Notable changes to Howdah, newest first. The format follows
 follow [semantic versioning](https://semver.org/) (0.x while Howdah is
 young).
 
+## [Unreleased]
+
+### Added
+
+- SPSA parameter tuning in the test daemon: a spec with `[spsa]` plays
+  one engine against itself with its parameters (AEI options) nudged
+  apart, and steps them by each iteration's results, with OpenBench's
+  schedules and defaults. A run takes slots like a test, can be paused,
+  resumed, stopped and archived, and picks up where it left off after a
+  restart. `howdah-tourney show` and `list` print the iterations done
+  and the current values, and `spsa-history.jsonl` in its directory has
+  the values after every iteration, for plotting. How it works is in
+  `docs/TOURNAMENTS.md`; the app's Engine tests panel doesn't show the
+  values yet.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added
