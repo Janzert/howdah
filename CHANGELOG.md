@@ -5,6 +5,50 @@ Notable changes to Howdah, newest first. The format follows
 follow [semantic versioning](https://semver.org/) (0.x while Howdah is
 young).
 
+## [0.3.0] - 2026-10-21
+
+### Added
+
+- Engine tests project how a running SPRT test will end: the chance it
+  passes, fails or runs out its pair limit, and about how many games are
+  left (with a range, and as a time at the test's recent pace). When a
+  test is as likely to decide early as to run on, the test panel gives
+  the games left for each. `howdah-tourney show` and `list` print the
+  projection too.
+- The chance an SPRT still decides within its pair limit, on the test
+  panel and in the command line.
+- A test with a pair limit can end undecided once its chance of
+  deciding in time falls below a cutoff. New tests in the app stop
+  undecided under 5% (a checkbox in the New test dialog). The cutoff
+  can be changed while a test runs (`howdah-tourney undecided-below`);
+  lowering or clearing it carries on a test that ended undecided.
+- The sidebar's test rows show a flask whose fluid shows the SPRT's LLR
+  by color and the share of the pair limit played by level, the games
+  playing while a test is active, and score, Elo, LLR and games left,
+  with the details in the row's tooltip.
+- Shutting down the test daemon shows at once in the Engine tests
+  panel, and a shutdown that lets running games finish can be called
+  off (Cancel shutdown, `howdah-tourney shutdown --cancel`).
+
+### Changed
+
+- A test's pair limit, undecided cutoff, games at once and priority are
+  changed in a Settings dialog, with Pause and Stop beside the engines.
+- Engine test cards give the end estimate, show running games in their
+  badge, and leave pairs out of the score line, which overflowed after
+  about a thousand games.
+- `howdah-tourney.exe` carries Windows version information, since
+  Defender took the unsigned program without it for a trojan.
+
+### Fixed
+
+- Engines started by the installed app on Windows no longer each open a
+  console window.
+- Docked boards load on Windows; they stayed blank and couldn't be
+  closed.
+- A finished test game no longer shows as running, or can be followed
+  as live, until its engines restart.
+
 ## [0.2.1] - 2026-10-17
 
 ### Added
@@ -259,7 +303,8 @@ Gatekeeper.
 - Keeps playing through network drops and sleep, and resumes games in
   progress.
 
-[Unreleased]: https://github.com/Janzert/howdah/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Janzert/howdah/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Janzert/howdah/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Janzert/howdah/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Janzert/howdah/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Janzert/howdah/releases/tag/v0.1.0
