@@ -237,14 +237,8 @@ impl Tourney {
         let mut cmd = std::process::Command::new(&program);
         cmd.arg("--data-dir").arg(&dir).args(["daemon", "--slots", &slots.to_string()]);
         cmd.stdin(std::process::Stdio::null()).stdout(log).stderr(err_log);
-        // Out of the app's process group (and console), so it outlives
-        // the app and a Ctrl-C meant for it.
-        #[cfg(unix)]
-        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-        #[cfg(windows)]
-        std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0000_0200 | 0x0800_0000);
-        let mut child =
-            cmd.spawn().map_err(|e| ApiError::state(format!("couldn't start {}: {e}", program.display())))?;
+        let mut child = spawn_detached(&mut cmd)
+            .map_err(|e| ApiError::state(format!("couldn't start {}: {e}", program.display())))?;
         // Reap it when it exits, so it doesn't linger as a zombie.
         std::thread::spawn(move || child.wait());
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -432,6 +426,33 @@ impl Tourney {
             closing: Some(closing),
         };
         emit(&self.events, TOURNEY_CHANGED, update);
+    }
+}
+
+/// Starts the daemon out of the app's process group (and console), so it
+/// outlives the app and a Ctrl-C meant for it. On Windows it also breaks
+/// away from the app's job: `cargo run` (so `tauri dev`) puts the app in
+/// a job that's killed with cargo, which took a running test's daemon down
+/// on every rebuild. Cargo's job allows breaking away; a job that doesn't
+/// refuses the flag, and the daemon then starts inside it.
+fn spawn_detached(cmd: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    #[cfg(unix)]
+    {
+        std::os::unix::process::CommandExt::process_group(cmd, 0);
+        cmd.spawn()
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        const ERROR_ACCESS_DENIED: i32 = 5;
+        let flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW;
+        match cmd.creation_flags(flags | CREATE_BREAKAWAY_FROM_JOB).spawn() {
+            Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => cmd.creation_flags(flags).spawn(),
+            spawned => spawned,
+        }
     }
 }
 
