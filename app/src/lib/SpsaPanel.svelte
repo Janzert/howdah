@@ -278,7 +278,7 @@
             style="left: {at(p, p.value - p.c) * 100}%; width: {(at(p, p.value + p.c) - at(p, p.value - p.c)) * 100}%"
           ></span>
           <span class="start" style="left: {at(p, p.start) * 100}%"></span>
-          <span class="dot" style="left: {at(p, p.value) * 100}%"></span>
+          <span class="theta" style="left: {at(p, p.value) * 100}%"></span>
         </span>
         <svg class="spark" width={SPARK_W} height={SPARK_H} aria-hidden="true">
           <line x1="0" x2={SPARK_W} y1={s.startY} y2={s.startY} />
@@ -452,7 +452,7 @@
     height: 12px;
     background: var(--muted);
   }
-  .dot {
+  .theta {
     position: absolute;
     top: 3px;
     width: 8px;
