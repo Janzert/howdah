@@ -188,6 +188,7 @@ pub fn run() {
             commands::tourney_status,
             commands::tourney_tests,
             commands::tourney_test,
+            commands::tourney_spsa_history,
             commands::tourney_submit,
             commands::tourney_control,
             commands::tourney_set_priority,

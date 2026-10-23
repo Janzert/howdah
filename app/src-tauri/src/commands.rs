@@ -9,8 +9,8 @@ use crate::dto::{
     ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatMessageView, ChatRoomView,
     EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames, GameroomStatus,
     MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec,
-    PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView, StartedBotView,
-    StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
+    PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView, SpsaStepView,
+    StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
 };
 
 #[tauri::command]
@@ -717,6 +717,15 @@ pub async fn tourney_tests(state: State<'_, Backend>) -> Result<Vec<TestView>, A
 #[tauri::command]
 pub async fn tourney_test(state: State<'_, Backend>, id: String) -> Result<TestDetailView, ApiError> {
     state.tourney_test(&id).await
+}
+
+#[tauri::command]
+pub async fn tourney_spsa_history(
+    state: State<'_, Backend>,
+    id: String,
+    skip: usize,
+) -> Result<Vec<SpsaStepView>, ApiError> {
+    state.tourney_spsa_history(&id, skip).await
 }
 
 #[tauri::command]

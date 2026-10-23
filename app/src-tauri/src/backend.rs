@@ -35,8 +35,8 @@ use crate::dto::{
     ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames,
     GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PlayerSpec,
     PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
-    ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, StartedBotView,
-    StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
+    ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, SpsaStepView,
+    StartedBotView, StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -896,6 +896,11 @@ impl Backend {
         self.tourney.test(id).await
     }
 
+    /// An SPSA run's steps after the first `skip`.
+    pub async fn tourney_spsa_history(&self, id: &str, skip: usize) -> Result<Vec<SpsaStepView>, ApiError> {
+        self.tourney.spsa_history(id, skip).await
+    }
+
     /// Adds a test of two engines from the engine list to the daemon's queue.
     pub async fn tourney_submit(&self, spec: NewTestSpec) -> Result<TestView, ApiError> {
         let engines = {
@@ -1336,6 +1341,9 @@ impl Backend {
             "tourney_status" => ok(self.tourney_status().await),
             "tourney_tests" => ok(self.tourney_tests().await?),
             "tourney_test" => ok(self.tourney_test(&arg::<String>(args, "id")?).await?),
+            "tourney_spsa_history" => ok(self
+                .tourney_spsa_history(&arg::<String>(args, "id")?, arg::<usize>(args, "skip")?)
+                .await?),
             "tourney_submit" => ok(self.tourney_submit(arg(args, "spec")?).await?),
             "tourney_control" => {
                 ok(self.tourney_control(&arg::<String>(args, "id")?, &arg::<String>(args, "action")?).await?)

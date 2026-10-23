@@ -13,6 +13,7 @@
   import Icon from './Icon.svelte';
   import ArchiveDialog from './ArchiveDialog.svelte';
   import NewTestDialog from './NewTestDialog.svelte';
+  import { spsaProgress } from './spsa';
   import { endsText, llrPosition, scoreText, testState } from './tests';
   import { tourney } from './tourney.svelte';
 
@@ -233,17 +234,29 @@
                         >
                       {:else}<span class="state {testState(t)}">{testState(t)}</span>{/if}
                     </span>
-                    <span class="meta">{t.engines[0]} vs {t.engines[1]}</span>
-                    <span class="meta">
-                      {scoreText(t, true)}{t.elo ? `, Elo ${t.elo}` : ''}{t.status !== 'active' && t.running.length > 0
-                        ? `, ${t.running.length} playing`
-                        : ''}
-                    </span>
-                    {#if endsText(t)}<span class="meta">Ends {endsText(t)}</span>{/if}
-                    {#if pos != null}
-                      <span class="llr" title="The SPRT's LLR between its bounds">
-                        <span class="mark" style="left: {pos * 100}%"></span>
+                    <span class="meta"
+                      >{t.spsa
+                        ? `SPSA tuning of ${t.spsa.params.length} parameters`
+                        : `${t.engines[0]} vs ${t.engines[1]}`}</span
+                    >
+                    {#if t.spsa}
+                      <span class="meta">Iteration {t.spsa.done} of {t.spsa.iterations}, {t.games} games</span>
+                      <span class="progress" title="Iterations stepped"
+                        ><span style="width: {(spsaProgress(t) ?? 0) * 100}%"></span></span
+                      >
+                    {:else}
+                      <span class="meta">
+                        {scoreText(t, true)}{t.elo ? `, Elo ${t.elo}` : ''}{t.status !== 'active' &&
+                        t.running.length > 0
+                          ? `, ${t.running.length} playing`
+                          : ''}
                       </span>
+                      {#if endsText(t)}<span class="meta">Ends {endsText(t)}</span>{/if}
+                      {#if pos != null}
+                        <span class="llr" title="The SPRT's LLR between its bounds">
+                          <span class="mark" style="left: {pos * 100}%"></span>
+                        </span>
+                      {/if}
                     {/if}
                   </button>
                 </li>
@@ -389,6 +402,19 @@
     margin: 6px 0 2px;
     border-radius: 2px;
     background: linear-gradient(to right, var(--warn), var(--border) 50%, var(--clock-ok));
+  }
+  .progress {
+    display: block;
+    height: 4px;
+    margin: 6px 0 2px;
+    border-radius: 2px;
+    background: color-mix(in oklab, var(--accent) 18%, transparent);
+    overflow: hidden;
+  }
+  .progress span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
   }
   .mark {
     position: absolute;

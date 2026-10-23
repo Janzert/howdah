@@ -256,7 +256,10 @@ plans the engine test and tournament runner.
     out (`spsa-points.jsonl`), `play_game` sends each game's values
     (`game_options`) before it, and `finish` steps θ once an iteration's
     games are all logged (`spsa-history.jsonl`, θ by name). Its pair
-    limit is `pair_limit()`; `TestInfo.spsa` is `SpsaInfo`.
+    limit is `pair_limit()`; `TestInfo.spsa` is `SpsaInfo` (θ, and each
+    parameter's `c` for the next iteration); `Daemon::spsa_history`
+    (`GET /tests/{id}/spsa-history?skip=N`) reads the steps after the
+    first `N`.
   - `Daemon` (`daemon.rs`): a queue of tests in a data directory
     (`default_data_dir`: `$HOWDAH_TOURNEY_DIR`, else `tourney/` in the
     app's local data dir), each with a `state.json` (`TestStatus`,
@@ -645,7 +648,12 @@ plans the engine test and tournament runner.
     watch or open, and Follow: a board with `HandOff.follow`, whose
     game-end dialog counts down 15 s to the test's next game; Pause and
     Stop beside the engines, the settings in brief with Settings…, which
-    opens `TestSettingsDialog.svelte`),
+    opens `TestSettingsDialog.svelte`; an SPSA run shows
+    `SpsaPanel.svelte` in place of the SPRT's results: progress, a
+    `SpsaChart` of θ's mean movement or one parameter's path, and the
+    parameters with range bars and sparklines, its history fetched with
+    `tourney_spsa_history` a step range at a time; `lib/spsa.ts` words
+    and measures it),
     `NewTestDialog.svelte` and `ArchiveDialog.svelte` (archived tests to
     restore or delete); `lib/tests.ts` words a
     test's state and SPRT.

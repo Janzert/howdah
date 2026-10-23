@@ -47,6 +47,7 @@ function view(over: Partial<TestView> = {}): TestView {
     decideChance: null,
     projection: null,
     repeated: 0,
+    spsa: null,
     path: '/tmp/t',
     ...over,
   };

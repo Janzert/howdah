@@ -50,6 +50,7 @@
   import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
   import TestFlask from './lib/TestFlask.svelte';
   import TestPanel from './lib/TestPanel.svelte';
+  import { spsaProgress } from './lib/spsa';
   import { briefText, detailsText, llrPosition, testState } from './lib/tests';
   import TestsScreen from './lib/TestsScreen.svelte';
   import { findTheme } from './lib/theme';
@@ -716,6 +717,8 @@
                             >
                             {#if pos != null}<span class="llr"
                                 ><span class="mark" style="left: {pos * 100}%"></span></span
+                              >{:else if t.spsa}<span class="progress"
+                                ><span style="width: {(spsaProgress(t) ?? 0) * 100}%"></span></span
                               >{/if}
                           {:else if tourney.status && !tourney.status.connected}
                             <span class="test-meta">Test daemon not running</span>
@@ -1137,6 +1140,19 @@
     margin: 4px 0 2px;
     border-radius: 2px;
     background: linear-gradient(to right, var(--warn), var(--border) 50%, var(--clock-ok));
+  }
+  .progress {
+    display: block;
+    height: 3px;
+    margin: 4px 0 2px;
+    border-radius: 2px;
+    background: color-mix(in oklab, var(--accent) 18%, transparent);
+    overflow: hidden;
+  }
+  .progress span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
   }
   .mark {
     position: absolute;

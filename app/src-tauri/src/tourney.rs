@@ -25,7 +25,8 @@ use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, ENGINE_OUTPUT, SharedSession, engine_output};
 use crate::dto::{
     ApiError, ArchivedTestView, EngineOutput, EngineSpec, NewTestSpec, ProjectionView, SprtView,
-    TestDetailView, TestGameRef, TestGameTag, TestGameView, TestView, TourneyStatusView, TourneyUpdate,
+    SpsaParamView, SpsaStepView, SpsaView, TestDetailView, TestGameRef, TestGameTag, TestGameView, TestView,
+    TourneyStatusView, TourneyUpdate,
 };
 use crate::session::{Player, RemoteClock, Session};
 
@@ -106,6 +107,26 @@ impl Tourney {
             client.games(id).await.map_err(api)?.iter().map(|g| game_view(id, &info.engines, g)).collect();
         games.reverse();
         Ok(TestDetailView { test: test_view(&info), games })
+    }
+
+    /// An SPSA run's steps after the first `skip`, θ in the order of its
+    /// parameters.
+    pub async fn spsa_history(&self, id: &str, skip: usize) -> Result<Vec<SpsaStepView>, ApiError> {
+        let client = self.client()?;
+        let info = client.info(id).await.map_err(api)?;
+        let names: Vec<String> =
+            info.spsa.map(|s| s.params.into_iter().map(|p| p.name).collect()).unwrap_or_default();
+        let steps = client.spsa_history(id, skip).await.map_err(api)?;
+        Ok(steps
+            .into_iter()
+            .map(|s| SpsaStepView {
+                iteration: s.iteration,
+                wins: s.wins,
+                losses: s.losses,
+                theta: names.iter().map(|n| s.theta.get(n).copied().unwrap_or(f64::NAN)).collect(),
+                finished: s.finished,
+            })
+            .collect())
     }
 
     /// Adds a test of two engines from the engine list.
@@ -643,6 +664,24 @@ pub fn test_view(t: &TestInfo) -> TestView {
             open_ended: t.max_pairs.is_none() && p.pairs_left[2] >= howdah_tourney::NO_LIMIT_HORIZON,
         }),
         repeated: s.repeated,
+        spsa: t.spsa.as_ref().map(|s| SpsaView {
+            iterations: s.iterations,
+            pairs_per_iteration: s.pairs_per_iteration,
+            done: s.done,
+            params: s
+                .params
+                .iter()
+                .map(|p| SpsaParamView {
+                    name: p.name.clone(),
+                    value: p.value,
+                    start: p.start,
+                    min: p.min,
+                    max: p.max,
+                    int: p.int,
+                    c: p.c,
+                })
+                .collect(),
+        }),
         path: t.path.display().to_string(),
     }
 }

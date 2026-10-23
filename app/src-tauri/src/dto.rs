@@ -1536,6 +1536,9 @@ pub struct TestView {
     pub projection: Option<ProjectionView>,
     /// Games whose moves repeat an earlier game's.
     pub repeated: u32,
+    /// An SPSA tuning run's iterations and parameters; its `engines` are
+    /// the engine at θ + cΔ and at θ − cΔ.
+    pub spsa: Option<SpsaView>,
     pub path: String,
 }
 
@@ -1561,6 +1564,53 @@ pub struct ProjectionView {
     /// With no pair limit, the 90th percentile is at the simulation's end
     /// and only a lower bound.
     pub open_ended: bool,
+}
+
+/// An SPSA tuning run's progress.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SpsaView {
+    pub iterations: u32,
+    pub pairs_per_iteration: u32,
+    /// Iterations played and stepped.
+    pub done: u32,
+    /// θ now, in the spec's order.
+    pub params: Vec<SpsaParamView>,
+}
+
+/// One tuned parameter (an AEI option) of an SPSA run.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SpsaParamView {
+    pub name: String,
+    /// θ now.
+    pub value: f64,
+    pub start: f64,
+    pub min: f64,
+    pub max: f64,
+    /// Sent to the engine rounded.
+    pub int: bool,
+    /// The next iteration's perturbation: a move smaller than this is
+    /// within the noise.
+    pub c: f64,
+}
+
+/// An SPSA iteration's step.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SpsaStepView {
+    pub iteration: u32,
+    /// The θ + cΔ side's wins and losses over the iteration.
+    pub wins: u32,
+    pub losses: u32,
+    /// θ after the step, in the order of `SpsaView.params`.
+    pub theta: Vec<f64>,
+    /// When it ended, in seconds since the Unix epoch.
+    #[ts(type = "number")]
+    pub finished: u64,
 }
 
 /// A finished game of a test.

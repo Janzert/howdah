@@ -17,8 +17,18 @@ young).
   restart. `howdah-tourney show` and `list` print the iterations done
   and the current values, and `spsa-history.jsonl` in its directory has
   the values after every iteration, for plotting. How it works is in
-  `docs/TOURNAMENTS.md`; the app's Engine tests panel doesn't show the
-  values yet.
+  `docs/TOURNAMENTS.md`.
+- An SPSA run's panel in the lobby: iterations, pace and time left, the
+  two sides' score, a chart of the parameters' mean movement from their
+  starts or of one parameter's path, and every parameter with where it
+  stands in its range, its path so far and how far it has moved (in the
+  spec's order, furthest moved first or by name, with a filter). Copy
+  values copies the current values as `name = value` lines. The sidebar
+  and the test cards show the iterations played.
+
+### Changed
+
+- A test's panel lists its newest 100 finished games, with Show more.
 
 ## [0.3.0] - 2026-10-21
 

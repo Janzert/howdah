@@ -1,6 +1,6 @@
 <script lang="ts">
   // A running test's settings that can change along the way: its pair
-  // limit, its undecided cutoff (an SPRT test's), how many of its games run
+  // limit (not an SPSA run's, which plays its iterations), its undecided cutoff (an SPRT test's), how many of its games run
   // at once, and its priority. Saving sends only what changed.
   import { untrack } from 'svelte';
   import { api, errorMessage } from './api';
@@ -30,7 +30,7 @@
   });
 
   const pairs = $derived(pairCount(maxPairs));
-  const canSave = $derived(!!test.sprt || (pairs != null && pairs >= 1));
+  const canSave = $derived(!!test.sprt || !!test.spsa || (pairs != null && pairs >= 1));
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
@@ -39,7 +39,7 @@
     const id = test.id;
     let t = test;
     try {
-      if (pairs !== t.maxPairs) t = await api.tourneySetMaxPairs(id, pairs);
+      if (!t.spsa && pairs !== t.maxPairs) t = await api.tourneySetMaxPairs(id, pairs);
       const cutoff = pairs != null ? percentCutoff(undecided) : null;
       if (t.sprt && (cutoff == null ? null : Number(undecided)) !== cutoffPercent(t)) {
         t = await api.tourneySetUndecidedBelow(id, cutoff);
@@ -61,23 +61,25 @@
   <h2 id="test-settings-title">Test settings</h2>
   <p class="note">{test.name}</p>
   <form onsubmit={submit}>
-    <label for="ts-pairs">Max pairs</label>
-    <div class="field">
-      <input
-        id="ts-pairs"
-        type="number"
-        min="1"
-        bind:value={maxPairs}
-        placeholder={test.sprt ? 'none' : 'needed'}
-        title="End the test after this many pairs of games"
-      />
-      <span class="hint"
-        >{test.sprt
-          ? 'End after this many pairs if the SPRT hasn’t decided (empty: no limit).'
-          : 'End after this many pairs.'}
-        Pairs played so far: {test.pairCounts[0] + test.pairCounts[1] + test.pairCounts[2]}.</span
-      >
-    </div>
+    {#if !test.spsa}
+      <label for="ts-pairs">Max pairs</label>
+      <div class="field">
+        <input
+          id="ts-pairs"
+          type="number"
+          min="1"
+          bind:value={maxPairs}
+          placeholder={test.sprt ? 'none' : 'needed'}
+          title="End the test after this many pairs of games"
+        />
+        <span class="hint"
+          >{test.sprt
+            ? 'End after this many pairs if the SPRT hasn’t decided (empty: no limit).'
+            : 'End after this many pairs.'}
+          Pairs played so far: {test.pairCounts[0] + test.pairCounts[1] + test.pairCounts[2]}.</span
+        >
+      </div>
+    {/if}
     {#if test.sprt}
       <label
         for="ts-undecided"

@@ -34,6 +34,7 @@ import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
 import type { StartedBotView } from './bindings/StartedBotView';
 import type { StepTarget } from './bindings/StepTarget';
+import type { SpsaStepView } from './bindings/SpsaStepView';
 import type { TestDetailView } from './bindings/TestDetailView';
 import type { TestView } from './bindings/TestView';
 import type { TourneyStatusView } from './bindings/TourneyStatusView';
@@ -306,6 +307,8 @@ function makeApi(sid: () => SessionId | null) {
     tourneyTests: () => invoke<TestView[]>('tourney_tests'),
     /** A test with its finished games, newest first. */
     tourneyTest: (id: string) => invoke<TestDetailView>('tourney_test', { id }),
+    /** An SPSA run's steps after the first `skip`. */
+    tourneySpsaHistory: (id: string, skip: number) => invoke<SpsaStepView[]>('tourney_spsa_history', { id, skip }),
     /** Adds a test of two engines from the engine list. */
     tourneySubmit: (spec: NewTestSpec) => invoke<TestView>('tourney_submit', { spec }),
     tourneyControl: (id: string, action: 'pause' | 'resume' | 'stop') =>

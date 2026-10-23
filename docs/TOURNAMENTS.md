@@ -604,8 +604,16 @@ average; its c is at least 0.5 so the two sides differ.
   `concurrency` up to `2 × pairs_per_iteration` that's at most one
   iteration behind, which OpenBench's workers (each taking a point from
   the θ of the moment) accept too.
-- Not done yet: showing a run in the app's Engine tests panel (it shows
-  as `<name>+` against `<name>-`), and plotting the history.
+- **In the app**, a run's test panel shows `SpsaPanel` in place of the
+  SPRT's results (`TestView.spsa`, with each parameter's `c` for the
+  next iteration): progress and pace, the mean movement of θ from its
+  start as a share of each range (or one parameter's path, with its
+  start), and the parameters with a range bar (start, θ, θ ± c), a
+  sparkline and the move. The history comes from `GET
+  /tests/{id}/spsa-history?skip=N`, fetched whole once and then only
+  the steps after those it has, as `TestInfo.spsa.done` rises. "Moved
+  more than c" counts parameters further from their start than the
+  next perturbation, a rough line between a trend and noise.
 
 ## Decided
 

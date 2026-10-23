@@ -1,6 +1,7 @@
 <script lang="ts">
   // One engine test, as a panel of its own in the lobby window (listed
-  // under Engine tests in the sidebar): its results, its running and
+  // under Engine tests in the sidebar): its results (an SPSA run's in
+  // `SpsaPanel`), its running and
   // finished games (each opens on a board: a running one followed live), and pausing,
   // resuming, stopping, and its settings (`TestSettingsDialog`). Once it's not
   // active and has no games running, it can be archived (zipped into the
@@ -10,6 +11,7 @@
   import type { TestGameView } from './bindings/TestGameView';
   import type { TestView } from './bindings/TestView';
   import { on } from './events';
+  import SpsaPanel from './SpsaPanel.svelte';
   import TestSettingsDialog from './TestSettingsDialog.svelte';
   import {
     cutoffPercent,
@@ -38,6 +40,9 @@
   }
   let { id, onOpenGame, onFollow, onRemoved, onClose }: Props = $props();
 
+  /** Finished games listed at first, and added by each Show more. */
+  const GAMES_PAGE = 100;
+
   let test = $state<TestView | null>(null);
   let games = $state<TestGameView[]>([]);
   let error = $state<string | null>(null);
@@ -45,6 +50,8 @@
   let settingsOpen = $state(false);
   /** Delete was clicked once; the second click deletes. */
   let confirmDelete = $state(false);
+  /** Finished games listed; Show more adds to it. */
+  let gamesShown = $state(GAMES_PAGE);
 
   function show(t: TestView) {
     test = t;
@@ -108,7 +115,9 @@
   /** The settings in brief, for beside the Settings button. */
   const settingsText = $derived.by(() => {
     if (!test) return '';
-    const parts = [test.maxPairs != null ? `max ${test.maxPairs} pairs` : 'no pair limit'];
+    const parts = test.spsa
+      ? [`${test.spsa.iterations} iterations of ${test.spsa.pairsPerIteration} pairs`]
+      : [test.maxPairs != null ? `max ${test.maxPairs} pairs` : 'no pair limit'];
     const cutoff = cutoffPercent(test);
     if (test.sprt && test.maxPairs != null && cutoff != null) parts.push(`undecided under ${cutoff}%`);
     parts.push(`${test.concurrency} at once`, `priority ${test.priority}`);
@@ -124,13 +133,15 @@
     <span class="spacer"></span>
     <button onclick={onClose} title="Close this panel (the test goes on)">Close</button>
   </header>
-  <div class="card">
+  <div class="card" class:wide={!!test?.spsa}>
     {#if test}
       <div class="title-row">
         <p class="note">
-          <strong>{test.engines[0]}</strong> (tested) vs {test.engines[1]}{test.timeControl
-            ? `, ${test.timeControl}`
-            : ', no clock'}
+          {#if test.spsa}
+            SPSA tuning: <strong>{test.engines[0]}</strong> (θ + cΔ) vs {test.engines[1]} (θ − cΔ)
+          {:else}
+            <strong>{test.engines[0]}</strong> (tested) vs {test.engines[1]}
+          {/if}{test.timeControl ? `, ${test.timeControl}` : ', no clock'}
         </p>
         <span class="spacer"></span>
         {#if test.status === 'active'}
@@ -152,55 +163,60 @@
       </div>
       {#if test.halted}<p class="error">Halted: {test.halted}</p>{/if}
 
-      <dl class="stats">
-        <dt>Score</dt>
-        <dd>{scoreText(test)}{test.score != null ? `, ${(test.score * 100).toFixed(1)}%` : ''}</dd>
-        <dt>Pairs</dt>
-        <dd>
-          {test.engines[0]} won both {test.pairCounts[2]}, split {test.pairCounts[1]}, lost both {test.pairCounts[0]}
-        </dd>
-        {#if test.elo}
-          <dt>Elo</dt>
-          <dd>{test.elo}{test.los != null ? `, LOS ${(test.los * 100).toFixed(1)}%` : ''}</dd>
-        {/if}
-        {#if sprtText(test)}
-          <dt>SPRT</dt>
+      {#if test.spsa}
+        <SpsaPanel test={{ ...test, spsa: test.spsa }} />
+      {:else}
+        <dl class="stats">
+          <dt>Score</dt>
+          <dd>{scoreText(test)}{test.score != null ? `, ${(test.score * 100).toFixed(1)}%` : ''}</dd>
+          <dt>Pairs</dt>
           <dd>
-            {sprtText(test)}
-            {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
+            {test.engines[0]} won both {test.pairCounts[2]}, split {test.pairCounts[1]}, lost both {test.pairCounts[0]}
           </dd>
-        {/if}
-        {#if ends}
-          <dt>Ends</dt>
-          <dd
-            title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings; apart for passing or failing and not, when both are likely"
-          >
-            {#each ends as row (row.label)}
-              {@const games = endsText(test, row.gamesLeft)}
-              {@const time = endsTimeText(test, perHour, row.gamesLeft)}
-              <div>
-                {row.label ? `${row.label}: ${games}` : games}{#if time}<span
-                    title="At the pace of the games since the last pause, {perHour?.toFixed(1)} an hour">, {time}</span
-                  >{/if}
-              </div>
-            {/each}
-          </dd>
-        {/if}
-        {#if oddsText(test) || decideText(test)}
-          <dt>Outcome</dt>
-          <dd>
-            {#if oddsText(test)}<span title="How often each ending came up in the simulations">{oddsText(test)}</span
-              >{/if}
-            {#if decideText(test)}
-              <span
-                class="aside"
-                title="The chance the LLR reaches a bound before the pair limit, which the undecided cutoff watches"
-                >{decideText(test)}</span
-              >
-            {/if}
-          </dd>
-        {/if}
-      </dl>
+          {#if test.elo}
+            <dt>Elo</dt>
+            <dd>{test.elo}{test.los != null ? `, LOS ${(test.los * 100).toFixed(1)}%` : ''}</dd>
+          {/if}
+          {#if sprtText(test)}
+            <dt>SPRT</dt>
+            <dd>
+              {sprtText(test)}
+              {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
+            </dd>
+          {/if}
+          {#if ends}
+            <dt>Ends</dt>
+            <dd
+              title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings; apart for passing or failing and not, when both are likely"
+            >
+              {#each ends as row (row.label)}
+                {@const games = endsText(test, row.gamesLeft)}
+                {@const time = endsTimeText(test, perHour, row.gamesLeft)}
+                <div>
+                  {row.label ? `${row.label}: ${games}` : games}{#if time}<span
+                      title="At the pace of the games since the last pause, {perHour?.toFixed(1)} an hour"
+                      >, {time}</span
+                    >{/if}
+                </div>
+              {/each}
+            </dd>
+          {/if}
+          {#if oddsText(test) || decideText(test)}
+            <dt>Outcome</dt>
+            <dd>
+              {#if oddsText(test)}<span title="How often each ending came up in the simulations">{oddsText(test)}</span
+                >{/if}
+              {#if decideText(test)}
+                <span
+                  class="aside"
+                  title="The chance the LLR reaches a bound before the pair limit, which the undecided cutoff watches"
+                  >{decideText(test)}</span
+                >
+              {/if}
+            </dd>
+          {/if}
+        </dl>
+      {/if}
       {#if test.repeated > 0}
         <p class="error">
           {test.repeated} games repeat an earlier game's moves, so the error bars are narrower than they should be.
@@ -212,7 +228,9 @@
         <button
           class="subtle"
           onclick={() => (settingsOpen = true)}
-          title="Change the pair limit, games at once and priority">Settings…</button
+          title={test.spsa
+            ? 'Change the games at once and priority'
+            : 'Change the pair limit, games at once and priority'}>Settings…</button
         >
       </div>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -246,7 +264,7 @@
         <p class="note">None finished yet.</p>
       {:else}
         <ul class="games list" aria-label="Finished games">
-          {#each games as g (`${g.pair}.${g.game}`)}
+          {#each games.slice(0, gamesShown) as g (`${g.pair}.${g.game}`)}
             <li>
               <span class="num">{g.pair}.{g.game}</span>
               <span class="who">{g.gold} vs {g.silver}</span>
@@ -255,6 +273,11 @@
             </li>
           {/each}
         </ul>
+        {#if games.length > gamesShown}
+          <button class="subtle more" onclick={() => (gamesShown += GAMES_PAGE)}
+            >Show more ({games.length - gamesShown} older)</button
+          >
+        {/if}
       {/if}
       <p class="note path">{test.path}</p>
       {#if settingsOpen}
@@ -306,6 +329,12 @@
   }
   .card {
     max-width: 820px;
+  }
+  .card.wide {
+    max-width: 1100px;
+  }
+  .more {
+    margin-top: 4px;
   }
   h3 {
     margin: 12px 0 4px;

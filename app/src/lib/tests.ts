@@ -171,8 +171,10 @@ export function scoreText(t: TestView, brief = false): string {
 }
 
 /** The score, Elo, LLR and games left in brief, for the sidebar:
- * `118–99 +29.0 0.44 1800` (each left out when the test has none). */
+ * `118–99 +29.0 0.44 1800` (each left out when the test has none); an
+ * SPSA run's iterations: `iteration 358/2000`. */
 export function briefText(t: TestView): string {
+  if (t.spsa) return `iteration ${t.spsa.done}/${t.spsa.iterations}`;
   const parts = [`${t.wins[0]}–${t.wins[1]}`];
   if (t.elo) parts.push(t.elo.split(' [')[0]);
   if (t.llr != null) parts.push(t.llr.toFixed(2));
@@ -184,6 +186,14 @@ export function briefText(t: TestView): string {
 /** A test's details, one to a line, for a tooltip: the score, Elo, SPRT,
  * when and how it's likely to end, and the chance to decide in time. */
 export function detailsText(t: TestView): string {
+  if (t.spsa) {
+    const s = t.spsa;
+    return [
+      `SPSA: iteration ${s.done} of ${s.iterations}, ${s.pairsPerIteration} pairs each`,
+      `${s.params.length} parameters`,
+      `θ + cΔ against θ − cΔ: ${scoreText(t)}`,
+    ].join('\n');
+  }
   const ends = endsText(t) && `Ends ${endsText(t)}: ${oddsText(t)}`;
   return [scoreText(t), t.elo && `Elo ${t.elo}`, sprtText(t), ends, decideText(t)].filter(Boolean).join('\n');
 }

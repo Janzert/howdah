@@ -3,7 +3,8 @@
   // shows the SPRT's LLR by color (the warning color at the lower bound,
   // muted halfway, the ok color at the upper) and how far the test is
   // through its pair limit by level. A test without an SPRT has muted
-  // fluid; one without a limit is filled to the flask's usual line. The
+  // fluid, and an SPSA run the accent color; one without a limit is filled
+  // to the flask's usual line. The
   // outline keeps the sidebar's colors for the test's state.
   import type { TestView } from './bindings/TestView';
   import { llrPosition, testProgress } from './tests';
@@ -24,6 +25,7 @@
   const top = $derived(BOTTOM - level * (BOTTOM - SHOULDER));
   const fluid = $derived.by(() => {
     const pos = llrPosition(test);
+    if (test.spsa) return 'var(--accent)';
     if (pos == null) return 'var(--muted)';
     return pos < 0.5
       ? `color-mix(in oklab, var(--muted) ${Math.round(pos * 200)}%, var(--warn))`
