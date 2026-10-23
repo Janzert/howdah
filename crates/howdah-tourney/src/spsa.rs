@@ -229,6 +229,10 @@ pub struct SpsaValue {
     pub min: f64,
     pub max: f64,
     pub int: bool,
+    /// The perturbation of the next iteration (the last one's once the
+    /// run is done): a move in θ smaller than this is within the noise.
+    #[serde(default)]
+    pub c: f64,
 }
 
 /// θ after a step: clamped to the bounds. `result` is W − L for engine 1.
@@ -398,6 +402,7 @@ impl SpsaRun {
 }
 
 fn info(spec: &SpsaSpec, done: u32, theta: &[f64]) -> SpsaInfo {
+    let next = (done + 1).min(spec.iterations);
     SpsaInfo {
         iterations: spec.iterations,
         pairs_per_iteration: spec.pairs_per_iteration,
@@ -406,13 +411,15 @@ fn info(spec: &SpsaSpec, done: u32, theta: &[f64]) -> SpsaInfo {
             .params
             .iter()
             .zip(theta)
-            .map(|(p, v)| SpsaValue {
+            .enumerate()
+            .map(|(i, (p, v))| SpsaValue {
                 name: p.name.clone(),
                 value: *v,
                 start: p.start,
                 min: p.min,
                 max: p.max,
                 int: p.int,
+                c: spec.c_k(i, next),
             })
             .collect(),
     }
@@ -443,6 +450,12 @@ pub fn read_progress(dir: &Path, spec: &SpsaSpec) -> Result<SpsaInfo, TourneyErr
         Err(e) => return Err(TourneyError::io(&path)(e)),
     };
     info_from_history(spec, &text, &path)
+}
+
+/// A test directory's SPSA history (`spsa-history.jsonl`), in the order
+/// the steps were taken; empty if it has none.
+pub fn read_history(dir: &Path) -> Result<Vec<SpsaStep>, TourneyError> {
+    read_lines(&dir.join(HISTORY_FILE))
 }
 
 fn read_lines<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, TourneyError> {

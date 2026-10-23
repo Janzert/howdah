@@ -12,6 +12,7 @@ use crate::daemon::{ArchivedTest, DaemonEvent, DaemonInfo, DaemonStatus, GameOut
 use crate::results::GameEntry;
 use crate::runner::LiveGame;
 use crate::spec::TestSpec;
+use crate::spsa::SpsaStep;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -99,6 +100,11 @@ impl Client {
 
     pub async fn games(&self, id: &str) -> Result<Vec<GameEntry>, ClientError> {
         self.get(&format!("/tests/{id}/games")).await
+    }
+
+    /// An SPSA run's steps after the first `skip`.
+    pub async fn spsa_history(&self, id: &str, skip: usize) -> Result<Vec<SpsaStep>, ClientError> {
+        self.get(&format!("/tests/{id}/spsa-history?skip={skip}")).await
     }
 
     /// A running game's moves and clocks so far.

@@ -12,6 +12,8 @@
 //!   /tests/{id}/output/{pair}/{game}`: server-sent events, each a
 //!   [`GameOutput`] (`engineOutput`), the game's engine output from now
 //!   on.
+//! - `GET /tests/{id}/spsa-history?skip=N`: an SPSA run's steps
+//!   ([`SpsaStep`]s, from `spsa-history.jsonl`) after the first `N`.
 //! - `POST /tests/{id}/archive`: zips a test that isn't active into
 //!   `archive/` and takes it out, `{"archive": path}`; `DELETE
 //!   /tests/{id}`: deletes one, `{"archive": null}`.
@@ -35,7 +37,7 @@ use std::convert::Infallible;
 use std::path::Path;
 use std::sync::Arc;
 
-use axum::extract::{Path as UrlPath, Request, State};
+use axum::extract::{Path as UrlPath, Query, Request, State};
 use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -51,6 +53,7 @@ use tokio_stream::{Stream, StreamExt};
 use crate::daemon::{Daemon, DaemonEvent, DaemonInfo, GameOutput, INFO_FILE};
 use crate::error::TourneyError;
 use crate::spec::TestSpec;
+use crate::spsa::SpsaStep;
 
 #[cfg(doc)]
 use crate::{
@@ -127,6 +130,7 @@ pub async fn serve(daemon: Daemon, listener: TcpListener, info: DaemonInfo) -> R
         .route("/tests/{id}", get(test_info).delete(delete))
         .route("/tests/{id}/archive", post(archive))
         .route("/tests/{id}/games", get(games))
+        .route("/tests/{id}/spsa-history", get(spsa_history))
         .route("/tests/{id}/games/{pair}/{game}", get(record))
         .route("/tests/{id}/live/{pair}/{game}", get(live))
         .route("/tests/{id}/output/{pair}/{game}", get(output))
@@ -213,6 +217,20 @@ async fn games(
     UrlPath(id): UrlPath<String>,
 ) -> ApiResult<Vec<crate::results::GameEntry>> {
     Ok(Json(s.daemon.games(&id)?))
+}
+
+#[derive(Deserialize)]
+struct Skip {
+    #[serde(default)]
+    skip: usize,
+}
+
+async fn spsa_history(
+    State(s): State<AppState>,
+    UrlPath(id): UrlPath<String>,
+    Query(q): Query<Skip>,
+) -> ApiResult<Vec<SpsaStep>> {
+    Ok(Json(s.daemon.spsa_history(&id, q.skip)?))
 }
 
 async fn record(

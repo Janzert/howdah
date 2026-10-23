@@ -451,5 +451,12 @@ async fn an_spsa_run_carries_on_across_a_restart_and_reports_its_parameters() {
     let history = std::fs::read_to_string(last.path.join(howdah_tourney::SPSA_HISTORY_FILE)).unwrap();
     assert_eq!(history.lines().count(), 30);
     assert!((0.0..=2.0).contains(&after.params[0].value));
+    // The last iteration's perturbation, once every iteration is done.
+    assert!((after.params[0].c - 0.1).abs() < 1e-9, "{}", after.params[0].c);
+    let steps = daemon.spsa_history(&t.id, 0).unwrap();
+    assert_eq!(steps.len(), 30);
+    assert_eq!(steps.last().unwrap().theta["weight"], after.params[0].value);
+    let rest = daemon.spsa_history(&t.id, 28).unwrap();
+    assert_eq!(rest, steps[28..]);
     close(&daemon).await;
 }

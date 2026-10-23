@@ -34,7 +34,7 @@ use crate::memory::{self, Engines};
 use crate::results::{GameEntry, parse_results};
 use crate::runner::{EngineLine, EventFn, LiveGame, Picker, RunEnd, RunEvent, TestRun, play_slot};
 use crate::spec::{SprtSpec, TestSpec};
-use crate::spsa::SpsaInfo;
+use crate::spsa::{SpsaInfo, SpsaStep};
 use crate::stats::{Projection, Summary};
 use crate::testdir::{TestDir, slug};
 
@@ -595,6 +595,14 @@ impl Daemon {
 
     pub fn games(&self, id: &str) -> Result<Vec<GameEntry>, TourneyError> {
         self.with(id, |e| Ok(e.run.entries()))
+    }
+
+    /// An SPSA run's steps after the first `skip`, in the order they were
+    /// taken (none for a test without SPSA).
+    pub fn spsa_history(&self, id: &str, skip: usize) -> Result<Vec<SpsaStep>, TourneyError> {
+        let dir = self.with(id, |e| Ok(e.run.dir.spec.spsa.is_some().then(|| e.run.dir.path.clone())))?;
+        let Some(dir) = dir else { return Ok(Vec::new()) };
+        Ok(crate::spsa::read_history(&dir)?.into_iter().skip(skip).collect())
     }
 
     /// A running game's moves and clocks so far.

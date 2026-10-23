@@ -45,8 +45,8 @@ pub use runner::{EngineLine, LiveGame, RunEnd, RunEvent, RunOptions, StopHandle,
 pub use spec::{EngineSpec, MemorySpec, OptionValue, SprtSpec, TestSpec};
 pub use spsa::{
     HISTORY_FILE as SPSA_HISTORY_FILE, POINTS_FILE as SPSA_POINTS_FILE, SpsaInfo, SpsaParam, SpsaPoint,
-    SpsaSpec, SpsaStep, SpsaValue, draw_point as spsa_point, read_progress as spsa_progress,
-    step as spsa_step,
+    SpsaSpec, SpsaStep, SpsaValue, draw_point as spsa_point, read_history as spsa_history,
+    read_progress as spsa_progress, step as spsa_step,
 };
 pub use stats::{
     Decision, NO_LIMIT_HORIZON, Projection, Summary, decide_chance, elo_from_score, project, score_from_elo,
