@@ -601,4 +601,16 @@ mod tests {
         assert_eq!(history.len(), 1);
         assert_eq!((history[0].wins, history[0].losses), (3, 1));
     }
+
+    #[test]
+    fn values_read_back_exactly() {
+        // A resumed run carries on from what the files say, so θ, c and r
+        // must read back as written (serde_json's `float_roundtrip`).
+        let mut rng = Rng::new(1, 1);
+        for _ in 0..10_000 {
+            let x = rng.unit() * 10f64.powi((rng.next() % 9) as i32 - 4);
+            let back: f64 = serde_json::from_str(&serde_json::to_string(&x).unwrap()).unwrap();
+            assert_eq!(back, x);
+        }
+    }
 }
