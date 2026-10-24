@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use howdah_aei::{EngineId, EngineMessage, Profile};
-use howdah_arimaa::{Color, GameRecord, TimeControl};
+use howdah_arimaa::{Color, DEFAULT_SETUP_MINIMUM, GameRecord, SETUP_MINIMUM_TAG, TimeControl};
 use howdah_tourney::client::{Client, ClientError, EventStream};
 use howdah_tourney::{
     DaemonEvent, DaemonInfo, Decision, EngineLine, GameEntry, GameOutput, OptionValue, RunEnd, SprtSpec,
@@ -282,7 +282,16 @@ impl Tourney {
         let output = client.output(id, pair, game).await.ok();
         let profiles =
             live.engine_ids.clone().map(|name| Profile::detect(&EngineId { name, ..EngineId::default() }));
-        let tc: Option<TimeControl> = live.time_control.as_deref().and_then(|t| t.parse().ok());
+        let setup_minimum = live
+            .setup_minimum
+            .as_deref()
+            .and_then(|t| TimeControl::parse_time(t).ok())
+            .unwrap_or(DEFAULT_SETUP_MINIMUM);
+        let tc: Option<TimeControl> = live
+            .time_control
+            .as_deref()
+            .and_then(|t| t.parse().ok())
+            .map(|t: TimeControl| t.with_setup_minimum(setup_minimum));
         let generation = {
             let mut s = lock(&session);
             s.start_match(
@@ -298,6 +307,9 @@ impl Tourney {
             ];
             if let Some(tc) = &live.time_control {
                 tags.push(("TimeControl".into(), tc.clone()));
+            }
+            if let Some(minimum) = &live.setup_minimum {
+                tags.push((SETUP_MINIMUM_TAG.into(), minimum.clone()));
             }
             s.set_tags(tags);
             s.set_test_game(TestGameTag { test: id.to_string(), name: info.name.clone(), pair, game });
@@ -753,6 +765,8 @@ pub fn test_spec(new: NewTestSpec, engines: [EngineSpec; 2]) -> Result<TestSpec,
     let spec = TestSpec {
         name: new.name.trim().to_string(),
         time_control: new.time_control.filter(|t| !t.trim().is_empty()).map(|t| t.trim().to_string()),
+        // Engines get no setup minute.
+        setup_minimum: None,
         concurrency: new.concurrency,
         max_pairs: new.max_pairs,
         sprt: new.sprt.map(|s| SprtSpec {

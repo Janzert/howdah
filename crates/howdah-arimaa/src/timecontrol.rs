@@ -17,8 +17,12 @@
 //!
 //! The setup follows arimaa.com's match rules (`matchRules.html`): with
 //! under a minute per move it gets a minute, past which the reserve is
-//! used, and unused setup time is never added to the reserve. (pyrimaa
-//! gives the setup the plain move time and never charges the reserve.)
+//! used, and unused setup time is never added to the reserve. The minute
+//! is there for humans; `with_setup_minimum` changes or drops it (engine
+//! games), and records say so with a `SetupMinimum` tag
+//! ([`SETUP_MINIMUM_TAG`]). It isn't part of the `M/R/P/L/G/T` text, which
+//! always means the minute. (pyrimaa gives the setup the plain move time,
+//! doesn't add unused time, and never charges overtime to the reserve.)
 
 use std::fmt;
 use std::str::FromStr;
@@ -41,11 +45,18 @@ data_type! {
         /// Game time limit (0 = none).
         pub time_limit_ms: u64,
         pub max_turn_ms: u64,
+        /// The least move time a setup gets (arimaa.com's minute unless
+        /// changed; 0 for none).
+        pub setup_minimum_ms: u64,
     }
 }
 
-/// The least move time a setup gets.
-const SETUP_MINIMUM: Duration = Duration::from_secs(60);
+/// The least move time a setup gets by arimaa.com's rules.
+pub const DEFAULT_SETUP_MINIMUM: Duration = Duration::from_secs(60);
+
+/// The record tag naming a game's setup minimum when it isn't
+/// [`DEFAULT_SETUP_MINIMUM`], in the time control's syntax (`0`, `10s`).
+pub const SETUP_MINIMUM_TAG: &str = "SetupMinimum";
 
 const UNITS: [(char, u64); 4] = [('d', 86_400_000), ('h', 3_600_000), ('m', 60_000), ('s', 1_000)];
 
@@ -180,6 +191,7 @@ impl FromStr for TimeControl {
             turn_limit,
             time_limit_ms,
             max_turn_ms,
+            setup_minimum_ms: DEFAULT_SETUP_MINIMUM.as_millis() as u64,
         })
     }
 }
@@ -249,10 +261,32 @@ impl TimeControl {
         if self.max_turn_ms > 0 { allowance.min(self.max_turn_time()) } else { allowance }
     }
 
-    /// Move time for the setup. With under a minute per move, each player
-    /// gets a minute for the setup (arimaa.com's match rules).
+    /// The same time control with `minimum` as the least move time a
+    /// setup gets (zero: the plain move time).
+    pub fn with_setup_minimum(self, minimum: Duration) -> TimeControl {
+        TimeControl { setup_minimum_ms: minimum.as_millis() as u64, ..self }
+    }
+
+    pub fn setup_minimum(&self) -> Duration {
+        Duration::from_millis(self.setup_minimum_ms)
+    }
+
+    /// Parses a time in the time control's syntax (`0`, `10s`, `1:30`;
+    /// a bare number is minutes), as the `SetupMinimum` tag holds one.
+    pub fn parse_time(text: &str) -> Result<Duration, ParseError> {
+        parse_time_field(text.trim(), 'm').map(Duration::from_millis)
+    }
+
+    /// Writes a time in the time control's syntax (`0`, `1m30s`, `0.5s`).
+    pub fn format_time(time: Duration) -> String {
+        format_time(time.as_millis() as u64)
+    }
+
+    /// Move time for the setup: the move time, but at least the setup
+    /// minimum. By default, with under a minute per move each player gets
+    /// a minute for the setup (arimaa.com's match rules).
     pub fn setup_move_time(&self) -> Duration {
-        self.move_time().max(SETUP_MINIMUM)
+        self.move_time().max(self.setup_minimum())
     }
 
     /// Longest a player may take for the setup, given its reserve. A turn
@@ -392,6 +426,27 @@ mod tests {
         assert_eq!(format_seconds(ms(1_250)), "1.25");
         assert_eq!(format_seconds(ms(7)), "0.007");
         assert_eq!(format_seconds(Duration::from_micros(1_999)), "0.001", "rounded down to the ms");
+    }
+
+    #[test]
+    fn setup_minimum() {
+        let s = Duration::from_secs;
+        let blitz = tc("15s/1m");
+        assert_eq!(blitz.setup_minimum(), DEFAULT_SETUP_MINIMUM, "the text always means the minute");
+        let engines = blitz.with_setup_minimum(Duration::ZERO);
+        assert_eq!(engines.setup_move_time(), s(15));
+        assert_eq!(engines.setup_allowance(s(60)), s(75));
+        assert_eq!(engines.reserve_after_setup(s(60), s(5)), s(60), "unused time still isn't added");
+        assert_eq!(engines.reserve_after_setup(s(60), s(20)), s(55), "overtime still uses the reserve");
+        assert_eq!(engines.to_string(), "15s/1m", "not part of the text");
+        assert_ne!(engines, blitz);
+        assert_eq!(blitz.with_setup_minimum(s(30)).setup_move_time(), s(30));
+        assert_eq!(TimeControl::parse_time("0").unwrap(), Duration::ZERO);
+        assert_eq!(TimeControl::parse_time(" 10s ").unwrap(), s(10));
+        assert_eq!(TimeControl::parse_time("1").unwrap(), s(60), "a bare number is minutes");
+        assert!(TimeControl::parse_time("soon").is_err());
+        assert_eq!(TimeControl::format_time(Duration::ZERO), "0");
+        assert_eq!(TimeControl::format_time(s(90)), "1m30s");
     }
 
     #[test]

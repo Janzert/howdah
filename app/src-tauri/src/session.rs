@@ -32,9 +32,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use howdah_arimaa::{
-    Annotation, Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement,
-    Position, Route, Square, StartPosition, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder,
-    ViewerGame, WinReason, check_start_position, default_setup, is_viewer_vars,
+    Annotation, Color, DEFAULT_SETUP_MINIMUM, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move,
+    NodeId, Placement, Position, Route, SETUP_MINIMUM_TAG, Square, StartPosition, Step, StepEffect, StepKind,
+    TimeControl, Turn, TurnBuilder, ViewerGame, WinReason, check_start_position, default_setup,
+    is_viewer_vars,
 };
 
 use crate::dto::{
@@ -959,6 +960,13 @@ impl Session {
             Some(start) => start_tree(start)?,
             None => GameTree::new(),
         };
+        // arimaa.com's setup minute is for humans: engines playing each
+        // other get the plain move time.
+        let time_controls = if players.iter().all(|p| matches!(p, Player::Engine { .. })) {
+            time_controls.map(|tc| tc.map(|t| t.with_setup_minimum(Duration::ZERO)))
+        } else {
+            time_controls
+        };
         let now = Instant::now();
         let clock = time_controls.iter().any(Option::is_some).then(|| Clock {
             tcs: time_controls,
@@ -984,7 +992,7 @@ impl Session {
         // out again from the move times once it's loaded: `TimeControl`
         // when both sides share one, otherwise one tag per timed side (as
         // cutechess writes `WhiteTimeControl`).
-        let tags = match time_controls {
+        let mut tags: Vec<(String, String)> = match time_controls {
             [Some(gold), Some(silver)] if gold == silver => vec![("TimeControl".into(), gold.to_string())],
             tcs => Color::ALL
                 .into_iter()
@@ -992,6 +1000,13 @@ impl Session {
                 .filter_map(|(side, tc)| Some((format!("{side:?}TimeControl"), tc?.to_string())))
                 .collect(),
         };
+        // The setup minimum isn't in the time control's text; a record
+        // without the tag means arimaa.com's minute.
+        if let Some(minimum) = time_controls.iter().flatten().map(TimeControl::setup_minimum).next()
+            && minimum != DEFAULT_SETUP_MINIMUM
+        {
+            tags.push((SETUP_MINIMUM_TAG.into(), TimeControl::format_time(minimum)));
+        }
         self.replace(tree, tags, GameTree::ROOT, Some(matchup));
         // Analysis stays on across games, but not into an online game the
         // user plays.
@@ -2699,11 +2714,16 @@ impl Session {
         if let Some(clock) = self.matchup.as_ref().and_then(|m| m.clock.as_ref()) {
             return clock.tcs;
         }
+        let setup_minimum = self
+            .tag(SETUP_MINIMUM_TAG)
+            .and_then(|t| TimeControl::parse_time(&t).ok())
+            .unwrap_or(DEFAULT_SETUP_MINIMUM);
         Color::ALL.map(|side| {
             self.tag(&format!("{side:?}TimeControl"))
                 .or_else(|| self.tag("TimeControl"))
                 .and_then(|t| t.parse::<TimeControl>().ok())
                 .filter(|t| !(t.move_time().is_zero() && t.starting_reserve().is_zero()))
+                .map(|t| t.with_setup_minimum(setup_minimum))
         })
     }
 
@@ -4150,9 +4170,9 @@ mod tests {
         let gold: TimeControl = "1s/0".parse().unwrap();
         s.start_match([engine("a"), engine("b")], [Some(gold), None], false);
         let clock = s.view().clock.unwrap();
-        assert_eq!(clock.gold.unwrap().move_time_ms, 60_000, "the setup's minute");
+        assert_eq!(clock.gold.unwrap().move_time_ms, 1000, "engines get no setup minute");
         assert!(clock.silver.is_none());
-        assert_eq!(s.engine_turn().unwrap().time_control, Some(gold));
+        assert_eq!(s.engine_turn().unwrap().time_control, Some(gold.with_setup_minimum(Duration::ZERO)));
         s.apply_engine_move(s.generation(), Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
         assert_eq!(s.view().clock.unwrap().gold.unwrap().move_time_ms, 1000);
         // Silver is untimed: no deadline, no running clock.
@@ -4285,6 +4305,29 @@ mod tests {
     }
 
     #[test]
+    fn the_setup_minute_is_for_humans() {
+        let tc: TimeControl = "15s/1m".parse().unwrap();
+        let mut s = Session::new();
+        s.start_match([Player::Human, engine("b")], [Some(tc); 2], false);
+        assert_eq!(s.view().clock.unwrap().gold.unwrap().move_time_ms, 60_000);
+        assert!(!s.export(false).contains("SetupMinimum"), "{}", s.export(false));
+        s.start_match([engine("a"), engine("b")], [Some(tc); 2], false);
+        assert_eq!(s.view().clock.unwrap().gold.unwrap().move_time_ms, 15_000);
+
+        // A record's tag sets the minimum for its replayed clocks; without
+        // one it's arimaa.com's minute.
+        let setup = "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2 {[%emt 0:00:25]}\n";
+        let reserve = |tags: &str| {
+            let mut s = Session::new();
+            s.load(&format!("[TimeControl \"15s/1m\"]\n{tags}\n{setup}")).unwrap();
+            s.view().shown_clock.unwrap().gold.unwrap().reserve_ms / 1000
+        };
+        assert_eq!(reserve(""), 60);
+        assert_eq!(reserve("[SetupMinimum \"0\"]\n"), 50);
+        assert_eq!(reserve("[SetupMinimum \"20s\"]\n"), 55);
+    }
+
+    #[test]
     fn a_record_keeps_each_sides_time_control() {
         let play = |s: &mut Session, side, ply, text: &str, secs| {
             s.matchup.as_mut().unwrap().turn_started = Instant::now() - Duration::from_secs(secs);
@@ -4305,13 +4348,14 @@ mod tests {
         let (record, gold, silver) = reloaded([Some("1m/5m"), Some("30s/2m")]);
         assert!(record.contains("[GoldTimeControl \"1m/5m\"]\n[SilverTimeControl \"30s/2m\"]"), "{record}");
         assert!(!record.contains("[TimeControl"), "{record}");
-        // Each setup gets a minute: gold's 10 s and silver's 30 s over it
-        // come out of their own reserves.
-        assert_eq!((gold, silver), (Some(("1m/5m".into(), 290)), Some(("30s/2m".into(), 90))));
+        assert!(record.contains("[SetupMinimum \"0\"]"), "{record}");
+        // Engines get no setup minute: gold's 10 s over its minute and
+        // silver's 60 s over its 30 s come out of their own reserves.
+        assert_eq!((gold, silver), (Some(("1m/5m".into(), 290)), Some(("30s/2m".into(), 60))));
 
         let (record, gold, silver) = reloaded([None, Some("30s/2m")]);
         assert!(!record.contains("GoldTimeControl"), "{record}");
-        assert_eq!((gold, silver), (None, Some(("30s/2m".into(), 90))), "gold stays untimed");
+        assert_eq!((gold, silver), (None, Some(("30s/2m".into(), 60))), "gold stays untimed");
 
         // A side's own tag wins over `TimeControl`.
         let mut s = Session::new();

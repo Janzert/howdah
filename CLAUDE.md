@@ -44,7 +44,12 @@ plans the engine test and tournament runner.
     `matchRules.html`: with under a minute per move the setup gets a
     minute, overtime comes out of the reserve, and unused setup time is
     never added; `setup_allowance`, `reserve_after_setup`; pyrimaa
-    doesn't charge setup overtime to the reserve), `notation` (syntax only), and
+    doesn't charge setup overtime to the reserve. The minute is for
+    humans: `with_setup_minimum` changes it (engine-only games use zero,
+    the plain move time, with the same reserve rule). It isn't in the
+    time control's text; records name it in a `SetupMinimum` tag
+    (`SETUP_MINIMUM_TAG`, a time such as `0`), and no tag means the
+    minute), `notation` (syntax only), and
     `game::Game`: moves plus cached positions per ply. It rejects third
     repetitions (`earlier_occurrences` gives the plies where the position
     stood, which the refusal names by move, or as the start), and a player whose only moves would all be third
@@ -232,7 +237,9 @@ plans the engine test and tournament runner.
     plays from commands on stdin). Never in tests or CI.
 - `crates/howdah-tourney`: engine tests (plan in `docs/TOURNAMENTS.md`;
   no UI deps). A `TestSpec` (`test.toml`: two engines, time control,
-  `max_pairs`, `sprt`) and a `TestDir` holding it, engine snapshots
+  `setup_minimum` (none by default: setups get the move time; records
+  and `LiveGame` carry it as the `SetupMinimum` tag), `max_pairs`,
+  `sprt`) and a `TestDir` holding it, engine snapshots
   (`engines/`, with source and SHA-256), `results.jsonl` (`GameEntry`
   per game, appended and synced as it ends; the state of a test is the
   spec plus this log) and `games/`. `run` plays the games not yet
@@ -986,7 +993,9 @@ plans the engine test and tournament runner.
     side's `GoldTimeControl`/`SilverTimeControl` tag or the shared
     `TimeControl`; `start_match` writes `TimeControl` when both sides
     share one, otherwise a tag per timed side, after cutechess's
-    `WhiteTimeControl`, which the reader maps), with the time the move took (`SideClockView.lastUsedMs`) in
+    `WhiteTimeControl`, which the reader maps; and the `SetupMinimum`
+    tag, which `start_match` writes for engine-only matches, whose
+    setups get no minute), with the time the move took (`SideClockView.lastUsedMs`) in
     place of the mover's move time. None if a move on the line has no
     time. The viewer (`arimaa.js`, `buildUsedResvTimeArrays`) adds all
     unused move time, ignoring the percentage; we follow the time control.

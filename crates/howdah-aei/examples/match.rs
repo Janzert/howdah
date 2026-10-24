@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 use howdah_aei::{Direction, Engine, EngineConfig, Info, MatchConfig, MatchEvent, play_match};
-use howdah_arimaa::Color;
+use howdah_arimaa::{Color, TimeControl};
 
 struct Args {
     gold: String,
@@ -78,7 +78,11 @@ async fn main() {
     let mut gold = start(&args.gold, &args.gold_dir, "gold", args.transcript).await;
     let mut silver = start(&args.silver, &args.silver_dir, "silver", args.transcript).await;
     let config = MatchConfig {
-        time_control: args.tc.as_deref().map(|t| t.parse().expect("invalid --tc")),
+        // Engines get no setup minute (arimaa.com's is for humans).
+        time_control: args.tc.as_deref().map(|t| {
+            let tc: TimeControl = t.parse().expect("invalid --tc");
+            tc.with_setup_minimum(Duration::ZERO)
+        }),
         ..MatchConfig::default()
     };
     if let Some(tc) = config.time_control {

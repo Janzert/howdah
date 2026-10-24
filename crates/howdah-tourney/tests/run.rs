@@ -80,6 +80,7 @@ async fn plays_every_pair_and_records_the_games() {
         assert_eq!(record.tag("Gold"), Some(gold));
         assert_eq!(record.tag("Round"), Some(format!("{}.{}", e.pair, e.game).as_str()));
         assert_eq!(record.tag("Event"), Some("random"));
+        assert_eq!(record.tag("SetupMinimum"), Some("0"), "engines get no setup minute");
         let result = if e.winner == e.gold() { "1-0" } else { "0-1" };
         assert_eq!(record.tag("Result"), Some(result), "{e:?}");
         assert!(e.plies <= 24, "{e:?}");

@@ -31,6 +31,12 @@ young).
   them), and the game records keep move times to the millisecond
   (`[%emt 0:00:01.25]`). Whole-second time controls send and record
   times as before. arimaa.com games still take whole seconds only.
+- Engine-only games no longer give setups arimaa.com's minute: with under
+  a minute per move, a setup gets the plain move time, and time over it
+  still comes out of the reserve. Games with a human player keep the
+  minute. Engine tests can ask for it with `setup_minimum = "1m"` in the
+  spec. Records of games without the minute say so with a
+  `[SetupMinimum "0"]` tag, so their clocks replay correctly.
 
 ### Changed
 

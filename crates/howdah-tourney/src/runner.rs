@@ -23,7 +23,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use howdah_aei::{Direction, Engine, Info, MatchConfig, MatchEvent, MatchOutcome, play_match};
-use howdah_arimaa::{Color, Game, GameRecord, GameResult, GameTree, WinReason};
+use howdah_arimaa::{
+    Color, DEFAULT_SETUP_MINIMUM, Game, GameRecord, GameResult, GameTree, SETUP_MINIMUM_TAG, TimeControl,
+    WinReason,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinSet;
@@ -31,7 +34,7 @@ use tokio::task::JoinSet;
 use crate::error::TourneyError;
 use crate::memory::{self, Engines, Limits, size};
 use crate::results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash};
-use crate::spec::OptionValue;
+use crate::spec::{OptionValue, TestSpec};
 use crate::spsa::{SpsaInfo, SpsaRun};
 use crate::stats::{Decision, Summary, decide_chance, summarize};
 use crate::testdir::TestDir;
@@ -194,6 +197,11 @@ pub struct LiveGame {
     pub gold: String,
     pub silver: String,
     pub time_control: Option<String>,
+    /// The `SetupMinimum` tag's value, when the setup minimum isn't
+    /// arimaa.com's minute. Daemons from before it was kept played with
+    /// the minute and send none.
+    #[serde(default)]
+    pub setup_minimum: Option<String>,
     pub moves: Vec<String>,
     /// Milliseconds each move took.
     pub used_ms: Vec<u64>,
@@ -442,6 +450,7 @@ impl TestRun {
             gold: gold_name,
             silver: silver_name,
             time_control: spec.time_control.clone(),
+            setup_minimum: setup_minimum_tag(spec),
             moves: live.moves.clone(),
             used_ms: live.used.iter().copied().map(ms).collect(),
             reserves_ms: live.reserves.map(|r| r.map(ms)),
@@ -997,6 +1006,13 @@ async fn start_engine(ctx: &TestRun, i: usize, sink: LogSink) -> Result<Engine, 
     Ok(engine)
 }
 
+/// The `SetupMinimum` tag's value for a timed test's games, unless the
+/// setup minimum is arimaa.com's minute (which records take as given).
+fn setup_minimum_tag(spec: &TestSpec) -> Option<String> {
+    let tc = spec.time_control()?;
+    (tc.setup_minimum() != DEFAULT_SETUP_MINIMUM).then(|| TimeControl::format_time(tc.setup_minimum()))
+}
+
 /// Writes a game's record and makes its log entry.
 fn write_game(
     ctx: &TestRun,
@@ -1016,6 +1032,9 @@ fn write_game(
     record.set_tag("Silver", names[1 - gold].as_str());
     if let Some(tc) = &spec.time_control {
         record.set_tag("TimeControl", tc.as_str());
+    }
+    if let Some(minimum) = setup_minimum_tag(spec) {
+        record.set_tag(SETUP_MINIMUM_TAG, minimum);
     }
     if let Some(detail) = &outcome.detail {
         record.set_tag("Termination", detail.as_str());

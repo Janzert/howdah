@@ -3,6 +3,7 @@
 //! ```toml
 //! name = "opfor-null-move"
 //! time_control = "2s/30s/100/0/100t"
+//! # setup_minimum = "1m"   # the least time a setup gets (default 0: the move time)
 //! concurrency = 4
 //! max_pairs = 2000
 //!
@@ -63,6 +64,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use howdah_arimaa::TimeControl;
 use serde::{Deserialize, Serialize};
@@ -77,6 +79,11 @@ pub struct TestSpec {
     /// In AEI's `M/R/P/L/G/T` format. None plays without clocks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_control: Option<String>,
+    /// The least move time a setup gets, in the time control's syntax.
+    /// None is no minimum, the plain move time; arimaa.com gives humans a
+    /// minute (`1m`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_minimum: Option<String>,
     /// Games played at once.
     #[serde(default = "one")]
     pub concurrency: u32,
@@ -228,8 +235,17 @@ impl TestSpec {
         toml::to_string_pretty(self).expect("a spec always serializes")
     }
 
+    /// The time control, with the setup minimum.
     pub fn time_control(&self) -> Option<TimeControl> {
-        self.time_control.as_deref().map(|t| t.parse().expect("validated"))
+        let tc: TimeControl = self.time_control.as_deref()?.parse().expect("validated");
+        Some(tc.with_setup_minimum(self.setup_minimum()))
+    }
+
+    /// The least move time a setup gets: `setup_minimum`, or none.
+    pub fn setup_minimum(&self) -> Duration {
+        self.setup_minimum
+            .as_deref()
+            .map_or(Duration::ZERO, |t| TimeControl::parse_time(t).expect("validated"))
     }
 
     /// The pair limit: `max_pairs`, or every pair of an SPSA run.
@@ -277,6 +293,11 @@ impl TestSpec {
             && let Err(e) = tc.parse::<TimeControl>()
         {
             return bad(format!("time control {tc:?}: {e}"));
+        }
+        if let Some(m) = &self.setup_minimum
+            && let Err(e) = TimeControl::parse_time(m)
+        {
+            return bad(format!("setup_minimum {m:?}: {e}"));
         }
         if self.concurrency == 0 {
             return bad("concurrency must be at least 1".into());
@@ -359,6 +380,15 @@ mod tests {
     }
 
     #[test]
+    fn setups_get_the_move_time_unless_the_spec_says() {
+        let spec = TestSpec::parse(SPEC).unwrap();
+        assert_eq!(spec.time_control().unwrap().setup_move_time(), Duration::from_secs(2));
+        let minute = TestSpec::parse(&SPEC.replace("concurrency = 2", "setup_minimum = \"1m\"")).unwrap();
+        assert_eq!(minute.time_control().unwrap().setup_move_time(), Duration::from_secs(60));
+        assert_eq!(TestSpec::parse(&minute.to_toml()).unwrap(), minute);
+    }
+
+    #[test]
     fn refuses_specs_that_cannot_run() {
         let no_end = SPEC.replace("[sprt]\n        elo0 = 0\n        elo1 = 10", "");
         assert!(TestSpec::parse(&no_end).unwrap_err().contains("so the test ends"));
@@ -366,6 +396,8 @@ mod tests {
         assert!(TestSpec::parse(&same).unwrap_err().contains("both engines"));
         let tc = SPEC.replace("2s/30s/100/0/0/120", "soon");
         assert!(TestSpec::parse(&tc).unwrap_err().contains("time control"));
+        let minimum = SPEC.replace("concurrency = 2", "setup_minimum = \"soon\"");
+        assert!(TestSpec::parse(&minimum).unwrap_err().contains("setup_minimum"));
         let bounds = SPEC.replace("elo1 = 10", "elo1 = -5");
         assert!(TestSpec::parse(&bounds).unwrap_err().contains("elo1"));
         let unknown = SPEC.replace("concurrency = 2", "concurency = 2");

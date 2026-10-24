@@ -14,7 +14,8 @@ use crate::message::{EngineMessage, Info};
 
 #[derive(Clone, Debug)]
 pub struct MatchConfig {
-    /// `None` plays without clocks.
+    /// `None` plays without clocks. Its setup minimum applies as given:
+    /// engine games usually want none (`TimeControl::with_setup_minimum`).
     pub time_control: Option<TimeControl>,
     /// Send `stop` this long before a turn's deadline, so a slow engine
     /// still gets a move in; at most a quarter of the turn's allowance, so
