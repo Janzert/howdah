@@ -45,6 +45,12 @@ young).
   into a turn, so a turn shorter than the usual one-second margin isn't
   stopped at once (the app's own matches already did this).
 
+### Fixed
+
+- On Windows, a test daemon started by the app no longer stops when the
+  app is rebuilt and restarted under `tauri dev`: it now runs outside the
+  job object that `cargo run` puts the app in.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

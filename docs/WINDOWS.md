@@ -340,6 +340,15 @@ above: analysis is refused only in the window playing the game; closing
 the lobby hides it while game windows are open; postal games without a
 window rely on the lobby's poll; windows now, keeping tabs possible.
 
+Brian's answers on the lobby redesign and boards as panels
+(2026-10-18): the Bots and Watch panels load their lists when opened;
+the 20 s refresh runs only while an arimaa.com panel is shown; the
+gameroom chat is a panel of its own, at least to start; the Lobby
+button shows the last panel; the sidebar doesn't fold by itself; a
+dialog may darken only its own board; Howdah asks before quitting with
+docked boards in a hidden lobby too; and the Home panel keeps its board
+cards beside the sidebar's list.
+
 ## Open questions
 
 - Whether closing the lobby should quit, once it's been used for a
