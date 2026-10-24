@@ -1,8 +1,8 @@
 //! The gameroom's chat room: one room-wide chat, separate from each
 //! game's chat (mapped 2026-10-17 from the room's own scripts).
 //!
-//! The room is `/arimaa/chat/` on plain HTTP (https doesn't run its PHP).
-//! Its server, `srv.php`, takes form posts that each carry the user's
+//! The room is `/arimaa/chat/` on plain HTTP (https doesn't serve its CGIs).
+//! Its server, `srv.cgi`, takes form posts that each carry the user's
 //! name and the `auth` from the lobby's `state` (`me.auth`), and answers
 //! in plain text:
 //!
@@ -14,7 +14,7 @@
 //! - `cmd=msg&color=<rrggbb>&data=<text>`: says something.
 //! - `cmd=out`: leaves.
 //!
-//! The archive, `archsrv.php` ([`archive`]), needs no login: `day=<unix
+//! The archive, `archsrv.cgi` ([`archive`]), needs no login: `day=<unix
 //! time>` gets `OK` and the 24 hours of events from then.
 //!
 //! Entering and leaving are archived for good and everyone sees who is
@@ -156,14 +156,14 @@ pub fn parse_archive(reply: &str) -> Result<Vec<ChatEvent>, Error> {
     Ok(lines.filter_map(parse_event).collect())
 }
 
-/// The room's archive, `archsrv.php`: the events of the 24 hours from
+/// The room's archive, `archsrv.cgi`: the events of the 24 hours from
 /// `start` (Unix seconds; the archive's page asks from local midnight).
 /// It needs no login, only the Referer every request carries. Past days
 /// don't change, so callers should keep what they get and ask gently.
 pub async fn archive(http: &Http, base: &str, start: i64) -> Result<Vec<ChatEvent>, Error> {
     let base = if base.ends_with('/') { base.to_string() } else { format!("{base}/") };
     let body = encode_request(Format::KeyValue, &[("day", start.to_string())]);
-    let reply = http.page_reply(&format!("{base}archsrv.php"), None, Some(body), REQUEST_TIMEOUT).await?;
+    let reply = http.page_reply(&format!("{base}archsrv.cgi"), None, Some(body), REQUEST_TIMEOUT).await?;
     match reply.status {
         404 => Err(Error::Refused),
         s if !(200..300).contains(&s) => Err(Error::Status(s)),
@@ -180,7 +180,7 @@ fn bad_reply(reply: &str) -> Error {
 #[derive(Clone)]
 pub struct ChatClient {
     http: Http,
-    /// `srv.php`'s URL.
+    /// `srv.cgi`'s URL.
     url: String,
     user: String,
     auth: String,
@@ -191,7 +191,7 @@ impl ChatClient {
     /// the `auth` the lobby gave them (`state`'s `me.auth`).
     pub fn new(http: Http, base: &str, user: &str, auth: &str) -> ChatClient {
         let base = if base.ends_with('/') { base.to_string() } else { format!("{base}/") };
-        ChatClient { http, url: format!("{base}srv.php"), user: user.to_string(), auth: auth.to_string() }
+        ChatClient { http, url: format!("{base}srv.cgi"), user: user.to_string(), auth: auth.to_string() }
     }
 
     pub fn user(&self) -> &str {

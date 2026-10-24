@@ -1,5 +1,5 @@
 //! The gameroom chat room's log, kept locally: what the archive gave
-//! (`archsrv.php`, no login needed) and what the user saw in the room.
+//! (`archsrv.cgi`, no login needed) and what the user saw in the room.
 //!
 //! The store is a set of chunks, each a stretch of time it covers in full
 //! (`start..end`, Unix seconds, end exclusive) and the events in it:

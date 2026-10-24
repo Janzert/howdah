@@ -156,7 +156,7 @@ architecture. Decided and checked against the live server in October 2026.
   as needed to be readable.
   Unlike the room's script, symbols aren't replaced inside links, and
   every occurrence is replaced, not just the first.
-  - **The archive.** The room's archive (`archsrv.php`) needs no login,
+  - **The archive.** The room's archive (`archsrv.cgi`) needs no login,
     only the Referer every request carries, and gives the 24 hours of
     events from any moment. Howdah keeps the room's log locally: the
     Chat archive panel (open logged out too) shows a month calendar with

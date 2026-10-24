@@ -201,14 +201,14 @@ plans the engine test and tournament runner.
     scripts and other markup dropped), so no server HTML reaches the
     app. `Error::Expired` is a lobby session
     that's gone (an ASIP error or the "Session Expired" page).
-  - `chat`: the gameroom's chat room (`/arimaa/chat/srv.php`, plain
+  - `chat`: the gameroom's chat room (`/arimaa/chat/srv.cgi`, plain
     text): `ChatClient` (`fetch`, which enters the room the first time,
     `users`, `say`, `leave`; its own `Http` in the app so its spacing
     never delays a game's requests), with `user` and the `auth` from
     `state`'s `me` (`LobbyGames.chat_auth`; `chat_count` is
     `chatCount`), `ChatEvent`s from the log, and `format_message`, the
     room's formatting as `MessagePart`s (links, faces, piece symbols,
-    `/me` emotes). `archive` asks `archsrv.php` (no login) for the 24
+    `/me` emotes). `archive` asks `archsrv.cgi` (no login) for the 24
     hours from a moment; `ChatEvent::to_line` writes an event back as a
     log line.
   - `puzzles`: the puzzle pages (`/arimaa/puzzles/`, no login, the
