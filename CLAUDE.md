@@ -37,7 +37,10 @@ plans the engine test and tournament runner.
     letters; `limit_score_winner` is arimaa.com's score rule for game and
     turn limits, looking back past equal piece counts, which
     `Game::score_winner`/`GameTree::score_winner` apply), `timecontrol` (`M/R/P/L/G/T` format and reserve arithmetic,
-    ported from pyrimaa `util.py`, plus the one-minute setup rule from
+    ported from pyrimaa `util.py` but with times in milliseconds, so a
+    number may have a decimal fraction (`0.5s`; `is_whole_seconds` tells
+    whether pyrimaa and arimaa.com could take it, and `format_seconds`
+    writes an AEI time), plus the one-minute setup rule from
     `matchRules.html`: with under a minute per move the setup gets a
     minute, overtime comes out of the reserve, and unused setup time is
     never added; `setup_allowance`, `reserve_after_setup`; pyrimaa
@@ -87,6 +90,9 @@ plans the engine test and tournament runner.
     `Glyph`s). The session keeps its game as one. Comments can hold PGN
     commands (`[%emt 0:00:12]`): `comment_text` leaves them out, and
     `set_comment_text`/`set_command` change one part and keep the rest.
+    `set_elapsed` writes `%emt` in whole seconds, `set_elapsed_ms` to the
+    millisecond (games with a fractional time control: the tourney
+    runner and `Match::record_move_time`).
   - `record::GameRecord`: tags plus a `GameTree`, read from and written to
     the PGN-style record format (`parse`, `parse_all`, `to_record`). The
     reader is lenient (arimaa.com `Name: value` tags, `White`/`Black`

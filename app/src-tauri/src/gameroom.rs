@@ -490,7 +490,7 @@ impl Gameroom {
         if who.is_empty() {
             return Err(ApiError::illegal("enter the username to invite"));
         }
-        time_control.parse::<TimeControl>().map_err(|e| ApiError::illegal(e.to_string()))?;
+        check_time_control(time_control)?;
         let (iid, ts) = with_lobby!(self, |l| l.invite(who, side, time_control, rated, message.trim()))?;
         let gameroom = self.clone();
         let who = who.to_string();
@@ -585,7 +585,7 @@ impl Gameroom {
     /// id. `time_control` is in the gameroom's format (`2m/5m/100/0/30m`).
     async fn create_game(&self, side: Color, time_control: &str, rated: bool) -> Result<String, ApiError> {
         let time_control = time_control.trim();
-        time_control.parse::<TimeControl>().map_err(|e| ApiError::illegal(e.to_string()))?;
+        check_time_control(time_control)?;
         let (gid, _) = with_lobby!(self, |l| l.new_game(side, time_control, rated))?;
         gid.ok_or_else(|| ApiError::state("arimaa.com created the game but gave no id for it"))
     }
@@ -1864,6 +1864,16 @@ async fn find_id(
     None
 }
 
+/// Refuses a time control arimaa.com can't take: one that doesn't parse,
+/// or with fractions of a second (the gameroom's times are whole seconds).
+fn check_time_control(time_control: &str) -> Result<(), ApiError> {
+    let tc = time_control.parse::<TimeControl>().map_err(|e| ApiError::illegal(e.to_string()))?;
+    if !tc.is_whole_seconds() {
+        return Err(ApiError::illegal("arimaa.com's time controls are in whole seconds"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use howdah_arimaa::{GameResult, WinReason};
@@ -2125,6 +2135,14 @@ mod tests {
         let v = recent_view(game);
         assert_eq!(v.result, Some(GameResult { winner: Color::Silver, reason: WinReason::Timeout }));
         assert_eq!((v.moves, v.ended_ms, v.rated), (Some(6), Some(1_791_110_910_000), true));
+    }
+
+    #[test]
+    fn arimaa_com_takes_whole_seconds_only() {
+        assert!(check_time_control("2m/5m/100/0/30m").is_ok());
+        assert!(check_time_control("1:30/5").is_ok());
+        assert!(check_time_control("0.5s/5m").is_err());
+        assert!(check_time_control("nonsense").is_err());
     }
 
     #[test]

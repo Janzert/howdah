@@ -124,8 +124,9 @@ enum ActorEvent {
 enum ActorCmd {
     Think {
         request: u64,
-        /// A set position the moves start from (sent with `setposition`).
-        start: Option<Position>,
+        /// A set position the moves start from (sent with `setposition`),
+        /// boxed to keep the commands small.
+        start: Option<Box<Position>>,
         moves: Vec<String>,
         tc: Option<TimeControl>,
         reserves: Option<[Duration; 2]>,
@@ -309,7 +310,7 @@ impl Coordinator {
             });
             let cmd = ActorCmd::Think {
                 request,
-                start: turn.start,
+                start: turn.start.map(Box::new),
                 moves: turn.moves,
                 tc: turn.time_control,
                 reserves: turn.reserves,
@@ -663,7 +664,7 @@ impl Analysis {
         self.request = request;
         let cmd = ActorCmd::Think {
             request,
-            start: target.start.clone(),
+            start: target.start.clone().map(Box::new),
             moves: target.moves.clone(),
             tc: None,
             reserves: None,
@@ -916,6 +917,7 @@ async fn run_actor(
                         ready = apply_options(&mut engine, &mut applied, options, &report).await;
                     }
                     if ready.is_ok() {
+                        let start = start.map(|p| *p);
                         ready = prepare(&mut engine, &mut told, Told { start, moves }, tc, reserves).await;
                     }
                     if ready.is_ok() {
@@ -1090,7 +1092,7 @@ async fn prepare(
     }
     *told = Some(game);
     if let Some(r) = reserves {
-        engine.set_clock(r).await?;
+        engine.set_clock(r, tc.is_some_and(|t| !t.is_whole_seconds())).await?;
     }
     Ok(())
 }
@@ -1380,7 +1382,7 @@ mod tests {
             Position::from_pieces(Color::Silver, pieces.map(|(p, sq)| (p, sq.parse().unwrap()))).unwrap();
         let think = |request, moves: Vec<String>| ActorCmd::Think {
             request,
-            start: Some(start.clone()),
+            start: Some(Box::new(start.clone())),
             moves,
             tc: None,
             reserves: None,

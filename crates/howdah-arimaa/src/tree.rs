@@ -164,6 +164,15 @@ impl Annotation {
         let secs = time.as_secs_f64().round() as u64;
         self.set_command("emt", &format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60));
     }
+
+    /// Records the time the move took as `%emt` to the millisecond
+    /// (`h:mm:ss.fff`, trailing zeros dropped), for games with fractions
+    /// of a second in their time control.
+    pub fn set_elapsed_ms(&mut self, time: Duration) {
+        let (secs, ms) = (time.as_secs(), time.subsec_millis());
+        let fraction = if ms == 0 { String::new() } else { format!(".{ms:03}").trim_end_matches('0').into() };
+        self.set_command("emt", &format!("{}:{:02}:{:02}{fraction}", secs / 3600, secs / 60 % 60, secs % 60));
+    }
 }
 
 /// Reads a `[h:]m:ss` or plain-seconds time, seconds possibly fractional.
@@ -823,6 +832,13 @@ mod tests {
         a.set_elapsed(Duration::from_millis(3_725_600));
         assert_eq!(a.command("emt").as_deref(), Some("1:02:06"));
         assert_eq!(a.elapsed(), Some(Duration::from_secs(3726)));
+        a.set_elapsed_ms(Duration::from_micros(3_725_600_400));
+        assert_eq!(a.command("emt").as_deref(), Some("1:02:05.6"));
+        assert_eq!(a.elapsed(), Some(Duration::from_millis(3_725_600)));
+        a.set_elapsed_ms(Duration::from_millis(250));
+        assert_eq!(a.command("emt").as_deref(), Some("0:00:00.25"));
+        a.set_elapsed_ms(Duration::from_secs(7));
+        assert_eq!(a.command("emt").as_deref(), Some("0:00:07"));
         for (text, secs) in [("0:00:12", 12.0), ("1:30", 90.0), ("7", 7.0), ("0:00:01.5", 1.5)] {
             a.set_command("emt", text);
             assert_eq!(a.elapsed(), Some(Duration::from_secs_f64(secs)), "{text}");

@@ -32,9 +32,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use howdah_arimaa::{
-    Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement, Position,
-    Route, Square, StartPosition, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder, ViewerGame,
-    WinReason, check_start_position, default_setup, is_viewer_vars,
+    Annotation, Color, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move, NodeId, Placement,
+    Position, Route, Square, StartPosition, Step, StepEffect, StepKind, TimeControl, Turn, TurnBuilder,
+    ViewerGame, WinReason, check_start_position, default_setup, is_viewer_vars,
 };
 
 use crate::dto::{
@@ -96,8 +96,8 @@ impl Clock {
         self.tcs
             .iter()
             .flatten()
-            .filter(|tc| tc.time_limit > 0)
-            .map(|tc| self.game_started + Duration::from_secs(tc.time_limit.into()))
+            .filter(|tc| tc.time_limit_ms > 0)
+            .map(|tc| self.game_started + tc.time_limit())
             .min()
     }
 
@@ -171,6 +171,18 @@ impl Match {
     /// plays).
     fn server_clock(&self) -> bool {
         self.players.iter().any(|p| matches!(p, Player::Remote { .. }))
+    }
+
+    /// Puts the time a move took on it as `%emt`: to the millisecond when a
+    /// side's time control has fractions of a second, otherwise in whole
+    /// seconds.
+    fn record_move_time(&self, annotation: &mut Annotation, used: Duration) {
+        let tcs = self.clock.as_ref().map_or(&[None; 2], |c| &c.tcs);
+        if tcs.iter().flatten().any(|tc| !tc.is_whole_seconds()) {
+            annotation.set_elapsed_ms(used);
+        } else {
+            annotation.set_elapsed(used);
+        }
     }
 
     fn turn_start(&self, now: Instant) -> TurnStart {
@@ -1307,9 +1319,10 @@ impl Session {
         if added > 0
             && refused.is_none()
             && let Some(used) = last_used
-            && let Ok(annotation) = self.tree.annotation_mut(self.live())
+            && let Some(m) = &self.matchup
+            && let Ok(annotation) = self.tree.annotation_mut(m.live)
         {
-            annotation.set_elapsed(used);
+            m.record_move_time(annotation, used);
         }
         let live = self.live();
         let finished = self.live_result().is_some();
@@ -1601,7 +1614,7 @@ impl Session {
             if let Some(used) = m.last_move_time
                 && let Ok(annotation) = self.tree.annotation_mut(node)
             {
-                annotation.set_elapsed(used);
+                m.record_move_time(annotation, used);
             }
             m.live = node;
             let start = m.turn_start(m.turn_started);
@@ -1620,16 +1633,16 @@ impl Session {
     /// first setup, as a finished game's record gives them. Does nothing
     /// (and returns false) if the count doesn't match the moves played.
     pub fn fill_move_times(&mut self, generation: u64, times: &[Duration]) -> bool {
-        if generation != self.generation || self.matchup.is_none() {
+        let Some(m) = self.matchup.as_ref().filter(|_| generation == self.generation) else {
             return false;
-        }
-        let path = self.tree.path(self.live());
+        };
+        let path = self.tree.path(m.live);
         if path.len() != times.len() + 1 {
             return false;
         }
         for (&node, &time) in path[1..].iter().zip(times) {
             if let Ok(annotation) = self.tree.annotation_mut(node) {
-                annotation.set_elapsed(time);
+                m.record_move_time(annotation, time);
             }
         }
         self.refresh();
@@ -2739,16 +2752,15 @@ impl Session {
                 last_used_ms: (mover == Some(side)).then(|| ms(used)),
             })
         };
-        let time_limit = tcs.iter().flatten().map(|tc| tc.time_limit).filter(|&t| t > 0).min();
+        let time_limit = tcs.iter().flatten().map(|tc| tc.time_limit()).filter(|t| !t.is_zero()).min();
         Some(ClockView {
             gold: side_view(Color::Gold),
             silver: side_view(Color::Silver),
             running: None,
             turn_elapsed_ms: 0,
             turn_allowance_ms: 0,
-            game_remaining_ms: time_limit.and_then(|limit| {
-                Some(ms(Duration::from_secs(limit.into()).saturating_sub(self.game_time(id)?)))
-            }),
+            game_remaining_ms: time_limit
+                .and_then(|limit| Some(ms(limit.saturating_sub(self.game_time(id)?)))),
             past: true,
         })
     }
@@ -4168,6 +4180,22 @@ mod tests {
             [(Some(12_000), Some(12_000)), (Some(5_000), Some(17_000)), (Some(75_000), Some(92_000))]
         );
         assert!(s.export(false).contains("2g Ee2n Ee3n {[%emt 0:01:15]}"), "{}", s.export(false));
+    }
+
+    #[test]
+    fn a_fractional_time_control_records_milliseconds() {
+        let mut s = Session::new();
+        let tc: TimeControl = "2.5s/1m".parse().unwrap();
+        s.start_match([engine("a"), engine("b")], [Some(tc); 2], false);
+        s.matchup.as_mut().unwrap().turn_started = Instant::now() - Duration::from_millis(1_250);
+        s.apply_engine_move(s.generation(), Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
+        let used = s.view().tree[0].elapsed_ms.unwrap();
+        assert!((1_250..1_300).contains(&used), "{used}");
+        let record = s.export(false);
+        assert!(record.contains("[TimeControl \"2.5s/1m\"]"), "{record}");
+        let fraction = format!("{:03}", used % 1000);
+        let emt = format!("{{[%emt 0:00:01.{}]}}", fraction.trim_end_matches('0'));
+        assert!(record.contains(&emt), "{emt} in {record}");
     }
 
     #[test]

@@ -7,11 +7,13 @@
 //! - `G`: game time limit, or a turn limit with a `t` suffix (0 = none)
 //! - `T`: maximum time for a single turn (0 = none)
 //!
-//! Only `M` and `R` are required. Times are whole seconds, written with
-//! units (`30s`, `5m`, `1h`, `1d`, combinable as `1m30s`), or as bare or
-//! colon-separated numbers whose first unit is minutes (hours for `G`), so
-//! `1:30` is 90 s but `G` = `1:30` is 90 minutes. This follows AEI's
-//! `pyrimaa/util.py`.
+//! Only `M` and `R` are required. Times are written with units (`30s`,
+//! `5m`, `1h`, `1d`, combinable as `1m30s`), or as bare or colon-separated
+//! numbers whose first unit is minutes (hours for `G`), so `1:30` is 90 s
+//! but `G` = `1:30` is 90 minutes. This follows AEI's `pyrimaa/util.py`,
+//! which takes whole numbers only; here a number may have a decimal
+//! fraction (`0.5s`, `1.5m`, `0:02.25`) as long as the time comes to whole
+//! milliseconds.
 //!
 //! The setup follows arimaa.com's match rules (`matchRules.html`): with
 //! under a minute per move it gets a minute, past which the reserve is
@@ -26,48 +28,58 @@ use crate::error::ParseError;
 use crate::types::data_type;
 
 data_type! {
-    /// All times in seconds; 0 means "no limit" for `max_reserve`,
-    /// `time_limit` and `max_turn_time`.
+    /// All times in milliseconds; 0 means "no limit" for `max_reserve_ms`,
+    /// `time_limit_ms` and `max_turn_ms`.
     #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
     pub struct TimeControl {
-        pub move_time: u32,
-        pub reserve: u32,
+        pub move_ms: u64,
+        pub reserve_ms: u64,
         pub percent: u32,
-        pub max_reserve: u32,
-        /// Maximum number of turns per side (0 = none). Mutually exclusive with `time_limit`.
+        pub max_reserve_ms: u64,
+        /// Maximum number of turns per side (0 = none). Mutually exclusive with `time_limit_ms`.
         pub turn_limit: u32,
-        /// Game time limit in seconds (0 = none).
-        pub time_limit: u32,
-        pub max_turn_time: u32,
+        /// Game time limit (0 = none).
+        pub time_limit_ms: u64,
+        pub max_turn_ms: u64,
     }
 }
 
 /// The least move time a setup gets.
 const SETUP_MINIMUM: Duration = Duration::from_secs(60);
 
-const UNITS: [(char, u32); 4] = [('d', 86_400), ('h', 3_600), ('m', 60), ('s', 1)];
+const UNITS: [(char, u64); 4] = [('d', 86_400_000), ('h', 3_600_000), ('m', 60_000), ('s', 1_000)];
 
-fn unit_seconds(c: char) -> Option<u32> {
-    UNITS.iter().find(|(u, _)| *u == c).map(|&(_, s)| s)
+fn unit_ms(c: char) -> Option<u64> {
+    UNITS.iter().find(|(u, _)| *u == c).map(|&(_, ms)| ms)
 }
 
-/// Parses one time field. Bare numbers and `:`-separated parts start at
-/// `start_unit` and step down one unit per colon.
-fn parse_time_field(field: &str, start_unit: char) -> Result<u32, ParseError> {
+/// Parses one time field into milliseconds. Bare numbers and
+/// `:`-separated parts start at `start_unit` and step down one unit per
+/// colon. Each number may have a decimal fraction.
+fn parse_time_field(field: &str, start_unit: char) -> Result<u64, ParseError> {
     let err = || ParseError::new(format!("invalid time {field:?}"));
     let order = ['d', 'h', 'm', 's'];
     let mut implicit = order.iter().position(|&u| u == start_unit).ok_or_else(err)?;
-    let mut total: u32 = 0;
+    let mut total: u64 = 0;
     // ":30" means "0:30".
     let padded = if field.starts_with(':') { format!("0{field}") } else { field.to_string() };
     let mut rest = padded.as_str();
     while !rest.is_empty() {
-        let digits = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
-        if digits == 0 {
+        let digits = |s: &str| s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+        let whole = digits(rest);
+        if whole == 0 {
             return Err(err());
         }
-        let n: u32 = rest[..digits].parse().map_err(|_| err())?;
-        rest = &rest[digits..];
+        let mut len = whole;
+        if rest[len..].starts_with('.') {
+            let fraction = digits(&rest[len + 1..]);
+            if fraction == 0 {
+                return Err(err());
+            }
+            len += 1 + fraction;
+        }
+        let number = &rest[..len];
+        rest = &rest[len..];
         let unit = match rest.chars().next() {
             None | Some(':') => {
                 let u = *order.get(implicit).ok_or_else(err)?;
@@ -76,8 +88,9 @@ fn parse_time_field(field: &str, start_unit: char) -> Result<u32, ParseError> {
             }
             Some(c) => c,
         };
-        let secs = unit_seconds(unit).ok_or_else(err)?;
-        total = n.checked_mul(secs).and_then(|v| total.checked_add(v)).ok_or_else(err)?;
+        let ms = scale(number, unit_ms(unit).ok_or_else(err)?)
+            .ok_or_else(|| ParseError::new(format!("invalid time {field:?}: times go to the millisecond")))?;
+        total = total.checked_add(ms).ok_or_else(err)?;
         if !rest.is_empty() {
             rest = &rest[1..];
         }
@@ -85,19 +98,48 @@ fn parse_time_field(field: &str, start_unit: char) -> Result<u32, ParseError> {
     Ok(total)
 }
 
-/// Formats seconds compactly with units, e.g. 90 -> `1m30s`, 0 -> `0`.
-fn format_time(mut secs: u32) -> String {
-    if secs == 0 {
+/// `number` (digits, maybe with a decimal fraction) times `unit` ms, if
+/// that's a whole number of milliseconds that fits.
+fn scale(number: &str, unit: u64) -> Option<u64> {
+    let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
+    let denominator = 10u128.checked_pow(fraction.len() as u32)?;
+    let numerator: u128 = format!("{whole}{fraction}").parse().ok()?;
+    let ms = numerator.checked_mul(unit.into())?;
+    if ms % denominator != 0 {
+        return None;
+    }
+    u64::try_from(ms / denominator).ok()
+}
+
+/// Formats milliseconds compactly with units, e.g. 90 000 -> `1m30s`,
+/// 1 500 -> `1.5s`, 0 -> `0`.
+fn format_time(mut ms: u64) -> String {
+    if ms == 0 {
         return "0".to_string();
     }
     let mut out = String::new();
-    for (unit, len) in UNITS {
-        if secs >= len {
-            out.push_str(&format!("{}{unit}", secs / len));
-            secs %= len;
+    for (unit, len) in &UNITS[..3] {
+        if ms >= *len {
+            out.push_str(&format!("{}{unit}", ms / len));
+            ms %= len;
         }
     }
+    if ms > 0 {
+        out.push_str(&format!("{}s", format_seconds(Duration::from_millis(ms))));
+    }
     out
+}
+
+/// A time as seconds, with as many decimals as its milliseconds need
+/// (`12`, `0.5`, `1.25`).
+pub fn format_seconds(time: Duration) -> String {
+    let ms = time.as_millis();
+    let (secs, frac) = (ms / 1000, ms % 1000);
+    if frac == 0 {
+        secs.to_string()
+    } else {
+        format!("{secs}.{}", format!("{frac:03}").trim_end_matches('0'))
+    }
 }
 
 impl FromStr for TimeControl {
@@ -110,17 +152,17 @@ impl FromStr for TimeControl {
         }
         let field = |i: usize| fields.get(i).copied().filter(|f| !f.is_empty());
         let time = |i: usize, unit| field(i).map_or(Ok(0), |f| parse_time_field(f, unit));
-        let move_time = time(0, 'm')?;
+        let move_ms = time(0, 'm')?;
         if field(1).is_none() {
             return Err(ParseError::new("time control needs a starting reserve"));
         }
-        let reserve = time(1, 'm')?;
+        let reserve_ms = time(1, 'm')?;
         let percent = match field(2) {
             None => 100,
             Some(p) => p.parse().map_err(|_| ParseError::new(format!("invalid percent {p:?}")))?,
         };
-        let max_reserve = time(3, 'm')?;
-        let (turn_limit, time_limit) = match field(4) {
+        let max_reserve_ms = time(3, 'm')?;
+        let (turn_limit, time_limit_ms) = match field(4) {
             Some(g) if g.ends_with('t') => {
                 let turns = g[..g.len() - 1]
                     .parse()
@@ -129,23 +171,34 @@ impl FromStr for TimeControl {
             }
             _ => (0, time(4, 'h')?),
         };
-        let max_turn_time = time(5, 'm')?;
-        Ok(TimeControl { move_time, reserve, percent, max_reserve, turn_limit, time_limit, max_turn_time })
+        let max_turn_ms = time(5, 'm')?;
+        Ok(TimeControl {
+            move_ms,
+            reserve_ms,
+            percent,
+            max_reserve_ms,
+            turn_limit,
+            time_limit_ms,
+            max_turn_ms,
+        })
     }
 }
 
 /// Canonical form, dropping trailing default fields (`1m30s/5m`).
 impl fmt::Display for TimeControl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let game =
-            if self.turn_limit > 0 { format!("{}t", self.turn_limit) } else { format_time(self.time_limit) };
+        let game = if self.turn_limit > 0 {
+            format!("{}t", self.turn_limit)
+        } else {
+            format_time(self.time_limit_ms)
+        };
         let mut out = vec![
-            format_time(self.move_time),
-            format_time(self.reserve),
+            format_time(self.move_ms),
+            format_time(self.reserve_ms),
             self.percent.to_string(),
-            format_time(self.max_reserve),
+            format_time(self.max_reserve_ms),
             game,
-            format_time(self.max_turn_time),
+            format_time(self.max_turn_ms),
         ];
         let defaults = ["", "", "100", "0", "0", "0"];
         while out.len() > 2 && out.last().map(String::as_str) == Some(defaults[out.len() - 1]) {
@@ -161,21 +214,39 @@ impl fmt::Display for TimeControl {
 
 impl TimeControl {
     pub fn move_time(&self) -> Duration {
-        Duration::from_secs(self.move_time.into())
+        Duration::from_millis(self.move_ms)
     }
 
     pub fn starting_reserve(&self) -> Duration {
-        Duration::from_secs(self.reserve.into())
+        Duration::from_millis(self.reserve_ms)
+    }
+
+    /// The reserve limit; zero for none.
+    pub fn max_reserve(&self) -> Duration {
+        Duration::from_millis(self.max_reserve_ms)
+    }
+
+    /// The game time limit; zero for none.
+    pub fn time_limit(&self) -> Duration {
+        Duration::from_millis(self.time_limit_ms)
+    }
+
+    /// The longest a single turn may take; zero for no limit.
+    pub fn max_turn_time(&self) -> Duration {
+        Duration::from_millis(self.max_turn_ms)
+    }
+
+    /// Whether every time is whole seconds, as arimaa.com and pyrimaa need.
+    pub fn is_whole_seconds(&self) -> bool {
+        [self.move_ms, self.reserve_ms, self.max_reserve_ms, self.time_limit_ms, self.max_turn_ms]
+            .iter()
+            .all(|ms| ms % 1000 == 0)
     }
 
     /// Longest the side to move may take this turn, given its reserve.
     pub fn turn_allowance(&self, reserve: Duration) -> Duration {
         let allowance = self.move_time() + reserve;
-        if self.max_turn_time > 0 {
-            allowance.min(Duration::from_secs(self.max_turn_time.into()))
-        } else {
-            allowance
-        }
+        if self.max_turn_ms > 0 { allowance.min(self.max_turn_time()) } else { allowance }
     }
 
     /// Move time for the setup. With under a minute per move, each player
@@ -188,8 +259,8 @@ impl TimeControl {
     /// time limit doesn't cut the setup's minute short.
     pub fn setup_allowance(&self, reserve: Duration) -> Duration {
         let allowance = self.setup_move_time() + reserve;
-        if self.max_turn_time > 0 {
-            allowance.min(Duration::from_secs(self.max_turn_time.into()).max(self.setup_move_time()))
+        if self.max_turn_ms > 0 {
+            allowance.min(self.max_turn_time().max(self.setup_move_time()))
         } else {
             allowance
         }
@@ -203,7 +274,7 @@ impl TimeControl {
 
     /// Reserve after a turn that took `used`. Unused move time is added at
     /// `percent`; overtime comes out of the reserve; the result is capped at
-    /// `max_reserve`. Setups use `reserve_after_setup` instead.
+    /// the reserve limit. Setups use `reserve_after_setup` instead.
     pub fn reserve_after(&self, reserve: Duration, used: Duration) -> Duration {
         let move_time = self.move_time();
         let updated = if used <= move_time {
@@ -211,7 +282,7 @@ impl TimeControl {
         } else {
             reserve.saturating_sub(used - move_time)
         };
-        if self.max_reserve > 0 { updated.min(Duration::from_secs(self.max_reserve.into())) } else { updated }
+        if self.max_reserve_ms > 0 { updated.min(self.max_reserve()) } else { updated }
     }
 }
 
@@ -228,19 +299,19 @@ mod tests {
     #[test]
     fn move_time() {
         assert!("none".parse::<TimeControl>().is_err());
-        assert_eq!(tc("30s/1s").move_time, 30);
-        assert_eq!(tc("5m/1s").move_time, 300);
-        assert_eq!(tc("1h/1s").move_time, 3600);
-        assert_eq!(tc("1d/1s").move_time, 86_400);
-        assert_eq!(tc("1:30/1s").move_time, 90);
-        assert_eq!(tc("2/2").move_time, 120, "bare numbers are minutes");
+        assert_eq!(tc("30s/1s").move_ms, 30_000);
+        assert_eq!(tc("5m/1s").move_ms, 300_000);
+        assert_eq!(tc("1h/1s").move_ms, 3_600_000);
+        assert_eq!(tc("1d/1s").move_ms, 86_400_000);
+        assert_eq!(tc("1:30/1s").move_ms, 90_000);
+        assert_eq!(tc("2/2").move_ms, 120_000, "bare numbers are minutes");
     }
 
     #[test]
     fn reserve() {
         assert!("30s".parse::<TimeControl>().is_err());
-        assert_eq!(tc("30s/10s").reserve, 10);
-        assert_eq!(tc("30s/1:30").reserve, 90);
+        assert_eq!(tc("30s/10s").reserve_ms, 10_000);
+        assert_eq!(tc("30s/1:30").reserve_ms, 90_000);
     }
 
     #[test]
@@ -253,10 +324,10 @@ mod tests {
 
     #[test]
     fn max_reserve() {
-        assert_eq!(tc("30s/10s").max_reserve, 0);
-        assert_eq!(tc("30s/10s/100/0").max_reserve, 0);
-        assert_eq!(tc("30s/10s/100/10s").max_reserve, 10);
-        assert_eq!(tc("30s/10s/100/1:30").max_reserve, 90);
+        assert_eq!(tc("30s/10s").max_reserve_ms, 0);
+        assert_eq!(tc("30s/10s/100/0").max_reserve_ms, 0);
+        assert_eq!(tc("30s/10s/100/10s").max_reserve_ms, 10_000);
+        assert_eq!(tc("30s/10s/100/1:30").max_reserve_ms, 90_000);
     }
 
     #[test]
@@ -264,16 +335,16 @@ mod tests {
         assert_eq!(tc("30s/10s").turn_limit, 0);
         assert_eq!(tc("30s/10s/100/0/0t").turn_limit, 0);
         assert_eq!(tc("30s/10s/100/0/120t").turn_limit, 120);
-        assert_eq!(tc("30s/10s").time_limit, 0);
-        assert_eq!(tc("30s/10s/100/0/1h").time_limit, 3600);
-        assert_eq!(tc("30s/10s/100/0/1:30").time_limit, 90 * 60, "G starts at hours");
+        assert_eq!(tc("30s/10s").time_limit_ms, 0);
+        assert_eq!(tc("30s/10s/100/0/1h").time_limit_ms, 3_600_000);
+        assert_eq!(tc("30s/10s/100/0/1:30").time_limit_ms, 5_400_000, "G starts at hours");
     }
 
     #[test]
     fn max_turn_time() {
-        assert_eq!(tc("30s/10s").max_turn_time, 0);
-        assert_eq!(tc("30s/10s/100/0/0/2m").max_turn_time, 120);
-        assert_eq!(tc("30s/10s/100/0/0/1:30").max_turn_time, 90);
+        assert_eq!(tc("30s/10s").max_turn_ms, 0);
+        assert_eq!(tc("30s/10s/100/0/0/2m").max_turn_ms, 120_000);
+        assert_eq!(tc("30s/10s/100/0/0/1:30").max_turn_ms, 90_000);
     }
 
     #[test]
@@ -293,6 +364,34 @@ mod tests {
         for bad in ["30x/1", "30s/", "30s/1s/abc", "30s/1s/100/0/xt", "1/2/3/4/5/6/7", "::/1"] {
             assert!(bad.parse::<TimeControl>().is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn fractions() {
+        assert_eq!(tc("0.5s/1s").move_ms, 500);
+        assert_eq!(tc("1.5m/0").move_ms, 90_000);
+        assert_eq!(tc("0:02.25/0").move_ms, 2_250, "the colon form's seconds");
+        assert_eq!(tc("1s/0.125s").reserve_ms, 125);
+        assert_eq!(tc("1s/0/100/0/0.5h").time_limit_ms, 1_800_000);
+        assert_eq!(tc("0.1s/0/100/0/0/0.3s").max_turn_ms, 300);
+        assert_eq!(tc("0.5s/1m0.25s").to_string(), "0.5s/1m0.25s");
+        assert_eq!(tc("1.5s/2s").to_string(), "1.5s/2s");
+        assert!(tc("30s/1m").is_whole_seconds());
+        assert!(!tc("0.5s/1m").is_whole_seconds());
+        for bad in ["0.0005s/1s", "1./1s", ".5s/1s", "1.5.5s/1s"] {
+            assert!(bad.parse::<TimeControl>().is_err(), "{bad}");
+        }
+        assert_eq!(tc("1s/0.5").reserve_ms, 30_000, "a bare number is minutes");
+    }
+
+    #[test]
+    fn format_seconds_trims() {
+        let ms = Duration::from_millis;
+        assert_eq!(format_seconds(ms(12_000)), "12");
+        assert_eq!(format_seconds(ms(500)), "0.5");
+        assert_eq!(format_seconds(ms(1_250)), "1.25");
+        assert_eq!(format_seconds(ms(7)), "0.007");
+        assert_eq!(format_seconds(Duration::from_micros(1_999)), "0.001", "rounded down to the ms");
     }
 
     #[test]

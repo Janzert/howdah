@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-use howdah_arimaa::{Position, TimeControl};
+use howdah_arimaa::{Position, TimeControl, format_seconds};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::{Instant, timeout_at};
@@ -325,25 +325,29 @@ impl Engine {
         self.send(&format!("setoption name {name}")).await
     }
 
-    /// Sends the time-control options (`tcmove`, `tcreserve`, ...).
+    /// Sends the time-control options (`tcmove`, `tcreserve`, ...), in
+    /// seconds. A control with fractions of a second sends decimals
+    /// (`0.5`); others send whole numbers, as pyrimaa does.
     pub async fn set_time_control(&mut self, tc: &TimeControl) -> Result<(), AeiError> {
-        self.set_option("tcmove", tc.move_time).await?;
-        self.set_option("tcreserve", tc.reserve).await?;
+        self.set_option("tcmove", format_seconds(tc.move_time())).await?;
+        self.set_option("tcreserve", format_seconds(tc.starting_reserve())).await?;
         self.set_option("tcpercent", tc.percent).await?;
-        self.set_option("tcmax", tc.max_reserve).await?;
+        self.set_option("tcmax", format_seconds(tc.max_reserve())).await?;
         self.set_option("tcturns", tc.turn_limit).await?;
-        self.set_option("tctotal", tc.time_limit).await?;
-        self.set_option("tcturntime", tc.max_turn_time).await
+        self.set_option("tctotal", format_seconds(tc.time_limit())).await?;
+        self.set_option("tcturntime", format_seconds(tc.max_turn_time())).await
     }
 
-    /// Sends the per-turn clock options: both reserves (gold, silver) in
-    /// whole seconds, and `moveused` 0. Protocol-version-0 engines also get
-    /// the old `wreserve`/`breserve` names.
-    pub async fn set_clock(&mut self, reserves: [Duration; 2]) -> Result<(), AeiError> {
-        let [g, s] = reserves.map(|r| r.as_secs());
+    /// Sends the per-turn clock options: both reserves (gold, silver) and
+    /// `moveused` 0. The reserves go in whole seconds (rounded down, as
+    /// pyrimaa sends them), or to the millisecond with `fractional` (for a
+    /// time control with fractions of a second, `TimeControl::is_whole_seconds`).
+    /// Protocol-version-0 engines also get the old `wreserve`/`breserve` names.
+    pub async fn set_clock(&mut self, reserves: [Duration; 2], fractional: bool) -> Result<(), AeiError> {
+        let [g, s] = reserves.map(|r| if fractional { format_seconds(r) } else { r.as_secs().to_string() });
         if self.id.protocol_version == 0 {
-            self.set_option("wreserve", g).await?;
-            self.set_option("breserve", s).await?;
+            self.set_option("wreserve", &g).await?;
+            self.set_option("breserve", &s).await?;
             self.set_option("tcmoveused", 0).await?;
         }
         self.set_option("greserve", g).await?;

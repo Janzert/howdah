@@ -23,6 +23,12 @@ working Python controller. Engine quirks live in one place in the code,
 - **Clocks:** the time-control options (`tcmove`, `tcreserve`, ...) at
   `newgame`, then `greserve`/`sreserve` before every `go`, as pyrimaa does.
   Engines that keep their own reserve (Sharp does) need the latter.
+  Times go in whole seconds (reserves rounded down, as pyrimaa sends
+  them) unless the time control has fractions of a second (`0.5s/30s`):
+  then every time goes as a decimal to the millisecond (`tcmove 0.5`,
+  `greserve 29.871`). The AEI spec says only that times are in seconds.
+  Sharp and OpFor read every time option as a decimal; pyrimaa's own
+  tools write and read whole seconds only.
 - **Every engine move is checked** through the core before it's played.
   An illegal move, a crash, a hang past the deadline or garbage loses the
   game; the game itself is never corrupted.

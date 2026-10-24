@@ -1020,10 +1020,13 @@ fn write_game(
     if let Some(detail) = &outcome.detail {
         record.set_tag("Termination", detail.as_str());
     }
+    // A time control with fractions of a second gets move times to the
+    // millisecond.
+    let precise = spec.time_control().is_some_and(|tc| !tc.is_whole_seconds());
     let line = record.tree.main_line();
     for (node, time) in line.iter().skip(1).zip(used) {
         if let Ok(a) = record.tree.annotation_mut(*node) {
-            a.set_elapsed(*time);
+            if precise { a.set_elapsed_ms(*time) } else { a.set_elapsed(*time) }
         }
     }
     let name = TestDir::record_name(pair, game);

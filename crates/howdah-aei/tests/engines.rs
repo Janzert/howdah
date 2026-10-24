@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use howdah_aei::{AeiError, Engine, EngineConfig, EngineMessage, MatchConfig, MatchEvent, play_match};
-use howdah_arimaa::{Color, Game, WinReason};
+use howdah_arimaa::{Color, Game, TimeControl, WinReason};
 
 const TEST_ENGINE: &str = env!("CARGO_BIN_EXE_aei-test-engine");
 
@@ -168,6 +168,72 @@ async fn slow_engine_is_stopped_before_the_deadline() {
         })
         .expect("silver's first turn was played");
     assert!(slow_turn >= Duration::from_millis(1500) && slow_turn < Duration::from_secs(2), "{slow_turn:?}");
+    assert_ne!(outcome.result.reason, WinReason::Timeout, "stop got a move in: {:?}", outcome.detail);
+}
+
+/// The options an engine logs having been sent, up to `isready`.
+async fn options_sent(engine: &mut Engine) -> Vec<String> {
+    let msgs = engine.is_ready(Duration::from_secs(5)).await.unwrap();
+    msgs.into_iter()
+        .filter_map(|m| match m {
+            EngineMessage::Log(text) => text.strip_prefix("option ").map(str::to_string),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn times_go_out_in_the_time_controls_precision() {
+    let mut engine = start(&[]).await;
+    let reserves = [Duration::from_millis(1_500), Duration::from_millis(61_999)];
+
+    let tc: TimeControl = "30s/1m/100/0/2h/90s".parse().unwrap();
+    engine.set_time_control(&tc).await.unwrap();
+    engine.set_clock(reserves, !tc.is_whole_seconds()).await.unwrap();
+    let sent = options_sent(&mut engine).await;
+    let whole = [
+        "tcmove=30",
+        "tcreserve=60",
+        "tcpercent=100",
+        "tcmax=0",
+        "tcturns=0",
+        "tctotal=7200",
+        "tcturntime=90",
+    ];
+    assert_eq!(sent[..7], whole);
+    assert_eq!(sent[7..], ["greserve=1", "sreserve=61", "moveused=0"], "rounded down, as pyrimaa does");
+
+    let tc: TimeControl = "0.8s/1.5s/100/0/0/1.25s".parse().unwrap();
+    engine.set_time_control(&tc).await.unwrap();
+    engine.set_clock(reserves, !tc.is_whole_seconds()).await.unwrap();
+    let sent = options_sent(&mut engine).await;
+    assert_eq!(sent[..2], ["tcmove=0.8", "tcreserve=1.5"]);
+    assert_eq!(sent[6], "tcturntime=1.25");
+    assert_eq!(sent[7..], ["greserve=1.5", "sreserve=61.999", "moveused=0"]);
+    engine.quit(Duration::from_secs(5)).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fractional_time_control() {
+    // Silver, who would take 10 s, gets `stop` 300 ms before its 1.2 s
+    // turn limit.
+    let (outcome, events) = run(
+        &["--seed", "5"],
+        &["--mode", "slow", "--after", "1", "--delay-ms", "10000", "--seed", "6"],
+        Some("0.8s/1.5s/100/0/0/1.2s"),
+    )
+    .await;
+    let slow_turn = events
+        .iter()
+        .find_map(|e| match e {
+            MatchEvent::MovePlayed { ply: 3, used, .. } => Some(*used),
+            _ => None,
+        })
+        .expect("silver's first turn was played");
+    assert!(
+        slow_turn >= Duration::from_millis(800) && slow_turn < Duration::from_millis(1200),
+        "{slow_turn:?}"
+    );
     assert_ne!(outcome.result.reason, WinReason::Timeout, "stop got a move in: {:?}", outcome.detail);
 }
 

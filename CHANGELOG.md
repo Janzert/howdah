@@ -25,10 +25,19 @@ young).
   spec's order, furthest moved first or by name, with a filter). Copy
   values copies the current values as `name = value` lines. The sidebar
   and the test cards show the iterations played.
+- Time controls with fractions of a second (`0.5s/30s`, `1.5m/5m`,
+  `0:02.25`), to the millisecond, for fast engine games and tests.
+  Engines are sent the times as decimals then (Sharp and OpFor read
+  them), and the game records keep move times to the millisecond
+  (`[%emt 0:00:01.25]`). Whole-second time controls send and record
+  times as before. arimaa.com games still take whole seconds only.
 
 ### Changed
 
 - A test's panel lists its newest 100 finished games, with Show more.
+- Engine matches never send `stop` earlier than a quarter of the way
+  into a turn, so a turn shorter than the usual one-second margin isn't
+  stopped at once (the app's own matches already did this).
 
 ## [0.3.0] - 2026-10-21
 

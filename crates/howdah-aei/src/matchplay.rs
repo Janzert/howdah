@@ -17,7 +17,8 @@ pub struct MatchConfig {
     /// `None` plays without clocks.
     pub time_control: Option<TimeControl>,
     /// Send `stop` this long before a turn's deadline, so a slow engine
-    /// still gets a move in.
+    /// still gets a move in; at most a quarter of the turn's allowance, so
+    /// short turns aren't stopped at once.
     pub stop_margin: Duration,
     pub ready_timeout: Duration,
 }
@@ -103,7 +104,7 @@ pub async fn play_match(
     let mut game = Game::new();
     let mut reserves = tc.map(|t| [t.starting_reserve(); 2]);
     let game_start = Instant::now();
-    let game_deadline = tc.filter(|t| t.time_limit > 0).map(|t| game_start + secs(t.time_limit));
+    let game_deadline = tc.filter(|t| t.time_limit_ms > 0).map(|t| game_start + t.time_limit());
     let mut detail = None;
 
     while game.result().is_none() {
@@ -115,7 +116,7 @@ pub async fn play_match(
         let mut deadline = None;
         let mut allowance = None;
         if let (Some(tc), Some(res)) = (tc, reserves) {
-            engine.set_clock(res).await.ok();
+            engine.set_clock(res, !tc.is_whole_seconds()).await.ok();
             let a = if Game::is_setup_ply(ply) {
                 tc.setup_allowance(res[me])
             } else {
@@ -129,7 +130,10 @@ pub async fn play_match(
 
         let start = Instant::now();
         let reply = match engine.go().await {
-            Ok(()) => wait_for_move(engine, side, deadline, config.stop_margin, &mut on_event).await,
+            Ok(()) => {
+                let margin = allowance.map_or(config.stop_margin, |a| config.stop_margin.min(a / 4));
+                wait_for_move(engine, side, deadline, margin, &mut on_event).await
+            }
             Err(e) => Err(e),
         };
         let used = start.elapsed();
@@ -225,10 +229,6 @@ async fn wait_for_move(
             Some(other) => on_event(MatchEvent::Unexpected { side, line: format!("{other:?}") }),
         }
     }
-}
-
-fn secs(s: u32) -> Duration {
-    Duration::from_secs(s.into())
 }
 
 fn side_name(side: Color) -> &'static str {
