@@ -7,6 +7,12 @@ young).
 
 ## [Unreleased]
 
+### Fixed
+
+- A bare number after a unit in a time control takes the next smaller
+  unit, as the arimaa.com gameroom reads it: `2m30` is two and a half
+  minutes, not 32 minutes, and `1h5` is an hour and five minutes.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added

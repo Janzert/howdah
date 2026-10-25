@@ -13,7 +13,9 @@
 //! but `G` = `1:30` is 90 minutes. This follows AEI's `pyrimaa/util.py`,
 //! which takes whole numbers only; here a number may have a decimal
 //! fraction (`0.5s`, `1.5m`, `0:02.25`) as long as the time comes to whole
-//! milliseconds.
+//! milliseconds. A bare number after a unit takes the next smaller unit,
+//! so `2m30` is 2m30s and `1h5` is 1h5m, as the arimaa.com gameroom reads
+//! them (pyrimaa reads `2m30` as 32 minutes).
 //!
 //! The setup follows arimaa.com's match rules (`matchRules.html`): with
 //! under a minute per move it gets a minute, past which the reserve is
@@ -66,7 +68,8 @@ fn unit_ms(c: char) -> Option<u64> {
 
 /// Parses one time field into milliseconds. Bare numbers and
 /// `:`-separated parts start at `start_unit` and step down one unit per
-/// colon. Each number may have a decimal fraction.
+/// colon; after a unit, a bare number takes the next smaller unit
+/// (`2m30` is 150 s). Each number may have a decimal fraction.
 fn parse_time_field(field: &str, start_unit: char) -> Result<u64, ParseError> {
     let err = || ParseError::new(format!("invalid time {field:?}"));
     let order = ['d', 'h', 'm', 's'];
@@ -97,7 +100,12 @@ fn parse_time_field(field: &str, start_unit: char) -> Result<u64, ParseError> {
                 implicit += 1;
                 u
             }
-            Some(c) => c,
+            Some(c) => {
+                // A bare number after a unit takes the next smaller one
+                // (`2m30` is 2m30s).
+                implicit = order.iter().position(|&u| u == c).map_or(order.len(), |i| i + 1);
+                c
+            }
         };
         let ms = scale(number, unit_ms(unit).ok_or_else(err)?)
             .ok_or_else(|| ParseError::new(format!("invalid time {field:?}: times go to the millisecond")))?;
@@ -339,6 +347,17 @@ mod tests {
         assert_eq!(tc("1d/1s").move_ms, 86_400_000);
         assert_eq!(tc("1:30/1s").move_ms, 90_000);
         assert_eq!(tc("2/2").move_ms, 120_000, "bare numbers are minutes");
+    }
+
+    #[test]
+    fn bare_number_after_a_unit() {
+        assert_eq!(tc("2m30/0").move_ms, 150_000);
+        assert_eq!(tc("15s/2m30").reserve_ms, 150_000);
+        assert_eq!(tc("1s/0/100/1h5").max_reserve_ms, 3_900_000);
+        assert_eq!(tc("1s/0/100/0/1d2").time_limit_ms, 93_600_000);
+        assert_eq!(tc("1s/0/100/0/0/1m0.5").max_turn_ms, 60_500);
+        assert_eq!(tc("2m30/1").to_string(), "2m30s/1m");
+        assert!("1s30/0".parse::<TimeControl>().is_err(), "nothing below seconds");
     }
 
     #[test]
