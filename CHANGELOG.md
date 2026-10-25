@@ -7,12 +7,6 @@ young).
 
 ## [Unreleased]
 
-### Fixed
-
-- A bare number after a unit in a time control takes the next smaller
-  unit, as the arimaa.com gameroom reads it: `2m30` is two and a half
-  minutes, not 32 minutes, and `1h5` is an hour and five minutes.
-
 ## [0.4.0] - 2026-10-24
 
 ### Added
@@ -58,6 +52,9 @@ young).
 - The chat room and its archive work again: arimaa.com moved them from
   `srv.php` and `archsrv.php` to `srv.cgi` and `archsrv.cgi`, and the old
   addresses now refuse every request.
+- A bare number after a unit in a time control takes the next smaller
+  unit, as the arimaa.com gameroom reads it: `2m30` is two and a half
+  minutes, not 32 minutes, and `1h5` is an hour and five minutes.
 - On Windows, a test daemon started by the app no longer stops when the
   app is rebuilt and restarted under `tauri dev`: it now runs outside the
   job object that `cargo run` puts the app in.
