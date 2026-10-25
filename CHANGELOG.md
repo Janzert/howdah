@@ -43,8 +43,8 @@ young).
 ### Changed
 
 - A test's panel lists its newest 100 finished games, with Show more.
-- Engine matches never send `stop` earlier than a quarter of the way
-  into a turn, so a turn shorter than the usual one-second margin isn't
+- Engine matches send `stop` at most a quarter of a turn's time before
+  its deadline, so a turn shorter than the usual one-second margin isn't
   stopped at once (the app's own matches already did this).
 
 ### Fixed
