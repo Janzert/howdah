@@ -1,6 +1,6 @@
 <script lang="ts">
   import { SQ, TRAPS, squareName, squareXY } from '../geometry';
-  import type { Coordinates } from '../settings.svelte';
+  import type { Coordinates } from '../types';
   import type { Theme } from '../theme';
 
   let { theme, flipped, coordinates }: { theme: Theme; flipped: boolean; coordinates: Coordinates } = $props();

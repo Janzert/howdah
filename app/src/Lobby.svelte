@@ -20,7 +20,7 @@
   import type { GameroomGames } from './lib/bindings/GameroomGames';
   import type { MatchSpec } from './lib/bindings/MatchSpec';
   import type { SessionId } from './lib/bindings/SessionId';
-  import MiniBoard from './lib/board/MiniBoard.svelte';
+  import MiniBoard from '@howdah/board/board/MiniBoard.svelte';
   import CloseWindowDialog from './lib/CloseWindowDialog.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
   import { on } from './lib/events';
@@ -47,13 +47,13 @@
   import RecordDialog from './lib/RecordDialog.svelte';
   import { settings } from './lib/settings.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
-  import { play, setMuted, setVolume, unlockOnInteraction } from './lib/sound';
+  import { play, setMuted, setVolume, unlockOnInteraction } from '@howdah/board/sound';
   import TestFlask from './lib/TestFlask.svelte';
   import TestPanel from './lib/TestPanel.svelte';
   import { spsaProgress } from './lib/spsa';
   import { briefText, detailsText, llrPosition, testState } from './lib/tests';
   import TestsScreen from './lib/TestsScreen.svelte';
-  import { findTheme } from './lib/theme';
+  import { findTheme } from '@howdah/board/theme';
   import { tourney } from './lib/tourney.svelte';
   import { matchGoesOn } from './lib/windowList';
   import { focusGameWindow, inTauri, openBoard, openWindowFor, showBoard } from './lib/windows';

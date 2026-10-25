@@ -296,7 +296,7 @@ plans the engine test and tournament runner.
     `client`): `Client` and its `EventStream`.
 - `crates/howdah-render`: draws positions as images with the app's image
   themes (`image` crate; depends only on `howdah-arimaa`). The classic
-  themes' manifests and files are embedded from `app/src/themes/classic/`
+  themes' manifests and files are embedded from `packages/board/src/themes/classic/`
   (a new image theme needs adding to `THEMES`), and pieces are placed as
   the board does: centred in the manifest's `grid`, scaled by
   `pieces.scale`. The `howdah-render` binary reads anything
@@ -644,6 +644,20 @@ plans the engine test and tournament runner.
     including `"session": <id>` for session commands; SSE `GET /events`), so the
     frontend can run in a plain browser against the real session and
     engines. Its engine list lives in `target/debug/dev-bridge-config/`.
+- `packages/board` (`@howdah/board`): the board components, shared with
+  other sites (Maqha's web UI). It holds `board/` (with `registry.ts`, through which
+  the app's dev hooks find the mounted board), `PlayerBar.svelte`,
+  `clock.ts`, `geometry.ts`, `theme.ts` with `themes/`, `sound.ts` and
+  `wav.ts` with `sounds/`, and `types.ts`. They take only props and
+  never import app code (no `api`, no bindings, no settings): `types.ts`
+  copies the bindings they take, and `app/src/lib/boardTypes.check.ts`
+  fails svelte-check if the two drift. The app imports them as
+  `@howdah/board/<path>` (a Vite alias and tsconfig paths; the package
+  is used from source), and its tests and Prettier run over the package
+  too. The notes below on `lib/board/`, `PlayerBar`, `lib/sound.ts`,
+  `lib/clock.ts` and `lib/theme.ts` are about those files there.
+  `lib/playerBar.ts` (`barProps`) turns a `SessionView` into the bar's
+  props; `lib/clockTicks.ts` has `ticksFor`.
 - `app/src`: Svelte 5 (runes) + Vite, no SvelteKit.
   - `main.ts` is the one entry page for every window: a game window
     (`?session=<id>`) mounts `App.svelte`, the main window `Lobby.svelte`.
@@ -1201,7 +1215,7 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
 
 ## Adding a theme
 
-Create `app/src/themes/<dir>/<name>.theme.json` (see `lib/theme.ts` for the
+Create `packages/board/src/themes/<dir>/<name>.theme.json` (see `lib/theme.ts` for the
 schema) next to its images. For image boards, `grid` is the 8×8 playing area
 in image pixels. It's picked up automatically. `ui.frozen` (optional) tunes
 the frozen-piece marker, an SVG filter drawn from each piece's alpha

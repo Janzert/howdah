@@ -1,7 +1,7 @@
 // Pointer-only input without a button pressed: hover arrows and step mode
 // (after 4steps). This is the pure part: which square the pointer leans
 // toward, and which step step mode offers.
-import type { Square } from '../bindings/Square';
+import type { Square } from '../types';
 import { SQ, squareAt, squareXY } from '../geometry';
 
 /** A legal single step to `to`; `enemy` when it pushes or pulls an enemy piece. */

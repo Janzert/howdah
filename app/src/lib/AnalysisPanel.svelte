@@ -11,10 +11,10 @@
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { PositionView } from './bindings/PositionView';
   import type { SessionView } from './bindings/SessionView';
-  import MiniBoard from './board/MiniBoard.svelte';
+  import MiniBoard from '@howdah/board/board/MiniBoard.svelte';
   import { on } from './events';
   import GameOptionsDialog from './GameOptionsDialog.svelte';
-  import type { Theme } from './theme';
+  import type { Theme } from '@howdah/board/theme';
 
   interface Props {
     view: SessionView;

@@ -7,11 +7,11 @@
   import { api } from '../api';
   import type { ChatEventView } from '../bindings/ChatEventView';
   import type { ChatMessageView } from '../bindings/ChatMessageView';
-  import PieceGlyph from '../board/PieceGlyph.svelte';
+  import PieceGlyph from '@howdah/board/board/PieceGlyph.svelte';
   import { CHAT_PALETTE, chatTime, FACES, messageColor, parseHex, PIECE_SYMBOLS, SPOILER_COLOR } from '../chatroom';
-  import { SQ } from '../geometry';
+  import { SQ } from '@howdah/board/geometry';
   import { settings } from '../settings.svelte';
-  import { findTheme } from '../theme';
+  import { findTheme } from '@howdah/board/theme';
   import ChatLine from './ChatLine.svelte';
   import { chatroom } from './chatroom.svelte';
   import { darkMode } from './darkMode.svelte';

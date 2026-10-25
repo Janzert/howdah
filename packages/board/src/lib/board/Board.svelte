@@ -2,12 +2,9 @@
   import { onMount, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
   import { SvelteMap } from 'svelte/reactivity';
-  import type { Square } from '../bindings/Square';
-  import type { StepTarget } from '../bindings/StepTarget';
-  import { registerBoard } from '../devHooks';
+  import type { Coordinates, HoverInput, LastMoveView, Square, StepTarget } from '../types';
+  import { registerBoard } from './registry';
   import { SQ, squareAt, squareName, squareXY } from '../geometry';
-  import type { LastMoveView } from '../bindings/LastMoveView';
-  import type { Coordinates, HoverInput } from '../settings.svelte';
   import { LAST_MOVE_COLORS, PV_MOVE_COLORS, viewBox, type Theme } from '../theme';
   import AnnotationLayer from './AnnotationLayer.svelte';
   import { Annotations, colorFor, type AnnotationColor } from './annotations.svelte';

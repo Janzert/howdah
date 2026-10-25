@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AnimStep } from '../bindings/AnimStep';
-import type { Color } from '../bindings/Color';
-import type { PieceKind } from '../bindings/PieceKind';
-import type { PieceView } from '../bindings/PieceView';
+import type { AnimStep, Color, PieceKind, PieceView } from '../types';
 import { BoardModel, INSTANT_GAP_MS, MAX_BEHIND, ROUTE_STEP_MS, STEP_MS } from './boardModel.svelte';
 
 // One gold rabbit, id 1, walking up the a-file one square per "move".

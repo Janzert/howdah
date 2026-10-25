@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api } from './api';
-  import { turnTimeLeft } from './clock';
+  import { turnTimeLeft } from '@howdah/board/clock';
   import type { SessionView } from './bindings/SessionView';
   import type { WatchView } from './bindings/WatchView';
 

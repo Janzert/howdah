@@ -8,7 +8,11 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@howdah/board/*": ["../packages/board/src/lib/*"],
+      "vitest": ["./node_modules/vitest"]
+    }
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "../packages/board/src/**/*.ts", "../packages/board/src/**/*.svelte"]
 }

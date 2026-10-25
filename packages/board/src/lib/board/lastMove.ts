@@ -1,8 +1,5 @@
 // Turns the last move's steps into one trail per piece, for drawing.
-import type { LastMoveView } from '../bindings/LastMoveView';
-import type { Piece } from '../bindings/Piece';
-import type { PieceAt } from '../bindings/PieceAt';
-import type { Square } from '../bindings/Square';
+import type { LastMoveView, Piece, PieceAt, Square } from '../types';
 
 export interface Trail {
   piece: Piece;

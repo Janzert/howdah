@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LastStepView } from '../bindings/LastStepView';
-import type { Piece } from '../bindings/Piece';
+import type { LastStepView, Piece } from '../types';
 import { lastMoveTrails } from './lastMove';
 
 const E: Piece = { color: 'gold', kind: 'elephant' };

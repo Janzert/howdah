@@ -1,0 +1,2 @@
+# Theme manifests and sound presets keep their own layout.
+src/**/*.json

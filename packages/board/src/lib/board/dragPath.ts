@@ -1,6 +1,6 @@
 // The squares a dragged piece has been carried across, used as a hint for
 // which of the shortest routes to take when it's dropped.
-import type { Square } from '../bindings/Square';
+import type { Square } from '../types';
 import { fileOf, rankOf } from '../geometry';
 
 export interface Point {

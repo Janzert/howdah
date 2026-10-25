@@ -2,9 +2,9 @@
   // The lobby window's Home panel: ways to start (new game, analysis
   // board, record, position editor, puzzles), what waits on the user, and
   // the open boards as cards.
-  import type { Theme } from './theme';
+  import type { Theme } from '@howdah/board/theme';
   import Icon, { type IconName } from './Icon.svelte';
-  import MiniBoard from './board/MiniBoard.svelte';
+  import MiniBoard from '@howdah/board/board/MiniBoard.svelte';
   import type { EngineSpec } from './bindings/EngineSpec';
   import EngineStarter from './EngineStarter.svelte';
   import type { ListedWindow } from './lobbyWindows';

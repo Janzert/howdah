@@ -3,8 +3,8 @@
   // where new boards open. Changes apply at once and are saved as they're
   // made (and reach every window).
   import { MAX_STEP_MS, settings, type Appearance, type Coordinates, type HoverInput } from './settings.svelte';
-  import { play } from './sound';
-  import { findTheme, themes } from './theme';
+  import { play } from '@howdah/board/sound';
+  import { findTheme, themes } from '@howdah/board/theme';
 
   const appearanceChoices: { value: Appearance; label: string }[] = [
     { value: 'system', label: 'System' },

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { api } from './api';
-  import { formatClock, formatShort } from './clock';
+  import { formatClock, formatShort } from '@howdah/board/clock';
   import { settings } from './settings.svelte';
   import type { MoveNodeView } from './bindings/MoveNodeView';
   import type { NodeId } from './bindings/NodeId';

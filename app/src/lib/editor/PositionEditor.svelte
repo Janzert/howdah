@@ -12,12 +12,12 @@
   import type { PositionCheck } from '../bindings/PositionCheck';
   import type { PositionSpec } from '../bindings/PositionSpec';
   import type { Square } from '../bindings/Square';
-  import Board from '../board/Board.svelte';
-  import { BoardModel } from '../board/boardModel.svelte';
-  import PieceGlyph from '../board/PieceGlyph.svelte';
+  import Board from '@howdah/board/board/Board.svelte';
+  import { BoardModel } from '@howdah/board/board/boardModel.svelte';
+  import PieceGlyph from '@howdah/board/board/PieceGlyph.svelte';
   import { registerEditor } from '../devHooks';
   import { settings } from '../settings.svelte';
-  import type { Theme } from '../theme';
+  import type { Theme } from '@howdah/board/theme';
   import { EditorBoard, letterOf, palettePieces } from './editorBoard';
 
   interface Props {

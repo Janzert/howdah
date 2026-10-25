@@ -8,7 +8,7 @@ import type { PieceKind } from '../bindings/PieceKind';
 import type { PieceView } from '../bindings/PieceView';
 import type { PositionSpec } from '../bindings/PositionSpec';
 import type { Square } from '../bindings/Square';
-import { fileOf, rankOf } from '../geometry';
+import { fileOf, rankOf } from '@howdah/board/geometry';
 
 const KINDS: Record<string, PieceKind> = {
   r: 'rabbit',

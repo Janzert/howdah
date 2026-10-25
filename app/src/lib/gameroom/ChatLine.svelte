@@ -7,11 +7,11 @@
   // spoiler shown).
   import { api } from '../api';
   import type { ChatEventView } from '../bindings/ChatEventView';
-  import PieceGlyph from '../board/PieceGlyph.svelte';
+  import PieceGlyph from '@howdah/board/board/PieceGlyph.svelte';
   import { FACE_EMOJI, messageColor } from '../chatroom';
-  import { SQ } from '../geometry';
+  import { SQ } from '@howdah/board/geometry';
   import { settings } from '../settings.svelte';
-  import { findTheme } from '../theme';
+  import { findTheme } from '@howdah/board/theme';
   import { darkMode } from './darkMode.svelte';
 
   let {

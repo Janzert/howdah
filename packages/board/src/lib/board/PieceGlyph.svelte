@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Piece } from '../bindings/Piece';
+  import type { Piece } from '../types';
   import { SQ } from '../geometry';
   import { pieceLetter, type Theme } from '../theme';
 

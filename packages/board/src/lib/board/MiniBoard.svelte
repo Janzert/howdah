@@ -1,7 +1,7 @@
 <script lang="ts">
   // A small read-only board for previews: the board and pieces of a
   // position, no input or animation.
-  import type { PositionView } from '../bindings/PositionView';
+  import type { PositionView } from '../types';
   import { squareXY } from '../geometry';
   import { viewBox, type Theme } from '../theme';
   import BoardSurface from './BoardSurface.svelte';

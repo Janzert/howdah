@@ -196,13 +196,13 @@ CI runs these on Linux, Windows and macOS and builds the installers.
 
 The classic board and piece images come from the original arimaa.com
 client and have been released to the public domain. See
-`app/src/themes/classic/ATTRIBUTION.md`.
+`packages/board/src/themes/classic/ATTRIBUTION.md`.
 
 The sounds are made from samples in [Kenney](https://kenney.nl/)'s audio
 packs (Interface Sounds, Casino Audio, Impact Sounds, Music Jingles, UI
 Audio and Digital Audio), released under CC0. Thanks, Kenney! See
-`app/src/sounds/board/ATTRIBUTION.md` and
-`app/src/sounds/app/ATTRIBUTION.md` for which samples went into which
+`packages/board/src/sounds/board/ATTRIBUTION.md` and
+`packages/board/src/sounds/app/ATTRIBUTION.md` for which samples went into which
 sound.
 
 Finally, thanks to Omar Syed, not only for creating a great game but even

@@ -1,12 +1,7 @@
 // What the board currently displays, and the animation player that moves it
 // from one backend state to the next. Pieces are keyed by stable ids from the
 // backend, so a slide is just a change of square with a CSS transition.
-import type { AnimStep } from '../bindings/AnimStep';
-import type { Color } from '../bindings/Color';
-import type { Piece } from '../bindings/Piece';
-import type { PieceKind } from '../bindings/PieceKind';
-import type { PieceView } from '../bindings/PieceView';
-import type { Square } from '../bindings/Square';
+import type { AnimStep, Color, Piece, PieceKind, PieceView, Square } from '../types';
 
 export interface DisplayPiece {
   id: number;

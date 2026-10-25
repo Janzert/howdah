@@ -1,6 +1,6 @@
 // User drawings on the board: square highlights and arrows. Purely visual;
 // never sent to the backend.
-import type { Square } from '../bindings/Square';
+import type { Square } from '../types';
 
 export type AnnotationColor = 'primary' | 'red' | 'blue';
 

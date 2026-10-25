@@ -1,34 +1,45 @@
 <script lang="ts">
   import PieceGlyph from './board/PieceGlyph.svelte';
-  import type { Color } from './bindings/Color';
-  import type { PieceKind } from './bindings/PieceKind';
-  import type { SessionView } from './bindings/SessionView';
   import { formatClock, sideTimes } from './clock';
   import { SQ } from './geometry';
   import type { Theme } from './theme';
+  import type { ClockView, Color, PieceKind } from './types';
 
   interface Props {
-    view: SessionView;
     side: Color;
-    /** `performance.now()` when `view` arrived, for local clock ticking. */
+    name: string;
+    rating?: string | null;
+    /** The player is an engine. */
+    engine?: boolean;
+    /** The clocks shown (live, or worked out for a past move); null for none. */
+    clock: ClockView | null;
+    /** This side is to move in the shown position. */
+    toMove: boolean;
+    thinking?: boolean;
+    /** The opponent's pieces off the board, strongest first. */
+    captured: PieceKind[];
+    /** `performance.now()` when `clock` arrived, for local clock ticking. */
     receivedAt: number;
     /** Current `performance.now()`, updated by the parent's ticker. */
     now: number;
     theme: Theme;
-    /** The player has left the table (an arimaa.com game). */
+    /** The player has left the table (a server's game). */
     away?: boolean;
   }
-  let { view, side, receivedAt, now, theme, away = false }: Props = $props();
-
-  const player = $derived(view.players?.[side]);
-  const name = $derived(
-    player?.name ?? view.tagNames[side === 'gold' ? 0 : 1] ?? (side === 'gold' ? 'Gold' : 'Silver'),
-  );
-  // The live clock, or the clocks after the shown move once the game is over.
-  const clock = $derived(view.shownClock);
-  const toMove = $derived(view.result == null && view.position.sideToMove === side);
-  const thinking = $derived(view.thinking === side);
-  const rating = $derived(view.tagRatings[side === 'gold' ? 0 : 1]);
+  let {
+    side,
+    name,
+    rating = null,
+    engine = false,
+    clock,
+    toMove,
+    thinking = false,
+    captured: lost,
+    receivedAt,
+    now,
+    theme,
+    away = false,
+  }: Props = $props();
 
   // The opponent's pieces this side has taken off the board (captures
   // include a side's own pieces lost on traps, so this is material, not who
@@ -37,7 +48,7 @@
   const opponent = $derived<Color>(side === 'gold' ? 'silver' : 'gold');
   const captured = $derived.by(() => {
     const groups: { kind: PieceKind; n: number }[] = [];
-    for (const kind of view.captured[opponent]) {
+    for (const kind of lost) {
       const last = groups[groups.length - 1];
       if (kind === 'rabbit' && last?.kind === kind) last.n++;
       else groups.push({ kind, n: 1 });
@@ -60,8 +71,8 @@
   <span class="name" title={name}>
     {name}
     {#if rating}<span class="rating" title="Rating">{rating}</span>{/if}
-    {#if player?.kind === 'engine'}<span class="tag">engine</span>{/if}
-    {#if away}<span class="tag away" title="Not at the table on arimaa.com; the clock keeps running">away</span>{/if}
+    {#if engine}<span class="tag">engine</span>{/if}
+    {#if away}<span class="tag away" title="Not at the table; the clock keeps running">away</span>{/if}
   </span>
   {#if thinking}<span class="thinking">thinking…</span>{/if}
   {#if captured.length > 0}

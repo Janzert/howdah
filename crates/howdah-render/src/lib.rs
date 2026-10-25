@@ -1,6 +1,6 @@
 //! Draws Arimaa positions as images with the app's image themes (the
 //! classic arimaa.com marble and stone artwork, embedded from
-//! `app/src/themes/classic/`), placed as the app's board does it: pieces
+//! `packages/board/src/themes/classic/`), placed as the app's board does it: pieces
 //! centred in the theme's grid, scaled by its `pieces.scale`.
 
 use std::collections::HashMap;
@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 macro_rules! classic {
     ($($file:literal),* $(,)?) => {
-        &[$(($file, include_bytes!(concat!("../../../app/src/themes/classic/", $file)) as &[u8])),*]
+        &[$(($file, include_bytes!(concat!("../../../packages/board/src/themes/classic/", $file)) as &[u8])),*]
     };
 }
 
@@ -21,8 +21,8 @@ type Files = &'static [(&'static str, &'static [u8])];
 
 /// Theme manifests with every file they name.
 const THEMES: &[(&str, Files)] = &[
-    (include_str!("../../../app/src/themes/classic/marble.theme.json"), CLASSIC_FILES),
-    (include_str!("../../../app/src/themes/classic/stone.theme.json"), CLASSIC_FILES),
+    (include_str!("../../../packages/board/src/themes/classic/marble.theme.json"), CLASSIC_FILES),
+    (include_str!("../../../packages/board/src/themes/classic/stone.theme.json"), CLASSIC_FILES),
 ];
 
 const CLASSIC_FILES: Files = classic!(

@@ -4,7 +4,7 @@ import type { AnnouncementView } from './bindings/AnnouncementView';
 import type { Color } from './bindings/Color';
 import type { LiveGameView } from './bindings/LiveGameView';
 import type { WatchView } from './bindings/WatchView';
-import type { SoundName } from './sound';
+import type { SoundName } from '@howdah/board/sound';
 
 const same = (a: string | null, b: string | null | undefined) =>
   a != null && b != null && a.toLowerCase() === b.toLowerCase();

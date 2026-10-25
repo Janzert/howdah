@@ -3,8 +3,7 @@
   // (dashed for enemy pieces that were pushed or pulled) and a ghost of each
   // piece captured on a trap. Drawn under the pieces. With `pv`, an engine's
   // next move instead, in the engine color and without ghosts.
-  import type { LastMoveView } from '../bindings/LastMoveView';
-  import type { Square } from '../bindings/Square';
+  import type { LastMoveView, Square } from '../types';
   import { SQ, squareXY } from '../geometry';
   import type { Theme } from '../theme';
   import { lastMoveTrails } from './lastMove';

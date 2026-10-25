@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { SessionView } from './bindings/SessionView';
   import type { WinReason } from './bindings/WinReason';
-  import { squareName } from './geometry';
+  import { squareName } from '@howdah/board/geometry';
 
   interface Props {
     view: SessionView;

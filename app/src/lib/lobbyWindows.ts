@@ -3,7 +3,7 @@
 import type { SessionId } from './bindings/SessionId';
 import type { SessionView } from './bindings/SessionView';
 import type { WatchView } from './bindings/WatchView';
-import { formatClock, sideTimes } from './clock';
+import { formatClock, sideTimes } from '@howdah/board/clock';
 import type { BoardLoading } from './boardLoading';
 import { boardTitle, testGameLabel, waitsOnUser } from './windowList';
 

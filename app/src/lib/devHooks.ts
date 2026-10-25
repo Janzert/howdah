@@ -6,23 +6,16 @@ import { api } from './api';
 import type { AnalysisView } from './bindings/AnalysisView';
 import type { SessionView } from './bindings/SessionView';
 import type { Square } from './bindings/Square';
-import type { BoardModel } from './board/boardModel.svelte';
+import type { BoardModel } from '@howdah/board/board/boardModel.svelte';
+import { onBoardRegistered, type BoardParts } from '@howdah/board/board/registry';
 import { on } from './events';
-import { squareName, TRAPS } from './geometry';
+import { squareName, TRAPS } from '@howdah/board/geometry';
 
 interface AppParts {
   state: () => SessionView | null;
   message: () => string | null;
   analysis: () => AnalysisView | null;
   model: BoardModel;
-}
-
-interface BoardParts {
-  svg: SVGSVGElement;
-  /** Waiting on the backend for something it will draw (hover arrows). */
-  busy: () => boolean;
-  /** Client (CSS pixel) coordinates of a square's center. */
-  clientPoint: (sq: Square) => { x: number; y: number };
 }
 
 /** The position editor, while it's open. */
@@ -190,6 +183,5 @@ export function registerEditor(state: (() => EditorState) | null): void {
   editor = state;
 }
 
-export function registerBoard(parts: BoardParts | null): void {
-  board = parts;
-}
+// The board registers itself with whoever listens (the package's registry).
+onBoardRegistered((parts) => (board = parts));

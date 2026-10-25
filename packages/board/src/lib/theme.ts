@@ -1,7 +1,7 @@
 // Board/piece themes. A theme is a `*.theme.json` manifest in
 // src/themes/<dir>/ plus its image files; asset paths in the manifest are
 // relative to the manifest. Adding a theme needs no code changes.
-import type { Piece } from './bindings/Piece';
+import type { Piece } from './types';
 import type { BoardSoundName } from './sound';
 
 export interface GridRect {

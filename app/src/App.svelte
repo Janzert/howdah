@@ -13,9 +13,11 @@
   import type { SessionView } from './lib/bindings/SessionView';
   import type { Square } from './lib/bindings/Square';
   import type { TestView } from './lib/bindings/TestView';
-  import Board from './lib/board/Board.svelte';
-  import { type AnimHooks, BoardModel } from './lib/board/boardModel.svelte';
-  import { nextTick, ticksFor, turnTimeLeft } from './lib/clock';
+  import Board from '@howdah/board/board/Board.svelte';
+  import { type AnimHooks, BoardModel } from '@howdah/board/board/boardModel.svelte';
+  import { nextTick, turnTimeLeft } from '@howdah/board/clock';
+  import { ticksFor } from './lib/clockTicks';
+  import { barProps } from './lib/playerBar';
   import EnginePanel from './lib/EnginePanel.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
   import EvalBar from './lib/EvalBar.svelte';
@@ -33,13 +35,13 @@
   import type { PositionSpec } from './lib/bindings/PositionSpec';
   import ChatPanel from './lib/ChatPanel.svelte';
   import CloseWindowDialog from './lib/CloseWindowDialog.svelte';
-  import PlayerBar from './lib/PlayerBar.svelte';
+  import PlayerBar from '@howdah/board/PlayerBar.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
   import { justEnded } from './lib/result';
   import { settings, type HoverInput } from './lib/settings.svelte';
   import { shortcutFor, type ShortcutId } from './lib/shortcuts';
-  import { play, setMuted, setThemeSounds, setVolume, type SoundName, unlockOnInteraction } from './lib/sound';
-  import { findTheme } from './lib/theme';
+  import { play, setMuted, setThemeSounds, setVolume, type SoundName, unlockOnInteraction } from '@howdah/board/sound';
+  import { findTheme } from '@howdah/board/theme';
   import TurnBar from './lib/TurnBar.svelte';
   import type { GameroomGames } from './lib/bindings/GameroomGames';
   import type { WatchView } from './lib/bindings/WatchView';
@@ -820,8 +822,7 @@
     <section class="board-area">
       {#if view}
         <PlayerBar
-          {view}
-          side={flipped ? 'gold' : 'silver'}
+          {...barProps(view, flipped ? 'gold' : 'silver')}
           {receivedAt}
           {now}
           {theme}
@@ -866,8 +867,7 @@
       </div>
       {#if view}
         <PlayerBar
-          {view}
-          side={flipped ? 'silver' : 'gold'}
+          {...barProps(view, flipped ? 'silver' : 'gold')}
           {receivedAt}
           {now}
           {theme}

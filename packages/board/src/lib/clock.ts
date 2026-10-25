@@ -1,7 +1,5 @@
 // Clock arithmetic for the running side, counted on locally from a view.
-import type { ClockView } from './bindings/ClockView';
-import type { Color } from './bindings/Color';
-import type { PlayersView } from './bindings/PlayersView';
+import type { ClockView, Color } from './types';
 
 /** Time the running side has left this turn (move time plus usable reserve),
  * `sinceViewMs` after the view carrying `clock` arrived. */
@@ -56,14 +54,6 @@ export const TICK_TIMES_MS: readonly number[] = [
  * below both `left` and the last tick played. */
 export function nextTick(left: number, lastTick = Infinity): number | null {
   return TICK_TIMES_MS.find((t) => t < left && t < lastTick) ?? null;
-}
-
-/** Whether the low-time tick plays for `side`'s running clock: a human's
- * at this machine, or either side's in a game without one (watched,
- * engine against engine) if `spectating` ticks are on. */
-export function ticksFor(players: PlayersView, side: Color, spectating: boolean): boolean {
-  if (players[side].kind === 'human') return true;
-  return spectating && players.gold.kind !== 'human' && players.silver.kind !== 'human';
 }
 
 /** A time in its two largest units, to keep it short: `m:ss` under an

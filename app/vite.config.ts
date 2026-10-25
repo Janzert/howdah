@@ -1,5 +1,9 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+
+// The board components, shared with other sites (packages/board).
+const board = fileURLToPath(new URL('../packages/board', import.meta.url));
 
 // Tauri expects a fixed dev port (1420) and doesn't want the terminal
 // cleared. Browser-only runs (the preview pane, Playwright) use `--port 1430`
@@ -7,10 +11,13 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 export default defineConfig({
   plugins: [svelte()],
   clearScreen: false,
+  // The package's own imports of svelte resolve to the app's copy.
+  resolve: { alias: { '@howdah/board': `${board}/src/lib` }, dedupe: ['svelte'] },
   server: {
     port: 1420,
     strictPort: true,
     watch: { ignored: ['**/src-tauri/**'] },
+    fs: { allow: ['.', board] },
     // The dev bridge (npm run bridge), for running outside Tauri.
     // BRIDGE_PORT points at a second bridge (`npm run bridge -- --port N`).
     proxy: {
@@ -23,6 +30,6 @@ export default defineConfig({
   build: { target: 'es2022' },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', '../packages/board/src/**/*.test.ts'],
   },
 });

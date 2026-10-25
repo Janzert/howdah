@@ -1,4 +1,4 @@
-import type { Square } from './bindings/Square';
+import type { Square } from './types';
 
 /** Board units per square; the playing area is 800×800. */
 export const SQ = 100;

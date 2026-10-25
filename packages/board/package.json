@@ -1,0 +1,14 @@
+{
+  "name": "@howdah/board",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Howdah's Arimaa board, player bar, clocks, themes and sounds, as Svelte 5 components",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./*": "./src/lib/*"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  }
+}

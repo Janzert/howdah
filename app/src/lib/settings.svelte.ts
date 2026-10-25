@@ -1,13 +1,11 @@
 // Display preferences, per viewer. Kept in localStorage as one JSON object;
 // a missing or unreadable store just means the defaults. Settings that
 // matter to the backend (engines) live in the app config dir instead.
-import { STEP_MS } from './board/boardModel.svelte';
-import { findTheme } from './theme';
+import { STEP_MS } from '@howdah/board/board/boardModel.svelte';
+import { findTheme } from '@howdah/board/theme';
+import type { Coordinates, HoverInput } from '@howdah/board/types';
 
-export type Coordinates = 'none' | 'traps' | 'all';
-/** Input from pointer movement without a button: none, arrows for a hovered
- * piece's legal steps, or step mode (the step toward the pointer, by click). */
-export type HoverInput = 'off' | 'arrows' | 'step';
+export type { Coordinates, HoverInput };
 /** Times in the move list: none, each move's time, or the time from the
  * start of the game to each move. */
 export type MoveTimes = 'off' | 'move' | 'game';
