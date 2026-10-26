@@ -901,14 +901,32 @@ impl Backend {
         self.tourney.spsa_history(id, skip).await
     }
 
-    /// Adds a test of two engines from the engine list to the daemon's queue.
+    /// Adds a test of two engines from the engine list (or a pool of them)
+    /// to the daemon's queue.
     pub async fn tourney_submit(&self, spec: NewTestSpec) -> Result<TestView, ApiError> {
         let engines = {
             let registry = self.engines();
             let find = |id: &str| registry.get(id).ok_or_else(|| ApiError::state(format!("no engine {id}")));
-            [find(&spec.engines[0])?, find(&spec.engines[1])?]
+            spec.engines.iter().map(|id| find(id)).collect::<Result<Vec<_>, _>>()?
         };
         self.tourney.submit(spec, engines).await
+    }
+
+    /// Adds an engine from the engine list to a pool.
+    pub async fn tourney_add_engine(&self, id: &str, engine: &str) -> Result<TestView, ApiError> {
+        let spec =
+            self.engines().get(engine).ok_or_else(|| ApiError::state(format!("no engine {engine}")))?;
+        self.tourney.add_engine(id, spec).await
+    }
+
+    /// Retires a pool's engine (by its name in the pool), or brings it back.
+    pub async fn tourney_set_engine_retired(
+        &self,
+        id: &str,
+        name: &str,
+        retired: bool,
+    ) -> Result<TestView, ApiError> {
+        self.tourney.set_engine_retired(id, name, retired).await
     }
 
     /// Pauses, resumes or stops a test (`action`).
@@ -1345,6 +1363,16 @@ impl Backend {
                 .tourney_spsa_history(&arg::<String>(args, "id")?, arg::<usize>(args, "skip")?)
                 .await?),
             "tourney_submit" => ok(self.tourney_submit(arg(args, "spec")?).await?),
+            "tourney_add_engine" => ok(self
+                .tourney_add_engine(&arg::<String>(args, "id")?, &arg::<String>(args, "engine")?)
+                .await?),
+            "tourney_set_engine_retired" => ok(self
+                .tourney_set_engine_retired(
+                    &arg::<String>(args, "id")?,
+                    &arg::<String>(args, "name")?,
+                    arg(args, "retired")?,
+                )
+                .await?),
             "tourney_control" => {
                 ok(self.tourney_control(&arg::<String>(args, "id")?, &arg::<String>(args, "action")?).await?)
             }

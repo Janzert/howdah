@@ -60,6 +60,30 @@
 //! program = "../OpFor/bot_opfor"
 //! options = { hash = 64 }
 //! ```
+//!
+//! A pool (see `pool`) has `[pool]` and two or more engines, and plays
+//! them against each other for as long as it runs: engines can be added
+//! or retired meanwhile, and it has no SPRT (`max_pairs` is optional):
+//!
+//! ```toml
+//! name = "opfor-versions"
+//! time_control = "2s/30s/100/0/100t"
+//! concurrency = 4
+//!
+//! [pool]            # these are the defaults:
+//! # min_pairs = 2   # pairs every matchup plays before the scheduler weighs them
+//! # outlier_z = 3.0 # how far out of line a matchup is to be an outlier
+//! # anchor = "v1"   # the engine rated 0 (default: the first with games)
+//!
+//! [[engines]]
+//! name = "v1"
+//! program = "/home/me/bots/opfor-v1"
+//!
+//! [[engines]]
+//! name = "v2"
+//! program = "/home/me/bots/opfor-v2"
+//! # retired = true  # plays no new pairs; its games still count
+//! ```
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -70,6 +94,7 @@ use howdah_arimaa::TimeControl;
 use serde::{Deserialize, Serialize};
 
 use crate::error::TourneyError;
+use crate::pool::PoolSpec;
 use crate::spsa::SpsaSpec;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -95,10 +120,13 @@ pub struct TestSpec {
     /// An SPSA tuning run instead of a test.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spsa: Option<SpsaSpec>,
+    /// A pool of engines playing each other instead of a test.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool: Option<PoolSpec>,
     /// Keep each game's engine transcripts in `logs/`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub engine_logs: bool,
-    /// Exactly two, or one for SPSA.
+    /// Exactly two, one for SPSA, or two or more for a pool.
     pub engines: Vec<EngineSpec>,
     /// When an engine's memory makes the runner restart it, or forfeit
     /// its game.
@@ -194,6 +222,9 @@ pub struct EngineSpec {
     /// files beside it.
     #[serde(default, skip_serializing_if = "is_false")]
     pub copy_dir: bool,
+    /// In a pool: plays no new pairs. Its games still count.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub retired: bool,
     /// Written when the snapshot is taken: the program it came from and
     /// its SHA-256.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -235,6 +266,10 @@ impl TestSpec {
         toml::to_string_pretty(self).expect("a spec always serializes")
     }
 
+    pub fn is_pool(&self) -> bool {
+        self.pool.is_some()
+    }
+
     /// The time control, with the setup minimum.
     pub fn time_control(&self) -> Option<TimeControl> {
         let tc: TimeControl = self.time_control.as_deref()?.parse().expect("validated");
@@ -254,13 +289,14 @@ impl TestSpec {
     }
 
     /// The engine playing as engine `index` (0 or 1): an SPSA run's one
-    /// engine plays both.
+    /// engine plays both. In a pool, the spec's engine `index`.
     pub fn engine(&self, index: usize) -> &EngineSpec {
         &self.engines[index.min(self.engines.len() - 1)]
     }
 
     /// The two sides' names: the engines', or for SPSA the engine's with
-    /// `+` (θ + cΔ) and `-` (θ − cΔ).
+    /// `+` (θ + cΔ) and `-` (θ − cΔ). A pool's are its first two engines'
+    /// (each pair has its own).
     pub fn side_names(&self) -> [String; 2] {
         match &self.spsa {
             Some(_) => ["+", "-"].map(|s| format!("{}{s}", self.engines[0].name)),
@@ -284,6 +320,18 @@ impl TestSpec {
             if let Some(p) = spsa.params.iter().find(|p| self.engines[0].options.contains_key(&p.name)) {
                 return bad(format!("{} is both an engine option and an SPSA parameter", p.name));
             }
+            if self.pool.is_some() {
+                return bad("a spec is an SPSA run or a pool, not both".into());
+            }
+        } else if let Some(pool) = &self.pool {
+            if self.engines.len() < 2 {
+                return bad(format!("a pool needs at least two engines, not {}", self.engines.len()));
+            }
+            if self.sprt.is_some() {
+                return bad("a pool has no SPRT; it rates its engines from all their games".into());
+            }
+            crate::pool::check_names(&self.engines).map_err(TourneyError::Spec)?;
+            pool.validate(&self.engines).map_err(TourneyError::Spec)?;
         } else if self.engines.len() != 2 {
             return bad(format!("a test needs two engines, not {}", self.engines.len()));
         } else if self.engines[0].name == self.engines[1].name {
@@ -306,7 +354,7 @@ impl TestSpec {
             return bad("max_pairs must be at least 1".into());
         }
         match self.sprt {
-            None if self.pair_limit().is_none() => {
+            None if self.pair_limit().is_none() && self.pool.is_none() => {
                 return bad("give an SPRT, max_pairs, or both, so the test ends".into());
             }
             Some(s) if s.elo1 <= s.elo0 => return bad("the SPRT's elo1 must be above elo0".into()),
@@ -463,6 +511,48 @@ mod tests {
         assert!(TestSpec::parse(&clash).unwrap_err().contains("both an engine option"));
         let none = SPSA.replace("iterations = 100", "iterations = 0");
         assert!(TestSpec::parse(&none).unwrap_err().contains("at least 1"));
+    }
+
+    const POOL: &str = r#"
+        name = "versions"
+        time_control = "2s/30s/100/0/0/120"
+        [pool]
+        [[engines]]
+        name = "v1"
+        program = "bin/v1"
+        [[engines]]
+        name = "v2"
+        program = "bin/v2"
+        [[engines]]
+        name = "v3"
+        program = "bin/v3"
+        retired = true
+    "#;
+
+    #[test]
+    fn reads_and_writes_a_pool_spec() {
+        let spec = TestSpec::parse(POOL).unwrap();
+        let pool = spec.pool.as_ref().unwrap();
+        assert_eq!((pool.min_pairs, pool.outlier_z, pool.anchor.as_deref()), (2, 3.0, None));
+        assert_eq!(spec.pair_limit(), None);
+        assert!(spec.engines[2].retired && !spec.engines[1].retired);
+        assert_eq!(spec.engine(2).name, "v3");
+        assert_eq!(TestSpec::parse(&spec.to_toml()).unwrap(), spec);
+    }
+
+    #[test]
+    fn refuses_pool_specs_that_cannot_run() {
+        let one = POOL.split("[[engines]]").next().unwrap().to_string()
+            + "[[engines]]\nname = \"a\"\nprogram = \"a\"";
+        assert!(TestSpec::parse(&one).unwrap_err().contains("at least two"));
+        let sprt = POOL.replace("[pool]", "[sprt]\n        elo0 = 0\n        elo1 = 5\n        [pool]");
+        assert!(TestSpec::parse(&sprt).unwrap_err().contains("no SPRT"));
+        let twice = POOL.replace("\"v3\"", "\"v1\"");
+        assert!(TestSpec::parse(&twice).unwrap_err().contains("two engines are named"));
+        let anchor = POOL.replace("[pool]", "[pool]\n        anchor = \"v9\"");
+        assert!(TestSpec::parse(&anchor).unwrap_err().contains("anchor"));
+        let pairs = POOL.replace("[pool]", "[pool]\n        min_pairs = 0");
+        assert!(TestSpec::parse(&pairs).unwrap_err().contains("min_pairs"));
     }
 
     #[test]

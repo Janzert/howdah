@@ -8,6 +8,10 @@
 //!   the results log and the game records.
 //! - [`summarize`]: score, Elo, LOS and the SPRT from the results.
 //! - [`run`]: plays a test's remaining games, resuming from its results.
+//! - [`PoolSpec`]: a pool instead of a test (`[pool]` in the spec): many
+//!   engines, added or retired as it goes, rated together from all their
+//!   games ([`PoolInfo`]), with each pair's matchup chosen by what it
+//!   would tell.
 //! - [`SpsaSpec`]: a tuning run instead of a test (`[spsa]` in the spec):
 //!   one engine against itself with its parameters nudged apart, stepped
 //!   by each iteration's games.
@@ -22,6 +26,7 @@
 mod daemon;
 mod error;
 mod memory;
+mod pool;
 mod results;
 mod runner;
 mod spec;
@@ -40,6 +45,7 @@ pub use daemon::{
 };
 pub use error::TourneyError;
 pub use memory::default_budget as default_memory_budget;
+pub use pool::{Matchup, OUTLIER_MIN_GAMES, PoolEngine, PoolInfo, PoolSpec, pool_info};
 pub use results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash, read_results};
 pub use runner::{EngineLine, LiveGame, RunEnd, RunEvent, RunOptions, StopHandle, run};
 pub use spec::{EngineSpec, MemorySpec, OptionValue, SprtSpec, TestSpec};

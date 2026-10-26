@@ -190,6 +190,8 @@ pub fn run() {
             commands::tourney_test,
             commands::tourney_spsa_history,
             commands::tourney_submit,
+            commands::tourney_add_engine,
+            commands::tourney_set_engine_retired,
             commands::tourney_control,
             commands::tourney_set_priority,
             commands::tourney_set_max_pairs,

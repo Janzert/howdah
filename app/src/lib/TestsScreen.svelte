@@ -14,7 +14,7 @@
   import ArchiveDialog from './ArchiveDialog.svelte';
   import NewTestDialog from './NewTestDialog.svelte';
   import { spsaProgress } from './spsa';
-  import { endsText, llrPosition, scoreText, testState } from './tests';
+  import { endsText, llrPosition, poolEnginesText, poolLeaderText, scoreText, testState } from './tests';
   import { tourney } from './tourney.svelte';
 
   interface Props {
@@ -237,9 +237,18 @@
                     <span class="meta"
                       >{t.spsa
                         ? `SPSA tuning of ${t.spsa.params.length} parameters`
-                        : `${t.engines[0]} vs ${t.engines[1]}`}</span
+                        : t.pool
+                          ? `Pool of ${poolEnginesText(t.pool)}`
+                          : `${t.engines[0]} vs ${t.engines[1]}`}</span
                     >
-                    {#if t.spsa}
+                    {#if t.pool}
+                      <span class="meta"
+                        >{t.games} games{poolLeaderText(t.pool) ? `, ${poolLeaderText(t.pool)}` : ''}{t.status !==
+                          'active' && t.running.length > 0
+                          ? `, ${t.running.length} playing`
+                          : ''}</span
+                      >
+                    {:else if t.spsa}
                       <span class="meta">Iteration {t.spsa.done} of {t.spsa.iterations}, {t.games} games</span>
                       <span class="progress" title="Iterations stepped"
                         ><span style="width: {(spsaProgress(t) ?? 0) * 100}%"></span></span

@@ -734,6 +734,25 @@ pub async fn tourney_submit(state: State<'_, Backend>, spec: NewTestSpec) -> Res
 }
 
 #[tauri::command]
+pub async fn tourney_add_engine(
+    state: State<'_, Backend>,
+    id: String,
+    engine: String,
+) -> Result<TestView, ApiError> {
+    state.tourney_add_engine(&id, &engine).await
+}
+
+#[tauri::command]
+pub async fn tourney_set_engine_retired(
+    state: State<'_, Backend>,
+    id: String,
+    name: String,
+    retired: bool,
+) -> Result<TestView, ApiError> {
+    state.tourney_set_engine_retired(&id, &name, retired).await
+}
+
+#[tauri::command]
 pub async fn tourney_control(
     state: State<'_, Backend>,
     id: String,

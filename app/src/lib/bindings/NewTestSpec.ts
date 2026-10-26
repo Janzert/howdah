@@ -2,10 +2,15 @@
 import type { SprtView } from "./SprtView";
 
 /**
- * A new engine test from the lobby: two engines from the engine list.
+ * A new engine test from the lobby: two engines from the engine list, or
+ * a pool of two or more.
  */
 export type NewTestSpec = { name: string, 
 /**
- * The ids of engine 1 (being tested) and engine 2.
+ * The engines' ids: engine 1 (being tested) and engine 2, or a pool's.
  */
-engines: [string, string], timeControl: string | null, maxPairs: number | null, sprt: SprtView | null, concurrency: number, priority: number, };
+engines: Array<string>, 
+/**
+ * A pool, with no SPRT, playing until stopped (or `max_pairs`).
+ */
+pool: boolean, timeControl: string | null, maxPairs: number | null, sprt: SprtView | null, concurrency: number, priority: number, };

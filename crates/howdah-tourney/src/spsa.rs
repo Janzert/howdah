@@ -244,14 +244,14 @@ pub fn step(spec: &SpsaSpec, theta: &mut [f64], point: &SpsaPoint, result: i64) 
 }
 
 /// SplitMix64: small, and the same everywhere.
-struct Rng(u64);
+pub(crate) struct Rng(u64);
 
 impl Rng {
-    fn new(seed: u32, iteration: u32) -> Rng {
+    pub(crate) fn new(seed: u32, iteration: u32) -> Rng {
         Rng((u64::from(seed) << 32 | u64::from(iteration)) ^ 0x6a09_e667_f3bc_c909)
     }
 
-    fn next(&mut self) -> u64 {
+    pub(crate) fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -260,7 +260,7 @@ impl Rng {
     }
 
     /// In [0, 1).
-    fn unit(&mut self) -> f64 {
+    pub(crate) fn unit(&mut self) -> f64 {
         (self.next() >> 11) as f64 / (1u64 << 53) as f64
     }
 }

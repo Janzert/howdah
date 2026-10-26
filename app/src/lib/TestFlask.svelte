@@ -25,7 +25,7 @@
   const top = $derived(BOTTOM - level * (BOTTOM - SHOULDER));
   const fluid = $derived.by(() => {
     const pos = llrPosition(test);
-    if (test.spsa) return 'var(--accent)';
+    if (test.spsa || test.pool) return 'var(--accent)';
     if (pos == null) return 'var(--muted)';
     return pos < 0.5
       ? `color-mix(in oklab, var(--muted) ${Math.round(pos * 200)}%, var(--warn))`

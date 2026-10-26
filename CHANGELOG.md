@@ -7,6 +7,24 @@ young).
 
 ## [Unreleased]
 
+### Added
+
+- Pools in the test daemon: a spec with `[pool]` plays two or more
+  engines against each other for as long as it runs, and engines can be
+  added or retired while it does. It rates them together from all their
+  games (Bradley–Terry, with 95% intervals), shows a crosstable, and
+  points out matchups whose results are out of line with the ratings.
+  Each pair's matchup is chosen by what it would tell: every matchup
+  gets a couple of pairs first (so a new engine catches up against the
+  rest), then the ones whose rating difference is least known get the
+  most. `howdah-tourney add-engine`, `retire` and `unretire` change a
+  running pool, and `show` prints its standings. How it works is in
+  `docs/TOURNAMENTS.md`.
+- A pool's panel in the lobby: ratings with their intervals, the
+  crosstable shaded by how far each result is from the prediction, the
+  outliers, and adding and retiring engines. New test makes one from the
+  engine list.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added

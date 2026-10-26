@@ -17,16 +17,16 @@ use howdah_aei::{EngineId, EngineMessage, Profile};
 use howdah_arimaa::{Color, DEFAULT_SETUP_MINIMUM, GameRecord, SETUP_MINIMUM_TAG, TimeControl};
 use howdah_tourney::client::{Client, ClientError, EventStream};
 use howdah_tourney::{
-    DaemonEvent, DaemonInfo, Decision, EngineLine, GameEntry, GameOutput, OptionValue, RunEnd, SprtSpec,
-    TestInfo, TestSpec, TestStatus,
+    DaemonEvent, DaemonInfo, Decision, EngineLine, GameEntry, GameOutput, OptionValue, PoolInfo, PoolSpec,
+    RunEnd, SprtSpec, TestInfo, TestSpec, TestStatus,
 };
 
 use crate::backend::{Events, emit, emit_session};
 use crate::controller::{Controller, ENGINE_OUTPUT, SharedSession, engine_output};
 use crate::dto::{
-    ApiError, ArchivedTestView, EngineOutput, EngineSpec, NewTestSpec, ProjectionView, SprtView,
-    SpsaParamView, SpsaStepView, SpsaView, TestDetailView, TestGameRef, TestGameTag, TestGameView, TestView,
-    TourneyStatusView, TourneyUpdate,
+    ApiError, ArchivedTestView, EngineOutput, EngineSpec, MatchupView, NewTestSpec, PoolEngineView, PoolView,
+    ProjectionView, SprtView, SpsaParamView, SpsaStepView, SpsaView, TestDetailView, TestGameRef,
+    TestGameTag, TestGameView, TestView, TourneyStatusView, TourneyUpdate,
 };
 use crate::session::{Player, RemoteClock, Session};
 
@@ -103,8 +103,9 @@ impl Tourney {
     pub async fn test(&self, id: &str) -> Result<TestDetailView, ApiError> {
         let client = self.client()?;
         let info = client.info(id).await.map_err(api)?;
+        let names = all_names(&info);
         let mut games: Vec<TestGameView> =
-            client.games(id).await.map_err(api)?.iter().map(|g| game_view(id, &info.engines, g)).collect();
+            client.games(id).await.map_err(api)?.iter().map(|g| game_view(id, &names, g)).collect();
         games.reverse();
         Ok(TestDetailView { test: test_view(&info), games })
     }
@@ -129,10 +130,34 @@ impl Tourney {
             .collect())
     }
 
-    /// Adds a test of two engines from the engine list.
-    pub async fn submit(&self, new: NewTestSpec, engines: [EngineSpec; 2]) -> Result<TestView, ApiError> {
+    /// Adds a test of two engines from the engine list, or a pool.
+    pub async fn submit(&self, new: NewTestSpec, engines: Vec<EngineSpec>) -> Result<TestView, ApiError> {
         let spec = test_spec(new.clone(), engines)?;
         Ok(test_view(&self.client()?.submit(&spec, new.priority).await.map_err(api)?))
+    }
+
+    /// Adds an engine from the engine list to a pool, named apart from
+    /// its engines (`Sharp (2)`) if it has to be.
+    pub async fn add_engine(&self, id: &str, engine: EngineSpec) -> Result<TestView, ApiError> {
+        let client = self.client()?;
+        let info = client.info(id).await.map_err(api)?;
+        let taken = all_names(&info);
+        let name = (1..)
+            .map(|n| if n == 1 { engine.name.clone() } else { format!("{} ({n})", engine.name) })
+            .find(|n| !taken.contains(n))
+            .expect("some name is free");
+        let engine = daemon_engine(engine, name)?;
+        Ok(test_view(&client.add_engine(id, &engine).await.map_err(api)?))
+    }
+
+    /// Retires a pool's engine (it plays no new pairs), or brings it back.
+    pub async fn set_engine_retired(
+        &self,
+        id: &str,
+        name: &str,
+        retired: bool,
+    ) -> Result<TestView, ApiError> {
+        Ok(test_view(&self.client()?.set_engine_retired(id, name, retired).await.map_err(api)?))
     }
 
     /// Pauses, resumes or stops a test.
@@ -359,7 +384,7 @@ impl Tourney {
     }
 
     async fn forward_loop(self: Arc<Self>) {
-        let mut names: HashMap<String, [String; 2]> = HashMap::new();
+        let mut names: HashMap<String, Vec<String>> = HashMap::new();
         loop {
             let stream = match self.client() {
                 Ok(c) => c.events().await.ok().map(|s| (c, s)),
@@ -370,14 +395,14 @@ impl Tourney {
                 while let Some(Ok(event)) = stream.next().await {
                     match event {
                         DaemonEvent::TestChanged { test } => {
-                            names.insert(test.id.clone(), test.engines.clone());
+                            names.insert(test.id.clone(), all_names(&test));
                             self.update(true, Some(test_view(&test)), None, None);
                         }
                         // The daemon sends no TestChanged as a game starts,
                         // so its test's running games come from asking.
                         DaemonEvent::GameStarted { test, .. } => {
                             if let Ok(info) = client.info(&test).await {
-                                names.insert(test, info.engines.clone());
+                                names.insert(test, all_names(&info));
                                 self.update(true, Some(test_view(&info)), None, None);
                             }
                         }
@@ -385,7 +410,7 @@ impl Tourney {
                             if !names.contains_key(&test)
                                 && let Ok(info) = client.info(&test).await
                             {
-                                names.insert(test.clone(), info.engines);
+                                names.insert(test.clone(), all_names(&info));
                             }
                             let engines = names.get(&test).cloned().unwrap_or_default();
                             self.update(true, None, Some(game_view(&test, &engines, &entry)), None);
@@ -643,6 +668,48 @@ fn signed(x: f64) -> String {
     }
 }
 
+/// Every engine's name, in the daemon's order: a pool's, or a test's two.
+fn all_names(t: &TestInfo) -> Vec<String> {
+    match &t.pool {
+        Some(p) => p.engines.iter().map(|e| e.name.clone()).collect(),
+        None => t.engines.to_vec(),
+    }
+}
+
+fn pool_view(p: &PoolInfo) -> PoolView {
+    PoolView {
+        engines: p
+            .engines
+            .iter()
+            .map(|e| PoolEngineView {
+                name: e.name.clone(),
+                retired: e.retired,
+                games: e.games,
+                wins: e.wins,
+                elo: e.elo,
+                error: e.error,
+            })
+            .collect(),
+        ranking: p.ranking.iter().map(|&i| i as u32).collect(),
+        anchor: p.anchor.map(|a| a as u32),
+        matchups: p
+            .matchups
+            .iter()
+            .map(|m| MatchupView {
+                a: m.a as u32,
+                b: m.b as u32,
+                wins: m.wins,
+                pairs: m.pairs,
+                expected: m.expected,
+                z: m.z,
+                outlier: m.outlier,
+            })
+            .collect(),
+        min_pairs: p.min_pairs,
+        outlier_z: p.outlier_z,
+    }
+}
+
 pub fn test_view(t: &TestInfo) -> TestView {
     let s = &t.summary;
     let (outcome, halted) = match &t.end {
@@ -675,7 +742,17 @@ pub fn test_view(t: &TestInfo) -> TestView {
         max_pairs: t.max_pairs,
         concurrency: t.concurrency,
         sprt: t.sprt.map(|s| SprtView { elo0: s.elo0, elo1: s.elo1, undecided_below: t.undecided_below }),
-        running: t.running.iter().map(|&(pair, game)| TestGameRef { pair, game }).collect(),
+        running: t
+            .running
+            .iter()
+            .enumerate()
+            .map(|(i, &(pair, game))| {
+                // A pool's pairs each have their own engines.
+                let engines = t.running_engines.get(i).unwrap_or(&t.engines);
+                let gold = GameEntry::gold_of(game);
+                TestGameRef { pair, game, gold: engines[gold].clone(), silver: engines[1 - gold].clone() }
+            })
+            .collect(),
         games: s.games,
         pairs: s.pairs,
         wins: s.wins,
@@ -715,19 +792,22 @@ pub fn test_view(t: &TestInfo) -> TestView {
                 })
                 .collect(),
         }),
+        pool: t.pool.as_ref().map(pool_view),
         path: t.path.display().to_string(),
     }
 }
 
-fn game_view(test: &str, engines: &[String], g: &GameEntry) -> TestGameView {
-    let name = |i: usize| engines.get(i).cloned().unwrap_or_else(|| format!("engine {}", i + 1));
+/// A finished game, its engines named from every engine's name (a pool's
+/// pairs each have their own).
+fn game_view(test: &str, all: &[String], g: &GameEntry) -> TestGameView {
+    let names = g.names(all);
     let gold = g.gold();
     TestGameView {
         test: test.to_string(),
         pair: g.pair,
         game: g.game,
-        gold: name(gold),
-        silver: name(1 - gold),
+        gold: names[gold].clone(),
+        silver: names[1 - gold].clone(),
         winner: if g.winner == gold { Color::Gold } else { Color::Silver },
         reason: g.reason.clone(),
         plies: g.plies,
@@ -736,32 +816,49 @@ fn game_view(test: &str, engines: &[String], g: &GameEntry) -> TestGameView {
     }
 }
 
-/// The daemon's spec for a test of two engines from the engine list.
-pub fn test_spec(new: NewTestSpec, engines: [EngineSpec; 2]) -> Result<TestSpec, ApiError> {
-    let names = {
-        let [a, b] = [&engines[0].name, &engines[1].name];
-        // Testing an engine against itself still needs two names.
-        if a == b { [format!("{a} (1)"), format!("{b} (2)")] } else { [a.clone(), b.clone()] }
-    };
-    let mut specs = Vec::new();
-    for (e, name) in engines.into_iter().zip(names) {
-        let program = std::path::absolute(&e.program)
-            .map_err(|err| ApiError::state(format!("{}: {err}", e.program)))?;
-        let options: BTreeMap<String, OptionValue> =
-            e.options.into_iter().map(|o| (o.name, OptionValue::Text(o.value))).collect();
-        specs.push(howdah_tourney::EngineSpec {
-            name,
-            program,
-            args: e.args,
-            working_dir: e.working_dir.filter(|d| !d.trim().is_empty()).map(PathBuf::from),
-            options,
-            restart_each_game: false,
-            // An installed engine may need the files beside it.
-            copy_dir: e.installed.is_some(),
-            source: None,
-            sha256: None,
-        });
+/// An engine-list entry as the daemon takes it, named `name`.
+fn daemon_engine(e: EngineSpec, name: String) -> Result<howdah_tourney::EngineSpec, ApiError> {
+    let program =
+        std::path::absolute(&e.program).map_err(|err| ApiError::state(format!("{}: {err}", e.program)))?;
+    let options: BTreeMap<String, OptionValue> =
+        e.options.into_iter().map(|o| (o.name, OptionValue::Text(o.value))).collect();
+    Ok(howdah_tourney::EngineSpec {
+        name,
+        program,
+        args: e.args,
+        working_dir: e.working_dir.filter(|d| !d.trim().is_empty()).map(PathBuf::from),
+        options,
+        restart_each_game: false,
+        // An installed engine may need the files beside it.
+        copy_dir: e.installed.is_some(),
+        retired: false,
+        source: None,
+        sha256: None,
+    })
+}
+
+/// The daemon's spec for a test of two engines from the engine list, or
+/// a pool of them.
+pub fn test_spec(new: NewTestSpec, engines: Vec<EngineSpec>) -> Result<TestSpec, ApiError> {
+    if new.pool && engines.len() < 2 {
+        return Err(ApiError::state("a pool needs at least two engines"));
     }
+    if !new.pool && engines.len() != 2 {
+        return Err(ApiError::state("a test needs two engines"));
+    }
+    // Testing an engine against itself still needs two names.
+    let count = |name: &str| engines.iter().filter(|e| e.name == name).count();
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let names: Vec<String> = engines
+        .iter()
+        .map(|e| {
+            let n = seen.entry(e.name.clone()).or_insert(0);
+            *n += 1;
+            if count(&e.name) > 1 { format!("{} ({n})", e.name) } else { e.name.clone() }
+        })
+        .collect();
+    let specs =
+        engines.into_iter().zip(names).map(|(e, name)| daemon_engine(e, name)).collect::<Result<_, _>>()?;
     let spec = TestSpec {
         name: new.name.trim().to_string(),
         time_control: new.time_control.filter(|t| !t.trim().is_empty()).map(|t| t.trim().to_string()),
@@ -769,7 +866,7 @@ pub fn test_spec(new: NewTestSpec, engines: [EngineSpec; 2]) -> Result<TestSpec,
         setup_minimum: None,
         concurrency: new.concurrency,
         max_pairs: new.max_pairs,
-        sprt: new.sprt.map(|s| SprtSpec {
+        sprt: new.sprt.filter(|_| !new.pool).map(|s| SprtSpec {
             elo0: s.elo0,
             elo1: s.elo1,
             alpha: 0.05,
@@ -777,6 +874,7 @@ pub fn test_spec(new: NewTestSpec, engines: [EngineSpec; 2]) -> Result<TestSpec,
             undecided_below: s.undecided_below,
         }),
         spsa: None,
+        pool: new.pool.then(PoolSpec::default),
         engine_logs: false,
         engines: specs,
         memory: Default::default(),
@@ -808,7 +906,8 @@ mod tests {
     fn new_test(sprt: bool, max_pairs: Option<u32>) -> NewTestSpec {
         NewTestSpec {
             name: " dev ".into(),
-            engines: ["a".into(), "b".into()],
+            engines: vec!["a".into(), "b".into()],
+            pool: false,
             time_control: Some(" 2s/30s/100/0/80t ".into()),
             max_pairs,
             sprt: sprt.then_some(SprtView { elo0: 0.0, elo1: 10.0, undecided_below: Some(0.05) }),
@@ -819,7 +918,8 @@ mod tests {
 
     #[test]
     fn a_test_spec_from_the_engine_list() {
-        let spec = test_spec(new_test(true, None), [engine("Sharp", true), engine("OpFor", false)]).unwrap();
+        let spec =
+            test_spec(new_test(true, None), vec![engine("Sharp", true), engine("OpFor", false)]).unwrap();
         assert_eq!(spec.name, "dev");
         assert_eq!(spec.time_control.as_deref(), Some("2s/30s/100/0/80t"));
         let [a, b] = [&spec.engines[0], &spec.engines[1]];
@@ -833,10 +933,21 @@ mod tests {
 
     #[test]
     fn an_engine_against_itself_gets_two_names() {
-        let spec =
-            test_spec(new_test(false, Some(10)), [engine("Sharp", false), engine("Sharp", false)]).unwrap();
+        let spec = test_spec(new_test(false, Some(10)), vec![engine("Sharp", false), engine("Sharp", false)])
+            .unwrap();
         assert_eq!(spec.engines[0].name, "Sharp (1)");
         assert_eq!(spec.engines[1].name, "Sharp (2)");
+    }
+
+    #[test]
+    fn a_pool_from_the_engine_list() {
+        let new = NewTestSpec { pool: true, ..new_test(true, None) };
+        let engines = vec![engine("Sharp", true), engine("OpFor", false), engine("Sharp", false)];
+        let spec = test_spec(new.clone(), engines).unwrap();
+        assert!(spec.pool.is_some() && spec.sprt.is_none(), "a pool has no SPRT");
+        let names: Vec<&str> = spec.engines.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["Sharp (1)", "OpFor", "Sharp (2)"]);
+        assert!(test_spec(new, vec![engine("A", false)]).unwrap_err().message.contains("at least two"));
     }
 
     #[test]
@@ -863,7 +974,7 @@ mod tests {
 
     #[test]
     fn a_test_needs_a_way_to_end() {
-        let err = test_spec(new_test(false, None), [engine("A", false), engine("B", false)]).unwrap_err();
+        let err = test_spec(new_test(false, None), vec![engine("A", false), engine("B", false)]).unwrap_err();
         assert!(err.message.contains("so the test ends"), "{}", err.message);
     }
 }

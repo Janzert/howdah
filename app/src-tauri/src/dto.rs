@@ -1468,12 +1468,14 @@ pub struct SprtView {
 
 /// A game of a test, by its pair and game number (game 1 has engine 1 as
 /// gold).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TestGameRef {
     pub pair: u32,
     pub game: u8,
+    pub gold: String,
+    pub silver: String,
 }
 
 /// The engine test game a session shows, running or finished.
@@ -1539,7 +1541,63 @@ pub struct TestView {
     /// An SPSA tuning run's iterations and parameters; its `engines` are
     /// the engine at θ + cΔ and at θ − cΔ.
     pub spsa: Option<SpsaView>,
+    /// A pool's ratings and matchups; its `engines` are its first two, and
+    /// the results above (score, Elo, pairs) mean nothing.
+    pub pool: Option<PoolView>,
     pub path: String,
+}
+
+/// A pool of engines rated together from all their games.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PoolView {
+    /// In the order they were added; matchups index them.
+    pub engines: Vec<PoolEngineView>,
+    /// Engine indexes, the best rated first; those without games last.
+    pub ranking: Vec<u32>,
+    /// The engine rated 0, once any has games.
+    pub anchor: Option<u32>,
+    /// Every matchup with games, `a < b`.
+    pub matchups: Vec<MatchupView>,
+    /// Pairs every matchup plays before the scheduler weighs them.
+    pub min_pairs: u32,
+    /// How far out of line (in standard deviations) a matchup is to be an
+    /// outlier.
+    pub outlier_z: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PoolEngineView {
+    pub name: String,
+    /// Plays no new pairs; its games still count.
+    pub retired: bool,
+    pub games: u32,
+    pub wins: u32,
+    /// Elo relative to the anchor; null before its first game.
+    pub elo: Option<f64>,
+    /// Half its 95% interval.
+    pub error: Option<f64>,
+}
+
+/// Two engines of a pool against each other.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MatchupView {
+    pub a: u32,
+    pub b: u32,
+    /// Games each won (a, b).
+    pub wins: [u32; 2],
+    /// Complete pairs.
+    pub pairs: u32,
+    /// `a`'s score the ratings predict (0 to 1).
+    pub expected: f64,
+    /// How far `a`'s wins are from that, in standard deviations.
+    pub z: f64,
+    pub outlier: bool,
 }
 
 /// How a test is likely to end, from simulating the rest of it many
@@ -1661,14 +1719,18 @@ pub struct ArchivedTestView {
     pub error: Option<String>,
 }
 
-/// A new engine test from the lobby: two engines from the engine list.
+/// A new engine test from the lobby: two engines from the engine list, or
+/// a pool of two or more.
 #[derive(Clone, Debug, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct NewTestSpec {
     pub name: String,
-    /// The ids of engine 1 (being tested) and engine 2.
-    pub engines: [String; 2],
+    /// The engines' ids: engine 1 (being tested) and engine 2, or a pool's.
+    pub engines: Vec<String>,
+    /// A pool, with no SPRT, playing until stopped (or `max_pairs`).
+    #[serde(default)]
+    pub pool: bool,
     pub time_control: Option<String>,
     pub max_pairs: Option<u32>,
     pub sprt: Option<SprtView>,

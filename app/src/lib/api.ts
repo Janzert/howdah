@@ -309,8 +309,13 @@ function makeApi(sid: () => SessionId | null) {
     tourneyTest: (id: string) => invoke<TestDetailView>('tourney_test', { id }),
     /** An SPSA run's steps after the first `skip`. */
     tourneySpsaHistory: (id: string, skip: number) => invoke<SpsaStepView[]>('tourney_spsa_history', { id, skip }),
-    /** Adds a test of two engines from the engine list. */
+    /** Adds a test of two engines from the engine list, or a pool. */
     tourneySubmit: (spec: NewTestSpec) => invoke<TestView>('tourney_submit', { spec }),
+    /** Adds an engine from the engine list (by id) to a pool. */
+    tourneyAddEngine: (id: string, engine: string) => invoke<TestView>('tourney_add_engine', { id, engine }),
+    /** Retires a pool's engine (by its name there), or brings it back. */
+    tourneySetEngineRetired: (id: string, name: string, retired: boolean) =>
+      invoke<TestView>('tourney_set_engine_retired', { id, name, retired }),
     tourneyControl: (id: string, action: 'pause' | 'resume' | 'stop') =>
       invoke<TestView>('tourney_control', { id, action }),
     tourneySetPriority: (id: string, priority: number) => invoke<TestView>('tourney_set_priority', { id, priority }),

@@ -30,7 +30,8 @@
   });
 
   const pairs = $derived(pairCount(maxPairs));
-  const canSave = $derived(!!test.sprt || !!test.spsa || (pairs != null && pairs >= 1));
+  // A pool, like a test with an SPRT, can run without a pair limit.
+  const canSave = $derived(!!test.sprt || !!test.spsa || !!test.pool || (pairs != null && pairs >= 1));
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
@@ -69,13 +70,15 @@
           type="number"
           min="1"
           bind:value={maxPairs}
-          placeholder={test.sprt ? 'none' : 'needed'}
+          placeholder={test.sprt || test.pool ? 'none' : 'needed'}
           title="End the test after this many pairs of games"
         />
         <span class="hint"
           >{test.sprt
             ? 'End after this many pairs if the SPRT hasn’t decided (empty: no limit).'
-            : 'End after this many pairs.'}
+            : test.pool
+              ? 'End after this many pairs (empty: play until stopped).'
+              : 'End after this many pairs.'}
           Pairs played so far: {test.pairCounts[0] + test.pairCounts[1] + test.pairCounts[2]}.</span
         >
       </div>

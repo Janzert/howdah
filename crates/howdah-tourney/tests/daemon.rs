@@ -460,3 +460,43 @@ async fn an_spsa_run_carries_on_across_a_restart_and_reports_its_parameters() {
     assert_eq!(rest, steps[28..]);
     close(&daemon).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pool_takes_new_engines_as_it_runs_and_keeps_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let daemon = Daemon::start(tmp.path(), 1).unwrap();
+    let mut rx = daemon.subscribe();
+    let t = daemon.submit(spec("versions", "max_pairs = 6\n[pool]\nmin_pairs = 1", &[]), 0).unwrap();
+    assert_eq!(t.pool.as_ref().unwrap().engines.len(), 2);
+    events_until(&mut rx, |e| matches!(e, DaemonEvent::GameFinished { .. })).await;
+
+    let mut three = spec("x", "max_pairs = 1", &[]).engines[0].clone();
+    three.name = "three".into();
+    let info = daemon.add_engine(&t.id, three.clone()).unwrap();
+    let names: Vec<&str> = info.pool.as_ref().unwrap().engines.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["one", "two", "three"]);
+    assert!(daemon.add_engine(&t.id, three.clone()).unwrap_err().to_string().contains("three"));
+
+    events_until(&mut rx, |e| finished(e, &t.id)).await;
+    let info = daemon.info(&t.id).unwrap();
+    let pool = info.pool.unwrap();
+    // The new engine caught up on its matchups, a pair against each.
+    assert!(pool.engines[2].games >= 4, "{pool:#?}");
+    assert!(pool.anchor.is_some() && pool.engines.iter().all(|e| e.elo.is_some()));
+    assert_eq!(info.summary.games, 12);
+
+    // Retiring is by name, and only in a pool.
+    let info = daemon.set_engine_retired(&t.id, "two", true).unwrap();
+    assert!(info.pool.unwrap().engines[1].retired);
+    assert!(daemon.set_engine_retired(&t.id, "nine", true).is_err());
+    let plain = daemon.submit(spec("plain", "max_pairs = 1", &[]), 0).unwrap();
+    assert!(daemon.add_engine(&plain.id, three).unwrap_err().to_string().contains("isn't a pool"));
+    close(&daemon).await;
+
+    // All of it is kept.
+    let again = Daemon::start(tmp.path(), 0).unwrap();
+    let pool = again.info(&t.id).unwrap().pool.unwrap();
+    assert_eq!(pool.engines.len(), 3);
+    assert!(pool.engines[1].retired && pool.engines[2].games >= 4);
+    close(&again).await;
+}

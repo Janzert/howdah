@@ -1,7 +1,7 @@
 <script lang="ts">
   // One engine test, as a panel of its own in the lobby window (listed
   // under Engine tests in the sidebar): its results (an SPSA run's in
-  // `SpsaPanel`), its running and
+  // `SpsaPanel`, a pool's in `PoolPanel`), its running and
   // finished games (each opens on a board: a running one followed live), and pausing,
   // resuming, stopping, and its settings (`TestSettingsDialog`). Once it's not
   // active and has no games running, it can be archived (zipped into the
@@ -11,6 +11,7 @@
   import type { TestGameView } from './bindings/TestGameView';
   import type { TestView } from './bindings/TestView';
   import { on } from './events';
+  import PoolPanel from './PoolPanel.svelte';
   import SpsaPanel from './SpsaPanel.svelte';
   import TestSettingsDialog from './TestSettingsDialog.svelte';
   import {
@@ -117,7 +118,7 @@
     if (!test) return '';
     const parts = test.spsa
       ? [`${test.spsa.iterations} iterations of ${test.spsa.pairsPerIteration} pairs`]
-      : [test.maxPairs != null ? `max ${test.maxPairs} pairs` : 'no pair limit'];
+      : [test.maxPairs != null ? `max ${test.maxPairs} pairs` : test.pool ? 'until stopped' : 'no pair limit'];
     const cutoff = cutoffPercent(test);
     if (test.sprt && test.maxPairs != null && cutoff != null) parts.push(`undecided under ${cutoff}%`);
     parts.push(`${test.concurrency} at once`, `priority ${test.priority}`);
@@ -133,12 +134,14 @@
     <span class="spacer"></span>
     <button onclick={onClose} title="Close this panel (the test goes on)">Close</button>
   </header>
-  <div class="card" class:wide={!!test?.spsa}>
+  <div class="card" class:wide={!!test?.spsa || !!test?.pool}>
     {#if test}
       <div class="title-row">
         <p class="note">
           {#if test.spsa}
             SPSA tuning: <strong>{test.engines[0]}</strong> (θ + cΔ) vs {test.engines[1]} (θ − cΔ)
+          {:else if test.pool}
+            A pool of {test.pool.engines.length} engines, {test.games} games
           {:else}
             <strong>{test.engines[0]}</strong> (tested) vs {test.engines[1]}
           {/if}{test.timeControl ? `, ${test.timeControl}` : ', no clock'}
@@ -165,6 +168,8 @@
 
       {#if test.spsa}
         <SpsaPanel test={{ ...test, spsa: test.spsa }} />
+      {:else if test.pool}
+        <PoolPanel test={{ ...test, pool: test.pool }} onChanged={show} />
       {:else}
         <dl class="stats">
           <dt>Score</dt>
@@ -248,11 +253,7 @@
           {#each test.running as r (`${r.pair}.${r.game}`)}
             <li>
               <span class="num">{r.pair}.{r.game}</span>
-              <span
-                >{r.game === 1 ? test.engines[0] : test.engines[1]} (gold) vs {r.game === 1
-                  ? test.engines[1]
-                  : test.engines[0]}</span
-              >
+              <span>{r.gold} (gold) vs {r.silver}</span>
               <button class="subtle" onclick={() => open(r.pair, r.game)}>Watch</button>
             </li>
           {/each}

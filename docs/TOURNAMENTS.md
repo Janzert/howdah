@@ -239,6 +239,7 @@ Local HTTP with JSON and server-sent events, as the dev bridge does:
    games in game windows.
 4. **More kinds of test.** Gauntlets, round robins with a crosstable,
    and ratings for a pool (BayesElo or Ordo style); then the game wall.
+   Pools are built (see "Pools" below); they cover round robins too.
 
 **As built (phase 1)**, where it differs from or adds to the plan:
 - `crates/howdah-tourney`, with the command `howdah-tourney`:
@@ -615,6 +616,87 @@ average; its c is at least 0.5 so the two sides differ.
   more than c" counts parameters further from their start than the
   next perturbation, a rough line between a trend and noise.
 
+### Pools
+
+A spec with `[pool]` is a standing tournament instead of a test (format
+in `spec.rs`, the method in `pool.rs`): two or more engines play each
+other in colour-swapped pairs for as long as it runs, engines can be
+added or retired meanwhile, and it shows ratings, a crosstable and the
+matchups whose results are out of line with the ratings. It's for
+continual testing across versions: add each new build, and see where it
+lands against every earlier one. It has no SPRT; `max_pairs` is
+optional, and without one it plays until stopped.
+
+- **Ratings.** The Bradley–Terry model (logistic Elo; no draws to
+  model) fitted to every game at once, as BayesElo and Ordo do: the most
+  likely ratings under a normal prior of SD 600 Elo on each, found by
+  Newton's method with step halving, with their covariance from the
+  inverse Hessian. The prior keeps an engine with only wins or only
+  losses finite and costs almost nothing once there are games. Ratings
+  are relative to the anchor (`anchor`, else the first engine with
+  games), and each one's 95% interval is that of its difference from the
+  anchor, from the covariance (the anchor's is 0). Games count one by
+  one; the pairs' near independence (see Statistics) makes that fine.
+- **Scheduling** (`choose`), when a pair's first game is handed out:
+  coverage first, then information. While some matchup of active
+  engines has fewer than `min_pairs` pairs (default 2, pairs in play
+  counting), one of the least played is drawn at random; a new engine
+  starts at none against everyone, so it catches up before anything
+  else. After that each matchup is weighted by how much one more pair
+  would shrink the variance of its rating difference, `v² I / (1 + v I)`
+  (`v` that variance, `I = 2 p (1 − p)` a pair's Fisher information),
+  with the games in play added to the Hessian as if played, so several
+  slots picking at once don't pile onto one matchup. Every weight gets
+  10% of the mean added (so distant matchups still get the odd pair and
+  the crosstable fills in), and a matchup whose result is 2 or more
+  standard deviations out of line but not yet an outlier gets the mean
+  again. The matchup is drawn in proportion to its weight, from a
+  generator seeded by the spec's `seed` and the pair number, and which
+  engine is engine 1 is drawn too. "The least confident outcome" (a
+  predicted score nearest 50%) was the first idea; it isn't the same
+  thing, since two engines rated alike after 500 games have nothing left
+  to tell.
+- **Outliers.** A matchup with at least 6 games is out of line when
+  `z = (wins − n p) / √(n p (1 − p))` is `outlier_z` (default 3) or
+  more either way, `p` from the ratings. 3 rather than 2 because a pool
+  of 20 engines has 190 matchups, and at 2 about ten would show by
+  chance.
+- **State.** `results.jsonl` entries carry `engines`, the pair's
+  engines 1 and 2 as indexes into the spec's engines (`winner`, `used`
+  and the rest stay by side), so a restart knows every pair's matchup
+  from its log; a pair with no game logged is drawn again. Engines are
+  only ever appended, so the indexes hold. Adding or retiring one
+  rewrites `test.toml` whole (a temporary file, renamed), with the new
+  engine's snapshot in `engines/` as at submission and `retired = true`
+  on a retired one.
+- **Retiring.** A retired engine plays no new pairs; its games still
+  count in the ratings. A pair drawn before its engine was retired is
+  drawn again if neither game has been played, and its other game is
+  dropped if one has. An engine failing three games in a row is retired
+  (`engineRetired`) rather than halting the pool, while at least two
+  others can play; otherwise the pool halts as a test does.
+- **Slots.** A slot keeps its engine processes for the next pair when it
+  has the same engines (either way round) and swaps the rest, so with
+  many engines most pairs start fresh processes.
+- **API and command line.** `POST /tests/{id}/engines` `{"engine":
+  EngineSpec}` and `POST /tests/{id}/retire` `{"engine": name,
+  "retired": bool}`; `howdah-tourney add-engine ID NAME PROGRAM [ARG...]`
+  (or `ENGINE.toml`, one `[[engines]]` table), `retire` and `unretire`.
+  `show`, `run` and `list` print the ratings, the crosstable (rows
+  against columns, both in rank order, `*` marking outliers) and the
+  outliers in words. `TestInfo.pool` is `PoolInfo`, and
+  `TestInfo.running_engines` names each running pair's engines.
+- **In the app**, New test has Two engines or Pool (two or more engines
+  from the engine list, with no SPRT), and a pool's panel shows
+  `PoolPanel` in place of the SPRT's results: the ratings in rank order
+  with their intervals drawn as a dot and whisker on a shared scale,
+  Retire or Bring back for each, Add an engine from the engine list
+  (named apart from the pool's, `Sharp (2)`, if it has to be), the
+  crosstable with each cell shaded by `z` (the accent color better than
+  predicted, warn worse, up to 55% at `outlier_z`, nothing within half a
+  standard deviation, the numbers always shown and the tooltip giving
+  the prediction), and the outliers.
+
 ## Decided
 
 Brian, 2026-10-11:
@@ -623,6 +705,11 @@ Brian, 2026-10-11:
   them for every game.
 - Two-engine SPRT tests come first.
 - No setup book to start with, and maybe never.
+
+Brian, 2026-10-26:
+- A pool (standing tournament) for continual testing between versions,
+  with ratings, a crosstable and outliers, taking new engines at any
+  time, scheduled by coverage then information (above).
 
 ## Open questions
 

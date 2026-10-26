@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::TourneyError;
 
 /// One finished game. Pairs count from 1; in game 1 of a pair engine 1
-/// (index 0) is gold, in game 2 engine 2 is.
+/// (index 0) is gold, in game 2 engine 2 is. In a pool, `engines` says
+/// which of its engines are the pair's engines 1 and 2; indexes here
+/// (`winner`, `used`, ...) are those sides.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameEntry {
@@ -42,6 +44,10 @@ pub struct GameEntry {
     /// Engines restarted after the game, and why.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub restarts: Vec<Restart>,
+    /// In a pool, the pair's engines 1 and 2, as indexes into the spec's
+    /// engines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engines: Option<[usize; 2]>,
 }
 
 /// [`GameEntry::reason`] for a game an engine forfeited by going over a
@@ -63,6 +69,13 @@ impl GameEntry {
 
     pub fn gold(&self) -> usize {
         GameEntry::gold_of(self.game)
+    }
+
+    /// The names of the pair's engines 1 and 2, from every engine's name
+    /// in spec order (or a test's two).
+    pub fn names(&self, all: &[String]) -> [String; 2] {
+        let name = |i: usize| all.get(i).cloned().unwrap_or_else(|| format!("engine {}", i + 1));
+        self.engines.unwrap_or([0, 1]).map(name)
     }
 
     /// How the game ended, by colour (None for a reason this version
@@ -175,6 +188,7 @@ pub(crate) fn entry(pair: u32, game: u8, winner: usize) -> GameEntry {
         finished: 0,
         memory_mb: None,
         restarts: Vec::new(),
+        engines: None,
     }
 }
 

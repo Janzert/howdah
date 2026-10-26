@@ -11,7 +11,7 @@ use serde_json::json;
 use crate::daemon::{ArchivedTest, DaemonEvent, DaemonInfo, DaemonStatus, GameOutput, INFO_FILE, TestInfo};
 use crate::results::GameEntry;
 use crate::runner::LiveGame;
-use crate::spec::TestSpec;
+use crate::spec::{EngineSpec, TestSpec};
 use crate::spsa::SpsaStep;
 
 #[derive(Debug, thiserror::Error)]
@@ -181,6 +181,21 @@ impl Client {
     /// (None: it plays on to its limit).
     pub async fn set_undecided_below(&self, id: &str, cutoff: Option<f64>) -> Result<TestInfo, ClientError> {
         self.post(&format!("/tests/{id}/undecided-below"), &json!({ "undecidedBelow": cutoff })).await
+    }
+
+    /// Adds an engine to a pool (its program as an absolute path).
+    pub async fn add_engine(&self, id: &str, engine: &EngineSpec) -> Result<TestInfo, ClientError> {
+        self.post(&format!("/tests/{id}/engines"), &json!({ "engine": engine })).await
+    }
+
+    /// Retires a pool's engine, or brings it back.
+    pub async fn set_engine_retired(
+        &self,
+        id: &str,
+        name: &str,
+        retired: bool,
+    ) -> Result<TestInfo, ClientError> {
+        self.post(&format!("/tests/{id}/retire"), &json!({ "engine": name, "retired": retired })).await
     }
 
     pub async fn set_slots(&self, slots: u32) -> Result<DaemonStatus, ClientError> {

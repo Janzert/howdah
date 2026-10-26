@@ -8,6 +8,8 @@
 //! - `logs/`: engine transcripts per game, if the spec asks for them.
 //! - `spsa-points.jsonl` and `spsa-history.jsonl`: an SPSA run's state
 //!   (see `spsa`).
+//!
+//! A pool's `test.toml` is written again as engines are added or retired.
 
 use std::path::{Path, PathBuf};
 
@@ -16,7 +18,7 @@ use sha2::{Digest, Sha256};
 
 use crate::error::TourneyError;
 use crate::results::{GameEntry, read_results};
-use crate::spec::TestSpec;
+use crate::spec::{EngineSpec, TestSpec};
 
 pub const SPEC_FILE: &str = "test.toml";
 pub const RESULTS_FILE: &str = "results.jsonl";
@@ -48,39 +50,46 @@ impl TestDir {
         std::fs::create_dir_all(dir).map_err(TourneyError::io(dir))?;
         let path = absolute(dir)?;
         for engine in &mut spec.engines {
-            let source = base.join(&engine.program);
-            let source = std::path::absolute(&source).map_err(TourneyError::io(&source))?;
-            if !source.is_file() {
-                return Err(TourneyError::Spec(format!("{} isn't a file", source.display())));
-            }
-            let rel = Path::new("engines").join(slug(&engine.name));
-            let snap = path.join(&rel);
-            std::fs::create_dir_all(&snap).map_err(TourneyError::io(&snap))?;
-            let file_name = source.file_name().expect("a file has a name");
-            if engine.copy_dir {
-                copy_dir(source.parent().expect("a file has a directory"), &snap)?;
-            } else {
-                let to = snap.join(file_name);
-                std::fs::copy(&source, &to).map_err(TourneyError::io(&to))?;
-            }
-            engine.sha256 = Some(sha256_file(&source)?);
-            engine.program = rel.join(file_name);
-            engine.source = Some(source);
-            if let Some(wd) = &engine.working_dir {
-                let wd = base.join(wd);
-                let wd = std::path::absolute(&wd).map_err(TourneyError::io(&wd))?;
-                if !wd.is_dir() {
-                    return Err(TourneyError::Spec(format!("{} isn't a directory", wd.display())));
-                }
-                engine.working_dir = Some(wd);
-            }
+            snapshot(&path, engine, base)?;
         }
         if let Some(spsa) = &mut spec.spsa {
             spsa.seed.get_or_insert_with(new_seed);
         }
-        let spec_path = path.join(SPEC_FILE);
-        std::fs::write(&spec_path, spec.to_toml()).map_err(TourneyError::io(&spec_path))?;
+        if let Some(pool) = &mut spec.pool {
+            pool.seed.get_or_insert_with(new_seed);
+        }
+        TestDir::write_spec(&path, &spec)?;
         Ok(TestDir { path, spec })
+    }
+
+    /// Snapshots an engine to add to the test (a pool), as making the
+    /// test does: relative paths are taken from `base`. Refuses one whose
+    /// snapshot directory is taken.
+    pub(crate) fn snapshot_engine(
+        &self,
+        mut engine: EngineSpec,
+        base: &Path,
+    ) -> Result<EngineSpec, TourneyError> {
+        let snap = self.path.join("engines").join(slug(&engine.name));
+        if snap.exists() {
+            return Err(TourneyError::Refused(format!(
+                "{} has an engine named {:?} already",
+                self.spec.name, engine.name
+            )));
+        }
+        let made = snapshot(&self.path, &mut engine, base);
+        if made.is_err() {
+            let _ = std::fs::remove_dir_all(&snap);
+        }
+        made.map(|()| engine)
+    }
+
+    /// Writes a test's spec, replacing the one there as a whole.
+    pub(crate) fn write_spec(path: &Path, spec: &TestSpec) -> Result<(), TourneyError> {
+        let spec_path = path.join(SPEC_FILE);
+        let tmp = spec_path.with_extension("toml.tmp");
+        std::fs::write(&tmp, spec.to_toml()).map_err(TourneyError::io(&tmp))?;
+        std::fs::rename(&tmp, &spec_path).map_err(TourneyError::io(&spec_path))
     }
 
     /// Opens an existing test's directory.
@@ -104,7 +113,12 @@ impl TestDir {
     /// How to start engine `index`: its snapshot, run in its snapshot's
     /// directory unless the spec names another.
     pub fn engine_config(&self, index: usize) -> EngineConfig {
-        let e = self.spec.engine(index);
+        self.config_of(self.spec.engine(index))
+    }
+
+    /// How to start an engine of the test's (a pool's, which may have been
+    /// added since the spec was read).
+    pub fn config_of(&self, e: &EngineSpec) -> EngineConfig {
         let program = self.path.join(&e.program);
         let dir = match &e.working_dir {
             Some(wd) => self.path.join(wd),
@@ -121,10 +135,42 @@ impl TestDir {
         format!("games/{pair:04}-{game}.txt")
     }
 
-    /// Where engine `index`'s transcript of a game goes.
-    pub fn log_path(&self, pair: u32, game: u8, index: usize) -> PathBuf {
-        self.path.join(format!("logs/{pair:04}-{game}-{}.log", slug(&self.spec.side_names()[index])))
+    /// Where the transcript of engine (or side) `name` of a game goes.
+    pub fn log_path(&self, pair: u32, game: u8, name: &str) -> PathBuf {
+        self.path.join(format!("logs/{pair:04}-{game}-{}.log", slug(name)))
     }
+}
+
+/// Copies an engine's program (or its directory) into `dir`'s
+/// `engines/<name>/`, and points the spec at the copy.
+fn snapshot(dir: &Path, engine: &mut EngineSpec, base: &Path) -> Result<(), TourneyError> {
+    let source = base.join(&engine.program);
+    let source = std::path::absolute(&source).map_err(TourneyError::io(&source))?;
+    if !source.is_file() {
+        return Err(TourneyError::Spec(format!("{} isn't a file", source.display())));
+    }
+    let rel = Path::new("engines").join(slug(&engine.name));
+    let snap = dir.join(&rel);
+    std::fs::create_dir_all(&snap).map_err(TourneyError::io(&snap))?;
+    let file_name = source.file_name().expect("a file has a name");
+    if engine.copy_dir {
+        copy_dir(source.parent().expect("a file has a directory"), &snap)?;
+    } else {
+        let to = snap.join(file_name);
+        std::fs::copy(&source, &to).map_err(TourneyError::io(&to))?;
+    }
+    engine.sha256 = Some(sha256_file(&source)?);
+    engine.program = rel.join(file_name);
+    engine.source = Some(source);
+    if let Some(wd) = &engine.working_dir {
+        let wd = base.join(wd);
+        let wd = std::path::absolute(&wd).map_err(TourneyError::io(&wd))?;
+        if !wd.is_dir() {
+            return Err(TourneyError::Spec(format!("{} isn't a directory", wd.display())));
+        }
+        engine.working_dir = Some(wd);
+    }
+    Ok(())
 }
 
 /// An absolute path, without `canonicalize`'s `\\?\` prefix on Windows

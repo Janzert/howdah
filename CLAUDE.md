@@ -273,6 +273,23 @@ plans the engine test and tournament runner.
     parameter's `c` for the next iteration); `Daemon::spsa_history`
     (`GET /tests/{id}/spsa-history?skip=N`) reads the steps after the
     first `N`.
+  - Pools (`pool.rs`, design in `docs/TOURNAMENTS.md`): a spec with
+    `[pool]` (`min_pairs`, `outlier_z`, `anchor`, `seed`) and two or more
+    engines (`EngineSpec.retired`: no new pairs), playing until stopped
+    or `max_pairs`. `PoolRun` lives in the `TestRun`'s state: `prepare`
+    picks a pair's matchup (`choose`: coverage, then the variance a pair
+    would remove, with games in play counted) as its first game goes out,
+    and `GameEntry.engines` logs it (sides stay by index; `sides`,
+    `pair_names`, `pair_engines` resolve them, and a slot's `Slotted.index`
+    says which engine it holds, swapped when the pair differs). Adding
+    (`TestRun::add_engine`, snapshotting with `TestDir::snapshot_engine`)
+    and retiring rewrite `test.toml` (`TestDir::write_spec`); an engine
+    failing again and again is retired (`RunEvent::EngineRetired`) while
+    two others can play. `pool_info` (`TestInfo.pool`, `PoolInfo`) fits
+    Bradley–Terry ratings with a prior, intervals against the anchor,
+    and each matchup's `z` and outlier flag. `Daemon::add_engine`,
+    `set_engine_retired`; `TestInfo.running_engines` names a pool's
+    running pairs.
   - `Daemon` (`daemon.rs`): a queue of tests in a data directory
     (`default_data_dir`: `$HOWDAH_TOURNEY_DIR`, else `tourney/` in the
     app's local data dir), each with a `state.json` (`TestStatus`,
@@ -554,7 +571,8 @@ plans the engine test and tournament runner.
     `dev-bridge-config/tourney`). `Tourney::status` starts a task passing
     the daemon's events on as `tourney://changed` (`TourneyUpdate`),
     reconnecting every 3 s. `test_spec` turns two engine-list entries into
-    a `TestSpec`. `open_game` loads a finished game's record, or follows a
+    a `TestSpec`, or two or more into a pool (`NewTestSpec.pool`);
+    `add_engine` adds one to a pool, named apart from its engines. `open_game` loads a finished game's record, or follows a
     running one in the session: a match of two `Player::Remote`s fed by
     `sync_remote`, `set_remote_clock` and `finish_remote` from the
     daemon's `movePlayed` and `gameFinished` events (`Follow`, ending when
@@ -680,7 +698,10 @@ plans the engine test and tournament runner.
     `SpsaChart` of θ's mean movement or one parameter's path, and the
     parameters with range bars and sparklines, its history fetched with
     `tourney_spsa_history` a step range at a time; `lib/spsa.ts` words
-    and measures it),
+    and measures it; a pool shows `PoolPanel.svelte`: ratings with
+    interval plots, Retire/Bring back, Add an engine, the crosstable shaded
+    by `zShade`, and the outliers, worded by `lib/tests.ts`'s `eloText`,
+    `matchupFor` and the like),
     `NewTestDialog.svelte` and `ArchiveDialog.svelte` (archived tests to
     restore or delete); `lib/tests.ts` words a
     test's state and SPRT.

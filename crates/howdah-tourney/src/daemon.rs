@@ -31,9 +31,10 @@ use tokio::task::JoinHandle;
 
 use crate::error::TourneyError;
 use crate::memory::{self, Engines};
+use crate::pool::PoolInfo;
 use crate::results::{GameEntry, parse_results};
 use crate::runner::{EngineLine, EventFn, LiveGame, Picker, RunEnd, RunEvent, TestRun, play_slot};
-use crate::spec::{SprtSpec, TestSpec};
+use crate::spec::{EngineSpec, SprtSpec, TestSpec};
 use crate::spsa::{SpsaInfo, SpsaStep};
 use crate::stats::{Projection, Summary};
 use crate::testdir::{TestDir, slug};
@@ -137,6 +138,9 @@ pub struct TestInfo {
     pub concurrency: u32,
     /// Games being played (pair, game).
     pub running: Vec<(u32, u8)>,
+    /// In a pool, the engines (1, 2) of each of `running`'s pairs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub running_engines: Vec<[String; 2]>,
     pub end: Option<RunEnd>,
     pub submitted: u64,
     pub summary: Summary,
@@ -159,6 +163,10 @@ pub struct TestInfo {
     /// sides: θ + cΔ and θ − cΔ).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spsa: Option<SpsaInfo>,
+    /// A pool's engines, ratings and matchups (its `engines` are its first
+    /// two, and its `summary` means nothing).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool: Option<PoolInfo>,
     /// The test's directory.
     pub path: PathBuf,
 }
@@ -247,15 +255,26 @@ pub enum DaemonEvent {
         test: String,
         entry: GameEntry,
     },
+    /// `engine` is its side in the pair, `name` its name.
     EngineRestarted {
         test: String,
         engine: usize,
+        #[serde(default)]
+        name: String,
         reason: String,
     },
     EngineFailedToStart {
         test: String,
         engine: usize,
+        #[serde(default)]
+        name: String,
         error: String,
+    },
+    /// A pool's engine was retired for failing game after game.
+    EngineRetired {
+        test: String,
+        name: String,
+        reason: String,
     },
     /// A test was taken out of the queue: archived (to `archive`) or
     /// deleted.
@@ -296,6 +315,7 @@ impl DaemonEvent {
             DaemonEvent::GameFinished { .. } => "gameFinished",
             DaemonEvent::EngineRestarted { .. } => "engineRestarted",
             DaemonEvent::EngineFailedToStart { .. } => "engineFailedToStart",
+            DaemonEvent::EngineRetired { .. } => "engineRetired",
             DaemonEvent::TestRemoved { .. } => "testRemoved",
             DaemonEvent::SlotsChanged { .. } => "slotsChanged",
             DaemonEvent::ShuttingDown { .. } => "shuttingDown",
@@ -376,6 +396,11 @@ impl Entry {
             sprt: spec.sprt,
             concurrency: self.run.concurrency(),
             running: self.run.running(),
+            running_engines: if spec.is_pool() {
+                self.run.running().iter().map(|&(pair, _)| self.run.pair_names(pair)).collect()
+            } else {
+                Vec::new()
+            },
             end: self.saved.end.clone(),
             submitted: self.saved.submitted,
             summary: self.run.summary(),
@@ -383,6 +408,7 @@ impl Entry {
             decide_chance: None,
             projection: None,
             spsa: self.run.spsa_info(),
+            pool: self.run.pool_info(),
             path: self.run.dir.path.clone(),
         }
         .with_decide_chance()
@@ -707,7 +733,7 @@ impl Daemon {
             if e.run.dir.spec.spsa.is_some() {
                 return Err(TourneyError::Refused(format!("{id} is an SPSA run; it plays its iterations")));
             }
-            if max_pairs.is_none() && e.run.dir.spec.sprt.is_none() {
+            if max_pairs.is_none() && e.run.dir.spec.sprt.is_none() && !e.run.dir.spec.is_pool() {
                 return Err(TourneyError::Refused(format!("{id} has no SPRT, so it needs a pair limit")));
             }
             if max_pairs == Some(0) {
@@ -737,6 +763,31 @@ impl Daemon {
             e.reconsider();
             Ok(())
         })
+    }
+
+    /// Adds an engine to a pool, snapshotted as submitting does (its
+    /// program must be an absolute path). It plays from the next pair.
+    pub fn add_engine(&self, id: &str, engine: EngineSpec) -> Result<TestInfo, TourneyError> {
+        self.refuse_if_closing()?;
+        if !engine.program.is_absolute() {
+            return Err(TourneyError::Refused(format!(
+                "{}'s program must be an absolute path, not {}",
+                engine.name,
+                engine.program.display()
+            )));
+        }
+        if engine.name.trim().is_empty() {
+            return Err(TourneyError::Refused("the engine needs a name".into()));
+        }
+        let run = self.with(id, |e| Ok(e.run.clone()))?;
+        run.add_engine(engine, &self.0.data_dir)?;
+        self.update(id, |_| Ok(()))
+    }
+
+    /// Retires a pool's engine (it plays no new pairs; its games still
+    /// count), or brings it back.
+    pub fn set_engine_retired(&self, id: &str, name: &str, retired: bool) -> Result<TestInfo, TourneyError> {
+        self.update(id, |e| e.run.set_engine_retired(name, retired))
     }
 
     /// Takes a test out of the queue, zipping its directory into
@@ -912,8 +963,8 @@ impl Daemon {
         let tests = self.0.tests.lock().unwrap();
         let mut running = Vec::new();
         for e in tests.iter() {
-            let names = e.run.dir.spec.side_names();
             for (pair, game) in e.run.running() {
+                let names = e.run.pair_names(pair);
                 let gold = GameEntry::gold_of(game);
                 running.push(RunningGame {
                     test: e.id.clone(),
@@ -1171,6 +1222,7 @@ fn read_archived(zip_path: &Path) -> Result<TestInfo, TourneyError> {
         sprt: spec.sprt,
         concurrency: saved.as_ref().and_then(|s| s.concurrency).unwrap_or(spec.concurrency),
         running: Vec::new(),
+        running_engines: Vec::new(),
         end: saved.as_ref().and_then(|s| s.end.clone()),
         submitted: saved.as_ref().map_or(0, |s| s.submitted),
         summary: crate::stats::summarize(spec.sprt, &entries),
@@ -1181,6 +1233,7 @@ fn read_archived(zip_path: &Path) -> Result<TestInfo, TourneyError> {
         decide_chance: None,
         projection: None,
         spsa,
+        pool: spec.pool.as_ref().map(|p| crate::pool::pool_info(p, &spec.engines, &entries)),
         path: zip_path.to_path_buf(),
     }
     .with_decide_chance())
@@ -1341,12 +1394,13 @@ fn event_fn(inner: &Arc<Inner>, id: &str) -> EventFn {
                 reserves_ms: reserves.map(|r| r.map(|d| d.as_millis() as u64)),
             },
             RunEvent::GameFinished { entry, .. } => DaemonEvent::GameFinished { test, entry },
-            RunEvent::EngineRestarted { engine, reason } => {
-                DaemonEvent::EngineRestarted { test, engine, reason }
+            RunEvent::EngineRestarted { engine, name, reason } => {
+                DaemonEvent::EngineRestarted { test, engine, name, reason }
             }
-            RunEvent::EngineFailedToStart { engine, error } => {
-                DaemonEvent::EngineFailedToStart { test, engine, error }
+            RunEvent::EngineFailedToStart { engine, name, error } => {
+                DaemonEvent::EngineFailedToStart { test, engine, name, error }
             }
+            RunEvent::EngineRetired { name, reason } => DaemonEvent::EngineRetired { test, name, reason },
         };
         let _ = events.send(event);
     })

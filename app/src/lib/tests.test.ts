@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { PoolView } from './bindings/PoolView';
 import type { ProjectionView } from './bindings/ProjectionView';
 import type { TestView } from './bindings/TestView';
 import {
@@ -6,19 +7,24 @@ import {
   cutoffPercent,
   decideText,
   detailsText,
+  eloText,
   endingText,
   endsRows,
   endsText,
   endsTimeText,
   gamesPerHour,
   llrPosition,
+  matchupFor,
   oddsText,
   pairCount,
   percentCutoff,
+  poolEnginesText,
+  poolLeaderText,
   scoreText,
   sprtText,
   testProgress,
   testState,
+  zShade,
 } from './tests';
 
 function view(over: Partial<TestView> = {}): TestView {
@@ -48,8 +54,28 @@ function view(over: Partial<TestView> = {}): TestView {
     projection: null,
     repeated: 0,
     spsa: null,
+    pool: null,
     path: '/tmp/t',
     ...over,
+  };
+}
+
+function pool(): PoolView {
+  const engine = (name: string, elo: number | null, error: number | null, retired = false) => ({
+    name,
+    retired,
+    games: elo == null ? 0 : 20,
+    wins: 10,
+    elo,
+    error,
+  });
+  return {
+    engines: [engine('v1', 0, 0), engine('v2', 24.14, 30), engine('v3', -10, 31, true), engine('v4', null, null)],
+    ranking: [1, 0, 2, 3],
+    anchor: 0,
+    matchups: [{ a: 0, b: 1, wins: [3, 9], pairs: 6, expected: 0.47, z: -2.1, outlier: false }],
+    minPairs: 2,
+    outlierZ: 3,
   };
 }
 
@@ -251,5 +277,34 @@ describe('time left', () => {
     expect(endsTimeText(t([20, 60, 4800], { status: 'paused' }), 60)).toBeNull();
     expect(endsTimeText(t([0, 0, 0]), 60)).toBeNull();
     expect(endsTimeText(t([0, 0, 0]), 60, [600, 1200, 2400])).toBe('about 20 h (10–40 h)');
+  });
+
+  it('words a pool', () => {
+    const p = pool();
+    expect(eloText(p.engines[0])).toBe('0');
+    expect(eloText(p.engines[1])).toBe('+24.1 ±30.0');
+    expect(eloText(p.engines[2])).toBe('-10.0 ±31.0');
+    expect(eloText(p.engines[3])).toBe('–');
+    expect(poolEnginesText(p)).toBe('3 engines playing, 1 retired');
+    expect(poolLeaderText(p)).toBe('v2 leads by 24.1');
+    expect(poolLeaderText({ ...p, anchor: null })).toBeNull();
+    const t = view({ pool: p, games: 40 });
+    expect(briefText(t)).toBe('4 engines, v2 leads');
+    expect(detailsText(t)).toBe('Pool of 3 engines playing, 1 retired, 40 games\nv2 leads by 24.1');
+  });
+
+  it('reads a matchup from either side', () => {
+    const p = pool();
+    expect(matchupFor(p, 0, 1)).toEqual({ wins: 3, losses: 9, pairs: 6, expected: 0.47, z: -2.1, outlier: false });
+    const back = matchupFor(p, 1, 0)!;
+    expect([back.wins, back.losses, back.z]).toEqual([9, 3, 2.1]);
+    expect(back.expected).toBeCloseTo(0.53);
+    expect(matchupFor(p, 0, 3)).toBeNull();
+  });
+
+  it('shades a result by how far out of line it is', () => {
+    expect(zShade(0.3, 3)).toBeNull();
+    expect(zShade(1.5, 3)).toBe('color-mix(in srgb, var(--accent) 28%, transparent)');
+    expect(zShade(-9, 3)).toBe('color-mix(in srgb, var(--warn) 55%, transparent)');
   });
 });

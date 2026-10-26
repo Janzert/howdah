@@ -4,4 +4,4 @@
  * A game of a test, by its pair and game number (game 1 has engine 1 as
  * gold).
  */
-export type TestGameRef = { pair: number, game: number, };
+export type TestGameRef = { pair: number, game: number, gold: string, silver: string, };

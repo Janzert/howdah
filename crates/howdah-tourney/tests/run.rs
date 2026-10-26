@@ -181,7 +181,7 @@ fn restarts_of(events: &[RunEvent], engine: usize) -> Vec<String> {
     events
         .iter()
         .filter_map(|e| match e {
-            RunEvent::EngineRestarted { engine: i, reason } if *i == engine => Some(reason.clone()),
+            RunEvent::EngineRestarted { engine: i, reason, .. } if *i == engine => Some(reason.clone()),
             _ => None,
         })
         .collect()
@@ -335,4 +335,74 @@ async fn an_spsa_run_steps_its_parameters_and_resumes() {
     let record =
         GameRecord::parse(&std::fs::read_to_string(test.path.join(&entries[1].record)).unwrap()).unwrap();
     assert_eq!((record.tag("Gold"), record.tag("Silver")), (Some("rand-"), Some("rand+")));
+}
+
+/// A pool of random movers, `extra` going into its `[pool]`, and each
+/// engine `(name, args)`.
+fn make_pool(dir: &Path, top: &str, pool: &str, engines: &[(&str, &[&str])]) -> TestDir {
+    let program = test_engine().display().to_string().replace('\\', "/");
+    let mut text = format!("name = \"pool\"\ntime_control = \"0s/30s/100/0/12t\"\n{top}\n[pool]\n{pool}\n");
+    for (name, args) in engines {
+        let args: Vec<String> = args.iter().map(|a| format!("{a:?}")).collect();
+        text += &format!(
+            "[[engines]]\nname = \"{name}\"\nprogram = \"{program}\"\nargs = [{}]\n",
+            args.join(", ")
+        );
+    }
+    let spec = TestSpec::parse(&text).unwrap();
+    TestDir::create(spec, Path::new("."), &dir.join("pool")).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pool_covers_every_matchup_and_logs_each_pairs_engines() {
+    let tmp = tempfile::tempdir().unwrap();
+    let engines: [(&str, &[&str]); 3] = [("a", &[]), ("b", &[]), ("c", &[])];
+    let test = make_pool(tmp.path(), "max_pairs = 6\nconcurrency = 2", "min_pairs = 2", &engines);
+    let (end, _) = play(&test, StopHandle::default(), None).await;
+    assert_eq!(end, RunEnd::MaxPairs);
+    let entries = test.results().unwrap();
+    assert_eq!(entries.len(), 12);
+    let mut matchups = std::collections::HashMap::new();
+    for e in &entries {
+        let [x, y] = e.engines.expect("a pool logs each pair's engines");
+        assert_ne!(x, y);
+        let other = entries.iter().find(|o| o.pair == e.pair && o.game != e.game).unwrap();
+        assert_eq!(other.engines, e.engines, "both games of a pair have the same engines");
+        if e.game == 1 {
+            *matchups.entry((x.min(y), x.max(y))).or_insert(0) += 1;
+        }
+        let record = GameRecord::parse(&std::fs::read_to_string(test.path.join(&e.record)).unwrap()).unwrap();
+        let names = ["a", "b", "c"];
+        let gold = if e.game == 1 { names[x] } else { names[y] };
+        assert_eq!(record.tag("Gold"), Some(gold));
+    }
+    // min_pairs 2: two pairs of each of the three matchups.
+    assert_eq!(matchups.values().copied().collect::<Vec<_>>(), [2, 2, 2]);
+    let info = howdah_tourney::pool_info(test.spec.pool.as_ref().unwrap(), &test.spec.engines, &entries);
+    assert_eq!(info.engines.iter().map(|e| e.games).sum::<u32>(), 24);
+    assert_eq!(info.matchups.iter().map(|m| m.pairs).sum::<u32>(), 6);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pool_retires_an_engine_that_keeps_failing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let engines: [(&str, &[&str]); 3] = [("a", &[]), ("b", &[]), ("broken", &["--mode", "crash"])];
+    let test = make_pool(tmp.path(), "max_pairs = 8", "min_pairs = 1", &engines);
+    let (end, events) = play(&test, StopHandle::default(), None).await;
+    assert_eq!(end, RunEnd::MaxPairs, "{events:?}");
+    let retired: Vec<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            RunEvent::EngineRetired { name, .. } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(retired, ["broken"]);
+    // Retiring it is kept in the spec.
+    let reopened = TestDir::open(&test.path).unwrap();
+    assert!(reopened.spec.engines[2].retired);
+    // Once it's retired, a and b play on.
+    let entries = reopened.results().unwrap();
+    let last = entries.iter().max_by_key(|e| e.pair).unwrap();
+    assert_eq!(last.engines.map(|[x, y]| x.max(y)), Some(1), "{entries:?}");
 }

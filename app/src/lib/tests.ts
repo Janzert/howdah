@@ -1,5 +1,7 @@
 // Engine tests (the howdah-tourney daemon): how the lobby words a test's
 // state and results.
+import type { PoolEngineView } from './bindings/PoolEngineView';
+import type { PoolView } from './bindings/PoolView';
 import type { TestView } from './bindings/TestView';
 
 /** A test's state in a word: active, paused, or how it ended. */
@@ -170,11 +172,75 @@ export function scoreText(t: TestView, brief = false): string {
   return `${t.wins[0]}–${t.wins[1]} in ${t.games} games (${pairs})`;
 }
 
+/** A pool engine's Elo with its 95% interval: `+12.3 ±8.0`; the
+ * anchor's `0`; `–` before its first game. */
+export function eloText(e: PoolEngineView): string {
+  if (e.elo == null) return '–';
+  if (e.error === 0) return '0';
+  const elo = `${e.elo >= 0 ? '+' : ''}${e.elo.toFixed(1)}`;
+  return e.error == null ? elo : `${elo} ±${e.error.toFixed(1)}`;
+}
+
+/** A pool's engines in brief: `5 engines`, or `4 engines playing, 1
+ * retired`. */
+export function poolEnginesText(p: PoolView): string {
+  const retired = p.engines.filter((e) => e.retired).length;
+  const playing = p.engines.length - retired;
+  const n = (k: number) => (k === 1 ? '1 engine' : `${k} engines`);
+  return retired === 0 ? n(playing) : `${n(playing)} playing, ${retired} retired`;
+}
+
+/** Who leads a pool: `v3 leads by 24.1` (over the next), or just `v3
+ * leads`; null before any games. */
+export function poolLeaderText(p: PoolView): string | null {
+  if (p.anchor == null) return null;
+  const [first, second] = p.ranking.map((i) => p.engines[i]).filter((e) => e.elo != null);
+  if (!first) return null;
+  if (!second) return `${first.name} leads`;
+  return `${first.name} leads by ${((first.elo ?? 0) - (second.elo ?? 0)).toFixed(1)}`;
+}
+
+/** Engine `i` against engine `j` in a pool, from `i`'s side: its wins
+ * and losses, the score the ratings predict for it, and how far out of
+ * line (z) the result is; null if they haven't played. */
+export function matchupFor(
+  p: PoolView,
+  i: number,
+  j: number,
+): { wins: number; losses: number; pairs: number; expected: number; z: number; outlier: boolean } | null {
+  const m = p.matchups.find((m) => m.a === Math.min(i, j) && m.b === Math.max(i, j));
+  if (!m) return null;
+  const mine = m.a === i;
+  return {
+    wins: mine ? m.wins[0] : m.wins[1],
+    losses: mine ? m.wins[1] : m.wins[0],
+    pairs: m.pairs,
+    expected: mine ? m.expected : 1 - m.expected,
+    z: mine ? m.z : -m.z,
+    outlier: m.outlier,
+  };
+}
+
+/** A crosstable cell's shade for how far its result is from the
+ * ratings' prediction: the accent (better) or warn (worse) color, mixed
+ * in up to 55% by `|z|` up to the outlier threshold; null within half a
+ * standard deviation. */
+export function zShade(z: number, outlierZ: number): string | null {
+  if (Math.abs(z) < 0.5) return null;
+  const share = Math.round(Math.min(1, Math.abs(z) / outlierZ) * 55);
+  return `color-mix(in srgb, var(${z > 0 ? '--accent' : '--warn'}) ${share}%, transparent)`;
+}
+
 /** The score, Elo, LLR and games left in brief, for the sidebar:
  * `118–99 +29.0 0.44 1800` (each left out when the test has none); an
- * SPSA run's iterations: `iteration 358/2000`. */
+ * SPSA run's iterations: `iteration 358/2000`; a pool's engines and
+ * leader. */
 export function briefText(t: TestView): string {
   if (t.spsa) return `iteration ${t.spsa.done}/${t.spsa.iterations}`;
+  if (t.pool) {
+    const leader = poolLeaderText(t.pool);
+    return `${t.pool.engines.length} engines${leader ? `, ${leader.split(' by ')[0]}` : ''}`;
+  }
   const parts = [`${t.wins[0]}–${t.wins[1]}`];
   if (t.elo) parts.push(t.elo.split(' [')[0]);
   if (t.llr != null) parts.push(t.llr.toFixed(2));
@@ -193,6 +259,16 @@ export function detailsText(t: TestView): string {
       `${s.params.length} parameters`,
       `θ + cΔ against θ − cΔ: ${scoreText(t)}`,
     ].join('\n');
+  }
+  if (t.pool) {
+    const outliers = t.pool.matchups.filter((m) => m.outlier).length;
+    return [
+      `Pool of ${poolEnginesText(t.pool)}, ${t.games} games`,
+      poolLeaderText(t.pool),
+      outliers > 0 ? `${outliers} ${outliers === 1 ? 'matchup' : 'matchups'} out of line with the ratings` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
   const ends = endsText(t) && `Ends ${endsText(t)}: ${oddsText(t)}`;
   return [scoreText(t), t.elo && `Elo ${t.elo}`, sprtText(t), ends, decideText(t)].filter(Boolean).join('\n');

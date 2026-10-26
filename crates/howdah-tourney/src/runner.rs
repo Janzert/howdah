@@ -8,6 +8,12 @@
 //! and appended to the log before the slot moves on, so a run stopped or
 //! killed at any point resumes by playing whatever isn't logged.
 //!
+//! In a pool (`pool`), each pair has its own two engines, chosen as its
+//! first game goes out; a slot keeps the engines it holds when the next
+//! pair shares them, and swaps the others. An engine that fails again and
+//! again is retired from the pool rather than halting it, while two others
+//! can still play.
+//!
 //! Engines' memory is watched (`memory`): a slot lets its engines go when
 //! it has had nothing to play for [`IDLE_KEEP`], or when the engines
 //! together are near the budget; an engine that has grown too much is
@@ -33,8 +39,9 @@ use tokio::task::JoinSet;
 
 use crate::error::TourneyError;
 use crate::memory::{self, Engines, Limits, size};
+use crate::pool::{PoolInfo, PoolRun, Prepared};
 use crate::results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash};
-use crate::spec::{OptionValue, TestSpec};
+use crate::spec::{EngineSpec, OptionValue, TestSpec};
 use crate::spsa::{SpsaInfo, SpsaRun};
 use crate::stats::{Decision, Summary, decide_chance, summarize};
 use crate::testdir::TestDir;
@@ -102,14 +109,22 @@ pub enum RunEvent {
         line: EngineLine,
     },
     /// An engine was restarted after failing, timing out (it may still
-    /// be searching), or using too much memory.
+    /// be searching), or using too much memory. `engine` is its side in
+    /// the pair.
     EngineRestarted {
         engine: usize,
+        name: String,
         reason: String,
     },
     EngineFailedToStart {
         engine: usize,
+        name: String,
         error: String,
+    },
+    /// A pool's engine was retired for failing game after game.
+    EngineRetired {
+        name: String,
+        reason: String,
     },
 }
 
@@ -165,14 +180,16 @@ struct State {
     /// The SPRT's chance of deciding within `max_pairs` below which the
     /// test ends undecided.
     undecided_below: Option<f64>,
-    /// Games each engine has failed in a row.
-    failures: [u32; 2],
+    /// Games each engine has failed in a row, by side (a pool's by engine).
+    failures: HashMap<usize, u32>,
     end: Option<RunEnd>,
     log: ResultsLog,
     /// The moves and clocks of the games being played.
     live: HashMap<(u32, u8), Live>,
     /// An SPSA run's parameters.
     spsa: Option<SpsaRun>,
+    /// A pool's engines and matchups.
+    pool: Option<PoolRun>,
 }
 
 /// A running game as far as it has got.
@@ -250,6 +267,7 @@ impl TestRun {
             Some(spec) => Some(SpsaRun::open(&dir.path, spec, &entries)?),
             None => None,
         };
+        let pool = dir.spec.is_pool().then(|| PoolRun::open(&dir, &entries));
         Ok(TestRun {
             config: MatchConfig { time_control: dir.spec.time_control(), ..MatchConfig::default() },
             limits: Limits::new(&dir.spec.memory),
@@ -262,11 +280,12 @@ impl TestRun {
                 cursor: (1, 1),
                 max_pairs: dir.spec.pair_limit(),
                 undecided_below: dir.spec.sprt.and_then(|s| s.undecided_below),
-                failures: [0; 2],
+                failures: HashMap::new(),
                 end,
                 log,
                 live: HashMap::new(),
                 spsa,
+                pool,
             }),
             dir,
             hold: StopHandle::default(),
@@ -278,22 +297,35 @@ impl TestRun {
 
     /// Takes the next game to play, if the test has one to start now.
     pub(crate) fn next_game(&self) -> Option<(u32, u8)> {
-        let mut st = self.state.lock().unwrap();
+        let mut guard = self.state.lock().unwrap();
+        let st = &mut *guard;
         if st.end.is_some() || self.hold.is_stopped() || st.running.len() as u32 >= self.concurrency() {
             return None;
         }
-        let g = match st.retry.pop_front() {
-            Some(g) => g,
-            None => loop {
-                let g = st.cursor;
-                if st.max_pairs.is_some_and(|m| g.0 > m) {
+        let g = loop {
+            let g = match st.retry.pop_front() {
+                Some(g) => g,
+                None => loop {
+                    let g = st.cursor;
+                    if st.max_pairs.is_some_and(|m| g.0 > m) {
+                        return None;
+                    }
+                    st.cursor = if g.1 == 1 { (g.0, 2) } else { (g.0 + 1, 1) };
+                    if !st.done.contains(&g) {
+                        break g;
+                    }
+                },
+            };
+            // A pool's pair gets its engines as its first game goes out.
+            let Some(pool) = &mut st.pool else { break g };
+            match pool.prepare(g, &st.entries, &st.done, &st.running) {
+                Prepared::Play => break g,
+                Prepared::Skip => continue,
+                Prepared::Wait => {
+                    st.retry.push_front(g);
                     return None;
                 }
-                st.cursor = if g.1 == 1 { (g.0, 2) } else { (g.0 + 1, 1) };
-                if !st.done.contains(&g) {
-                    break g;
-                }
-            },
+            }
         };
         // An SPSA iteration's point is drawn as its first game goes out.
         if let Some(spsa) = &mut st.spsa
@@ -317,6 +349,94 @@ impl TestRun {
     /// An SPSA run's progress.
     pub(crate) fn spsa_info(&self) -> Option<SpsaInfo> {
         self.state.lock().unwrap().spsa.as_ref().map(SpsaRun::info)
+    }
+
+    /// A pool's standings.
+    pub(crate) fn pool_info(&self) -> Option<PoolInfo> {
+        let st = self.state.lock().unwrap();
+        st.pool.as_ref().map(|p| p.info(&st.entries))
+    }
+
+    /// Adds an engine to a pool, snapshotted from `engine` (programs taken
+    /// from `base`). It plays from its pool's next pair.
+    pub(crate) fn add_engine(&self, engine: EngineSpec, base: &std::path::Path) -> Result<(), TourneyError> {
+        let check = |st: &State, engine: &EngineSpec| match &st.pool {
+            Some(pool) => {
+                let mut engines = pool.engines().to_vec();
+                engines.push(engine.clone());
+                crate::pool::check_names(&engines).map_err(TourneyError::Refused)
+            }
+            None => Err(TourneyError::Refused(format!("{} isn't a pool", self.dir.spec.name))),
+        };
+        check(&self.state.lock().unwrap(), &engine)?;
+        // Copied without the lock: games go on meanwhile.
+        let engine = self.dir.snapshot_engine(engine, base)?;
+        let mut st = self.state.lock().unwrap();
+        let added =
+            check(&st, &engine).and_then(|()| st.pool.as_mut().expect("checked").add_engine(engine.clone()));
+        if added.is_err() {
+            let _ = std::fs::remove_dir_all(
+                self.dir.path.join("engines").join(crate::testdir::slug(&engine.name)),
+            );
+        }
+        added
+    }
+
+    /// Retires a pool's engine (no new pairs) or brings it back.
+    pub(crate) fn set_engine_retired(&self, name: &str, retired: bool) -> Result<(), TourneyError> {
+        let mut st = self.state.lock().unwrap();
+        let Some(pool) = &mut st.pool else {
+            return Err(TourneyError::Refused(format!("{} isn't a pool", self.dir.spec.name)));
+        };
+        let index =
+            pool.index_of(name).ok_or_else(|| TourneyError::Refused(format!("no engine {name:?}")))?;
+        pool.set_retired(index, retired)?;
+        st.failures.remove(&index);
+        Ok(())
+    }
+
+    /// The spec's engines playing pair `pair` as engines 1 and 2: a pool's
+    /// matchup, an SPSA run's one engine twice, or a test's two.
+    fn sides(&self, st: &State, pair: u32) -> [usize; 2] {
+        match &st.pool {
+            Some(pool) => pool.sides(pair).unwrap_or([0, 1]),
+            None => [0, 1.min(self.dir.spec.engines.len() - 1)],
+        }
+    }
+
+    /// Pair `pair`'s engines, as [`TestRun::sides`] and their specs.
+    fn pair_engines(&self, pair: u32) -> ([usize; 2], [EngineSpec; 2]) {
+        let st = self.state.lock().unwrap();
+        let sides = self.sides(&st, pair);
+        let spec = |i: usize| match &st.pool {
+            Some(pool) => pool.engines()[i].clone(),
+            None => self.dir.spec.engine(i).clone(),
+        };
+        (sides, sides.map(spec))
+    }
+
+    /// The names of pair `pair`'s engines 1 and 2.
+    pub(crate) fn pair_names(&self, pair: u32) -> [String; 2] {
+        self.names_of(&self.state.lock().unwrap(), pair)
+    }
+
+    fn names_of(&self, st: &State, pair: u32) -> [String; 2] {
+        match &st.pool {
+            Some(pool) => self.sides(st, pair).map(|i| pool.engines()[i].name.clone()),
+            None => self.dir.spec.side_names(),
+        }
+    }
+
+    /// What side `side`'s failures count against: the engine in a pool,
+    /// otherwise the side.
+    fn failure_key(&self, st: &State, pair: u32, side: usize) -> usize {
+        if st.pool.is_some() { self.sides(st, pair)[side] } else { side }
+    }
+
+    /// A pool's engines 1 and 2 for pair `pair`, for its log entries.
+    fn logged_engines(&self, pair: u32) -> Option<[usize; 2]> {
+        let st = self.state.lock().unwrap();
+        st.pool.as_ref().map(|_| self.sides(&st, pair))
     }
 
     /// How the test ended, once it has and its last games are done: None
@@ -417,7 +537,7 @@ impl TestRun {
             return false;
         }
         st.end = None;
-        st.failures = [0; 2];
+        st.failures.clear();
         true
     }
 
@@ -441,7 +561,7 @@ impl TestRun {
         let gold = GameEntry::gold_of(game.1);
         let ms = |d: Duration| d.as_millis() as u64;
         let [gold_name, silver_name] = {
-            let names = spec.side_names();
+            let names = self.names_of(&st, game.0);
             [names[gold].clone(), names[1 - gold].clone()]
         };
         Some(LiveGame {
@@ -517,20 +637,37 @@ impl TestRun {
     fn give_back(&self, game: (u32, u8), blame: &[usize], why: &str) {
         let mut st = self.state.lock().unwrap();
         st.retry.push_back(game);
+        let names = self.names_of(&st, game.0);
         for &i in blame {
-            self.count_failure(&mut st, i, why);
+            let key = self.failure_key(&st, game.0, i);
+            self.count_failure(&mut st, key, &names[i], why);
         }
     }
 
-    fn count_failure(&self, st: &mut State, engine: usize, why: &str) {
-        st.failures[engine] += 1;
-        if st.failures[engine] >= MAX_FAILURES && st.end.is_none() {
-            let name = &self.dir.spec.side_names()[engine];
-            st.end = Some(RunEnd::Halted(format!(
-                "{name} failed {} times in a row; last: {why}",
-                st.failures[engine]
-            )));
+    /// Counts a failure against `key` ([`TestRun::failure_key`]): one too
+    /// many halts the test, or retires a pool's engine while two others
+    /// can play.
+    fn count_failure(&self, st: &mut State, key: usize, name: &str, why: &str) {
+        let failures = st.failures.entry(key).or_insert(0);
+        *failures += 1;
+        let failures = *failures;
+        if failures < MAX_FAILURES || st.end.is_some() {
+            return;
         }
+        let reason = format!("{name} failed {failures} times in a row; last: {why}");
+        if let Some(pool) = &mut st.pool
+            && pool.active() > 2
+        {
+            match pool.set_retired(key, true) {
+                Ok(()) => {
+                    st.failures.remove(&key);
+                    self.send(RunEvent::EngineRetired { name: name.into(), reason });
+                }
+                Err(e) => st.end = Some(RunEnd::Halted(e.to_string())),
+            }
+            return;
+        }
+        st.end = Some(RunEnd::Halted(reason));
     }
 
     /// Logs a finished game and updates the failure counts and the end.
@@ -541,11 +678,13 @@ impl TestRun {
         // No longer live once logged, before `GameFinished` goes out (the
         // slot only calls `not_running` after restarting engines).
         st.live.remove(&(entry.pair, entry.game));
-        for i in 0..2 {
+        let names = self.names_of(&st, entry.pair);
+        for (i, name) in names.iter().enumerate() {
+            let key = self.failure_key(&st, entry.pair, i);
             if failed == Some(i) {
-                self.count_failure(&mut st, i, entry.detail.as_deref().unwrap_or("forfeit"));
+                self.count_failure(&mut st, key, name, entry.detail.as_deref().unwrap_or("forfeit"));
             } else {
-                st.failures[i] = 0;
+                st.failures.insert(key, 0);
             }
         }
         let pair = entry.pair;
@@ -677,6 +816,8 @@ type LogSink = Arc<Mutex<Option<BufWriter<File>>>>;
 /// An engine a slot holds.
 struct Slotted {
     engine: Engine,
+    /// Which of the spec's engines it is (a pool's pairs differ).
+    index: usize,
     /// Its key in [`Engines`].
     key: u64,
     /// Its resident memory after its first game.
@@ -779,16 +920,35 @@ async fn play_game(
     sinks: &[LogSink; 2],
     tracked: &Engines,
 ) -> Result<(), TourneyError> {
+    let (sides, specs) = ctx.pair_engines(pair);
+    let names = ctx.pair_names(pair);
+    // A pool's pair may have the slot's engines the other way round, or
+    // others: those are swapped for the pair's.
+    let holds = |e: &Option<Slotted>, i: usize| e.as_ref().is_some_and(|s| s.index == i);
+    if !(holds(&engines[0], sides[0]) && holds(&engines[1], sides[1]))
+        && (holds(&engines[0], sides[1]) || holds(&engines[1], sides[0]))
+    {
+        engines.swap(0, 1);
+    }
+    for i in 0..2 {
+        if engines[i].as_ref().is_some_and(|s| s.index != sides[i])
+            && let Some(e) = engines[i].take()
+        {
+            tracked.remove(e.key);
+            let _ = e.engine.quit(Duration::from_secs(5)).await;
+        }
+    }
     let mut failed = Vec::new();
     for i in 0..2 {
         if engines[i].is_none() {
-            match start_engine(ctx, i, sinks[i].clone()).await {
+            match start_engine(ctx, &specs[i], sinks[i].clone()).await {
                 Ok(engine) => {
                     let key = tracked.add(engine.pid().unwrap_or(0));
-                    engines[i] = Some(Slotted { engine, key, first: None });
+                    engines[i] = Some(Slotted { engine, index: sides[i], key, first: None });
                 }
                 Err(error) => {
-                    ctx.send(RunEvent::EngineFailedToStart { engine: i, error: error.clone() });
+                    let name = names[i].clone();
+                    ctx.send(RunEvent::EngineFailedToStart { engine: i, name, error: error.clone() });
                     failed.push((i, error));
                 }
             }
@@ -802,7 +962,7 @@ async fn play_game(
     }
     if ctx.dir.spec.engine_logs {
         for (i, sink) in sinks.iter().enumerate() {
-            let path = ctx.dir.log_path(pair, game, i);
+            let path = ctx.dir.log_path(pair, game, &names[i]);
             let file = File::create(&path).map_err(TourneyError::io(&path))?;
             *sink.lock().unwrap() = Some(BufWriter::new(file));
         }
@@ -818,7 +978,7 @@ async fn play_game(
             }
         }
         if let Some(why) = failed {
-            restart(ctx, engines, tracked, i, &why).await;
+            restart(ctx, engines, tracked, i, &names[i], &why).await;
             ctx.give_back((pair, game), &[i], &why);
             return Ok(());
         }
@@ -846,7 +1006,7 @@ async fn play_game(
         });
         tokio::select! {
             outcome = game_played => Played::Game(outcome),
-            (i, why) = watch_memory(ctx, tracked, keys) => Played::OverLimit(i, why),
+            (i, why) = watch_memory(ctx, tracked, keys, &names) => Played::OverLimit(i, why),
         }
     };
     for sink in sinks {
@@ -860,8 +1020,8 @@ async fn play_game(
             // It failed before the first move, so it isn't a game. We
             // can't tell which engine to blame: start both afresh.
             let why = format!("failed before the first move: {e}");
-            for i in 0..2 {
-                restart(ctx, engines, tracked, i, &why).await;
+            for (i, name) in names.iter().enumerate() {
+                restart(ctx, engines, tracked, i, name, &why).await;
             }
             ctx.give_back((pair, game), &[0, 1], &why);
         }
@@ -889,10 +1049,10 @@ async fn play_game(
             let summary = ctx.finish(entry.clone(), failed)?;
             ctx.send(RunEvent::GameFinished { entry, summary: Box::new(summary) });
             for r in &restarts {
-                restart(ctx, engines, tracked, r.engine, &r.reason).await;
+                restart(ctx, engines, tracked, r.engine, &names[r.engine], &r.reason).await;
             }
             for (i, slot) in engines.iter_mut().enumerate() {
-                if ctx.dir.spec.engine(i).restart_each_game
+                if specs[i].restart_each_game
                     && let Some(e) = slot.take()
                 {
                     tracked.remove(e.key);
@@ -927,10 +1087,11 @@ async fn play_game(
                 let _ = e.engine.kill().await;
                 ctx.send(RunEvent::EngineRestarted {
                     engine: over,
+                    name: names[over].clone(),
                     reason: entry.restarts[0].reason.clone(),
                 });
             }
-            restart(ctx, engines, tracked, other, &entry.restarts[1].reason).await;
+            restart(ctx, engines, tracked, other, &names[other], &entry.restarts[1].reason).await;
         }
     }
     Ok(())
@@ -939,8 +1100,12 @@ async fn play_game(
 /// Reads a running game's engines every [`memory::POLL`] and returns the
 /// one to stop, and why: one over its limit, or the largest of all the
 /// engines when they're over the budget together and it's one of ours.
-async fn watch_memory(ctx: &TestRun, tracked: &Engines, keys: [u64; 2]) -> (usize, String) {
-    let names = ctx.dir.spec.side_names();
+async fn watch_memory(
+    ctx: &TestRun,
+    tracked: &Engines,
+    keys: [u64; 2],
+    names: &[String; 2],
+) -> (usize, String) {
     let limit = ctx.limits.limit;
     loop {
         tokio::time::sleep(memory::POLL).await;
@@ -979,18 +1144,19 @@ async fn restart(
     engines: &mut [Option<Slotted>; 2],
     tracked: &Engines,
     i: usize,
+    name: &str,
     reason: &str,
 ) {
     if let Some(e) = engines[i].take() {
         tracked.remove(e.key);
         let _ = e.engine.quit(Duration::from_secs(2)).await;
-        ctx.send(RunEvent::EngineRestarted { engine: i, reason: reason.to_string() });
+        ctx.send(RunEvent::EngineRestarted { engine: i, name: name.into(), reason: reason.to_string() });
     }
 }
 
-async fn start_engine(ctx: &TestRun, i: usize, sink: LogSink) -> Result<Engine, String> {
+async fn start_engine(ctx: &TestRun, spec: &EngineSpec, sink: LogSink) -> Result<Engine, String> {
     // The kernel's cap, a backstop for the watchdog's limit.
-    let config = ctx.dir.engine_config(i).memory_limit(ctx.limits.kernel_cap());
+    let config = ctx.dir.config_of(spec).memory_limit(ctx.limits.kernel_cap());
     let transcript = ctx.dir.spec.engine_logs.then(|| {
         Box::new(move |d: Direction, line: &str| {
             if let Some(w) = sink.lock().unwrap().as_mut() {
@@ -1000,7 +1166,7 @@ async fn start_engine(ctx: &TestRun, i: usize, sink: LogSink) -> Result<Engine, 
         }) as Box<dyn FnMut(Direction, &str) + Send>
     });
     let mut engine = Engine::start_with_transcript(&config, transcript).await.map_err(|e| e.to_string())?;
-    for (name, value) in &ctx.dir.spec.engine(i).options {
+    for (name, value) in &spec.options {
         engine.set_option(name, value).await.map_err(|e| format!("setting option {name}: {e}"))?;
     }
     Ok(engine)
@@ -1027,7 +1193,7 @@ fn write_game(
     let mut record = GameRecord { tags: Vec::new(), tree };
     record.set_tag("Event", spec.name.as_str());
     record.set_tag("Round", format!("{pair}.{game}"));
-    let names = spec.side_names();
+    let names = ctx.pair_names(pair);
     record.set_tag("Gold", names[gold].as_str());
     record.set_tag("Silver", names[1 - gold].as_str());
     if let Some(tc) = &spec.time_control {
@@ -1072,6 +1238,7 @@ fn write_game(
         finished: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
         memory_mb: None,
         restarts: Vec::new(),
+        engines: ctx.logged_engines(pair),
     })
 }
 

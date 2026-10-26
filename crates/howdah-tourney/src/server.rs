@@ -25,6 +25,9 @@
 //!   `{"maxPairs": n | null}`; `POST /tests/{id}/undecided-below`
 //!   `{"undecidedBelow": chance | null}`; `POST /tests/{id}/concurrency`
 //!   `{"concurrency": n}` (games at once).
+//! - `POST /tests/{id}/engines` `{"engine": EngineSpec}`: adds an engine
+//!   to a pool (program as an absolute path); `POST /tests/{id}/retire`
+//!   `{"engine": name, "retired": bool}` retires one or brings it back.
 //! - `POST /slots` `{"slots": n}`; `POST /shutdown` `{"now": bool}`;
 //!   `POST /shutdown/cancel` calls off a shutdown that isn't `now`.
 //! - `GET /events`: server-sent events, each a [`DaemonEvent`] named by
@@ -52,7 +55,7 @@ use tokio_stream::{Stream, StreamExt};
 
 use crate::daemon::{Daemon, DaemonEvent, DaemonInfo, GameOutput, INFO_FILE};
 use crate::error::TourneyError;
-use crate::spec::TestSpec;
+use crate::spec::{EngineSpec, TestSpec};
 use crate::spsa::SpsaStep;
 
 #[cfg(doc)]
@@ -141,6 +144,8 @@ pub async fn serve(daemon: Daemon, listener: TcpListener, info: DaemonInfo) -> R
         .route("/tests/{id}/max-pairs", post(max_pairs))
         .route("/tests/{id}/undecided-below", post(undecided_below))
         .route("/tests/{id}/concurrency", post(concurrency))
+        .route("/tests/{id}/engines", post(add_engine))
+        .route("/tests/{id}/retire", post(retire))
         .route("/archive", get(archived))
         .route("/archive/{file}", axum::routing::delete(delete_archived))
         .route("/archive/{file}/restore", post(restore))
@@ -339,6 +344,40 @@ async fn concurrency(
 ) -> ApiResult<crate::daemon::TestInfo> {
     let req: Concurrency = body(&bytes)?;
     Ok(Json(s.daemon.set_concurrency(&id, req.concurrency)?))
+}
+
+#[derive(Deserialize)]
+struct AddEngine {
+    engine: EngineSpec,
+}
+
+async fn add_engine(
+    State(s): State<AppState>,
+    UrlPath(id): UrlPath<String>,
+    bytes: Bytes,
+) -> ApiResult<crate::daemon::TestInfo> {
+    let req: AddEngine = body(&bytes)?;
+    // Copying the engine is file work.
+    let daemon = s.daemon.clone();
+    let info = tokio::task::spawn_blocking(move || daemon.add_engine(&id, req.engine))
+        .await
+        .expect("adding an engine doesn't panic")?;
+    Ok(Json(info))
+}
+
+#[derive(Deserialize)]
+struct Retire {
+    engine: String,
+    retired: bool,
+}
+
+async fn retire(
+    State(s): State<AppState>,
+    UrlPath(id): UrlPath<String>,
+    bytes: Bytes,
+) -> ApiResult<crate::daemon::TestInfo> {
+    let req: Retire = body(&bytes)?;
+    Ok(Json(s.daemon.set_engine_retired(&id, &req.engine, req.retired)?))
 }
 
 #[derive(Deserialize)]
