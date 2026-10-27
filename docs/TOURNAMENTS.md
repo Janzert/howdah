@@ -646,7 +646,17 @@ optional, and without one it plays until stopped.
   would shrink the variance of its rating difference, `v² I / (1 + v I)`
   (`v` that variance, `I = 2 p (1 − p)` a pair's Fisher information),
   with the games in play added to the Hessian as if played, so several
-  slots picking at once don't pile onto one matchup. Every weight gets
+  slots picking at once don't pile onto one matchup, times the
+  matchup's relevance: the larger of how contested it is, `4 p (1 − p)`,
+  and the chance its order is still open, `2 Φ(−|d| / √v)`. Without that,
+  the first pool on the Windows machine (three OpFor releases and Sharp,
+  2547 games) gave Sharp 57% of its games though it won 98% of them: a
+  lopsided matchup's difference stays the least known because each game
+  tells little, so pure information kept choosing it, to measure a gap
+  whose order was never in doubt. With it, the same tally gives Sharp's
+  matchups 15% of the weight, mostly the floor, while close engines stay
+  at full weight however well measured and a new engine far from the
+  rest gets full weight until its place is clear. Every weight gets
   10% of the mean added (so distant matchups still get the odd pair and
   the crosstable fills in), and a matchup whose result is 2 or more
   standard deviations out of line but not yet an outlier gets the mean

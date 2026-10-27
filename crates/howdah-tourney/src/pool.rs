@@ -21,8 +21,12 @@
 //! - Then by information: each matchup is weighted by how much one more
 //!   pair would shrink the variance of its rating difference,
 //!   `v² I / (1 + v I)` with `v` that variance and `I = 2 p (1 − p)` a
-//!   pair's Fisher information, counting the games in play as played. To
-//!   that is added a floor ([`FLOOR`] of the mean), so far-apart matchups
+//!   pair's Fisher information, counting the games in play as played,
+//!   times how much the matchup matters ([`relevance`]): fully while its
+//!   result is contested or the engines' order is still open, and down to
+//!   `4 p (1 − p)` for a lopsided one whose order is settled, which would
+//!   otherwise take the most games for the least use, since its rating
+//!   difference stays the least known. To that is added a floor ([`FLOOR`] of the mean), so far-apart matchups
 //!   still get the odd pair and the crosstable fills in, and the mean
 //!   again for a matchup whose result looks out of line ([`SUSPECT_Z`])
 //!   but isn't yet an outlier. The matchup is drawn in proportion to its
@@ -477,7 +481,7 @@ fn weights(spec: &PoolSpec, matchups: &[(usize, usize)], tally: &Tally) -> Vec<f
             let p = fit.p(a, b);
             let v = fit.diff_var(a, b).max(0.0);
             let info = 2.0 * p * (1.0 - p);
-            v * v * info / (1.0 + v * info)
+            v * v * info / (1.0 + v * info) * relevance(fit.r[a] - fit.r[b], v)
         })
         .collect();
     let mean = gains.iter().sum::<f64>() / gains.len() as f64;
@@ -490,6 +494,30 @@ fn weights(spec: &PoolSpec, matchups: &[(usize, usize)], tally: &Tally) -> Vec<f
             gain + FLOOR * mean + if suspect { mean } else { 0.0 }
         })
         .collect()
+}
+
+/// How much a matchup's rating difference matters, from 0 to 1, for a
+/// difference `d` (in natural units) with variance `v`: the larger of how
+/// contested its games are, `4 p (1 − p)`, and the chance its order is
+/// still open, `2 Φ(−|d| / √v)`. Close engines stay at about 1 however well
+/// measured; a new engine far from the rest is at 1 until its place is
+/// clear; a lopsided matchup whose order is settled (Sharp against an
+/// engine it beats 97% of the time) falls to about 0.1.
+fn relevance(d: f64, v: f64) -> f64 {
+    let p = sigmoid(d);
+    let contested = 4.0 * p * (1.0 - p);
+    let open = if v > 0.0 { 2.0 * normal_cdf(-d.abs() / v.sqrt()) } else { 0.0 };
+    contested.max(open).min(1.0)
+}
+
+/// Φ, by Abramowitz and Stegun's 7.1.26 (error under 1.5e-7).
+fn normal_cdf(x: f64) -> f64 {
+    let t = 1.0 / (1.0 + 0.327_591_1 * x.abs() / std::f64::consts::SQRT_2);
+    let poly = t
+        * (0.254_829_592
+            + t * (-0.284_496_736 + t * (1.421_413_741 + t * (-1.453_152_027 + t * 1.061_405_429))));
+    let erfc = poly * (-x * x / 2.0).exp();
+    if x >= 0.0 { 1.0 - erfc / 2.0 } else { erfc / 2.0 }
 }
 
 /// What to do with a game about to be handed out.
@@ -783,6 +811,46 @@ mod tests {
         let t = Tally { wins, pairs, pending: vec![vec![0; n]; n] };
         let w = weights(&spec, &[(0, 1), (0, 2), (1, 2)], &t);
         assert!(w[1] > w[0] && w[1] > w[2], "{w:?}");
+    }
+
+    /// Pool 0020's crosstable after 2547 games: Sharp beats three OpFor
+    /// releases 97–99%, two of which are even.
+    fn windows_pool() -> Tally {
+        // OpFor 10.6, 10.10, 10.26, Sharp.
+        let wins =
+            vec![vec![0, 181, 52, 1], vec![177, 0, 54, 4], vec![312, 326, 0, 21], vec![265, 370, 782, 0]];
+        let pairs = (0..4).map(|i| (0..4).map(|j| (wins[i][j] + wins[j][i]) / 2).collect()).collect();
+        Tally { wins, pairs, pending: vec![vec![0; 4]; 4] }
+    }
+
+    #[test]
+    fn settled_lopsided_matchups_get_little() {
+        let spec = PoolSpec::default();
+        let matchups = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+        let w = weights(&spec, &matchups, &windows_pool());
+        let total: f64 = w.iter().sum();
+        let sharp: f64 = [2, 4, 5].iter().map(|&k| w[k]).sum::<f64>() / total;
+        // It had over half the games; now it gets the floor and a little.
+        assert!(sharp < 0.25, "Sharp's share {sharp:.3}: {w:?}");
+        // Every matchup still gets some.
+        assert!(w.iter().all(|&x| x > 0.0));
+        // The two even releases get the most.
+        let most = w.iter().cloned().fold(0.0, f64::max);
+        assert_eq!(w[0], most, "{w:?}");
+    }
+
+    #[test]
+    fn relevance_keeps_close_and_unsettled_matchups() {
+        // Even: 1 however well measured.
+        assert!((relevance(0.0, 1e-6) - 1.0).abs() < 1e-9);
+        // 30 Elo apart, order known: still contested.
+        assert!(relevance(30.0 / ELO_PER_NAT, 1e-4) > 0.98);
+        // 600 Elo apart but barely measured: its place is open.
+        assert!(relevance(600.0 / ELO_PER_NAT, (600.0 / ELO_PER_NAT).powi(2)) > 0.3);
+        // 600 Elo apart and settled: about 0.1.
+        let settled = relevance(600.0 / ELO_PER_NAT, (40.0 / ELO_PER_NAT).powi(2));
+        assert!((0.05..0.15).contains(&settled), "{settled}");
+        assert!((normal_cdf(0.0) - 0.5).abs() < 1e-7 && (normal_cdf(-1.96) - 0.025).abs() < 1e-4);
     }
 
     #[test]

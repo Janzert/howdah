@@ -17,7 +17,7 @@ young).
   Each pair's matchup is chosen by what it would tell: every matchup
   gets a couple of pairs first (so a new engine catches up against the
   rest), then the ones whose rating difference is least known get the
-  most. `howdah-tourney add-engine`, `retire` and `unretire` change a
+  most, unless the matchup is lopsided and its order already settled. `howdah-tourney add-engine`, `retire` and `unretire` change a
   running pool, and `show` prints its standings. How it works is in
   `docs/TOURNAMENTS.md`.
 - A pool's panel in the lobby: ratings with their intervals, the

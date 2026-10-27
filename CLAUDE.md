@@ -278,7 +278,7 @@ plans the engine test and tournament runner.
     engines (`EngineSpec.retired`: no new pairs), playing until stopped
     or `max_pairs`. `PoolRun` lives in the `TestRun`'s state: `prepare`
     picks a pair's matchup (`choose`: coverage, then the variance a pair
-    would remove, with games in play counted) as its first game goes out,
+    would remove, with games in play counted, times `relevance`) as its first game goes out,
     and `GameEntry.engines` logs it (sides stay by index; `sides`,
     `pair_names`, `pair_engines` resolve them, and a slot's `Slotted.index`
     says which engine it holds, swapped when the pair differs). Adding

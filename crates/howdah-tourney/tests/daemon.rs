@@ -466,9 +466,11 @@ async fn a_pool_takes_new_engines_as_it_runs_and_keeps_them() {
     let tmp = tempfile::tempdir().unwrap();
     let daemon = Daemon::start(tmp.path(), 1).unwrap();
     let mut rx = daemon.subscribe();
-    let t = daemon.submit(spec("versions", "max_pairs = 6\n[pool]\nmin_pairs = 1", &[]), 0).unwrap();
+    // One pair first; random movers' games take milliseconds, so waiting
+    // for a game to end could find the whole pool played.
+    let t = daemon.submit(spec("versions", "max_pairs = 1\n[pool]\nmin_pairs = 1", &[]), 0).unwrap();
     assert_eq!(t.pool.as_ref().unwrap().engines.len(), 2);
-    events_until(&mut rx, |e| matches!(e, DaemonEvent::GameFinished { .. })).await;
+    events_until(&mut rx, |e| finished(e, &t.id)).await;
 
     let mut three = spec("x", "max_pairs = 1", &[]).engines[0].clone();
     three.name = "three".into();
@@ -477,11 +479,22 @@ async fn a_pool_takes_new_engines_as_it_runs_and_keeps_them() {
     assert_eq!(names, ["one", "two", "three"]);
     assert!(daemon.add_engine(&t.id, three.clone()).unwrap_err().to_string().contains("three"));
 
+    // More pairs: the new engine plays its matchups first. (A fresh
+    // subscription: the first pair's last events may still be queued.)
+    let mut rx = daemon.subscribe();
+    let more = daemon.set_max_pairs(&t.id, Some(6)).unwrap();
+    assert_eq!(more.status, TestStatus::Active);
     events_until(&mut rx, |e| finished(e, &t.id)).await;
     let info = daemon.info(&t.id).unwrap();
     let pool = info.pool.unwrap();
-    // The new engine caught up on its matchups, a pair against each.
+    // The new engine caught up on its matchups, a pair against each,
+    // straight after the first pair.
     assert!(pool.engines[2].games >= 4, "{pool:#?}");
+    let games = daemon.games(&t.id).unwrap();
+    for pair in [2, 3] {
+        let g = games.iter().find(|g| g.pair == pair).unwrap();
+        assert!(g.engines.unwrap().contains(&2), "pair {pair}: {g:?}");
+    }
     assert!(pool.anchor.is_some() && pool.engines.iter().all(|e| e.elo.is_some()));
     assert_eq!(info.summary.games, 12);
 
