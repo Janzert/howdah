@@ -31,6 +31,12 @@ young).
   and the cutoffs at any game count under the pointer. The LLR bar now
   sits below the results and the funnel.
 
+### Changed
+
+- Watching a test's game, the game-end sound is the tested engine's
+  (engine 1's): the win sound when it wins, the loss sound when it
+  loses. Pools and SPSA runs keep the win sound.
+
 ### Fixed
 
 - A test's panel could list a game twice when it finished while the

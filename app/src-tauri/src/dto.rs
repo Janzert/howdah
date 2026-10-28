@@ -1489,6 +1489,9 @@ pub struct TestGameTag {
     pub name: String,
     pub pair: u32,
     pub game: u8,
+    /// The side the engine under test (engine 1) plays; None in a pool or
+    /// an SPSA run, which test no one engine.
+    pub tested: Option<Color>,
 }
 
 /// An engine test, with its results so far, from engine 1's side.

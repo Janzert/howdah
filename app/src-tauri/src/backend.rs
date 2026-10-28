@@ -36,7 +36,7 @@ use crate::dto::{
     GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PlayerSpec,
     PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
     ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, SpsaStepView,
-    StartedBotView, StepTarget, TestDetailView, TestGameTag, TestView, TourneyStatusView, WatchView,
+    StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -1021,9 +1021,9 @@ impl Backend {
             .await?;
         match opened {
             tourney::Opened::Following => Ok(()),
-            tourney::Opened::Finished(record, name) => self.mutate(id, |s| {
+            tourney::Opened::Finished(record, tag) => self.mutate(id, |s| {
                 s.load_record_from_start(record);
-                s.set_test_game(TestGameTag { test: test.to_string(), name, pair, game });
+                s.set_test_game(tag);
                 Ok(Vec::new())
             }),
         }

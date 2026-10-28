@@ -50,8 +50,15 @@ pub struct Tourney {
 pub enum Opened {
     /// It's running; the session follows it.
     Following,
-    /// It's finished; this is its record, and the test's name.
-    Finished(GameRecord, String),
+    /// It's finished; this is its record, and its tag.
+    Finished(GameRecord, TestGameTag),
+}
+
+/// The tag for game `game` of pair `pair` of the test `info`.
+fn test_game_tag(info: &TestInfo, pair: u32, game: u8) -> TestGameTag {
+    let tested = (info.pool.is_none() && info.spsa.is_none())
+        .then(|| if GameEntry::gold_of(game) == 0 { Color::Gold } else { Color::Silver });
+    TestGameTag { test: info.id.clone(), name: info.name.clone(), pair, game, tested }
 }
 
 fn api(e: ClientError) -> ApiError {
@@ -297,7 +304,7 @@ impl Tourney {
             Err(ClientError::Daemon(_)) => {
                 let text = client.record(id, pair, game).await.map_err(api)?;
                 let info = client.info(id).await.map_err(api)?;
-                return Ok(Opened::Finished(GameRecord::parse(&text)?, info.name));
+                return Ok(Opened::Finished(GameRecord::parse(&text)?, test_game_tag(&info, pair, game)));
             }
             Err(e) => return Err(api(e)),
         };
@@ -337,7 +344,7 @@ impl Tourney {
                 tags.push((SETUP_MINIMUM_TAG.into(), minimum.clone()));
             }
             s.set_tags(tags);
-            s.set_test_game(TestGameTag { test: id.to_string(), name: info.name.clone(), pair, game });
+            s.set_test_game(test_game_tag(&info, pair, game));
             let generation = s.generation();
             s.sync_remote(generation, &live.moves, live.used_ms.last().map(|ms| Duration::from_millis(*ms)))?;
             // The moves so far arrive together, without times; the

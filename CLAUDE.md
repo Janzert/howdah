@@ -1065,7 +1065,8 @@ plans the engine test and tournament runner.
       test in `wav.test.ts` checks none is missing). Dev builds log each
       event as `sound: <name>` (`console.debug`).
       A match starting plays gameStart; the game ending plays timeout
-      for a loss on time, else loss when the lone human player lost,
+      for a loss on time, else loss when the lone human player (or, in
+      a test's game, the engine under test, `TestGameTag.tested`) lost,
       otherwise win, once the final move has animated, with the game-end
       dialog (`gameEndSound`; at once in a hidden window). yourTurn is for a player who doesn't see the
       opponent's move (or setup) come in: with the window unfocused it

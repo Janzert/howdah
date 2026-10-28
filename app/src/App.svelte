@@ -322,9 +322,10 @@
       setView(u.view);
       model.apply(u.view.position.pieces, u.animation, animHooks(u.view.turn != null), u.animationBudgetMs);
       if (ended) {
-        const human = loneHuman(u.view);
+        // Whose result it is: the lone human's, or a test's engine under test.
+        const side = loneHuman(u.view) ?? u.view.testGame?.tested;
         const sound =
-          u.view.result?.reason === 'timeout' ? 'timeout' : human && u.view.result?.winner !== human ? 'loss' : 'win';
+          u.view.result?.reason === 'timeout' ? 'timeout' : side && u.view.result?.winner !== side ? 'loss' : 'win';
         // A hidden window doesn't animate until it's shown, so it plays now.
         if (document.hidden) play(sound);
         else gameEndSound = sound;

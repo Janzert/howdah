@@ -57,7 +57,7 @@ describe('boardTitle', () => {
 
 describe('testGameLabel', () => {
   it('names an engine test and the game in it', () => {
-    const testGame = { test: '0001-e1', name: 'e1', pair: 12, game: 2 };
+    const testGame = { test: '0001-e1', name: 'e1', pair: 12, game: 2, tested: 'silver' as const };
     expect(testGameLabel(match('remote', 'remote', 2, { testGame }))).toBe('e1 12.2');
     expect(testGameLabel(match('remote', 'remote', 2, { testGame: null }))).toBeNull();
   });
