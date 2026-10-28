@@ -693,7 +693,14 @@ plans the engine test and tournament runner.
     watch or open, and Follow: a board with `HandOff.follow`, whose
     game-end dialog counts down 15 s to the test's next game; Pause and
     Stop beside the engines, the settings in brief with Settings…, which
-    opens `TestSettingsDialog.svelte`; an SPSA run shows
+    opens `TestSettingsDialog.svelte`; an SPRT test has
+    `SprtFunnel.svelte` beside its results, small, and full size in a
+    dialog on a click: the Elo at which it fails and passes after each
+    game (down from the first), the observed Elo's path between them
+    (rebuilt from the finished games in log order), and, full size, the
+    band where it stops undecided and where it's likely to end;
+    `lib/sprtFunnel.ts` works it out after `stats.rs` and the parent
+    repo's SPRT cutoff chart; an SPSA run shows
     `SpsaPanel.svelte` in place of the SPRT's results: progress, a
     `SpsaChart` of θ's mean movement or one parameter's path, and the
     parameters with range bars and sparklines, its history fetched with

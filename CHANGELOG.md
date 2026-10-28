@@ -24,6 +24,17 @@ young).
   crosstable shaded by how far each result is from the prediction, the
   outliers, and adding and retiring engines. New test makes one from the
   engine list.
+- The SPRT funnel in an SPRT test's panel: the observed Elo after each
+  game, running down between the Elo at which the test would fail and
+  pass, which close in as it goes. Click it for a full-size view with
+  the band where the test stops undecided, where it's likely to end,
+  and the cutoffs at any game count under the pointer. The LLR bar now
+  sits below the results and the funnel.
+
+### Fixed
+
+- A test's panel could list a game twice when it finished while the
+  panel was loading, which stopped the list from updating.
 
 ## [0.4.0] - 2026-10-24
 

@@ -13,6 +13,7 @@
   import { on } from './events';
   import PoolPanel from './PoolPanel.svelte';
   import SpsaPanel from './SpsaPanel.svelte';
+  import SprtFunnel from './SprtFunnel.svelte';
   import TestSettingsDialog from './TestSettingsDialog.svelte';
   import {
     cutoffPercent,
@@ -53,6 +54,12 @@
   let confirmDelete = $state(false);
   /** Finished games listed; Show more adds to it. */
   let gamesShown = $state(GAMES_PAGE);
+  /** The SPRT funnel shown full size over the panel. */
+  let funnelOpen = $state(false);
+  let funnelDialog = $state<HTMLDialogElement>();
+  $effect(() => {
+    if (funnelOpen) funnelDialog?.showModal();
+  });
 
   function show(t: TestView) {
     test = t;
@@ -68,7 +75,9 @@
       .catch((e) => (error = errorMessage(e)));
     const unlisten = on('tourney://changed', (u) => {
       if (u.test?.id === id) test = u.test;
-      if (u.game?.test === id) games = [u.game, ...games];
+      // A game that finished while the panel loaded can come in both ways.
+      const g = u.game;
+      if (g?.test === id && !games.some((o) => o.pair === g.pair && o.game === g.game)) games = [g, ...games];
     });
     return () => void unlisten.then((f) => f());
   });
@@ -171,56 +180,68 @@
       {:else if test.pool}
         <PoolPanel test={{ ...test, pool: test.pool }} onChanged={show} />
       {:else}
-        <dl class="stats">
-          <dt>Score</dt>
-          <dd>{scoreText(test)}{test.score != null ? `, ${(test.score * 100).toFixed(1)}%` : ''}</dd>
-          <dt>Pairs</dt>
-          <dd>
-            {test.engines[0]} won both {test.pairCounts[2]}, split {test.pairCounts[1]}, lost both {test.pairCounts[0]}
-          </dd>
-          {#if test.elo}
-            <dt>Elo</dt>
-            <dd>{test.elo}{test.los != null ? `, LOS ${(test.los * 100).toFixed(1)}%` : ''}</dd>
-          {/if}
-          {#if sprtText(test)}
-            <dt>SPRT</dt>
+        <div class="results">
+          <dl class="stats">
+            <dt>Score</dt>
+            <dd>{scoreText(test)}{test.score != null ? `, ${(test.score * 100).toFixed(1)}%` : ''}</dd>
+            <dt>Pairs</dt>
             <dd>
-              {sprtText(test)}
-              {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
+              {test.engines[0]} won both {test.pairCounts[2]}, split {test.pairCounts[1]}, lost both {test
+                .pairCounts[0]}
             </dd>
-          {/if}
-          {#if ends}
-            <dt>Ends</dt>
-            <dd
-              title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings; apart for passing or failing and not, when both are likely"
+            {#if test.elo}
+              <dt>Elo</dt>
+              <dd>{test.elo}{test.los != null ? `, LOS ${(test.los * 100).toFixed(1)}%` : ''}</dd>
+            {/if}
+            {#if sprtText(test)}
+              <dt>SPRT</dt>
+              <dd>{sprtText(test)}</dd>
+            {/if}
+            {#if ends}
+              <dt>Ends</dt>
+              <dd
+                title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings; apart for passing or failing and not, when both are likely"
+              >
+                {#each ends as row (row.label)}
+                  {@const games = endsText(test, row.gamesLeft)}
+                  {@const time = endsTimeText(test, perHour, row.gamesLeft)}
+                  <div>
+                    {row.label ? `${row.label}: ${games}` : games}{#if time}<span
+                        title="At the pace of the games since the last pause, {perHour?.toFixed(1)} an hour"
+                        >, {time}</span
+                      >{/if}
+                  </div>
+                {/each}
+              </dd>
+            {/if}
+            {#if oddsText(test) || decideText(test)}
+              <dt>Outcome</dt>
+              <dd>
+                {#if oddsText(test)}<span title="How often each ending came up in the simulations"
+                    >{oddsText(test)}</span
+                  >{/if}
+                {#if decideText(test)}
+                  <span
+                    class="aside"
+                    title="The chance the LLR reaches a bound before the pair limit, which the undecided cutoff watches"
+                    >{decideText(test)}</span
+                  >
+                {/if}
+              </dd>
+            {/if}
+          </dl>
+          {#if test.sprt}
+            <button
+              class="funnel-button"
+              aria-label="SPRT funnel, full size"
+              onclick={() => (funnelOpen = true)}
+              title="The SPRT funnel: the observed Elo after each game, between the Elo at which the test fails (left) and passes (right). Click for full size"
             >
-              {#each ends as row (row.label)}
-                {@const games = endsText(test, row.gamesLeft)}
-                {@const time = endsTimeText(test, perHour, row.gamesLeft)}
-                <div>
-                  {row.label ? `${row.label}: ${games}` : games}{#if time}<span
-                      title="At the pace of the games since the last pause, {perHour?.toFixed(1)} an hour"
-                      >, {time}</span
-                    >{/if}
-                </div>
-              {/each}
-            </dd>
+              <SprtFunnel {test} {games} mini />
+            </button>
           {/if}
-          {#if oddsText(test) || decideText(test)}
-            <dt>Outcome</dt>
-            <dd>
-              {#if oddsText(test)}<span title="How often each ending came up in the simulations">{oddsText(test)}</span
-                >{/if}
-              {#if decideText(test)}
-                <span
-                  class="aside"
-                  title="The chance the LLR reaches a bound before the pair limit, which the undecided cutoff watches"
-                  >{decideText(test)}</span
-                >
-              {/if}
-            </dd>
-          {/if}
-        </dl>
+        </div>
+        {#if pos != null}<span class="llr"><span class="mark" style="left: {pos * 100}%"></span></span>{/if}
       {/if}
       {#if test.repeated > 0}
         <p class="error">
@@ -281,6 +302,23 @@
         {/if}
       {/if}
       <p class="note path">{test.path}</p>
+      {#if funnelOpen}
+        <dialog
+          class="funnel-dialog"
+          bind:this={funnelDialog}
+          onclose={() => (funnelOpen = false)}
+          onclick={(e) => e.target === funnelDialog && funnelDialog.close()}
+          aria-labelledby="funnel-title"
+        >
+          <div class="heading">
+            <h2 id="funnel-title">SPRT funnel</h2>
+            <span class="note">{sprtText(test)}</span>
+            <span class="spacer"></span>
+            <button onclick={() => funnelDialog?.close()}>Close</button>
+          </div>
+          <SprtFunnel {test} {games} height={Math.max(320, Math.min(720, window.innerHeight - 200))} />
+        </dialog>
+      {/if}
       {#if settingsOpen}
         <TestSettingsDialog {test} onSaved={show} onClose={() => (settingsOpen = false)} />
       {/if}
@@ -368,6 +406,41 @@
     margin-top: 8px;
     overflow-wrap: anywhere;
   }
+  .results {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .results .stats {
+    flex: 1;
+    min-width: 0;
+  }
+  .funnel-button {
+    flex: none;
+    margin-top: 6px;
+    padding: 3px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: zoom-in;
+  }
+  .funnel-button:hover {
+    background: var(--hover);
+  }
+  .funnel-dialog {
+    width: min(1000px, 94vw);
+  }
+  .funnel-dialog h2 {
+    margin: 0;
+    font-size: 18px;
+  }
+  .funnel-dialog .heading {
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .funnel-dialog .note {
+    margin: 0;
+  }
   .stats {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -385,7 +458,7 @@
     position: relative;
     display: block;
     height: 4px;
-    margin: 6px 0 2px;
+    margin: 8px 0 10px;
     border-radius: 2px;
     background: linear-gradient(to right, var(--warn), var(--border) 50%, var(--clock-ok));
   }
