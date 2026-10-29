@@ -35,7 +35,13 @@ export interface HandOff {
   /** Follows the engine test whose game it opens on: when a game ends,
    * it moves on to the test's newest game without a window. */
   follow?: boolean;
+  /** The board's own sound setting. */
+  sound?: BoardSound;
 }
+
+/** A board's own sound setting, under the app's: every sound, all but the
+ * steps', moves' and captures', or none. */
+export type BoardSound = 'all' | 'quiet' | 'muted';
 
 const handOffKey = (id: SessionId) => `handoff.${id}`;
 
@@ -321,9 +327,11 @@ export async function closeSessionWithPage() {
 }
 
 /** In a game window: moves its board into the lobby as a panel, and
- * closes the window without asking (the game goes on in the panel). */
-export async function dockWindow() {
+ * closes the window without asking (the game goes on in the panel),
+ * handing over `handOff`. */
+export async function dockWindow(handOff: HandOff) {
   if (session == null || isDocked) return;
+  saveHandOff(session, handOff);
   await api.setSessionDocked(session, true);
   await showLobby();
   docking = true;

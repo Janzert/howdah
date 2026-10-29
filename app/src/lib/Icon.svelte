@@ -31,6 +31,9 @@
     pause: 'M8.5 5.5v13M15.5 5.5v13',
     last: 'M18 5.5v13M6 6.5 14 12l-8 5.5z',
     popout: 'M14 4h6v6M20 4l-8.5 8.5M18 13.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5.5',
+    sound: 'M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10',
+    soundLow: 'M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5a3.5 3.5 0 0 1 0 5',
+    soundOff: 'M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5l5 5M20.5 9.5l-5 5',
   } as const;
 
   export type IconName = keyof typeof PATHS;

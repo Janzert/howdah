@@ -40,7 +40,15 @@
   import { justEnded } from './lib/result';
   import { settings, type HoverInput } from './lib/settings.svelte';
   import { shortcutFor, type ShortcutId } from './lib/shortcuts';
-  import { play, setMuted, setThemeSounds, setVolume, type SoundName, unlockOnInteraction } from '@howdah/board/sound';
+  import {
+    play,
+    setBoardSounds,
+    setMuted,
+    setThemeSounds,
+    setVolume,
+    type SoundName,
+    unlockOnInteraction,
+  } from '@howdah/board/sound';
   import { findTheme } from '@howdah/board/theme';
   import TurnBar from './lib/TurnBar.svelte';
   import type { GameroomGames } from './lib/bindings/GameroomGames';
@@ -51,7 +59,7 @@
   import { OpenGames } from './lib/openGames.svelte';
   import { boardTitle, testGameLabel, waitsOnUser } from './lib/windowList';
   import { askLobby, lobbyKey } from './lib/frames';
-  import Icon from './lib/Icon.svelte';
+  import Icon, { type IconName } from './lib/Icon.svelte';
   import { type BoardLoading, followBoardLoading, readBoardLoading } from './lib/boardLoading';
   import {
     closeThisBoard,
@@ -63,6 +71,7 @@
     showBoard,
     showLobby,
     takeHandOff,
+    type BoardSound,
   } from './lib/windows';
 
   function pref(key: string): string | null {
@@ -136,6 +145,8 @@
   /** Following an engine test (opened from its Follow): when a game ends,
    * the window moves on to the test's newest game without a window. */
   let following = $state(handOff?.follow ?? false);
+  /** This board's own sound setting (the app's sound setting still rules). */
+  let boardSound = $state<BoardSound>(handOff?.sound ?? 'all');
   /** While following, why the next game hasn't opened yet. */
   let followWait = $state<string | null>(null);
   /** The edited position the new-game dialog starts from. */
@@ -283,7 +294,8 @@
 
   $effect(() => savePref('flipped', flipped ? '1' : '0'));
   $effect(() => setAppearance(settings.appearance));
-  $effect(() => setMuted(!settings.sound));
+  $effect(() => setMuted(!settings.sound || boardSound === 'muted'));
+  $effect(() => setBoardSounds(boardSound === 'all'));
   $effect(() => setVolume(settings.volume));
   $effect(() => setThemeSounds(theme.sounds ?? {}, theme.soundVariation));
   $effect(() => model.setBaseSpeed(settings.stepMs));
@@ -566,6 +578,15 @@
 
   /** Opens the position editor on the shown position, in a new window
    * (as 4steps does), so this game stays as it is. */
+  const nextBoardSound: Record<BoardSound, BoardSound> = { all: 'quiet', quiet: 'muted', muted: 'all' };
+  const boardSoundLabel: Record<BoardSound, string> = { all: 'Sound', quiet: 'Quiet', muted: 'Muted' };
+  const boardSoundText: Record<BoardSound, string> = {
+    all: 'Every sound',
+    quiet: 'No step, move or capture sounds',
+    muted: 'No sounds',
+  };
+  const boardSoundIcon: Record<BoardSound, IconName> = { all: 'sound', quiet: 'soundLow', muted: 'soundOff' };
+
   async function editPosition() {
     try {
       const position = await api.editorPosition();
@@ -975,21 +996,24 @@
         </button>
         <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
         <button onclick={openRecord} title="The game record, to copy, save or load">Record</button>
-        <button onclick={() => (showNewGame = true)} title="A new game in this window">New game</button>
-        <button
-          onclick={() => openBoard().catch((e) => flash(errorMessage(e)))}
-          title="Another board, with a game of its own"
-        >
-          New board
-        </button>
         <button onclick={editPosition} title="Set up a position from the shown one, in a new window (e)"
           >Edit position</button
         >
+        <button
+          class="sound"
+          onclick={() => (boardSound = nextBoardSound[boardSound])}
+          title="{boardSoundText[boardSound]} on this board; click for {boardSoundText[
+            nextBoardSound[boardSound]
+          ].toLowerCase()}{settings.sound ? '' : ' (sound is off in Settings)'}"
+        >
+          <Icon name={boardSoundIcon[boardSound]} size={16} />
+          {boardSoundLabel[boardSound]}
+        </button>
       </div>
       <div class="windows" style:grid-template-columns="repeat({(isDocked ? 1 : 2) + (spectating ? 0 : 1)}, 1fr)">
         {#if isDocked}
           <button
-            onclick={() => popOut({ spec: lastSpec, follow: following })}
+            onclick={() => popOut({ spec: lastSpec, follow: following, sound: boardSound })}
             title="Move this board to a window of its own">Pop out</button
           >
         {:else}
@@ -1002,7 +1026,8 @@
             Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
           </button>
           <button
-            onclick={() => dockWindow().catch((e) => flash(errorMessage(e)))}
+            onclick={() =>
+              dockWindow({ spec: lastSpec, follow: following, sound: boardSound }).catch((e) => flash(errorMessage(e)))}
             title="Move this board into the lobby window, as a panel there, and close this window">Dock</button
           >
         {/if}
@@ -1154,6 +1179,12 @@
   .tools {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  .tools .sound {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     gap: 4px;
   }
   .tools button,

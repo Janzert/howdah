@@ -39,8 +39,8 @@ test('the lobby opens game windows, lists them, and closing one ends its session
   await expect(openWindows(page).first()).toContainText('Your move');
   await expect(openWindows(page).first()).toContainText('Against an engine');
 
-  // A second, empty window from the game window's New window.
-  const second = await opens(context, () => first.getByRole('button', { name: 'New board' }).click());
+  // A second board from the lobby's Analysis board.
+  const second = await opens(context, () => page.getByRole('button', { name: 'Analysis board' }).click());
   const secondId = sessionOf(second);
   expect(secondId).not.toBe(firstId);
   await expect(openWindows(page)).toHaveCount(2);

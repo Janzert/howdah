@@ -5,7 +5,9 @@
 // repeated steps don't sound mechanical. The rest are app-wide, from
 // `sounds/app/` (made the same way, one file per event, named after it).
 // Whether sound is on and its volume are settings (settings.svelte.ts); the
-// app passes them in with `setMuted` and `setVolume`.
+// app passes them in with `setMuted` and `setVolume`. Each board (a window
+// or a docked panel, each its own page) can also mute itself or just its
+// board sounds (`setBoardSounds`).
 //
 // Sounds are played through Web Audio from buffers decoded once each
 // (by our own WAV decoder, so every platform behaves the same). Each play is
@@ -62,6 +64,7 @@ const appSounds: Partial<Record<SoundName, string>> = Object.fromEntries(
 let sources: Partial<Record<SoundName, string>> = { ...appSounds, ...boardDefaults };
 
 let muted = false;
+let boardSounds = true;
 let gain = 1;
 let context: AudioContext | null = null;
 /** Decoded sounds, by data URL. */
@@ -82,6 +85,12 @@ export function isMuted() {
 
 export function setMuted(m: boolean) {
   muted = m;
+}
+
+/** Turns the board sounds (`BOARD_SOUNDS`: steps, moves and captures) on
+ * or off; the rest still play. */
+export function setBoardSounds(on: boolean) {
+  boardSounds = on;
 }
 
 /** Sets the volume from a 0-100 setting, squared so the slider feels even. */
@@ -155,7 +164,7 @@ export function unlockOnInteraction() {
 export function play(name: SoundName) {
   // Shows which event played, also for those without a sound yet.
   if (import.meta.env.DEV) console.debug(`sound: ${name}`);
-  if (muted) return;
+  if (muted || (!boardSounds && isBoardSound(name))) return;
   const ctx = init();
   const url = sources[name];
   const buffer = url ? bufferFor(name, url) : null;

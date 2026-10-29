@@ -30,9 +30,15 @@ young).
   the band where the test stops undecided, where it's likely to end,
   and the cutoffs at any game count under the pointer. The LLR bar now
   sits below the results and the funnel.
+- A sound button on each board: every sound, no step, move or capture
+  sounds (your turn, the clock and the rest still play), or muted.
+  It's the board's own, under the Settings' sound, and goes with the
+  board when it's docked or popped out.
 
 ### Changed
 
+- The board's New game and New board buttons are gone; both are in the
+  lobby's Home.
 - Watching a test's game, the game-end sound is the tested engine's
   (engine 1's): the win sound when it wins, the loss sound when it
   loses. Pools and SPSA runs keep the win sound.

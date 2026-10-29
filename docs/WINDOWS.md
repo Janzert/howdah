@@ -94,8 +94,9 @@ Before phase 1 (as built, see below the Phases):
   today: playing a live arimaa.com game it asks, as Leave game does (the
   game goes on at arimaa.com with the clock running), and a running local
   match asks too.
-- **"New window"** in a game window opens an empty one; New game, Load
-  and the like still act on the window they're used in.
+- **New games and boards start from the lobby** (Home); a game
+  window has no New game or New board of its own. Load and the like
+  still act on the window they're used in.
 - **Game windows remember one size** (the last one resized), as 4steps
   does, and open cascaded from the last. Reopening the windows that were
   open when Howdah quit can come later (En Croissant keeps its tabs only
