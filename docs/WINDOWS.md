@@ -310,9 +310,10 @@ the sidebar to list every board and go to its panel or window. As built:
   it with its own IPC and posts the answer back, and the lobby posts
   every event on to every frame (`serveFrames`). Window commands
   (`plugin:…`) aren't relayed; what a board does to windows goes through
-  `askLobby`: a new board (Position editor, Next game's postal game) is shown as a panel or a window as the Settings say ("New
-  boards": in this window, the default, or in their own windows); Pop
-  out; and Close, after the board's own close question.
+  `askLobby`: a new board (Position editor, Next game's postal game)
+  is shown as a panel or a window as the Settings say ("New boards":
+  docked in the lobby, the default, or in their own windows); Pop out;
+  and Close, after the board's own close question.
 - Pop out: the lobby undocks the session, drops the frame and opens a
   game window on the same session (`openWindowFor`), handing over the
   rematch spec. Dock (in a game window): the window docks its session,

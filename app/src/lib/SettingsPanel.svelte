@@ -169,7 +169,7 @@
         <div class="choices">
           <label>
             <input type="radio" name="boards-in" value={false} bind:group={settings.boardsInWindows} />
-            In this window
+            Docked in the lobby
           </label>
           <label>
             <input type="radio" name="boards-in" value={true} bind:group={settings.boardsInWindows} />
