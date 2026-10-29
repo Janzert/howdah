@@ -13,6 +13,7 @@ import {
   endsText,
   endsTimeText,
   gamesPerHour,
+  nextGameAfter,
   llrPosition,
   matchupFor,
   oddsText,
@@ -306,5 +307,17 @@ describe('time left', () => {
     expect(zShade(0.3, 3)).toBeNull();
     expect(zShade(1.5, 3)).toBe('color-mix(in srgb, var(--accent) 28%, transparent)');
     expect(zShade(-9, 3)).toBe('color-mix(in srgb, var(--warn) 55%, transparent)');
+  });
+});
+
+describe('nextGameAfter', () => {
+  const g = (pair: number, game: number) => ({ pair, game });
+  it('takes the first game started after the one given', () => {
+    expect(nextGameAfter(g(3, 1), [g(5, 1), g(1, 2), g(3, 2), g(4, 1), g(3, 1)])).toEqual(g(3, 2));
+    expect(nextGameAfter(g(3, 2), [g(5, 1), g(4, 2), g(2, 1)])).toEqual(g(4, 2));
+  });
+  it('is null when none is later', () => {
+    expect(nextGameAfter(g(3, 2), [g(1, 1), g(3, 1), g(3, 2)])).toBeNull();
+    expect(nextGameAfter(g(1, 1), [])).toBeNull();
   });
 });

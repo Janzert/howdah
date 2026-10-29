@@ -298,3 +298,17 @@ export function endingText(reason: string): string {
   };
   return words[reason] ?? reason;
 }
+
+/** A test's game by number: its pair, and 1 or 2 within it. */
+export type GameNumber = { pair: number; game: number };
+
+/** The first of `games` started after `after` (games start in number
+ * order), or null if none was. */
+export function nextGameAfter(after: GameNumber, games: Iterable<GameNumber>): GameNumber | null {
+  const later = (a: GameNumber, b: GameNumber) => a.pair > b.pair || (a.pair === b.pair && a.game > b.game);
+  let next: GameNumber | null = null;
+  for (const g of games) {
+    if (later(g, after) && (!next || later(next, g))) next = { pair: g.pair, game: g.game };
+  }
+  return next;
+}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { analysisEngine, pvMoves } from './lib/analysis';
   import AnalysisPanel from './lib/AnalysisPanel.svelte';
   import { api, errorMessage, isDocked, session } from './lib/api';
@@ -58,6 +58,7 @@
   import { countNext, pickNext } from './lib/nextGame';
   import { OpenGames } from './lib/openGames.svelte';
   import { boardTitle, testGameLabel, waitsOnUser } from './lib/windowList';
+  import { type GameNumber, nextGameAfter } from './lib/tests';
   import { askLobby, lobbyKey } from './lib/frames';
   import Icon, { type IconName } from './lib/Icon.svelte';
   import { type BoardLoading, followBoardLoading, readBoardLoading } from './lib/boardLoading';
@@ -121,7 +122,8 @@
   /** How many other games wait on the user's move (Next game). */
   const nextCount = $derived(countNext(session!, games.waiting(), lobbyLists, games.openGids()));
   /** A match without a human side (a test's game, a watched arimaa.com
-   * game, engine against engine): no Next game button. */
+   * game, engine against engine): no Next game button, except a test's
+   * game's, which goes to the test's next game. */
   const spectating = $derived(
     view?.players != null && view.players.gold.kind !== 'human' && view.players.silver.kind !== 'human',
   );
@@ -380,6 +382,11 @@
     });
     const unlistenLobby = on('gameroom://lobby', lobbyGames);
     const unlistenTourney = on('tourney://changed', (u) => {
+      const shown = view?.testGame;
+      if (shown && (u.test?.id === shown.test || u.game?.test === shown.test)) {
+        const seen = [...(testNext ? [testNext] : []), ...(u.game ? [u.game] : []), ...(u.test?.running ?? [])];
+        testNext = nextGameAfter(shown, seen);
+      }
       if (following && followWait && u.test && u.test.id === view?.testGame?.test) {
         if (u.test.running.length > 0) void followNext();
         else followWait = waitText(u.test);
@@ -433,6 +440,37 @@
   }
   let followBusy = false;
 
+  /** The shown test game's successor: the test's next game started
+   * after it, running or finished (Next game). */
+  let testNext = $state<GameNumber | null>(null);
+  const testGameKey = $derived(
+    view?.testGame ? `${view.testGame.test} ${view.testGame.pair}.${view.testGame.game}` : '',
+  );
+  $effect(() => {
+    const key = testGameKey;
+    const shown = untrack(() => view?.testGame);
+    testNext = null;
+    if (!shown) return;
+    void (async () => {
+      try {
+        // Starts the daemon's events coming, to keep it up to date.
+        await api.tourneyStatus();
+        const d = await api.tourneyTest(shown.test);
+        if (key === testGameKey) testNext = nextGameAfter(shown, [...d.games, ...d.test.running]);
+      } catch {
+        /* no daemon: nothing to go to */
+      }
+    })();
+  });
+
+  /** Shows the test's next game in this board. */
+  function nextTestGame() {
+    const t = view?.testGame;
+    if (!t) return;
+    if (!testNext) flash('No later game in this test yet');
+    else void run(api.openTourneyGame(t.test, testNext.pair, testNext.game));
+  }
+
   const waitText = (t: TestView) =>
     t.status === 'finished' ? 'The test has finished.' : "Waiting for the test's next game…";
 
@@ -446,6 +484,7 @@
    * panel in the lobby or a window), else a postal game from the lobby's
    * lists, on a new board. */
   async function nextGame() {
+    if (view?.testGame) return nextTestGame();
     const next = pickNext(session!, games.waiting(), lobbyLists, games.openGids());
     if (!next) {
       flash('No other game waits on your move');
@@ -1010,7 +1049,10 @@
           {boardSoundLabel[boardSound]}
         </button>
       </div>
-      <div class="windows" style:grid-template-columns="repeat({(isDocked ? 1 : 2) + (spectating ? 0 : 1)}, 1fr)">
+      <div
+        class="windows"
+        style:grid-template-columns="repeat({(isDocked ? 1 : 2) + (spectating && !view?.testGame ? 0 : 1)}, 1fr)"
+      >
         {#if isDocked}
           <button
             onclick={() => popOut({ spec: lastSpec, follow: following, sound: boardSound })}
@@ -1031,7 +1073,17 @@
             title="Move this board into the lobby window, as a panel there, and close this window">Dock</button
           >
         {/if}
-        {#if !spectating}
+        {#if view?.testGame}
+          <button
+            onclick={nextTestGame}
+            disabled={!testNext}
+            title={testNext
+              ? `Game ${testNext.pair}.${testNext.game}, the next one this test started (n)`
+              : 'No later game in this test yet (n)'}
+          >
+            Next game
+          </button>
+        {:else if !spectating}
           <button
             class:primary={nextCount > 0}
             onclick={nextGame}

@@ -72,7 +72,12 @@ export const SHORTCUTS: readonly Shortcut[] = [
     keys: ['e'],
     label: 'Edit the shown position (position editor, in a new window)',
   },
-  { id: 'nextGame', group: 'Other', keys: ['n'], label: 'Next game waiting on your move' },
+  {
+    id: 'nextGame',
+    group: 'Other',
+    keys: ['n'],
+    label: "Next game waiting on your move (a test's next game, on a test's game)",
+  },
   { id: 'mute', group: 'Other', keys: ['m'], label: 'Sound on or off' },
   { id: 'help', group: 'Other', keys: ['?'], label: 'This help' },
 ];

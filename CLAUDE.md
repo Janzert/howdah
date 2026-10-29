@@ -777,7 +777,10 @@ plans the engine test and tournament runner.
     (invitations and postal moves due, from
     `gameroom_last_games` and `gameroom://lobby`), and Next game (`n`;
     `lib/nextGame.ts`): the next other board waiting on the user's
-    move, else a postal game on their move without a board. One board
+    move, else a postal game on their move without a board; on a test's
+    game, the test's next game started after it, running or finished
+    (`nextGameAfter` in `lib/tests.ts`, kept up to date from
+    `tourney://changed`), shown in the same board. One board
     per arimaa.com game: the lobby asks `gameroom_game_session(gid)` and
     shows that board if there is one. A game window's title
     (`setTitle` in `lib/attention.ts`) names the players, with "Your

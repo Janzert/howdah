@@ -34,6 +34,9 @@ young).
   sounds (your turn, the clock and the rest still play), or muted.
   It's the board's own, under the Settings' sound, and goes with the
   board when it's docked or popped out.
+- Next game on a board showing an engine test's game goes to the next
+  game the test started after it, running or finished, in the same
+  board (`n` too). It turns on as soon as there is one.
 
 ### Changed
 
