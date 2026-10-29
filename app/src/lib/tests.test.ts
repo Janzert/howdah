@@ -321,3 +321,29 @@ describe('nextGameAfter', () => {
     expect(nextGameAfter(g(1, 1), [])).toBeNull();
   });
 });
+
+describe('a test that plays every pair', () => {
+  const fixed = (over: Partial<TestView> = {}) =>
+    view({ sprt: null, llr: null, llrBounds: null, maxPairs: 100, ...over });
+
+  it('ends after its exact games left', () => {
+    expect(endsText(fixed())).toBe('in 179 games');
+    expect(endsText(fixed({ games: 199 }))).toBe('in 1 game');
+    expect(endsText(fixed({ games: 200 }))).toBe('once the running games finish');
+    expect(endsText(fixed({ status: 'finished' }))).toBeNull();
+    expect(endsText(fixed({ maxPairs: null }))).toBeNull();
+    expect(endsRows(fixed())).toEqual([{ label: null, gamesLeft: [179, 179, 179] }]);
+  });
+
+  it('ends in time at the pace', () => {
+    expect(endsTimeText(fixed(), 30)).toBe('about 6 h');
+    expect(endsTimeText(fixed(), null)).toBeNull();
+    expect(endsTimeText(fixed({ status: 'paused' }), 30)).toBeNull();
+    expect(endsTimeText(fixed({ games: 200 }), 30)).toBeNull();
+  });
+
+  it('shows the games left in brief and in its details', () => {
+    expect(briefText(fixed())).toBe('12–9 +70.4 179');
+    expect(detailsText(fixed()).split('\n').at(-1)).toBe('Ends in 179 games');
+  });
+});

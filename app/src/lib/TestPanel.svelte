@@ -200,7 +200,9 @@
             {#if ends}
               <dt>Ends</dt>
               <dd
-                title="Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings; apart for passing or failing and not, when both are likely"
+                title={test.sprt
+                  ? "Simulated from the results so far, with the test's own pass, fail and undecided rules: the median games left, and the range holding 80% of the endings; apart for passing or failing and not, when both are likely"
+                  : 'The games left to play every pair'}
               >
                 {#each ends as row (row.label)}
                   {@const games = endsText(test, row.gamesLeft)}

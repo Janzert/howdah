@@ -72,10 +72,23 @@ function roughly(n: number): number {
   return Math.round(n / unit) * unit;
 }
 
-/** When a running SPRT test is likely to end, in games, to follow "Ends":
- * `in about 1800 games (920–3600)`, the median and the middle 80% of
- * `gamesLeft` (by default every ending's); null without a projection. */
+/** Games left in an unfinished test without an SPRT, which plays every
+ * pair of its limit (games running count as left); null otherwise. */
+export function fixedGamesLeft(t: TestView): number | null {
+  if (t.sprt != null || t.maxPairs == null || t.spsa || t.pool || t.status === 'finished') return null;
+  return Math.max(0, 2 * t.maxPairs - t.games);
+}
+
+/** When a running test is likely to end, in games, to follow "Ends": for
+ * an SPRT test `in about 1800 games (920–3600)`, the median and the
+ * middle 80% of `gamesLeft` (by default every ending's); for one that
+ * plays every pair, `in 340 games`; null without a projection. */
 export function endsText(t: TestView, gamesLeft = t.projection?.gamesLeft): string | null {
+  const fixed = fixedGamesLeft(t);
+  if (fixed != null) {
+    if (fixed === 0) return 'once the running games finish';
+    return `in ${fixed} ${fixed === 1 ? 'game' : 'games'}`;
+  }
   const p = t.projection;
   if (p == null || gamesLeft == null || t.status === 'finished') return null;
   const [lo, mid, hi] = gamesLeft.map(roughly);
@@ -97,9 +110,12 @@ export interface EndsRow {
 /** The panel's Ends rows for a running SPRT test: one for every ending,
  * or, when it may well decide and may well not (each at least 15%) before
  * its pair limit, one for each, since the overall median then falls
- * between a decision along the way and running on to near the end. Null
+ * between a decision along the way and running on to near the end. A
+ * test that plays every pair has one, its exact games left. Null
  * without a projection. */
 export function endsRows(t: TestView): EndsRow[] | null {
+  const fixed = fixedGamesLeft(t);
+  if (fixed != null) return [{ label: null, gamesLeft: [fixed, fixed, fixed] }];
   const p = t.projection;
   if (p == null || t.status === 'finished') return null;
   const decides = p.pass + p.fail;
@@ -138,11 +154,16 @@ function roughTime(hours: number): string {
   return `${Math.round(hours / 24)} days`;
 }
 
-/** When an active SPRT test is likely to end, in time, at `perHour`
- * games an hour: `about 6 h (3–12 h)`, the median and the middle 80% of
- * `gamesLeft` (by default every ending's); null without a projection or a
- * pace. */
+/** When an active test is likely to end, in time, at `perHour` games an
+ * hour: for an SPRT test `about 6 h (3–12 h)`, the median and the middle
+ * 80% of `gamesLeft` (by default every ending's); for one that plays
+ * every pair, `about 6 h`; null without a projection or a pace. */
 export function endsTimeText(t: TestView, perHour: number | null, gamesLeft = t.projection?.gamesLeft): string | null {
+  const fixed = fixedGamesLeft(t);
+  if (fixed != null) {
+    if (perHour == null || t.status !== 'active' || fixed === 0) return null;
+    return `about ${roughTime(fixed / perHour)}`;
+  }
   const p = t.projection;
   if (p == null || gamesLeft == null || perHour == null || t.status !== 'active') return null;
   if (gamesLeft[2] === 0) return null;
@@ -244,8 +265,10 @@ export function briefText(t: TestView): string {
   const parts = [`${t.wins[0]}–${t.wins[1]}`];
   if (t.elo) parts.push(t.elo.split(' [')[0]);
   if (t.llr != null) parts.push(t.llr.toFixed(2));
+  const fixed = fixedGamesLeft(t);
   const left = t.projection?.gamesLeft[1];
-  if (left && t.status !== 'finished') parts.push(`${roughly(left)}`);
+  if (fixed) parts.push(`${fixed}`);
+  else if (left && t.status !== 'finished') parts.push(`${roughly(left)}`);
   return parts.join(' ');
 }
 
@@ -270,7 +293,8 @@ export function detailsText(t: TestView): string {
       .filter(Boolean)
       .join('\n');
   }
-  const ends = endsText(t) && `Ends ${endsText(t)}: ${oddsText(t)}`;
+  const odds = oddsText(t);
+  const ends = endsText(t) && `Ends ${endsText(t)}${odds ? `: ${odds}` : ''}`;
   return [scoreText(t), t.elo && `Elo ${t.elo}`, sprtText(t), ends, decideText(t)].filter(Boolean).join('\n');
 }
 
