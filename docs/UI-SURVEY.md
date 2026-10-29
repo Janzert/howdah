@@ -255,7 +255,7 @@ The current engine panel shows depth, eval, PV and log per side.
 
 - **[have] Board (position) editor** (2026-10-10; surveyed below): opened
   from the lobby ("Position editor", both default setups) or from a game
-  window ("Edit position", `e`, the shown position), each time in a
+  window ("Position editor", `e`, the shown position), each time in a
   window of its own, so the game it came from stays as it was. A palette
   per side (with how many of each piece are left to place), drag on, off
   and around the board, a click tool and a remove tool, right click to

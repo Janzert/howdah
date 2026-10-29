@@ -38,7 +38,8 @@ young).
 ### Changed
 
 - The board's New game and New board buttons are gone; both are in the
-  lobby's Home.
+  lobby's Home. Its Edit position button is now Position editor, as on
+  Home, since it opens the editor on a new board.
 - Watching a test's game, the game-end sound is the tested engine's
   (engine 1's): the win sound when it wins, the loss sound when it
   loses. Pools and SPSA runs keep the win sound.

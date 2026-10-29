@@ -770,8 +770,9 @@ plans the engine test and tournament runner.
     a board wherever it is; `popOut` (a docked board) and `dockWindow` (a
     game window) move one. The hand-off (the match spec, for a rematch)
     goes through localStorage, read once by the board (`takeHandOff`;
-    `saveHandOff`). Boards
-    also have "New board" (an empty one), Pop out (docked) or Lobby and
+    `saveHandOff`; also the board's sound setting, `BoardSound`). Boards
+    have no New game or New board (both are in the lobby's Home); they
+    have Pop out (docked) or Lobby and
     Dock (in a window), with what waits in the lobby on the Lobby button
     (invitations and postal moves due, from
     `gameroom_last_games` and `gameroom://lobby`), and Next game (`n`;
@@ -798,7 +799,7 @@ plans the engine test and tournament runner.
   - `lib/editor/`: the position editor (`PositionEditor.svelte`; survey
     and decisions in `docs/UI-SURVEY.md`, section 6). A game window shows
     it instead of its game while the window's hand-off has `editor` (the
-    lobby's "Position editor", or a game window's "Edit position", `e`,
+    lobby's "Position editor", or a game window's "Position editor", `e`,
     which opens a new window on the shown position); Analyse
     (`new_game_from`) or a game started from Play… (New game with
     `start`) puts the game back. It has its own `BoardModel` and drives
@@ -1055,6 +1056,10 @@ plans the engine test and tournament runner.
       long-lived gain node with a silent loop playing into it, so the
       output never goes idle between sounds. The loop is what fixed the
       rest; the shared node alone didn't. Keep both.
+    - Each board has its own sound setting under the app's (App's sound
+      button, `BoardSound` in `lib/windows.ts`): every sound, quiet
+      (`setBoardSounds(false)`: no `BOARD_SOUNDS`) or muted. Each board is
+      its own page, so the module's state is per board.
     - Sounds are named by event (`SoundName`, each commented with when it
       plays). The board sounds (`BOARD_SOUNDS`: step, lastStep, capture,
       ownLoss, restore) default to `sounds/board/`, mixed from Kenney CC0

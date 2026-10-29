@@ -90,7 +90,7 @@ test('the lobby opens the editor; pieces go on and off, and Analyse starts from 
   expect(record).toContain(`[Position "${short}"]`);
 });
 
-test('Edit position opens the shown position in a new window, and Play starts a match from it', async ({
+test('Position editor opens the shown position in a new window, and Play starts a match from it', async ({
   page,
   context,
 }) => {

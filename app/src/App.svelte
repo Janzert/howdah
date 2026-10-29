@@ -997,7 +997,7 @@
         <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
         <button onclick={openRecord} title="The game record, to copy, save or load">Record</button>
         <button onclick={editPosition} title="Set up a position from the shown one, in a new window (e)"
-          >Edit position</button
+          >Position editor</button
         >
         <button
           class="sound"
