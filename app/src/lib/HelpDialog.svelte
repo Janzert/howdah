@@ -1,12 +1,24 @@
 <script lang="ts">
   // The keyboard and mouse help: a dialog in a game window (`?`), the Help
   // panel in the lobby window (`panel`).
+  import { api } from './api';
   import { keyName, shortcutFor, shortcutGroups } from './shortcuts';
 
   let { onClose, panel = false }: { onClose?: () => void; panel?: boolean } = $props();
 
   let dialog = $state<HTMLDialogElement>();
   const groups = shortcutGroups();
+
+  const REPO = 'https://github.com/Janzert/howdah';
+  let version = $state<string | null>(null);
+  let copied = $state(false);
+  $effect(() => {
+    if (panel) api.appVersion().then((v) => (version = v));
+  });
+  const copyVersion = async () => {
+    await navigator.clipboard.writeText(`Howdah ${version}`);
+    copied = true;
+  };
 
   $effect(() => {
     dialog?.showModal();
@@ -86,6 +98,23 @@
         The keys work in a board, as a panel here or in its own window; <kbd>?</kbd> there shows this too.
       </p>
       {@render body()}
+    </div>
+    <div class="card about">
+      <h2>About Howdah</h2>
+      <p class="version">
+        Version {version ?? '…'}
+        <button class="subtle" onclick={copyVersion} disabled={version == null}>{copied ? 'Copied' : 'Copy'}</button>
+      </p>
+      <p class="links">
+        {#each [['Releases', `${REPO}/releases`], ['Changelog', `${REPO}/blob/main/CHANGELOG.md`], ['Source', REPO], ['Acknowledgements', `${REPO}#acknowledgements`]] as [label, url] (url)}
+          <button class="link" onclick={() => api.openUrl(url).catch(() => {})}>{label}</button>
+        {/each}
+      </p>
+      <p class="note">
+        By Brian Haskin Jr., under the MIT license. The Howdah logo is by Brian Haskin Jr. and Claude. The classic board
+        and pieces come from the original arimaa.com client, in the public domain, and the sounds are made from Kenney's
+        CC0 samples.
+      </p>
     </div>
   </div>
 {:else}
@@ -176,6 +205,25 @@
   .or {
     font-size: 11px;
     color: var(--muted);
+  }
+  .about {
+    margin-top: 12px;
+  }
+  .about p {
+    margin: 0 0 8px;
+  }
+  .about .note {
+    margin-bottom: 0;
+  }
+  .version {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
   }
   .buttons {
     display: flex;

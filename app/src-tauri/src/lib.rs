@@ -166,6 +166,7 @@ pub fn run() {
             commands::gameroom_logout,
             commands::gameroom_games,
             commands::gameroom_last_games,
+            commands::app_version,
             commands::open_url,
             commands::chatroom_state,
             commands::chat_archive_month,

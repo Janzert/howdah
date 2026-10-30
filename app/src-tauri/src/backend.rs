@@ -743,6 +743,11 @@ impl Backend {
         self.gameroom.games().await
     }
 
+    /// The app's version, for the Help panel.
+    pub fn app_version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+
     /// Opens a web page in the system's browser (links in the gameroom's
     /// announcements). Only http(s) URLs.
     pub fn open_url(&self, url: &str) -> Result<(), ApiError> {
@@ -1299,6 +1304,7 @@ impl Backend {
             "gameroom_logout" => ok(self.gameroom_logout().await?),
             "gameroom_games" => ok(self.gameroom_games().await?),
             "gameroom_last_games" => ok(self.gameroom_last_games()),
+            "app_version" => ok(self.app_version()),
             "open_url" => ok(self.open_url(&arg::<String>(args, "url")?)?),
             "chatroom_state" => ok(self.chatroom_state()),
             "chat_archive_month" => ok(self.chat_archive_month(arg(args, "year")?, arg(args, "month")?)?),

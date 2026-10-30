@@ -1155,6 +1155,7 @@ plans the engine test and tournament runner.
     opens new boards) as one reactive `settings` object,
     saved to localStorage as JSON (`parse` validates and reads the older
     `theme`/`muted` keys).
+    `HelpDialog.svelte`'s panel also has About: `app_version` and links.
     `SettingsPanel.svelte` (the lobby's Settings panel) binds to it directly; add new
     options to both.
     A `storage` event (another window saved) reloads it, so changes apply

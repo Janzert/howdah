@@ -413,6 +413,11 @@ pub fn gameroom_game_session(state: State<Backend>, gid: String) -> Option<Sessi
 }
 
 #[tauri::command]
+pub fn app_version(state: State<Backend>) -> String {
+    state.app_version()
+}
+
+#[tauri::command]
 pub fn open_url(state: State<Backend>, url: String) -> Result<(), ApiError> {
     state.open_url(&url)
 }

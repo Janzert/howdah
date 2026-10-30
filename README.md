@@ -194,6 +194,8 @@ CI runs these on Linux, Windows and macOS and builds the installers.
 
 ## Acknowledgements
 
+The Howdah logo was made by Brian Haskin Jr. and Claude.
+
 The classic board and piece images come from the original arimaa.com
 client and have been released to the public domain. See
 `packages/board/src/themes/classic/ATTRIBUTION.md`.

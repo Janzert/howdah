@@ -197,6 +197,7 @@ function makeApi(sid: () => SessionId | null) {
      * asking the server; null while logged out. */
     gameroomLastGames: () => invoke<GameroomGames | null>('gameroom_last_games'),
     /** Opens an http(s) URL in the system's browser. */
+    appVersion: () => invoke<string>('app_version'),
     openUrl: (url: string) => invoke<void>('open_url', { url }),
     /** The gameroom's chat room as it stands; changes come as
      * `chatroom://changed`. */
