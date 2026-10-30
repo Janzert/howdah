@@ -52,6 +52,7 @@ jobs:
               "Cargo.toml": tomllib.load(open("app/src-tauri/Cargo.toml", "rb"))["package"]["version"],
               "package.json": json.load(open("app/package.json"))["version"],
               "package-lock.json": json.load(open("app/package-lock.json"))["packages"][""]["version"],
+              "howdah-tourney": tomllib.load(open("crates/howdah-tourney/Cargo.toml", "rb"))["package"]["version"],
               "Cargo.lock": next(
                   p["version"] for p in tomllib.load(open("Cargo.lock", "rb"))["package"] if p["name"] == "howdah"
               ),

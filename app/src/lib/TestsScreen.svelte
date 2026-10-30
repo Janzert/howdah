@@ -191,6 +191,12 @@
         {/if}
       </div>
     {/if}
+    {#if status?.connected && status.daemonVersion && !status.closing}
+      <p class="hint" role="status">
+        This test daemon is version {status.daemonVersion}, and this is Howdah {status.appVersion}. New test features
+        may not work until it runs this version: shut it down and start it again. Its tests carry on.
+      </p>
+    {/if}
     {#if status?.dataDir}<p class="hint small">Tests are kept in {status.dataDir}</p>{/if}
   </section>
 

@@ -37,6 +37,11 @@ young).
 - Next game on a board showing an engine test's game goes to the next
   game the test started after it, running or finished, in the same
   board (`n` too). It turns on as soon as there is one.
+- An estimate of the end for tests with a pair limit and no SPRT: the
+  games left, and the time at the current pace.
+- A note on the Engine tests panel when the running test daemon is from
+  another version of Howdah. A daemon goes on across an upgrade until
+  it's shut down, and tests carry on when it starts again.
 
 ### Changed
 

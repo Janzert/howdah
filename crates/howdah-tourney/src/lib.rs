@@ -23,6 +23,10 @@
 //! app, share this crate. The `server` and `client` features (both on by
 //! default) add the HTTP side.
 
+/// This build's version, kept the same as the app's (the release workflow
+/// checks), so the app can tell when the daemon it finds is from another.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 mod daemon;
 mod error;
 mod memory;

@@ -1226,7 +1226,9 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
   installers on Ubuntu 22.04 (for older glibc), Windows and macOS and
   uploads them with `SHA256SUMS` to a *draft* GitHub release, published
   by hand. Versions are semver (0.x for now), kept in `tauri.conf.json`,
-  the app's `Cargo.toml` and `package.json` (and their lock files); the
+  the app's and `howdah-tourney`'s `Cargo.toml` and `package.json` (and
+  their lock files; the app compares the running daemon's version with
+  its own, `TourneyStatusView.daemon_version`); the
   run stops if the tag doesn't match them all. Run by hand, it only
   keeps the installers as artifacts. No code signing (macOS is signed ad
   hoc, `bundle.macOS.signingIdentity`) and no auto-updater yet.

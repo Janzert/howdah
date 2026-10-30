@@ -1444,6 +1444,10 @@ pub struct TourneyStatusView {
     pub connected: bool,
     /// Its data directory, where tests are kept.
     pub data_dir: Option<String>,
+    /// Its version, when it isn't this app's (`app_version`): a daemon
+    /// goes on across an upgrade until it's shut down.
+    pub daemon_version: Option<String>,
+    pub app_version: String,
     pub slots: Option<u32>,
     /// Games being played now.
     pub running: u32,

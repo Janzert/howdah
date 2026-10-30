@@ -93,9 +93,12 @@ impl Tourney {
             Ok(c) => c.status().await.ok(),
             Err(_) => None,
         };
+        let daemon_version = self.data_dir.as_deref().filter(|_| status.is_some()).and_then(DaemonInfo::read);
         TourneyStatusView {
             connected: status.is_some(),
             data_dir,
+            daemon_version: daemon_version.map(|i| i.version).filter(|v| v != howdah_tourney::VERSION),
+            app_version: howdah_tourney::VERSION.to_string(),
             slots: status.as_ref().map(|s| s.slots),
             running: status.as_ref().map_or(0, |s| s.running.len() as u32),
             can_start,

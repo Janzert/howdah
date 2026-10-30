@@ -103,7 +103,7 @@ pub async fn bind(data_dir: &Path, port: u16) -> Result<(TcpListener, DaemonInfo
         port,
         token: bytes.iter().map(|b| format!("{b:02x}")).collect(),
         pid: std::process::id(),
-        version: env!("CARGO_PKG_VERSION").into(),
+        version: crate::VERSION.into(),
     };
     write_private(&data_dir.join(INFO_FILE), &serde_json::to_string_pretty(&info).expect("info serializes"))?;
     Ok((listener, info))

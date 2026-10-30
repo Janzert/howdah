@@ -11,7 +11,12 @@ connected: boolean,
 /**
  * Its data directory, where tests are kept.
  */
-dataDir: string | null, slots: number | null, 
+dataDir: string | null, 
+/**
+ * Its version, when it isn't this app's (`app_version`): a daemon
+ * goes on across an upgrade until it's shut down.
+ */
+daemonVersion: string | null, appVersion: string, slots: number | null, 
 /**
  * Games being played now.
  */
