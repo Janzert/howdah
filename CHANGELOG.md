@@ -7,6 +7,8 @@ young).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-30
+
 ### Added
 
 - Pools in the test daemon: a spec with `[pool]` plays two or more
@@ -17,8 +19,9 @@ young).
   Each pair's matchup is chosen by what it would tell: every matchup
   gets a couple of pairs first (so a new engine catches up against the
   rest), then the ones whose rating difference is least known get the
-  most, unless the matchup is lopsided and its order already settled. `howdah-tourney add-engine`, `retire` and `unretire` change a
-  running pool, and `show` prints its standings. How it works is in
+  most, unless the matchup is lopsided and its order already settled.
+  `howdah-tourney add-engine`, `retire` and `unretire` change a running
+  pool, and `show` prints its standings. How it works is in
   `docs/TOURNAMENTS.md`.
 - A pool's panel in the lobby: ratings with their intervals, the
   crosstable shaded by how far each result is from the prediction, the
@@ -417,7 +420,8 @@ Gatekeeper.
 - Keeps playing through network drops and sleep, and resumes games in
   progress.
 
-[Unreleased]: https://github.com/Janzert/howdah/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Janzert/howdah/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Janzert/howdah/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Janzert/howdah/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Janzert/howdah/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Janzert/howdah/compare/v0.2.0...v0.2.1
