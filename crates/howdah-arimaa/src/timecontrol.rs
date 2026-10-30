@@ -315,16 +315,26 @@ impl TimeControl {
     }
 
     /// Reserve after a turn that took `used`. Unused move time is added at
-    /// `percent`; overtime comes out of the reserve; the result is capped at
-    /// the reserve limit. Setups use `reserve_after_setup` instead.
+    /// `percent`; overtime comes out of the reserve. Additions stop at the
+    /// reserve limit, but a reserve already over it isn't cut (`matchRules.html`).
+    /// Setups use `reserve_after_setup` instead.
     pub fn reserve_after(&self, reserve: Duration, used: Duration) -> Duration {
         let move_time = self.move_time();
         let updated = if used <= move_time {
-            reserve + (move_time - used).mul_f64(f64::from(self.percent) / 100.0)
+            reserve + self.added_to_reserve(move_time - used)
         } else {
             reserve.saturating_sub(used - move_time)
         };
-        if self.max_reserve_ms > 0 { updated.min(self.max_reserve()) } else { updated }
+        if self.max_reserve_ms > 0 { updated.min(self.max_reserve().max(reserve)) } else { updated }
+    }
+
+    /// `percent` of `unused` move time, rounded to the nearest second as
+    /// `matchRules.html` has it, or to the millisecond in a time control
+    /// with fractions of a second.
+    fn added_to_reserve(&self, unused: Duration) -> Duration {
+        let unit: u128 = if self.is_whole_seconds() { 1000 } else { 1 };
+        let added = (unused.as_millis() * u128::from(self.percent) + 50 * unit) / (100 * unit) * unit;
+        Duration::from_millis(added as u64)
     }
 }
 
@@ -481,6 +491,26 @@ mod tests {
         // Capped at 90 s.
         assert_eq!(t.reserve_after(s(88), s(0)), s(90));
         assert_eq!(t.reserve_after(s(3), s(60)), s(0));
+    }
+
+    #[test]
+    fn a_reserve_over_the_limit_is_not_cut() {
+        let s = Duration::from_secs;
+        let t = tc("30s/5m/100/3m");
+        assert_eq!(t.reserve_after(s(300), s(10)), s(300), "nothing added, nothing cut");
+        assert_eq!(t.reserve_after(s(300), s(40)), s(290), "overtime still comes off");
+        assert_eq!(t.reserve_after(s(170), s(0)), s(180), "under the limit, capped at it");
+    }
+
+    #[test]
+    fn additions_round_to_the_nearest_second() {
+        let ms = Duration::from_millis;
+        let t = tc("30s/1m/75");
+        assert_eq!(t.reserve_after(ms(60_000), ms(20_000)), ms(68_000), "7.5 s rounds up");
+        assert_eq!(t.reserve_after(ms(60_000), ms(20_800)), ms(67_000), "6.9 s");
+        assert_eq!(t.reserve_after(ms(60_000), ms(21_000)), ms(67_000), "6.75 s");
+        let tenths = tc("0.5s/1m/75");
+        assert_eq!(tenths.reserve_after(ms(60_000), ms(100)), ms(60_300), "to the ms with fractions");
     }
 
     #[test]

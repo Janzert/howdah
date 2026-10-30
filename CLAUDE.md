@@ -44,7 +44,10 @@ plans the engine test and tournament runner.
     `matchRules.html`: with under a minute per move the setup gets a
     minute, overtime comes out of the reserve, and unused setup time is
     never added; `setup_allowance`, `reserve_after_setup`; pyrimaa
-    doesn't charge setup overtime to the reserve. The minute is for
+    doesn't charge setup overtime to the reserve. `reserve_after` follows
+    the same page: additions rounded to the nearest second (the
+    millisecond with fractions in the time control), and a reserve over
+    the limit left as it is. The minute is for
     humans: `with_setup_minimum` changes it (engine-only games use zero,
     the plain move time, with the same reserve rule). It isn't in the
     time control's text; records name it in a `SetupMinimum` tag

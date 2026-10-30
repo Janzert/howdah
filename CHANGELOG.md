@@ -51,6 +51,12 @@ young).
 - Watching a test's game, the game-end sound is the tested engine's
   (engine 1's): the win sound when it wins, the loss sound when it
   loses. Pools and SPSA runs keep the win sound.
+- A reserve already over its limit (`30s/5m/100/3m`) isn't cut to it
+  any more: more time just isn't added until it falls below, as
+  arimaa.com's match rules have it.
+- Unused move time goes into the reserve rounded to the nearest second,
+  as the match rules have it, or to the millisecond in a time control
+  with fractions of a second.
 
 ### Fixed
 
