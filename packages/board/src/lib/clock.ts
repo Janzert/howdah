@@ -58,8 +58,10 @@ export function nextTick(left: number, lastTick = Infinity): number | null {
 
 /** A time in its two largest units, to keep it short: `m:ss` under an
  * hour, then `1h05` (hours and minutes) and `2d03` (days and hours), each
- * rounded down. */
-export function formatShort(ms: number): string {
+ * rounded down. With `fractional`, a time under 10 s is its seconds to the
+ * millisecond instead, the same width: `0.123`. */
+export function formatShort(ms: number, fractional = false): string {
+  if (fractional && ms < 10_000) return (Math.max(0, ms) / 1000).toFixed(3);
   const total = Math.max(0, Math.floor(ms / 1000));
   const pad = (n: number) => String(n).padStart(2, '0');
   if (total >= 86400) return `${Math.floor(total / 86400)}d${pad(Math.floor((total % 86400) / 3600))}`;

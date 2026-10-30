@@ -47,6 +47,9 @@
     return () => observer.disconnect();
   });
 
+  // Only a time control with fractions of a second records them.
+  const fractional = $derived(view.tree.some((m) => (m.elapsedMs ?? 0) % 1000 !== 0));
+
   /** The move's time in the chosen mode, or null when it isn't known. */
   function timeOf(m: MoveNodeView): number | null {
     return settings.moveTimes === 'move' ? m.elapsedMs : m.gameTimeMs;
@@ -138,8 +141,10 @@
       >
         {#if settings.moveTimes !== 'off'}
           {@const t = timeOf(m)}
-          <span class="time" title={t == null ? 'Time not known' : formatClock(t)}
-            >{t == null ? '' : formatShort(t)}</span
+          <span
+            class="time"
+            title={t == null ? 'Time not known' : fractional && t < 10_000 ? formatShort(t, true) : formatClock(t)}
+            >{t == null ? '' : formatShort(t, fractional)}</span
           >
         {/if}
         <span class="label">{m.label}</span>

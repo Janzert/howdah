@@ -161,6 +161,14 @@ describe('formatFractional', () => {
 });
 
 describe('formatShort', () => {
+  it('gives seconds to the millisecond under 10 s with fractions', () => {
+    expect(formatShort(123, true)).toBe('0.123');
+    expect(formatShort(0, true)).toBe('0.000');
+    expect(formatShort(9999, true)).toBe('9.999');
+    expect(formatShort(10_000, true)).toBe('0:10');
+    expect(formatShort(123)).toBe('0:00');
+  });
+
   it('keeps the two largest units, rounded down', () => {
     expect(formatShort(0)).toBe('0:00');
     expect(formatShort(7_900)).toBe('0:07');

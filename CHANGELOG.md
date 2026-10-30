@@ -43,7 +43,8 @@ young).
 - An About section in the Help panel: the version, with Copy, and links
   to the releases, changelog, source and acknowledgements.
 - Clocks in a time control with fractions of a second show them under
-  10 seconds: tenths while running, milliseconds when stopped.
+  10 seconds: tenths while running, milliseconds when stopped. The move
+  list's times show them too (`0.123`).
 - An estimate of the end for tests with a pair limit and no SPRT: the
   games left, and the time at the current pace.
 - A note on the Engine tests panel when the running test daemon is from
