@@ -162,8 +162,11 @@
   let receivedAt = $state(performance.now());
   let now = $state(performance.now());
   $effect(() => {
-    if (!view?.clock?.running) return;
-    const timer = setInterval(() => (now = performance.now()), 200);
+    const clock = view?.clock;
+    if (!clock?.running) return;
+    // Fractions of a second show tenths, so they need a quicker tick.
+    const fractional = clock.gold?.fractional || clock.silver?.fractional;
+    const timer = setInterval(() => (now = performance.now()), fractional ? 50 : 200);
     return () => clearInterval(timer);
   });
 

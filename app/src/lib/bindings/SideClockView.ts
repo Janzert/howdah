@@ -3,7 +3,11 @@
 /**
  * One side's clock.
  */
-export type SideClockView = { timeControl: string, moveTimeMs: number, reserveMs: number, 
+export type SideClockView = { timeControl: string, 
+/**
+ * The time control has fractions of a second, so the clock shows them.
+ */
+fractional: boolean, moveTimeMs: number, reserveMs: number, 
 /**
  * The time this side has for a turn from its start: move time plus
  * reserve, within the time control's turn limit (the setup's minute

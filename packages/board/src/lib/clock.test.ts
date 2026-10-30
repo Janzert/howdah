@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { ClockView } from './types';
-import { clockLevel, formatClock, formatShort, nextTick, sideTimes, TICK_TIMES_MS, turnTimeLeft } from './clock';
+import {
+  clockLevel,
+  formatClock,
+  formatFractional,
+  formatShort,
+  nextTick,
+  sideTimes,
+  TICK_TIMES_MS,
+  turnTimeLeft,
+} from './clock';
 
 describe('turnTimeLeft', () => {
   const clock: ClockView = {
@@ -21,7 +30,13 @@ describe('turnTimeLeft', () => {
 });
 
 describe('sideTimes', () => {
-  const side = { timeControl: '30s/2m', moveTimeMs: 30_000, reserveMs: 120_000, turnAllowanceMs: 150_000 };
+  const side = {
+    timeControl: '30s/2m',
+    fractional: false,
+    moveTimeMs: 30_000,
+    reserveMs: 120_000,
+    turnAllowanceMs: 150_000,
+  };
 
   it('counts the running side down, move time first', () => {
     const clock: ClockView = {
@@ -114,6 +129,34 @@ describe('clockLevel', () => {
     expect(clockLevel(10_000)).toBe('warn');
     expect(clockLevel(9999)).toBe('low');
     expect(clockLevel(0)).toBe('low');
+  });
+});
+
+describe('formatFractional', () => {
+  it('shows tenths while running and milliseconds when stopped, under 10 s', () => {
+    expect(formatFractional(9412, true)).toEqual({ text: '0:09.5', spare: '00' });
+    expect(formatFractional(9412, false)).toEqual({ text: '0:09.412', spare: '' });
+    expect(formatFractional(500, false)).toEqual({ text: '0:00.500', spare: '' });
+    expect(formatFractional(0, true)).toEqual({ text: '0:00.0', spare: '00' });
+    expect(formatFractional(-5, false)).toEqual({ text: '0:00.000', spare: '' });
+  });
+
+  it('shows whole seconds from 10 s, rounding up into them', () => {
+    expect(formatFractional(12_000, false)).toEqual({ text: '0:12', spare: '.000' });
+    expect(formatFractional(9950, true)).toEqual({ text: '0:10', spare: '.000' });
+    expect(formatFractional(9999.5, false)).toEqual({ text: '0:10', spare: '.000' });
+    expect(formatFractional(9999, false)).toEqual({ text: '0:09.999', spare: '' });
+  });
+
+  it('keeps the same width in every form', () => {
+    for (const [ms, running] of [
+      [12_000, true],
+      [9412, true],
+      [9412, false],
+    ] as const) {
+      const { text, spare } = formatFractional(ms, running);
+      expect((text + spare).length).toBe(8);
+    }
   });
 });
 

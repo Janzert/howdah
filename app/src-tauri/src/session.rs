@@ -2674,6 +2674,7 @@ impl Session {
         let side_view = |side: Color| {
             clock.tc(side).map(|tc| SideClockView {
                 time_control: tc.to_string(),
+                fractional: !tc.is_whole_seconds(),
                 move_time_ms: ms(if self.setup_pending(side) {
                     tc.setup_move_time()
                 } else {
@@ -2762,6 +2763,7 @@ impl Session {
             let reserve = reserves[side.index()];
             tcs[side.index()].map(|tc| SideClockView {
                 time_control: tc.to_string(),
+                fractional: !tc.is_whole_seconds(),
                 move_time_ms: ms(if setup { tc.setup_move_time() } else { tc.move_time() }),
                 reserve_ms: ms(reserve),
                 turn_allowance_ms: ms(if setup {

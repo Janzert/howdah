@@ -54,6 +54,7 @@ export type PositionView = { sideToMove: Color; pieces: Array<PieceView>; short:
  * took. */
 export type SideClockView = {
   timeControl: string;
+  fractional: boolean;
   moveTimeMs: number;
   reserveMs: number;
   turnAllowanceMs: number;

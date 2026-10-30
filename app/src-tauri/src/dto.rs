@@ -422,6 +422,8 @@ pub struct PlayersView {
 #[ts(export)]
 pub struct SideClockView {
     pub time_control: String,
+    /// The time control has fractions of a second, so the clock shows them.
+    pub fractional: bool,
     #[ts(type = "number")]
     pub move_time_ms: u64,
     #[ts(type = "number")]

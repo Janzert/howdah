@@ -1051,6 +1051,10 @@ plans the engine test and tournament runner.
     The bars show in free play too, named from the record's `Gold`/`Silver`
     tags (`SessionView.tagNames`) when there's no match, and show ratings
     from `GoldRating`/`SilverRating` (`SessionView.tagRatings`).
+    In a time control with fractions of a second
+    (`SideClockView.fractional`) the bar uses `formatFractional`: tenths
+    while running and milliseconds when stopped, under 10 s, with hidden
+    `spare` digits so its width stays put; App ticks at 50 ms for them.
   - `lib/sound.ts`: Web Audio. Sounds are embedded (`?inline`), decoded
     once by our own `lib/wav.ts` (8/16-bit PCM), and played as buffer
     sources, so overlapping sounds mix.

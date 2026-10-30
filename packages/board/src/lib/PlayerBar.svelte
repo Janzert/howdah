@@ -1,6 +1,6 @@
 <script lang="ts">
   import PieceGlyph from './board/PieceGlyph.svelte';
-  import { formatClock, sideTimes } from './clock';
+  import { formatClock, formatFractional, sideTimes } from './clock';
   import { SQ } from './geometry';
   import type { Theme } from './theme';
   import type { ClockView, Color, PieceKind } from './types';
@@ -59,12 +59,20 @@
     captured.map((g) => (g.n > 1 ? `${g.n} ${opponent} ${g.kind}s` : `${opponent} ${g.kind}`)).join(', '),
   );
 
-  const fmt = formatClock;
-
   // Colored by the time left for the turn, reserve included: counting
   // down while running, otherwise what the side's next turn will have.
   const times = $derived(clock ? sideTimes(clock, side, now - receivedAt) : null);
+  const fractional = $derived(clock?.[side]?.fractional ?? false);
 </script>
+
+{#snippet time(ms: number, running: boolean)}
+  {#if fractional}
+    {@const shown = formatFractional(ms, running)}
+    {shown.text}<span class="spare" aria-hidden="true">{shown.spare}</span>
+  {:else}
+    {formatClock(ms)}
+  {/if}
+{/snippet}
 
 <div class="bar" class:active={toMove}>
   <span class="dot {side}"></span>
@@ -98,9 +106,9 @@
           ? 'move time · reserve at this move'
           : 'move time · reserve'}
     >
-      <span class="move" class:used={times.used}>{fmt(times.move)}</span>
+      <span class="move" class:used={times.used}>{@render time(times.move, times.running)}</span>
       <span class="sep">·</span>
-      <span class="reserve">{fmt(times.reserve)}</span>
+      <span class="reserve">{@render time(times.reserve, times.running)}</span>
     </span>
   {/if}
 </div>
@@ -226,6 +234,9 @@
   }
   .sep {
     opacity: 0.5;
+  }
+  .spare {
+    visibility: hidden;
   }
   /* The time a past move took stands out from the clocks' other times. */
   .move.used {

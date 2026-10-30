@@ -83,3 +83,18 @@ export function formatClock(ms: number): string {
   }
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
+
+/** A clock's time in a time control with fractions of a second: under 10 s
+ * in tenths while it runs and to the millisecond when it's stopped, otherwise
+ * as `formatClock`. `spare` is what's left out of the longest form; the bar
+ * keeps its width, so the time doesn't shift when the form changes. */
+export function formatFractional(ms: number, running: boolean): { text: string; spare: string } {
+  const digits = running ? 1 : 3;
+  const unit = 10 ** (3 - digits);
+  const shown = Math.ceil(Math.max(0, ms) / unit) * unit;
+  if (shown >= 10_000) return { text: formatClock(ms), spare: '.000' };
+  const fraction = String(shown % 1000)
+    .padStart(3, '0')
+    .slice(0, digits);
+  return { text: `0:0${Math.floor(shown / 1000)}.${fraction}`, spare: '0'.repeat(3 - digits) };
+}
