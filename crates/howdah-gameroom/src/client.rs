@@ -63,6 +63,10 @@ const SECRETS: [&str; 4] = ["password", "sid", "auth", "tid"];
 pub enum Error {
     #[error("network error: {0}")]
     Network(String),
+    /// The server took the request and never answered, as it does for a
+    /// seat at a table it has cleared away.
+    #[error("no reply from the server")]
+    NoReply,
     /// The server's answer to requests it won't allow.
     #[error("the server refused the request (HTTP 404)")]
     Refused,
@@ -88,6 +92,9 @@ pub enum Error {
 /// request") doesn't say what went wrong. The URL is left out, since it
 /// may carry a session id.
 fn network(e: reqwest::Error) -> Error {
+    if e.is_timeout() && !e.is_connect() {
+        return Error::NoReply;
+    }
     Error::Network(with_causes(&e.without_url()))
 }
 

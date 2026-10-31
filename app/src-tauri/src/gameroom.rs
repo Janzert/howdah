@@ -49,9 +49,9 @@ use std::time::{Duration, Instant};
 
 use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
-    Actions, Announcement, Asip, ChatClient, DEFAULT_GAMEROOM, Error, GameInfo, GameServer, GameState, Http,
-    Invitation, InviteOutcome, Lobby, LobbyGames, OnlinePlayer, Opened, PastGame, RecentGame, Role,
-    ViewerSeat, parse_chat, parse_result,
+    Actions, Announcement, Asip, ChatClient, DEFAULT_GAMEROOM, Error, FinishedGame, GameInfo, GameServer,
+    GameState, Http, Invitation, InviteOutcome, Lobby, LobbyGames, OnlinePlayer, Opened, PastGame,
+    RecentGame, Role, ViewerSeat, parse_chat, parse_result,
 };
 use tokio::sync::Notify;
 
@@ -61,9 +61,9 @@ use crate::chatroom::ChatRoom;
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
     AnimStep, AnnouncementBlock, AnnouncementSpan, AnnouncementView, ApiError, BotInfoView, ChatLineView,
-    ChatRoomView, GameroomGames, GameroomStatus, InvitationAnswer, InvitationOutcome, InvitationView,
-    LiveGameView, OnlinePlayerView, PastGameView, PlayerGamesView, PlayerMatchView, PostalGameView,
-    RecentGameView, ServerBotView, ServerBotsView, StartedBotView, WatchState, WatchView,
+    ChatRoomView, ErrorKind, GameroomGames, GameroomStatus, InvitationAnswer, InvitationOutcome,
+    InvitationView, LiveGameView, OnlinePlayerView, PastGameView, PlayerGamesView, PlayerMatchView,
+    PostalGameView, RecentGameView, ServerBotView, ServerBotsView, StartedBotView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -115,9 +115,11 @@ const SLEEP_CHECK: Duration = Duration::from_secs(5);
 /// checks before it counts as a sleep.
 const SLEEP_GAP: Duration = Duration::from_secs(5);
 
-/// How many new seats a watch takes in a row, after the game server drops
-/// one, before it gives up.
-const MAX_RESEATS: u32 = 3;
+/// How many new seats a watch tries for in a row, after the game server
+/// drops one, before it gives up. With the pauses between them that's half
+/// a minute, longer than the server can take to give an ended game its id
+/// ([`find_id`]). Tries the network stopped don't count.
+const MAX_RESEATS: u32 = 5;
 
 /// How long a sent move may take to come back in the server's state
 /// before the state is checked and the move sent again. Each try after
@@ -129,7 +131,9 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn net_error(e: Error) -> ApiError {
-    ApiError::state(format!("arimaa.com: {e}"))
+    let kind =
+        if matches!(e, Error::Network(_) | Error::NoReply) { ErrorKind::Network } else { ErrorKind::State };
+    ApiError::new(kind, format!("arimaa.com: {e}"))
 }
 
 /// Hides a saved password from a casual look at the file. It's
@@ -1323,9 +1327,17 @@ fn set_refused(target: &Target, view: &Mutex<WatchView>, refused: Option<String>
     }
 }
 
+/// Whether a watch at `state` stays there rather than going to `new`: an
+/// ended or failed game has no connection to report on, whatever the
+/// sender, which outlives the follower, last saw.
+fn stays(state: WatchState, new: WatchState) -> bool {
+    matches!(state, WatchState::Ended | WatchState::Failed)
+        && matches!(new, WatchState::Following | WatchState::Reconnecting)
+}
+
 fn set_state(target: &Target, view: &Mutex<WatchView>, state: WatchState, detail: Option<String>) {
     let mut v = lock(view);
-    if (v.state, &v.detail) == (state, &detail) {
+    if (v.state, &v.detail) == (state, &detail) || stays(v.state, state) {
         return;
     }
     v.state = state;
@@ -1413,7 +1425,8 @@ async fn follow(
     // `gamestate` marks it present again; long polls and moves don't.
     let mut resync = false;
     loop {
-        let polled = if std::mem::take(&mut resync) {
+        let asked_state = std::mem::take(&mut resync);
+        let polled = if asked_state {
             server.game_state().await
         } else {
             tokio::select! {
@@ -1429,6 +1442,10 @@ async fn follow(
                 }
             }
         };
+        // A `gamestate` gets a reply at once, unless the server has cleared
+        // the table away, when it waits for ever. That's a lost seat, not a
+        // lost connection; if the connection's lost, `reseat` says so.
+        let seat_silent = asked_state && matches!(polled, Err(Error::NoReply));
         // Network errors retry sooner than the server's own.
         let mut cap = MAX_BACKOFF;
         match polled {
@@ -1448,8 +1465,10 @@ async fn follow(
             // once, can go out on it as it closes. Asking again on a new
             // connection is safe, so once after a good reply that's done
             // before calling the connection lost.
-            Err(Error::Network(_)) if std::mem::take(&mut retry_at_once) => continue,
-            Err(Error::Network(_)) => {
+            Err(Error::Network(_) | Error::NoReply) if !seat_silent && std::mem::take(&mut retry_at_once) => {
+                continue;
+            }
+            Err(Error::Network(_) | Error::NoReply) if !seat_silent => {
                 cap = NETWORK_BACKOFF;
                 resync = true;
                 set_state(&target, &view, WatchState::Reconnecting, Some(CONNECTION_LOST.into()));
@@ -1458,7 +1477,9 @@ async fn follow(
                 resync = true;
                 set_state(&target, &view, WatchState::Reconnecting, Some(e.to_string()));
             }
-            Err(e @ (Error::Server(_) | Error::Refused | Error::Expired)) if reseats < MAX_RESEATS => {
+            Err(e @ (Error::Server(_) | Error::Refused | Error::Expired | Error::NoReply))
+                if reseats < MAX_RESEATS =>
+            {
                 // The server dropped the seat (an expired game server
                 // session, say), or the table is gone (`No Game Data` once
                 // a finished game is cleared away): take a new seat, or
@@ -1469,23 +1490,25 @@ async fn follow(
                     Ok(Reseat::Live(new, how)) => {
                         server = new;
                         set_seat(&mut lock(&view), &how);
-                        if let Ok(state) = server.game_state().await {
-                            // The sender acts at the new seat.
-                            if let (Some(sender), Some(new)) = (&sender, server.actions()) {
-                                *lock(&sender.actions) = new;
-                            }
-                            if let Next::Stop = update(&state) {
-                                after_end(gameroom, server, target, generation, view).await;
-                                return;
-                            }
-                            continue;
+                        // The sender acts at the new seat.
+                        if let (Some(sender), Some(new)) = (&sender, server.actions()) {
+                            *lock(&sender.actions) = new;
                         }
+                        resync = true;
+                        continue;
                     }
-                    Ok(Reseat::Finished(state)) => {
+                    Ok(Reseat::Finished(game)) => {
                         // The table is gone, and its chat with it.
-                        update(&state);
+                        update(&game.state());
                         close_chat(&target, &view);
+                        fill_move_times(&target, generation, &game);
                         return;
+                    }
+                    Err(e) if e.kind == ErrorKind::Network => {
+                        reseats -= 1;
+                        cap = NETWORK_BACKOFF;
+                        resync = true;
+                        set_state(&target, &view, WatchState::Reconnecting, Some(CONNECTION_LOST.into()));
                     }
                     Err(e) => {
                         set_state(&target, &view, WatchState::Reconnecting, Some(e.message));
@@ -1566,6 +1589,11 @@ async fn complete_record(
         return;
     }
     let Ok(Opened::Finished(game)) = gameroom.open(&id).await else { return };
+    fill_move_times(&target, generation, &game);
+}
+
+/// Adds the finished game's move times to the record.
+fn fill_move_times(target: &Target, generation: u64, game: &FinishedGame) {
     let times: Vec<_> = game.time_used().into_iter().map(|t| Duration::from_secs(t.into())).collect();
     let mut s = lock(&target.session);
     if s.fill_move_times(generation, &times) {
@@ -1587,26 +1615,28 @@ async fn follow_chat(mut server: GameServer, target: Target, generation: u64, vi
         if lock(&target.session).generation() != generation {
             return;
         }
-        let polled = if std::mem::take(&mut resync) {
-            server.game_state().await
-        } else {
-            server.update(MAXWAIT).await
-        };
+        let asked_state = std::mem::take(&mut resync);
+        let polled = if asked_state { server.game_state().await } else { server.update(MAXWAIT).await };
         match polled {
             Ok(state) => {
                 backoff = Duration::from_secs(1);
                 let mut v = lock(&view);
                 let (chat, away) = (kept_chat(&v.chat, chat_view(&state.chat)), away(&state));
-                if (&v.chat, v.away) != (&chat, away) {
+                if (&v.chat, v.away, v.detail.is_some()) != (&chat, away, false) {
                     v.chat = chat;
                     v.away = away;
+                    v.detail = None;
                     emit(&target.events, WATCH_UPDATE, v.clone());
                 }
                 continue;
             }
             Err(Error::Empty) => {}
-            // A dropped connection: try again.
-            Err(Error::Network(_)) => resync = true,
+            // A dropped connection: try again. (A `gamestate` with no reply
+            // is a cleared table: see `follow`.)
+            Err(Error::Network(_)) | Err(Error::NoReply) if !asked_state => {
+                resync = true;
+                set_state(&target, &view, WatchState::Ended, Some(CONNECTION_LOST.into()));
+            }
             Err(e) => {
                 eprintln!("gameroom: chat closed for game {}: {e}", lock(&view).gid);
                 close_chat(&target, &view);
@@ -1621,8 +1651,8 @@ async fn follow_chat(mut server: GameServer, target: Target, generation: u64, vi
 /// A followed game, opened again.
 enum Reseat {
     Live(GameServer, Seat),
-    /// It ended: the final state.
-    Finished(GameState),
+    /// It ended.
+    Finished(FinishedGame),
 }
 
 /// Opens followed game `gid` again after its seat was dropped, at the same
@@ -1631,13 +1661,18 @@ enum Reseat {
 /// and permanent ids are separate, so the same number may be an older
 /// finished game.
 async fn reseat(gameroom: &Gameroom, gid: &str, seat: &Seat) -> Result<Reseat, ApiError> {
-    if let Ok(id) = gameroom.find_game_id(gid).await {
-        return match gameroom.open(&id).await? {
-            Opened::Finished(game) => Ok(Reseat::Finished(game.state())),
-            Opened::Live(..) => {
-                Err(ApiError::state(format!("game {gid} ended as {id}, which isn't finished")))
-            }
-        };
+    match gameroom.find_game_id(gid).await {
+        Ok(id) => {
+            return match gameroom.open(&id).await? {
+                Opened::Finished(game) => Ok(Reseat::Finished(game)),
+                Opened::Live(..) => {
+                    Err(ApiError::state(format!("game {gid} ended as {id}, which isn't finished")))
+                }
+            };
+        }
+        // No answer says nothing about the game.
+        Err(e) if e.kind == ErrorKind::Network => return Err(e),
+        Err(_) => {}
     }
     if let Seat::Player(side) = seat {
         return Ok(Reseat::Live(gameroom.sit(gid, *side, false).await?, seat.clone()));
@@ -1929,6 +1964,19 @@ mod tests {
              tcwreserve=0\ntcbreserve=0\ntimeonserver=1000\nwstartmove=990\n{extra}"
         );
         GameState::from_record(Record::decode(&text).unwrap())
+    }
+
+    #[test]
+    fn the_connection_doesnt_change_an_ended_or_failed_watch() {
+        use WatchState::{Ended, Failed, Following, Reconnecting, Stopped};
+        for over in [Ended, Failed] {
+            assert!(stays(over, Following));
+            assert!(stays(over, Reconnecting));
+            assert!(!stays(over, Stopped));
+        }
+        assert!(!stays(Following, Reconnecting));
+        assert!(!stays(Reconnecting, Following));
+        assert!(!stays(Reconnecting, Failed));
     }
 
     #[test]

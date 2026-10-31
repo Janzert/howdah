@@ -865,6 +865,8 @@ pub enum ErrorKind {
     Illegal,
     /// The request doesn't fit the current state (e.g. a step during setup).
     State,
+    /// A request to arimaa.com didn't get through.
+    Network,
 }
 
 /// Error returned by commands.

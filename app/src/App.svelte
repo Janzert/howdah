@@ -907,6 +907,12 @@
             <strong>Back to live game</strong> <kbd>End</kbd>
           </button>
         {/if}
+        {#if watch?.state === 'reconnecting' || watch?.state === 'failed'}
+          <div class="connection-alert {watch.state}" role="alert">
+            <strong>{watch.state === 'failed' ? 'No longer following this game' : 'Reconnecting…'}</strong>
+            {#if watch.detail}<span>{watch.detail}</span>{/if}
+          </div>
+        {/if}
         <div class="board-box">
           <Board
             {model}
@@ -1303,6 +1309,34 @@
   }
   .live-alert .dot.silver {
     background: #c9ced6;
+  }
+  /* Along the bottom, clear of the live alert; moves can still be made
+     through it, and go out when the connection is back. */
+  .connection-alert {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 8px;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: #d29922;
+    color: #1b1300;
+    font-size: 13px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+  }
+  .connection-alert.failed {
+    background: var(--warn);
+    color: #fff;
   }
   @keyframes live-alert-in {
     0% {

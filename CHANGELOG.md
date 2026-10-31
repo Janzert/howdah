@@ -7,6 +7,19 @@ young).
 
 ## [Unreleased]
 
+### Added
+
+- A banner over the board while its arimaa.com game has lost the
+  connection, or has stopped following the game.
+
+### Fixed
+
+- A game that ended during a long network outage stayed on "Reconnecting"
+  for ever, since the server doesn't answer at a table it has cleared
+  away. Now its final result and move times arrive. Tries for a new seat
+  that the network stopped also no longer count towards giving up.
+- After taking a new seat, moves could go on going to the old one.
+
 ## [0.5.0] - 2026-10-30
 
 ### Added

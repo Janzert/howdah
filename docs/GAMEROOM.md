@@ -285,6 +285,16 @@ architecture. Decided and checked against the live server in October 2026.
   for the rest of the game.
 - A move that failed to send is checked against the state before it's sent
   again, and not resent while the state can't be checked.
+- While a game's connection is lost, a banner over the board says so; moves
+  can still be entered, and go out once it's back. After the game has ended,
+  the chat's lost connection shows in the game's panel instead.
+- A game that ended during an outage is found either way: the old seat
+  reports the result, or, if the server has cleared the table, a new try
+  at a seat asks for the finished game. The server never answers a
+  `gamestate` at a cleared table (seen with a table left 5 minutes), so a
+  connection that takes the request with no reply counts as a lost seat,
+  not a lost connection. Tries the network stops don't count towards
+  giving up, so an outage of any length is outlasted.
 
 ## Not built
 

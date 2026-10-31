@@ -487,10 +487,16 @@ plans the engine test and tournament runner.
     (`retry_at_once`) before the watch shows the connection lost. The sender checks the state before
     sending a move again and doesn't resend while that check fails
     (the server would refuse a move it already has). When the game server
-    drops the seat (a server error), `reseat` takes a new one, up to three
-    times in a row; if the game ended meanwhile it asks `findgameid` and
-    applies the finished game's final state (a gameroom id alone could
-    open an unrelated old game with the same number). Its state goes out
+    drops the seat (a server error), `reseat` takes a new one, up to
+    `MAX_RESEATS` times in a row, not counting tries the network stopped
+    (`ErrorKind::Network`), and also when a `gamestate` gets no reply
+    (`Error::NoReply`: a cleared table); if the game ended meanwhile it asks
+    `findgameid` and applies the finished game's final state and move
+    times (a gameroom id alone could open an unrelated old game with the
+    same number). App shows `WatchState::Reconnecting` and `Failed` over
+    the board (`.connection-alert`); `set_state` never takes an ended or
+    failed watch back to following or reconnecting (`stays`), since the
+    sender outlives the follower. Its state goes out
     as `gameroom://watch` (`WatchView`, only when changed). Playing
     (`play`, command `play_gameroom_game`) takes the user's seat at a
     side the browser's way (`Lobby::play`); `start` makes the seat's side
