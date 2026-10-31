@@ -771,7 +771,8 @@ plans the engine test and tournament runner.
     browser preview (tabs are named, `nameTab`, so `showLobby` and
     `focusGameWindow` find them); from a game window, a window; from a
     docked board, as the lobby decides (`askLobby`). With `loading` (the
-    lobby's arimaa.com games, Next game's postal game) the board is shown
+    lobby's arimaa.com games, puzzles and engine test games, Next game's
+    postal game: whatever waits on the network or the daemon) the board is shown
     first and `prepare` runs after: `lib/boardLoading.ts` keeps the
     board's state in localStorage, and App shows a spinner with the text,
     or the error with Close (`closeThisBoard`); the lobby clears it at

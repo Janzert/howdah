@@ -135,8 +135,8 @@
   // The game-end sound waits for the final move too, with the dialog.
   let gameEndSound: SoundName | null = null;
   const handOff = takeHandOff();
-  /** Set while the board waits for its game (an arimaa.com game opened
-   * before it loaded), or with the error if loading failed. */
+  /** Set while the board waits for its game (one opened before it loaded),
+   * or with the error if loading failed. */
   let loading = $state<BoardLoading | null>(session != null ? readBoardLoading(session) : null);
   $effect(() => (session != null ? followBoardLoading(session, (l) => (loading = l)) : undefined));
   /** The last match started from the new-game dialog, for a rematch. */
@@ -1364,6 +1364,15 @@
     justify-content: center;
     background: rgba(0, 0, 0, 0.25);
     background: color-mix(in srgb, var(--bg) 55%, transparent);
+  }
+  /* A game that loads at once shouldn't flash the spinner. */
+  .loading[role='status'] {
+    animation: loading-in 0.15s 0.2s backwards;
+  }
+  @keyframes loading-in {
+    from {
+      opacity: 0;
+    }
   }
   .loading-box {
     display: flex;

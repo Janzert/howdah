@@ -227,7 +227,7 @@
     if (selected.startsWith('board:') && !docked.includes(Number(selected.slice(6)))) leave(selected, 'home');
   });
 
-  /** What each board still waits for (an arimaa.com game loading). */
+  /** What each board still waits for (its game loading). */
   let boardsLoading = $state<Record<SessionId, BoardLoading>>({});
   $effect(() => followAllBoardLoading((all) => (boardsLoading = all)));
 
@@ -275,11 +275,16 @@
   /** Opens a board following engine test `id`, on its newest running game
    * without a board; resolves to an error message, or null. */
   async function followTest(id: string): Promise<string | null> {
+    const none = 'Every game playing now has a board';
+    // Asked here too, as the board opens before the backend picks a game.
+    const shown = Object.values(games.views).flatMap((v) => (v.view.testGame?.test === id ? [v.view.testGame] : []));
+    const running = tourney.test(id)?.running ?? [];
+    if (!running.some((r) => !shown.some((g) => g.pair === r.pair && g.game === r.game))) return none;
     try {
       const prepare = async (a: Api) => {
-        if (!(await a.followTourneyTest(id))) throw new Error('Every game playing now has a board');
+        if (!(await a.followTourneyTest(id))) throw new Error(none);
       };
-      await openBoard(prepare, { spec: null, follow: true });
+      await openBoard(prepare, { spec: null, follow: true }, 'Loading the game…');
       return null;
     } catch (e) {
       return errorMessage(e);
@@ -803,7 +808,10 @@
             onEngines={() => select('engines')}
           />
         {:else if selected === 'puzzles'}
-          <PuzzlesPanel onOpen={(id) => openNew((a) => a.openPuzzle(id))} onClose={closePuzzles} />
+          <PuzzlesPanel
+            onOpen={(id) => openNew((a) => a.openPuzzle(id), null, 'Loading the puzzle…')}
+            onClose={closePuzzles}
+          />
         {:else if selected === 'gameroom'}
           <GameroomScreen />
         {:else if selected.startsWith('gameroom:')}
@@ -816,7 +824,8 @@
           {#key id}
             <TestPanel
               {id}
-              onOpenGame={(test, pair, game) => openNew((a) => a.openTourneyGame(test, pair, game))}
+              onOpenGame={(test, pair, game) =>
+                openNew((a) => a.openTourneyGame(test, pair, game), null, 'Loading the game…')}
               onFollow={followTest}
               onRemoved={(zip) => {
                 tourney.forget(id);

@@ -1,5 +1,5 @@
-// A board opened before its game has loaded (an arimaa.com game, which
-// may take a while on a slow network): whoever opens it says so here, and
+// A board opened before its game has loaded (from arimaa.com or the test
+// daemon, which may take a while): whoever opens it says so here, and
 // the board shows a loading overlay, or the error if loading failed,
 // until it's cleared. Kept in localStorage, whose `storage` events reach
 // every window and docked board (not the one that wrote it).

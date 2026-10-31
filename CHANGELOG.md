@@ -19,6 +19,8 @@ young).
   away. Now its final result and move times arrive. Tries for a new seat
   that the network stopped also no longer count towards giving up.
 - After taking a new seat, moves could go on going to the old one.
+- Puzzles and engine test games open their board at once, with a
+  spinner while the game loads, as arimaa.com games do.
 
 ## [0.5.0] - 2026-10-30
 
