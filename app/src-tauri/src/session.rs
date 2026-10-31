@@ -42,7 +42,7 @@ use crate::dto::{
     AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, EngineOutput,
     LastMoveView, LastStepView, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView,
     PlayerKind, PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView, SessionView, SideClockView,
-    StepTarget, TakebackView, TestGameTag, TurnStepView, TurnView,
+    StepTarget, SweepView, TakebackView, TestGameTag, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -277,7 +277,17 @@ pub struct AnalysisEngine {
     pub options: Vec<EngineOption>,
 }
 
-/// What analysis should search now: the shown node.
+/// A run of analysis over the main line: each position gets `seconds`,
+/// and what's found goes in `Session::evals` like any other analysis.
+struct Sweep {
+    /// The positions left, the one being searched first.
+    pending: VecDeque<NodeId>,
+    total: usize,
+    seconds: u32,
+}
+
+/// What analysis should search now: the shown node, or the next one of a
+/// run over the whole game.
 #[derive(Clone, Debug)]
 pub struct AnalysisTarget {
     pub generation: u64,
@@ -291,12 +301,15 @@ pub struct AnalysisTarget {
     /// The game up to the node, open for more moves (an outside result
     /// such as a resignation is dropped), to check the engine's lines.
     pub game: Game,
+    /// In a run over the whole game, how long to search; otherwise until
+    /// the target changes.
+    pub time: Option<Duration>,
 }
 
 impl AnalysisTarget {
     /// Whether two targets are the same search.
     pub fn same(&self, other: &AnalysisTarget) -> bool {
-        (self.generation, self.node) == (other.generation, other.node)
+        (self.generation, self.node, self.time) == (other.generation, other.node, other.time)
     }
 }
 
@@ -415,8 +428,14 @@ pub struct Session {
     /// while the game went on at the server): analysis stays refused
     /// until another game is loaded, which resets the session.
     left_online: bool,
-    /// The deepest line analysis found at each node.
-    evals: HashMap<NodeId, AnalysisLine>,
+    /// The deepest line each engine found at each node, by engine id:
+    /// depths and evals don't compare across engines.
+    evals: HashMap<String, HashMap<NodeId, AnalysisLine>>,
+    /// The engine whose evals are shown: the analysis engine, or the last
+    /// one after analysis is turned off.
+    evals_engine: Option<String>,
+    /// The run of analysis over the whole game, while there is one.
+    sweep: Option<Sweep>,
     /// Whether a step after a full turn finishes it and starts the next
     /// side's (see [`Session::try_step`]). A preference, kept across games.
     continue_turns: bool,
@@ -497,6 +516,8 @@ impl Session {
             analysis: None,
             left_online: false,
             evals: HashMap::new(),
+            evals_engine: None,
+            sweep: None,
             continue_turns: true,
             puzzle: None,
             test_game: None,
@@ -1787,8 +1808,68 @@ impl Session {
             (Some(old), Some(new)) if old.id == new.id => old.options.clone(),
             _ => Vec::new(),
         };
+        // A run over the game is one engine's.
+        if self.analysis.as_ref().map(|a| &a.id) != engine.as_ref().map(|e| &e.id) {
+            self.sweep = None;
+        }
+        if let Some(e) = &engine {
+            self.evals_engine = Some(e.id.clone());
+        }
         self.analysis = engine.map(|e| AnalysisEngine { options, ..e });
         Ok(())
+    }
+
+    /// Starts a run of analysis over the main line, `seconds` a position.
+    /// Setups are left out (their evals say little), and so are positions
+    /// already searched for about that long, so a run stopped early can be
+    /// taken up again.
+    pub fn start_sweep(&mut self, seconds: u32) -> Result<(), ApiError> {
+        if self.analysis.is_none() {
+            return Err(ApiError::state("analysis is off"));
+        }
+        let searched = |n: NodeId| {
+            let time = self.shown_eval(n).and_then(|l| l.time_ms);
+            time.is_some_and(|ms| ms * 2 >= u64::from(seconds) * 1000)
+        };
+        let pending: VecDeque<NodeId> = (self.tree.main_line().into_iter())
+            .filter(|&n| !self.tree[n].is_terminal() && !self.tree.setup_due(n) && !searched(n))
+            .collect();
+        if pending.is_empty() {
+            return Err(ApiError::state("no positions to analyse at that time"));
+        }
+        self.sweep = Some(Sweep { total: pending.len(), pending, seconds });
+        Ok(())
+    }
+
+    /// Ends the run over the game; analysis goes back to the shown node.
+    pub fn stop_sweep(&mut self) {
+        self.sweep = None;
+    }
+
+    /// The run's search of `node` is over: on to the next position.
+    pub fn sweep_done(&mut self, generation: u64, node: NodeId) {
+        if generation != self.generation {
+            return;
+        }
+        let Some(sweep) = &mut self.sweep else { return };
+        sweep.pending.retain(|&n| n != node && self.tree.contains(n));
+        if sweep.pending.is_empty() {
+            self.sweep = None;
+        }
+    }
+
+    /// The position the run is on: moves may have been deleted since it
+    /// started.
+    fn sweep_node(&self) -> Option<(NodeId, Duration)> {
+        let sweep = self.sweep.as_ref()?;
+        let node = *sweep.pending.iter().find(|&&n| self.tree.contains(n))?;
+        Some((node, Duration::from_secs(sweep.seconds.into())))
+    }
+
+    fn sweep_view(&self) -> Option<SweepView> {
+        let sweep = self.sweep.as_ref()?;
+        let left = sweep.pending.iter().filter(|&&n| self.tree.contains(n)).count();
+        (left > 0).then(|| SweepView { done: sweep.total - left, total: sweep.total, seconds: sweep.seconds })
     }
 
     /// Replaces the analysis engine's options for this session. The search
@@ -1819,13 +1900,15 @@ impl Session {
         self.analysis.as_ref()
     }
 
-    /// What analysis should search now: the shown node, unless analysis is
-    /// off or the node's position has a result on the board. A turn being
+    /// What analysis should search now: the run over the game's position
+    /// if there's a run, otherwise the shown node, unless analysis is off
+    /// or the node's position has a result on the board. A turn being
     /// entered is ignored (AEI can't hand an engine a partial turn), so the
     /// search stays on the turn's start.
     pub fn analysis_target(&self) -> Option<AnalysisTarget> {
         self.analysis.as_ref()?;
-        let node = self.cursor_node();
+        let sweep = self.sweep_node();
+        let node = sweep.map_or_else(|| self.cursor_node(), |(n, _)| n);
         if self.tree[node].is_terminal() {
             return None;
         }
@@ -1838,24 +1921,32 @@ impl Session {
             start: self.tree.start_position().cloned(),
             moves: game.moves().iter().map(Move::notation).collect(),
             game,
+            time: sweep.map(|(_, time)| time),
         })
     }
 
-    /// Keeps `line` as what analysis found at its node, unless a deeper
+    /// Keeps `line` as what `engine` found at its node, unless a deeper
     /// line is kept already. Lines for an old game are ignored.
-    pub fn store_analysis(&mut self, generation: u64, line: &AnalysisLine) {
+    pub fn store_analysis(&mut self, generation: u64, engine: &str, line: &AnalysisLine) {
         if generation != self.generation || !self.tree.contains(line.node) {
             return;
         }
+        self.evals_engine.get_or_insert_with(|| engine.to_string());
         let deeper = |old: &AnalysisLine| depth_key(old.depth.as_deref()) > depth_key(line.depth.as_deref());
-        if !self.evals.get(&line.node).is_some_and(deeper) {
-            self.evals.insert(line.node, line.clone());
+        let evals = self.evals.entry(engine.to_string()).or_default();
+        if !evals.get(&line.node).is_some_and(deeper) {
+            evals.insert(line.node, line.clone());
         }
     }
 
     /// The line kept for `node` by [`Session::store_analysis`].
-    pub fn stored_analysis(&self, generation: u64, node: NodeId) -> Option<&AnalysisLine> {
-        (generation == self.generation).then(|| self.evals.get(&node)).flatten()
+    pub fn stored_analysis(&self, generation: u64, engine: &str, node: NodeId) -> Option<&AnalysisLine> {
+        (generation == self.generation).then(|| self.evals.get(engine)?.get(&node)).flatten()
+    }
+
+    /// The line the shown engine has for `node`.
+    fn shown_eval(&self, node: NodeId) -> Option<&AnalysisLine> {
+        self.evals.get(self.evals_engine.as_ref()?)?.get(&node)
     }
 
     /// Adds `moves` (in notation) as a line from `from`, reusing moves that
@@ -1917,7 +2008,9 @@ impl Session {
             }
         }
         self.tree = tree;
-        self.evals.retain(|&n, _| self.tree.contains(n));
+        for evals in self.evals.values_mut() {
+            evals.retain(|&n, _| self.tree.contains(n));
+        }
         // Keep the shown line if it still exists; otherwise fall back to
         // the deepest part of it that does.
         let keep = self.line.iter().take_while(|&&n| self.tree.contains(n)).count();
@@ -2553,7 +2646,8 @@ impl Session {
             analysis_options: self.analysis.as_ref().map(|a| a.options.clone()).unwrap_or_default(),
             analysis_allowed: self.analysis_allowed(),
             stuck: self.stuck(),
-            stored_analysis: self.evals.get(&self.cursor_node()).cloned(),
+            stored_analysis: self.shown_eval(self.cursor_node()).cloned(),
+            sweep: self.sweep_view(),
             test_game: self.test_game.clone(),
         }
     }
@@ -2630,6 +2724,7 @@ impl Session {
             result: node.result(),
             collapsible: false,
             folded: 0,
+            eval: self.shown_eval(id).and_then(|l| l.eval),
         }
     }
 
@@ -2805,6 +2900,7 @@ fn position_view(pos: &Position, ids: &IdMap) -> PositionView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dto::Eval;
 
     const SAMPLE: &str = include_str!("../../../crates/howdah-arimaa/tests/data/sample_game.txt");
 
@@ -4491,6 +4587,74 @@ mod tests {
         assert_eq!(fresh.label, "1g");
     }
 
+    fn sample_to_sweep() -> Session {
+        let mut s = Session::new();
+        s.load(SAMPLE).unwrap();
+        analysing(&mut s);
+        s
+    }
+
+    #[test]
+    fn a_sweep_goes_over_the_main_line_after_the_setups() {
+        let mut s = sample_to_sweep();
+        let line: Vec<NodeId> = s.tree.main_line();
+        assert!(line.len() >= 4, "the game has moves after the setups");
+        assert!(s.start_sweep(1).is_ok());
+        let v = s.view().sweep.unwrap();
+        assert_eq!((v.done, v.total, v.seconds), (0, line.len() - 2, 1));
+        // It doesn't follow the board.
+        s.goto(1).unwrap();
+        let t = s.analysis_target().unwrap();
+        assert_eq!((t.node, t.time), (line[2], Some(Duration::from_secs(1))));
+        s.sweep_done(s.generation() + 1, line[2]);
+        assert_eq!(s.view().sweep.unwrap().done, 0, "an old game's");
+        s.sweep_done(s.generation(), line[2]);
+        assert_eq!(s.view().sweep.unwrap().done, 1);
+        assert_eq!(s.analysis_target().unwrap().node, line[3]);
+        s.stop_sweep();
+        let t = s.analysis_target().unwrap();
+        assert_eq!((t.node, t.time), (line[1], None), "back to the shown node");
+    }
+
+    #[test]
+    fn a_sweep_skips_what_was_searched_for_long_enough() {
+        let mut s = sample_to_sweep();
+        let line = s.tree.main_line();
+        let searched = |ms| AnalysisLine {
+            node: line[2],
+            depth: Some("9".into()),
+            eval: Some(Eval::CentiRabbits { value: 20 }),
+            pv: vec![],
+            nodes: None,
+            time_ms: Some(ms),
+        };
+        s.store_analysis(s.generation(), "e", &searched(400));
+        s.start_sweep(1).unwrap();
+        assert_eq!(s.analysis_target().unwrap().node, line[2], "too short");
+        s.store_analysis(s.generation(), "e", &searched(600));
+        s.start_sweep(1).unwrap();
+        assert_eq!(s.analysis_target().unwrap().node, line[3]);
+        let node = s.view().tree.into_iter().find(|m| m.id == line[2]).unwrap();
+        assert_eq!(node.eval, Some(Eval::CentiRabbits { value: 20 }));
+    }
+
+    #[test]
+    fn a_sweep_ends_with_its_last_position_and_with_its_engine() {
+        let mut s = sample_to_sweep();
+        s.start_sweep(1).unwrap();
+        while let Some(t) = s.analysis_target().filter(|t| t.time.is_some()) {
+            s.sweep_done(s.generation(), t.node);
+        }
+        assert!(s.view().sweep.is_none());
+        s.start_sweep(2).unwrap();
+        s.set_analysis(Some(AnalysisEngine { id: "e".into(), name: "E".into(), options: vec![] })).unwrap();
+        assert!(s.view().sweep.is_some(), "the same engine carries on");
+        s.set_analysis(Some(AnalysisEngine { id: "f".into(), name: "F".into(), options: vec![] })).unwrap();
+        assert!(s.view().sweep.is_none());
+        s.set_analysis(None).unwrap();
+        assert!(s.start_sweep(1).is_err(), "analysis is off");
+    }
+
     #[test]
     fn analysis_goes_on_after_a_resignation_but_not_a_goal() {
         let mut s = Session::new();
@@ -4552,20 +4716,32 @@ mod tests {
             time_ms: None,
         };
         let g = s.generation();
-        s.store_analysis(g, &line("8"));
-        s.store_analysis(g, &line("12"));
-        s.store_analysis(g, &line("9+"));
-        assert_eq!(s.stored_analysis(g, node).unwrap().depth.as_deref(), Some("12"));
-        s.store_analysis(g, &line("12+"));
+        s.store_analysis(g, "e", &line("8"));
+        s.store_analysis(g, "e", &line("12"));
+        s.store_analysis(g, "e", &line("9+"));
+        assert_eq!(s.stored_analysis(g, "e", node).unwrap().depth.as_deref(), Some("12"));
+        s.store_analysis(g, "e", &line("12+"));
         assert_eq!(s.view().stored_analysis.unwrap().depth.as_deref(), Some("12+"));
-        s.store_analysis(g + 1, &line("30"));
-        assert_eq!(s.stored_analysis(g, node).unwrap().depth.as_deref(), Some("12+"), "old game");
+        s.store_analysis(g + 1, "e", &line("30"));
+        assert_eq!(s.stored_analysis(g, "e", node).unwrap().depth.as_deref(), Some("12+"), "old game");
         s.goto(3).unwrap();
         let earlier = s.cursor_node();
         s.delete_from(s.line[4]).unwrap();
-        assert!(s.stored_analysis(g, node).is_none(), "dropped with its node");
+        assert!(s.stored_analysis(g, "e", node).is_none(), "dropped with its node");
         s.load(SAMPLE).unwrap();
-        assert!(s.stored_analysis(s.generation(), earlier).is_none(), "cleared with a new game");
+        assert!(s.stored_analysis(s.generation(), "e", earlier).is_none(), "cleared with a new game");
+        // Each engine has its own, and they stay when another is used.
+        analysing(&mut s);
+        s.store_analysis(s.generation(), "e", &AnalysisLine { node: s.cursor_node(), ..line("5") });
+        s.set_analysis(None).unwrap();
+        assert!(s.view().stored_analysis.is_some(), "still shown after turning it off");
+        let other = AnalysisEngine { id: "f".into(), name: "F".into(), options: vec![] };
+        s.set_analysis(Some(other)).unwrap();
+        assert!(s.view().stored_analysis.is_none(), "the other engine has none");
+        s.store_analysis(s.generation(), "f", &AnalysisLine { node: s.cursor_node(), ..line("3") });
+        assert_eq!(s.view().stored_analysis.unwrap().depth.as_deref(), Some("3"), "not compared with e's 5");
+        analysing(&mut s);
+        assert_eq!(s.view().stored_analysis.unwrap().depth.as_deref(), Some("5"), "back to e's");
         assert_eq!(depth_key(None), (-1.0, false));
         assert!(depth_key(Some("12.4+")) > depth_key(Some("12")));
     }

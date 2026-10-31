@@ -11,6 +11,9 @@ young).
 
 - A banner over the board while its arimaa.com game has lost the
   connection, or has stopped following the game.
+- Analyse game, in the analysis panel: the engine searches each position
+  of the main line for a set time, and the evals show in the move list
+  and on a graph of the game; clicking the graph goes to that move.
 
 ### Fixed
 

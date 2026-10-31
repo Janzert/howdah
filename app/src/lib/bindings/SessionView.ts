@@ -13,6 +13,7 @@ import type { Phase } from "./Phase";
 import type { PlayersView } from "./PlayersView";
 import type { PositionView } from "./PositionView";
 import type { PuzzleView } from "./PuzzleView";
+import type { SweepView } from "./SweepView";
 import type { TakebackView } from "./TakebackView";
 import type { TestGameTag } from "./TestGameTag";
 import type { TurnView } from "./TurnView";
@@ -170,6 +171,10 @@ stuck: Color | null,
  * eval shows at once while the new search starts.
  */
 storedAnalysis: AnalysisLine | null, 
+/**
+ * How far a run of analysis over the whole game has got.
+ */
+sweep: SweepView | null, 
 /**
  * The engine test game shown, when the session shows one.
  */

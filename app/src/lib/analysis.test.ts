@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { analysisEngine, formatEval, formatRabbits, goldShare, nodesPerSecond, pvMoves } from './analysis';
+import {
+  analysisEngine,
+  evalGraph,
+  formatEval,
+  formatRabbits,
+  goldShare,
+  nodesPerSecond,
+  pvMoves,
+  shortEval,
+} from './analysis';
 import type { AnalysisLine } from './bindings/AnalysisLine';
 import type { EngineSpec } from './bindings/EngineSpec';
+import type { Eval } from './bindings/Eval';
+import type { MoveNodeView } from './bindings/MoveNodeView';
 
 const line = (over: Partial<AnalysisLine> = {}): AnalysisLine => ({
   node: 3,
@@ -52,5 +63,39 @@ describe('analysis display', () => {
     expect(analysisEngine([e('a'), e('b')], 'b')?.id).toBe('b');
     expect(analysisEngine([e('a'), e('b')], 'gone')?.id).toBe('a');
     expect(analysisEngine([], 'a')).toBeNull();
+  });
+});
+
+describe('evalGraph', () => {
+  const move = (id: number, ply: number, value: number | null, depth = 0) =>
+    ({
+      id,
+      ply,
+      depth,
+      label: `${ply}g`,
+      eval: value == null ? null : { kind: 'centiRabbits', value },
+    }) as unknown as MoveNodeView;
+
+  it('is empty without evals', () => {
+    expect(evalGraph([move(1, 1, null)])).toEqual([]);
+  });
+
+  it('keeps the main line and spaces the moves by ply', () => {
+    const tree = [move(1, 1, null), move(2, 3, 0), move(9, 4, 500, 1), move(3, 4, 100), move(4, 7, -100)];
+    const graph = evalGraph(tree);
+    expect(graph.map((p) => p.id)).toEqual([2, 3, 4]);
+    expect(graph.map((p) => p.at)).toEqual([0, 0.25, 1]);
+    expect(graph[0].share).toBe(0.5);
+  });
+
+  it('survives a single move', () => {
+    expect(evalGraph([move(2, 3, 0)])[0].at).toBe(0);
+  });
+});
+
+describe('shortEval', () => {
+  it('shows a win as on the eval bar', () => {
+    expect(shortEval({ kind: 'decided', winner: 'silver' } as Eval)).toBe('L');
+    expect(shortEval({ kind: 'centiRabbits', value: 35 })).toBe('+0.35');
   });
 });

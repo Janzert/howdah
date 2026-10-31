@@ -3,6 +3,8 @@
 import type { AnalysisLine } from './bindings/AnalysisLine';
 import type { EngineSpec } from './bindings/EngineSpec';
 import type { Eval } from './bindings/Eval';
+import type { MoveNodeView } from './bindings/MoveNodeView';
+import type { NodeId } from './bindings/NodeId';
 
 /** Centi-rabbits giving gold about 73% of the eval bar (a logistic: a
  * rabbit up in the opening, about +100, is about 58%). */
@@ -20,6 +22,40 @@ export function formatEval(e: Eval | null): string {
   if (!e) return '';
   if (e.kind === 'decided') return e.winner === 'gold' ? 'Gold wins' : 'Silver wins';
   return formatRabbits(e.value);
+}
+
+/** An eval short enough for a move list row: `W`/`L` for a win or loss for
+ * gold, as on the eval bar. */
+export function shortEval(e: Eval): string {
+  if (e.kind === 'decided') return e.winner === 'gold' ? 'W' : 'L';
+  return formatRabbits(e.value);
+}
+
+/** One move on the eval graph. */
+export interface GraphPoint {
+  id: NodeId;
+  label: string;
+  eval: Eval;
+  /** Across the graph, 0..1. */
+  at: number;
+  /** Gold's share of the eval bar. */
+  share: number;
+}
+
+/** The main line's moves with evals, spaced by ply over the moves that
+ * have one. */
+export function evalGraph(tree: MoveNodeView[]): GraphPoint[] {
+  const known = tree.filter((m) => m.depth === 0 && m.eval != null);
+  if (known.length === 0) return [];
+  const first = known[0].ply;
+  const span = Math.max(known[known.length - 1].ply - first, 1);
+  return known.map((m) => ({
+    id: m.id,
+    label: m.label,
+    eval: m.eval!,
+    at: (m.ply - first) / span,
+    share: goldShare(m.eval),
+  }));
 }
 
 /** Centi-rabbits as signed rabbits (`+0.35`, `−1.20`). */

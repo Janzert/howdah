@@ -1001,6 +1001,8 @@
             onEngine={useAnalysisEngine}
             onAdd={addPv}
             preview={(line, i) => api.previewLine(line.node, pvMoves(line, i))}
+            onGotoNode={(id) => run(api.gotoNode(id))}
+            {run}
           />
         {/if}
         <div class="nav">

@@ -171,6 +171,8 @@ struct Analysis {
     /// The request searching `target`; output from older ones is dropped.
     request: u64,
     state: AnalysisState,
+    /// When this search's time is up, in a run over the whole game.
+    stop_at: Option<Instant>,
     /// What this search has found so far.
     line: Option<AnalysisLine>,
     /// Engine output not sent yet.
@@ -393,6 +395,7 @@ impl Coordinator {
                 None => {
                     let _ = a.cmd.send(ActorCmd::Stop);
                     a.target = None;
+                    a.stop_at = None;
                     if a.started {
                         a.state = AnalysisState::Idle;
                     }
@@ -436,6 +439,7 @@ impl Coordinator {
             target: None,
             request: 0,
             state: AnalysisState::Starting,
+            stop_at: None,
             line: None,
             log: Vec::new(),
             pv_cut: false,
@@ -480,9 +484,9 @@ impl Coordinator {
         let (line, stored) = match &a.target {
             Some(t) => {
                 let mut s = lock(&self.session);
-                let kept = s.stored_analysis(t.generation, t.node).cloned();
+                let kept = s.stored_analysis(t.generation, &a.engine_id, t.node).cloned();
                 if let Some(l) = &a.line {
-                    s.store_analysis(t.generation, l);
+                    s.store_analysis(t.generation, &a.engine_id, l);
                 }
                 match (&a.line, kept) {
                     (Some(l), Some(k)) if depth_key(k.depth.as_deref()) > depth_key(l.depth.as_deref()) => {
@@ -517,11 +521,28 @@ impl Coordinator {
             .as_ref()
             .filter(|a| a.dirty)
             .map(|a| a.sent_at.map_or_else(Instant::now, |t| t + ANALYSIS_INTERVAL));
-        [stop, deadline, analysis].into_iter().flatten().min()
+        let sweep = self.analysis.as_ref().and_then(|a| a.stop_at);
+        [stop, deadline, analysis, sweep].into_iter().flatten().min()
+    }
+
+    /// The search of a position in a run over the whole game is over: keeps
+    /// what it found and moves the run on. The next `Think` stops the
+    /// engine; one that won't stop fails as usual.
+    fn sweep_step_done(&mut self) {
+        self.flush_analysis(true);
+        let Some(a) = &mut self.analysis else { return };
+        a.stop_at = None;
+        let Some(t) = a.target.as_ref().filter(|t| t.time.is_some()) else { return };
+        let mut s = lock(&self.session);
+        s.sweep_done(t.generation, t.node);
+        emit_session(&self.events, &s, Vec::new(), None);
     }
 
     fn on_timer(&mut self) {
         self.flush_analysis(false);
+        if self.analysis.as_ref().and_then(|a| a.stop_at).is_some_and(|t| Instant::now() >= t) {
+            self.sweep_step_done();
+        }
         let now = Instant::now();
         if let Some(p) = &mut self.pending
             && !p.stop_sent
@@ -622,6 +643,7 @@ impl Coordinator {
             ActorEvent::Started { name, profile } => {
                 a.profile = profile;
                 a.started = true;
+                a.set_stop_time();
                 if a.state == AnalysisState::Starting {
                     a.state = if a.target.is_some() { AnalysisState::Searching } else { AnalysisState::Idle };
                 }
@@ -644,7 +666,7 @@ impl Coordinator {
                 }
                 a.state = AnalysisState::Finished;
                 a.read_best_move(text);
-                self.flush_analysis(true);
+                self.sweep_step_done();
             }
             ActorEvent::Failed(detail) => {
                 let engine = AnalysisEngine {
@@ -675,6 +697,13 @@ impl Analysis {
         self.target = Some(target);
         self.line = None;
         self.pv_cut = false;
+        self.set_stop_time();
+    }
+
+    /// Starts the clock of a timed search, once the engine is up.
+    fn set_stop_time(&mut self) {
+        let time = self.target.as_ref().and_then(|t| t.time).filter(|_| self.started);
+        self.stop_at = time.map(|t| Instant::now() + t);
     }
 
     /// Takes in the engine's answer. Without a PV (Sharp sends none for a
@@ -1564,5 +1593,38 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let off = lock(&recorder.0).iter().rev().find(|(e, _)| e == ANALYSIS_UPDATE).unwrap().1.clone();
         assert_eq!(off["state"], "off");
+    }
+
+    #[tokio::test]
+    async fn a_sweep_visits_each_position_then_returns_to_the_shown_one() {
+        let path = std::env::temp_dir().join(format!("arimaa-sweep-test-{}.json", std::process::id()));
+        let mut registry = EngineRegistry::load(path.clone());
+        let spec = registry.save(test_engine(&["--until-stop"])).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let session = Arc::new(Mutex::new(Session::new()));
+        let recorder = Arc::new(Recorder(Mutex::new(Vec::new())));
+        let (controller, run) = new(recorder.clone(), session.clone(), Arc::new(Mutex::new(registry)));
+        tokio::spawn(run);
+        let line = {
+            let mut s = lock(&session);
+            s.load(&format!("1g {}\n1s {}\n2g Ee2n Ee3n\n2s ed7s ed6s\n", SETUPS[0], SETUPS[1])).unwrap();
+            let engine = AnalysisEngine { id: spec.id.clone(), name: spec.name.clone(), options: vec![] };
+            s.set_analysis(Some(engine)).unwrap();
+            s.goto(1).unwrap();
+            s.start_sweep(1).unwrap();
+            s.view().tree.iter().map(|m| m.id).collect::<Vec<_>>()
+        };
+        controller.poke();
+        tokio::time::sleep(Duration::from_millis(3600)).await;
+        let s = lock(&session);
+        assert!(s.view().sweep.is_none(), "the run is over");
+        for &node in &line[1..3] {
+            assert!(s.stored_analysis(s.generation(), &spec.id, node).is_some_and(|l| l.eval.is_some()));
+        }
+        let target = s.analysis_target().unwrap();
+        assert_eq!((target.node, target.time), (line[0], None), "back on the shown node");
+        let updates = lock(&recorder.0);
+        let last = updates.iter().rev().find(|(e, _)| e == ANALYSIS_UPDATE).unwrap();
+        assert_eq!(last.1["state"], "searching", "{}", last.1);
     }
 }

@@ -239,9 +239,9 @@ The current engine panel shows depth, eval, PV and log per side.
   side-by-side engines are the practical way to compare lines.
 - **[P2] Whole-game analysis** (lichess server analysis, Nibbler's
   "automatic full-game analysis"):
-  - Run an engine over every ply in the background.
-  - Plot an eval graph (lichess `ui/chart`); clicking the graph jumps to
-    that ply.
+  - [have] Run an engine over every ply in the background.
+  - [have] Plot an eval graph (lichess `ui/chart`); clicking the graph
+    jumps to that ply.
   - Mark inaccuracies, mistakes and blunders from eval swings (lichess
     `nodeFinder.evalSwings`).
   - Cache results per position hash (lichess `evalCache`).

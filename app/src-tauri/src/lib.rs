@@ -150,6 +150,8 @@ pub fn run() {
             commands::set_analysis_options,
             commands::press_engine_button,
             commands::set_analysis,
+            commands::start_sweep,
+            commands::stop_sweep,
             commands::add_line,
             commands::preview_line,
             commands::list_engines,

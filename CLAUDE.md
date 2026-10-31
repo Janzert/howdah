@@ -442,9 +442,12 @@ plans the engine test and tournament runner.
       `Think` runs. PVs are checked with `Game::play_notation` into
       `PvTurn`s, scores turned to gold's side, and snapshots sent as
       `analysis://update` (`AnalysisView`) at most every 100 ms. The
-      session keeps the deepest line per node (`store_analysis`), shown as
+      session keeps each engine's deepest line per node (`store_analysis`), shown as
       `SessionView.storedAnalysis` on return. `add_line` adds a PV as a
       variation (a plan in a match); `preview_line` is the hover preview.
+      Analyse game (`start_sweep`, `Session`'s `sweep`) gives each main
+      line position a set time, as `AnalysisTarget.time`; the coordinator
+      moves on when it's up (`sweep_step_done`).
       No analysis while the user plays an online game
       (`Session::plays_online`): `set_analysis` refuses an engine,
       `start_match` turns it off, and `SessionView.analysisAllowed`

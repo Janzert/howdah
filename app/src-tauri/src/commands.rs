@@ -363,6 +363,16 @@ pub fn set_analysis(
 }
 
 #[tauri::command]
+pub fn start_sweep(state: State<Backend>, session: SessionId, seconds: u32) -> Result<(), ApiError> {
+    state.start_sweep(session, seconds)
+}
+
+#[tauri::command]
+pub fn stop_sweep(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
+    state.stop_sweep(session)
+}
+
+#[tauri::command]
 pub fn add_line(
     state: State<Backend>,
     session: SessionId,

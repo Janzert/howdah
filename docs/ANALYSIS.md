@@ -27,8 +27,9 @@ it builds on the variation tree (`VARIATIONS.md`).
 - The model allows several engines at once and whole-game analysis
   later, though the first version runs one engine on the shown position.
 
-Not goals for now: threat mode, side-by-side engines, whole-game
-analysis, and saving evals in records. Each gets a short section below so
+Not goals for the first version: threat mode, side-by-side engines,
+whole-game analysis (since started, see "Whole-game analysis"), and
+saving evals in records. Each gets a short section below so
 the first version doesn't block it.
 
 ## What the engines give us
@@ -311,13 +312,45 @@ These aren't in the first version, but the design above leaves room:
   holding one, `AnalysisView` carries the slot, and each slot gets a panel
   section and an arrow color. AEI has no multi-PV, so this is how lines are
   compared.
-- **Whole-game analysis:** a background run over the main line, one fixed
-  depth or time per ply, filling `evals`. The move list can then show
-  evals and swings, and a graph plots them. Caching by position hash
-  (across transpositions and games) belongs with the game database.
+- **Whole-game analysis, next steps:** marks for mistakes and blunders
+  from eval swings, a depth instead of a time, and a run that uses a
+  second engine so the shown position stays analysed. Caching by position
+  hash (across transpositions and games) belongs with the game database.
 - **`%eval` in records**, from `evals`, as an export option.
 - **A CPU budget:** stop after N seconds or at a depth (a setting), for
   laptops on battery.
+
+## Whole-game analysis
+
+The start of it, built 2026-10-31. **Analyse game** in the panel runs over
+the main line, a set time a position (`start_sweep(seconds)`), and
+`stop_sweep` ends it.
+
+- **One engine.** The run uses the analysis engine, so while it runs
+  `analysis_target()` is the run's position (with its `time`), not the
+  shown node. The board stays free, and showing a position with a stored
+  line still shows that line. After the run, analysis goes back to the
+  shown node.
+- **Which positions.** `Session::start_sweep` takes the main line as it
+  stands, without setups (their evals say little), terminal positions and
+  those already searched for at least half the time, so a stopped run can
+  be started again. Moves added later aren't in the run; moves deleted
+  drop out of it.
+- **A position's time** starts when the engine is up. When it's over the
+  coordinator stores the line and moves on, without waiting for a
+  `bestmove`: the next `Think` stops the search, and an engine that won't
+  stop fails as usual. A search ending by itself (a proven win) moves on
+  at once. The run's last output for a position is lost that way, which
+  matters less than a lost `stop` hanging the run.
+- **Results** go in `evals`, as every search's do, so they show on return
+  to a node. `MoveNodeView.eval` gives the move list its evals (after that
+  move, from gold's side) and `EvalGraph.svelte` plots the main line's,
+  by the eval bar's share. `SessionView.sweep` is the progress.
+- **Evals are kept per engine** (`evals`, by engine id), since depths
+  and evals don't compare across engines. What's shown is the analysis
+  engine's (after analysis is turned off, the last one's), and going back
+  to an engine brings its results back. Comparing engines can read the
+  same store (Brian wants this eventually; see "Several engines").
 
 ## Build order
 

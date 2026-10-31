@@ -114,6 +114,8 @@ pub struct MoveNodeView {
     /// While folded, how many moves of the variation are hidden after this
     /// one (0 when it's open).
     pub folded: u32,
+    /// What analysis made of the position after this move, if it looked.
+    pub eval: Option<Eval>,
 }
 
 /// A piece on a square.
@@ -301,8 +303,23 @@ pub struct SessionView {
     /// What analysis found at the shown node earlier, if anything, so the
     /// eval shows at once while the new search starts.
     pub stored_analysis: Option<AnalysisLine>,
+    /// How far a run of analysis over the whole game has got.
+    pub sweep: Option<SweepView>,
     /// The engine test game shown, when the session shows one.
     pub test_game: Option<TestGameTag>,
+}
+
+/// A run of analysis over the main line, under way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SweepView {
+    /// Positions finished.
+    pub done: usize,
+    /// Positions in the run.
+    pub total: usize,
+    /// The search time for each.
+    pub seconds: u32,
 }
 
 /// An evaluation from gold's side.

@@ -161,6 +161,10 @@ function makeApi(sid: () => SessionId | null) {
     /** Turns analysis on with an engine, or off with null. Updates arrive as
      * `analysis://update` events. */
     setAnalysis: (engineId: string | null) => invoke<void>('set_analysis', { session: sid(), engineId }),
+    /** Runs analysis over the main line, `seconds` a position. */
+    startSweep: (seconds: number) => invoke<void>('start_sweep', { session: sid(), seconds }),
+    /** Ends the run over the main line. */
+    stopSweep: () => invoke<void>('stop_sweep', { session: sid() }),
     /** Adds moves (in notation) as a line from a node and shows its end. */
     addLine: (from: NodeId, moves: string[]) => invoke<void>('add_line', { session: sid(), from, moves }),
     /** The position after playing moves from a node, without changing anything. */

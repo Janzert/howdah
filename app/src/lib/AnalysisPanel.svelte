@@ -5,10 +5,12 @@
   import { onMount } from 'svelte';
   import { formatEval, nodesPerSecond, pvMoves } from './analysis';
   import { api, errorMessage } from './api';
+  import EvalGraph from './EvalGraph.svelte';
   import type { AnalysisLine } from './bindings/AnalysisLine';
   import type { AnalysisView } from './bindings/AnalysisView';
   import type { EngineOption } from './bindings/EngineOption';
   import type { EngineSpec } from './bindings/EngineSpec';
+  import type { NodeId } from './bindings/NodeId';
   import type { PositionView } from './bindings/PositionView';
   import type { SessionView } from './bindings/SessionView';
   import MiniBoard from '@howdah/board/board/MiniBoard.svelte';
@@ -32,8 +34,29 @@
     /** Adds the PV up to turn `index` as a line. */
     onAdd: (line: AnalysisLine, index: number) => void;
     preview: (line: AnalysisLine, index: number) => Promise<PositionView>;
+    onGotoNode: (id: NodeId) => void;
+    /** Runs a command, showing its error if it fails. */
+    run: (p: Promise<unknown>) => Promise<boolean>;
   }
-  let { view, analysis, line, stored, engines, theme, flipped, sharesCpu, onEngine, onAdd, preview }: Props = $props();
+  let {
+    view,
+    analysis,
+    line,
+    stored,
+    engines,
+    theme,
+    flipped,
+    sharesCpu,
+    onEngine,
+    onAdd,
+    preview,
+    onGotoNode,
+    run,
+  }: Props = $props();
+
+  /** Search times to choose from for a run over the game. */
+  const SWEEP_SECONDS = [1, 2, 5, 10, 30];
+  let sweepSeconds = $state(2);
 
   const engine = $derived(engines.find((e) => e.id === view.analysisEngine));
   let showOptions = $state(false);
@@ -157,6 +180,26 @@
     </div>
   {/if}
   <p class="status" class:failed={phase === 'failed'} role="status">{status}</p>
+  <div class="sweep">
+    {#if view.sweep}
+      {@const left = (view.sweep.total - view.sweep.done) * view.sweep.seconds}
+      <progress max={view.sweep.total} value={view.sweep.done} aria-label="Game analysis"></progress>
+      <span title="about {left}s left">{view.sweep.done}/{view.sweep.total}</span>
+      <button onclick={() => run(api.stopSweep())}>Stop</button>
+    {:else}
+      <button
+        title="Search each position of the main line for a set time"
+        disabled={phase === 'failed'}
+        onclick={() => run(api.startSweep(sweepSeconds))}>Analyse game</button
+      >
+      <select aria-label="Time a position" bind:value={sweepSeconds}>
+        {#each SWEEP_SECONDS as s (s)}
+          <option value={s}>{s}s a position</option>
+        {/each}
+      </select>
+    {/if}
+  </div>
+  <EvalGraph tree={view.tree} cursor={view.cursor} onGoto={onGotoNode} />
   {#if sharesCpu}<p class="note">Shares the CPU with the match engines.</p>{/if}
   {#if pvLine && pvLine.pv.length && phase !== 'failed'}
     <div
@@ -243,6 +286,21 @@
   .options {
     font-size: 12px;
     padding: 1px 8px;
+  }
+  .sweep {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .sweep button {
+    font-size: 12px;
+    padding: 1px 8px;
+  }
+  .sweep progress {
+    flex: 1;
+    min-width: 0;
   }
   .stats {
     display: flex;

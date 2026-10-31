@@ -537,6 +537,22 @@ impl Backend {
         })
     }
 
+    /// Starts a run of analysis over the main line.
+    pub fn start_sweep(&self, id: SessionId, seconds: u32) -> Result<(), ApiError> {
+        self.mutate(id, |s| {
+            s.start_sweep(seconds)?;
+            Ok(Vec::new())
+        })
+    }
+
+    /// Ends the run of analysis over the main line.
+    pub fn stop_sweep(&self, id: SessionId) -> Result<(), ApiError> {
+        self.mutate(id, |s| {
+            s.stop_sweep();
+            Ok(Vec::new())
+        })
+    }
+
     /// Adds moves as a line from `from` and shows its end (see
     /// [`Session::add_line`]).
     pub fn add_line(&self, id: SessionId, from: NodeId, moves: &[String]) -> Result<(), ApiError> {
@@ -1271,6 +1287,8 @@ impl Backend {
             "set_analysis" => {
                 ok(self.set_analysis(sid()?, arg::<Option<String>>(args, "engineId")?.as_deref())?)
             }
+            "start_sweep" => ok(self.start_sweep(sid()?, arg(args, "seconds")?)?),
+            "stop_sweep" => ok(self.stop_sweep(sid()?)?),
             "add_line" => {
                 ok(self.add_line(sid()?, arg(args, "from")?, &arg::<Vec<String>>(args, "moves")?)?)
             }
