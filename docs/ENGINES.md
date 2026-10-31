@@ -136,8 +136,10 @@ LDC).
 - **With no time control and no depth limit** (the defaults), `go`
   searches until `stop`. It stops by itself on a proven win or a single
   legal move.
-- **`stop`** takes 0.2-0.3 s since its search runs in 0.1 s slices (it
-  was 0.5-1.2 s with 1 s slices).
+- **`stop`** takes about 0.05 s, or 0.1 s with 4 threads, since its
+  search runs in 0.1 s slices (it was 0.2-0.3 s before the search
+  threads' stop check went from 200 ms to 1 ms, and 0.5-1.2 s with 1 s
+  slices).
 - **`depth`** stops the search at that many steps (at least 4); 0 or
   less (or `infinite`) is no limit. A time control still applies, as in
   Sharp, so a fixed-depth search is one without a time control, which
