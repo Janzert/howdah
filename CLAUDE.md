@@ -186,7 +186,10 @@ plans the engine test and tournament runner.
     when the server answers with an "Invitation Sent" page instead.
     `Lobby` is `Clone` so a long wait can run on a copy of the session.
   - `players`: the player search (`searchPlayers.cgi`, `PlayerMatch`),
-    a player's past games (`pastgames.cgi?id=`, `PastGames`, 50 a page),
+    a player's past games (`pastgames.cgi?id=`, `PastGames`, 50 a page), the recent
+    games (`recentgames.cgi`, the same rows, the last 100 with no paging,
+    and it can take 30 s to arrive: `Lobby::recent_games` waits longer,
+    and the app calls it on a copy of the lobby),
     and the postal games being played (`postalgames.cgi`, `PostalGame`,
     `Lobby::postal_games`; the lobby's live list leaves them out), read
     leniently from their HTML. The page writes times in the
@@ -887,7 +890,9 @@ plans the engine test and tournament runner.
     arimaa.com in the sidebar once opened, until closed: `BotsTab` (the
     list beside the chosen bot), `WatchTab` (live and postal games, with a
     player filter), `FinishedTab` (a player's games, a game by id,
-    recently finished) and `PlayersTab` (online, with Games and Invite).
+    recently finished: the lobby's five at once, then the page of 100
+    behind them in the background, `loadRecentPage`, 25 rows at a time)
+    and `PlayersTab` (online, with Games and Invite).
     `ChatArchiveTab` is the chat archive, which needs no login
     (`NO_LOGIN_PANELS`, `GameroomFrame`'s `noLogin`; logged out, the login
     form links to it): a month calendar (each day's messages and people,

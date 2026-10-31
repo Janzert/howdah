@@ -76,8 +76,9 @@ export interface NewGameSpec {
  * as the browser lobby does. */
 const REFRESH_MS = 20_000;
 
-/** The least time between fetches of the page of recent games. */
-const RECENT_PAGE_MS = 5 * 60_000;
+/** The least time between fetches of the page of recent games, which is
+ * large and can be slow to arrive. */
+const RECENT_PAGE_MS = 30 * 60_000;
 
 const pickSide = (side: Color | 'random'): Color =>
   side === 'random' ? (Math.random() < 0.5 ? 'gold' : 'silver') : side;
@@ -441,9 +442,9 @@ class GameroomStore {
   }
 
   /** Fetches the page of recent games if it's missing, or stale with a
-   * newer game in the lobby's list. The page is large, and this is called
-   * with every update of the lists, so it's kept to one in `RECENT_PAGE_MS`;
-   * `retry` asks again after a failure. Its errors stay in the panel. */
+   * newer game in the lobby's list. This is called with every update of the
+   * lists, so it's kept to one in `RECENT_PAGE_MS`; `retry` asks again after
+   * a failure. Its errors stay in the panel. */
   async loadRecentPage(retry = false) {
     if (this.recentPageLoading) return;
     const page = this.recentPage;

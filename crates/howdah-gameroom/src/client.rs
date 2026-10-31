@@ -20,7 +20,8 @@ use crate::clock_sync::ClockSync;
 use crate::finished::{FinishedGame, RecentGame};
 use crate::invitations::{Invitation, InviteOutcome, parse_wait};
 use crate::players::{
-    OnlinePlayer, PastGames, PlayerMatch, PostalGame, parse_past_games, parse_postal_games, parse_search,
+    OnlinePlayer, PastGame, PastGames, PlayerMatch, PostalGame, parse_past_games, parse_postal_games,
+    parse_search,
 };
 use crate::state::{GameState, Role};
 use crate::wire::{Format, Record, encode_request};
@@ -37,6 +38,9 @@ const INVITE_WAIT: Duration = Duration::from_secs(150);
 
 /// How long an ordinary request may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long to wait for the recent games page, which arrives slowly (28 s
+/// when timed, 2026-10-31).
+const RECENT_GAMES_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// TCP keepalive on every connection: probes after this long idle, then
 /// every [`KEEPALIVE_INTERVAL`], giving up after [`KEEPALIVE_RETRIES`]
@@ -310,7 +314,18 @@ impl Http {
     /// given. The log shows the URL with secrets redacted and only the
     /// page's size, since pages carry session ids.
     pub async fn get_page(&self, url: &str, cookies: Option<&str>) -> Result<String, Error> {
-        self.page(url, cookies, None).await
+        self.page(url, cookies, None, REQUEST_TIMEOUT).await
+    }
+
+    /// Gets a page as [`Http::get_page`] does, waiting up to `timeout` for
+    /// one that's slow to arrive.
+    pub async fn get_slow_page(
+        &self,
+        url: &str,
+        cookies: Option<&str>,
+        timeout: Duration,
+    ) -> Result<String, Error> {
+        self.page(url, cookies, None, timeout).await
     }
 
     /// Posts a form and gets the page that answers it, as
@@ -321,11 +336,17 @@ impl Http {
         cookies: Option<&str>,
         params: &[(&str, String)],
     ) -> Result<String, Error> {
-        self.page(url, cookies, Some(encode_request(Format::KeyValue, params))).await
+        self.page(url, cookies, Some(encode_request(Format::KeyValue, params)), REQUEST_TIMEOUT).await
     }
 
-    async fn page(&self, url: &str, cookies: Option<&str>, form: Option<String>) -> Result<String, Error> {
-        let reply = self.page_reply(url, cookies, form, REQUEST_TIMEOUT).await?;
+    async fn page(
+        &self,
+        url: &str,
+        cookies: Option<&str>,
+        form: Option<String>,
+        timeout: Duration,
+    ) -> Result<String, Error> {
+        let reply = self.page_reply(url, cookies, form, timeout).await?;
         match reply.status {
             404 => Err(Error::Refused),
             s if !(200..300).contains(&s) => Err(Error::Status(s)),
@@ -1122,6 +1143,17 @@ impl Lobby {
         // The session's cookie makes the times local (in the login's time zone).
         let page = self.http.get_page(&url, self.cookies.as_deref()).await?;
         Ok(parse_past_games(&page, offset))
+    }
+
+    /// The last 100 games finished in the gameroom, newest first
+    /// (`recentgames.cgi`, which needs no session and has no further
+    /// pages). It can take half a minute to arrive, so call this on a
+    /// copy of the lobby rather than holding up other requests.
+    pub async fn recent_games(&self) -> Result<Vec<PastGame>, Error> {
+        let url = format!("{}recentgames.cgi", self.base);
+        // The session's cookie makes the times local, as in `player_games`.
+        let page = self.http.get_slow_page(&url, self.cookies.as_deref(), RECENT_GAMES_TIMEOUT).await?;
+        Ok(parse_past_games(&page, 0).games)
     }
 
     /// Makes a game server URL absolute. ASIP 2.0 can return one relative

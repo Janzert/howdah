@@ -740,7 +740,11 @@ impl Gameroom {
 
     /// The last 100 games finished in the gameroom, newest first.
     pub async fn recent_games(&self) -> Result<Vec<PastGameView>, ApiError> {
-        let games = with_lobby!(self, |l| l.recent_games())?;
+        // Not through `with_lobby!`, which would hold up every other lobby
+        // request while this slow page arrives.
+        let lobby = self.lobby.lock().await.clone();
+        let lobby = lobby.ok_or_else(|| ApiError::state("log in to arimaa.com first"))?;
+        let games = lobby.recent_games().await.map_err(net_error)?;
         Ok(games.into_iter().map(past_view).collect())
     }
 }

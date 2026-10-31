@@ -33,10 +33,10 @@ use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatMessageView,
     ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames,
-    GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerSpec,
-    PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
-    ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, SpsaStepView,
-    StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
+    GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView,
+    PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView,
+    PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard,
+    SpsaStepView, StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};

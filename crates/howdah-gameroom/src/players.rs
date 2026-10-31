@@ -1,6 +1,7 @@
 //! Finding a player's games: the gameroom's player search
 //! (`searchPlayers.cgi`, which needs a session) and a player's past games
-//! (`pastgames.cgi?id=<player id>`, 50 a page, newest first); and the
+//! (`pastgames.cgi?id=<player id>`, 50 a page, newest first); the gameroom's
+//! recent games (`recentgames.cgi`, laid out the same way); and the
 //! postal games being played (`postalgames.cgi`), which the lobby's live
 //! list leaves out. Also who is logged in to the gameroom, from the
 //! lobby's `state` (`OnlinePlayer`).
@@ -489,6 +490,76 @@ mod tests {
             ]
         );
         assert!(parse_search("<h2>Results</h2> no rows").is_empty());
+    }
+
+    /// A row of `recentgames.cgi`, from the page (2026-10-31; names changed).
+    const RECENT: &str = r#"<a href="?&s=ct">Comments</a>
+  <tr>
+  <td align=right>
+     * <a href="javascript:playerPage(1)">Fritzlein</a>
+<br><font size=-1>2100 &nbsp; US</font>
+  </td>
+  <td align=center>
+    <font size=1><b>R</b> <a href="/arimaa/gameroom/timecontrol.cgi?tc=15s/1/100/2/2" target=_blank> 15s/1/100/2/2</a></font><br>
+<table background="/arimaa/graphics/BoardWithPiecesIcon2.jpg" width=50 height=50 border=0 cellspacing=0 cellpadding=0>
+  <tr>
+    <td >
+<!--
+<a href="/arimaa/games/jsShowGame.cgi?gid=671629&s=w" target=replay671629 >
+-->
+<a href="javascript:openGame('671629','v','w')" >
+  <img src="/arimaa/graphics/animals/blank.gif" width=25 height=49 border=0>
+</a>
+    </td>
+  </tr>
+</table>
+  </td>
+  <td align=left>
+    <a href="javascript:playerPage(19377)">bot_testbot</a> 
+<br><font size=-1>US &nbsp; 1400</font>
+  </td>
+  <td align=right>
+    &nbsp; &nbsp; 
+  </td>
+  <td align=center>
+    g
+  </td>
+  <td align=right>
+    31
+  </td>
+  <td align=right>
+    &nbsp; &nbsp; 
+  </td>
+  <td align=left>
+    Sat 4:31 pm YLT 
+  </td>
+  <td align=right>
+    &nbsp; &nbsp; 
+  </td>
+  <td align=left>
+    <a href="comments.cgi?gid=671629" target=_blank class="v">add</a>
+  </td>
+</tr>
+</table>"#;
+
+    #[test]
+    fn recent_games_are_read() {
+        let page = parse_past_games(RECENT, 0);
+        assert_eq!(page.next, None);
+        assert_eq!(
+            page.games,
+            [PastGame {
+                id: "671629".into(),
+                players: ["Fritzlein".into(), "bot_testbot".into()],
+                ratings: [Some("2100".into()), Some("1400".into())],
+                time_control: Some("15s/1/100/2/2".into()),
+                rated: true,
+                winner: Some(Color::Gold),
+                reason: Some("g".into()),
+                moves: Some(31),
+                finished: Some("Sat 4:31 pm".into()),
+            }]
+        );
     }
 
     #[test]
