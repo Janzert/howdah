@@ -33,7 +33,7 @@ use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatMessageView,
     ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames,
-    GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PlayerSpec,
+    GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerSpec,
     PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
     ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, SpsaStepView,
     StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
@@ -553,6 +553,14 @@ impl Backend {
         })
     }
 
+    /// Adds analysis's marks on the main line to the game.
+    pub fn annotate_game(&self, id: SessionId) -> Result<(), ApiError> {
+        self.mutate(id, |s| {
+            s.annotate_game()?;
+            Ok(Vec::new())
+        })
+    }
+
     /// Adds moves as a line from `from` and shows its end (see
     /// [`Session::add_line`]).
     pub fn add_line(&self, id: SessionId, from: NodeId, moves: &[String]) -> Result<(), ApiError> {
@@ -901,6 +909,11 @@ impl Backend {
         offset: u32,
     ) -> Result<PlayerGamesView, ApiError> {
         self.gameroom.player_games(player_id, offset).await
+    }
+
+    /// The last 100 games finished in the gameroom, newest first.
+    pub async fn gameroom_recent_games(&self) -> Result<Vec<PastGameView>, ApiError> {
+        self.gameroom.recent_games().await
     }
 
     /// The engine test daemon's state; the first call starts passing on
@@ -1289,6 +1302,7 @@ impl Backend {
             }
             "start_sweep" => ok(self.start_sweep(sid()?, arg(args, "seconds")?)?),
             "stop_sweep" => ok(self.stop_sweep(sid()?)?),
+            "annotate_game" => ok(self.annotate_game(sid()?)?),
             "add_line" => {
                 ok(self.add_line(sid()?, arg(args, "from")?, &arg::<Vec<String>>(args, "moves")?)?)
             }
@@ -1380,6 +1394,7 @@ impl Backend {
             "gameroom_player_games" => ok(self
                 .gameroom_player_games(&arg::<String>(args, "playerId")?, arg(args, "offset")?)
                 .await?),
+            "gameroom_recent_games" => ok(self.gameroom_recent_games().await?),
             "tourney_status" => ok(self.tourney_status().await),
             "tourney_tests" => ok(self.tourney_tests().await?),
             "tourney_test" => ok(self.tourney_test(&arg::<String>(args, "id")?).await?),

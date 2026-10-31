@@ -21,6 +21,7 @@ import type { MatchSpec } from './bindings/MatchSpec';
 import type { MoveReplay } from './bindings/MoveReplay';
 import type { NewTestSpec } from './bindings/NewTestSpec';
 import type { NodeId } from './bindings/NodeId';
+import type { PastGameView } from './bindings/PastGameView';
 import type { PlayerGamesView } from './bindings/PlayerGamesView';
 import type { PlayerMatchView } from './bindings/PlayerMatchView';
 import type { PositionCheck } from './bindings/PositionCheck';
@@ -165,6 +166,8 @@ function makeApi(sid: () => SessionId | null) {
     startSweep: (seconds: number) => invoke<void>('start_sweep', { session: sid(), seconds }),
     /** Ends the run over the main line. */
     stopSweep: () => invoke<void>('stop_sweep', { session: sid() }),
+    /** Adds analysis's marks to the game, with the engine's lines. */
+    annotateGame: () => invoke<void>('annotate_game', { session: sid() }),
     /** Adds moves (in notation) as a line from a node and shows its end. */
     addLine: (from: NodeId, moves: string[]) => invoke<void>('add_line', { session: sid(), from, moves }),
     /** The position after playing moves from a node, without changing anything. */
@@ -249,6 +252,8 @@ function makeApi(sid: () => SessionId | null) {
     /** A player's finished games, newest first, 50 from `offset`. */
     gameroomPlayerGames: (playerId: string, offset: number) =>
       invoke<PlayerGamesView>('gameroom_player_games', { playerId, offset }),
+    /** The last 100 games finished on arimaa.com, newest first. */
+    gameroomRecentGames: () => invoke<PastGameView[]>('gameroom_recent_games'),
     /** Opens an arimaa.com game in this session. A live game (its gameroom
      * id) is followed as a viewer, with changes arriving as `game://changed`
      * and `gameroom://watch` events; a finished game (its permanent id) is

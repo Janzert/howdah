@@ -312,8 +312,7 @@ These aren't in the first version, but the design above leaves room:
   holding one, `AnalysisView` carries the slot, and each slot gets a panel
   section and an arrow color. AEI has no multi-PV, so this is how lines are
   compared.
-- **Whole-game analysis, next steps:** marks for mistakes and blunders
-  from eval swings, a depth instead of a time, and a run that uses a
+- **Whole-game analysis, next steps:** a depth instead of a time, and a run that uses a
   second engine so the shown position stays analysed. Caching by position
   hash (across transpositions and games) belongs with the game database.
 - **`%eval` in records**, from `evals`, as an export option.
@@ -351,6 +350,33 @@ the main line, a set time a position (`start_sweep(seconds)`), and
   engine's (after analysis is turned off, the last one's), and going back
   to an engine brings its results back. Comparing engines can read the
   same store (Brian wants this eventually; see "Several engines").
+
+### Marks
+
+Moves that lose ground get `?!`, `?` or `??` in the move list
+(`MoveNodeView.mark`). Other clients were checked first (2026-10-31):
+lichess grades by the drop in winning chance and exports a glyph, a
+comment and the engine's line as a variation; En Croissant's report adds
+annotations and variations; Scid adds variations, optionally only on
+blunders; KaTrain marks moves and adds a line only when asked. Here:
+
+- **Derived, then added on request.** Marks come from the stored evals
+  (`Session::judge_move`) and aren't part of the game, so a better engine
+  or a longer run just replaces them. **Add N marks** (`annotate_game`)
+  writes the main line's into the game as glyphs, plus each engine line
+  (up to 8 turns) as a variation, folded if it's longer than one turn,
+  with an intro naming the engine and its eval. The main line doesn't
+  change. A move with a move glyph already is left as it is, so a user's
+  own judgment wins.
+- **Thresholds** are drops in the eval bar's share (`MARK_DROPS`): 0.10,
+  0.15 and 0.25, against the mover. The bar's curve means the same drop in
+  rabbits counts for less when far ahead. They're first guesses, to tune
+  by use.
+- **The engine's own choice is never marked**, since then the eval only
+  changed its mind between searches. Turns are compared by their steps in
+  any order.
+- **Limits.** Evals from short visits count like a run's, a mark needs the
+  evals on both sides of the move, and setups aren't judged.
 
 ## Build order
 

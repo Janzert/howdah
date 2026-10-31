@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest';
 import type { LiveGameView } from './bindings/LiveGameView';
 import type { WatchView } from './bindings/WatchView';
 import type { AnnouncementView } from './bindings/AnnouncementView';
-import { announcementKey, mySide, myTurn, newOpponentChat, splitAnnouncements, watchSounds } from './gameroom';
+import type { PastGameView } from './bindings/PastGameView';
+import type { RecentGameView } from './bindings/RecentGameView';
+import {
+  announcementKey,
+  finishedRows,
+  mySide,
+  myTurn,
+  newOpponentChat,
+  splitAnnouncements,
+  watchSounds,
+} from './gameroom';
 
 function game(gold: string | null, silver: string | null, turn: LiveGameView['turn']): LiveGameView {
   return { gid: '1', gold, silver, timeControl: '1d/30d/100/0/0', rated: false, postal: true, turn };
@@ -111,5 +121,24 @@ describe('splitAnnouncements', () => {
     const before = announcement(5 * DAY, 'news');
     const edited = announcement(DAY, 'news');
     expect(splitAnnouncements([edited], new Set([announcementKey(before)])).fresh).toEqual([edited]);
+  });
+});
+
+describe('finishedRows', () => {
+  const recent = (gid: string) => ({ gid }) as RecentGameView;
+  const past = (gid: string) => ({ gid }) as PastGameView;
+
+  it("puts the lobby's newer games above the page, without repeats", () => {
+    const rows = finishedRows([recent('12'), recent('11'), recent('10')], [past('10'), past('9')]);
+    expect(rows).toEqual([
+      { recent: recent('12') },
+      { recent: recent('11') },
+      { past: past('10') },
+      { past: past('9') },
+    ]);
+  });
+
+  it("shows the lobby's games until the page arrives", () => {
+    expect(finishedRows([recent('2'), recent('1')], [])).toEqual([{ recent: recent('2') }, { recent: recent('1') }]);
   });
 });

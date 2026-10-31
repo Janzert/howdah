@@ -737,6 +737,12 @@ impl Gameroom {
         let page = with_lobby!(self, |l| l.player_games(player_id, offset))?;
         Ok(PlayerGamesView { games: page.games.into_iter().map(past_view).collect(), next: page.next })
     }
+
+    /// The last 100 games finished in the gameroom, newest first.
+    pub async fn recent_games(&self) -> Result<Vec<PastGameView>, ApiError> {
+        let games = with_lobby!(self, |l| l.recent_games())?;
+        Ok(games.into_iter().map(past_view).collect())
+    }
 }
 
 /// The open games with bot `name` at `bot_side`.

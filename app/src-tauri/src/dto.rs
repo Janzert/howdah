@@ -116,6 +116,20 @@ pub struct MoveNodeView {
     pub folded: u32,
     /// What analysis made of the position after this move, if it looked.
     pub eval: Option<Eval>,
+    /// Analysis's judgment of this move, unless the move has a glyph.
+    pub mark: Option<MoveMark>,
+}
+
+/// A move analysis found lost ground, from the evals before and after it.
+/// It isn't part of the game until it's added (`annotate_game`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MoveMark {
+    /// `?!`, `?` or `??`.
+    pub glyph: String,
+    /// The engine's choice instead, in notation.
+    pub best: Option<String>,
 }
 
 /// A piece on a square.

@@ -14,6 +14,10 @@ young).
 - Analyse game, in the analysis panel: the engine searches each position
   of the main line for a set time, and the evals show in the move list
   and on a graph of the game; clicking the graph goes to that move.
+  Moves that lose ground are marked `?!`, `?` or `??`, and the panel can
+  add the marks to the game with the engine's better lines as variations.
+- The arimaa.com Finished games panel lists the last 100 games, not five,
+  25 at a time with a More games button.
 
 ### Fixed
 

@@ -447,7 +447,8 @@ plans the engine test and tournament runner.
       variation (a plan in a match); `preview_line` is the hover preview.
       Analyse game (`start_sweep`, `Session`'s `sweep`) gives each main
       line position a set time, as `AnalysisTarget.time`; the coordinator
-      moves on when it's up (`sweep_step_done`).
+      moves on when it's up (`sweep_step_done`). `judge_move` marks moves
+      from the evals around them; `annotate_game` adds the marks to the game.
       No analysis while the user plays an online game
       (`Session::plays_online`): `set_analysis` refuses an engine,
       `start_match` turns it off, and `SessionView.analysisAllowed`

@@ -3,6 +3,8 @@
 import type { AnnouncementView } from './bindings/AnnouncementView';
 import type { Color } from './bindings/Color';
 import type { LiveGameView } from './bindings/LiveGameView';
+import type { PastGameView } from './bindings/PastGameView';
+import type { RecentGameView } from './bindings/RecentGameView';
 import type { WatchView } from './bindings/WatchView';
 import type { SoundName } from '@howdah/board/sound';
 
@@ -70,4 +72,18 @@ export function splitAnnouncements(
   const isFresh = (a: AnnouncementView) =>
     a.age != null && a.age <= FRESH_ANNOUNCEMENT_S && !hidden.has(announcementKey(a));
   return { fresh: all.filter(isFresh), older: all.filter((a) => !isFresh(a)) };
+}
+
+/** A row of the Finished games panel's list. */
+export type FinishedRow = { recent: RecentGameView } | { past: PastGameView };
+
+/** The recently finished games, newest first: the page of them and the
+ * lobby's few, which are fresher. */
+export function finishedRows(recent: RecentGameView[], page: PastGameView[]): FinishedRow[] {
+  const inPage = new Set(page.map((g) => g.gid));
+  const rows = [
+    ...recent.filter((g) => !inPage.has(g.gid)).map((g) => ({ gid: g.gid, row: { recent: g } })),
+    ...page.map((g) => ({ gid: g.gid, row: { past: g } })),
+  ];
+  return rows.sort((a, b) => Number(b.gid) - Number(a.gid)).map((r) => r.row);
 }

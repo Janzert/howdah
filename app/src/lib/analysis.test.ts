@@ -5,6 +5,7 @@ import {
   formatEval,
   formatRabbits,
   goldShare,
+  markTitle,
   nodesPerSecond,
   pvMoves,
   shortEval,
@@ -97,5 +98,12 @@ describe('shortEval', () => {
   it('shows a win as on the eval bar', () => {
     expect(shortEval({ kind: 'decided', winner: 'silver' } as Eval)).toBe('L');
     expect(shortEval({ kind: 'centiRabbits', value: 35 })).toBe('+0.35');
+  });
+});
+
+describe('markTitle', () => {
+  it('names the mark and the better move', () => {
+    expect(markTitle({ glyph: '??', best: 'Ee2n' })).toBe('Blunder, by the engine. Best was Ee2n');
+    expect(markTitle({ glyph: '?!', best: null })).toBe('Dubious, by the engine');
   });
 });

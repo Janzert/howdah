@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { formatEval, shortEval } from './analysis';
+  import { formatEval, markTitle, shortEval } from './analysis';
   import { api } from './api';
   import { formatClock, formatShort } from '@howdah/board/clock';
   import { settings } from './settings.svelte';
@@ -150,9 +150,12 @@
         {/if}
         <span class="label">{m.label}</span>
         <span class="notation"
-          >{m.notation}{#if m.glyphs.length}<span class="glyphs">{m.glyphs.join(' ')}</span>{/if}{#if m.folded}<span
-              class="folded">+{m.folded}</span
-            >{/if}</span
+          >{m.notation}{#if m.glyphs.length}<span class="glyphs">{m.glyphs.join(' ')}</span>{/if}{#if m.mark}<span
+              class="mark"
+              class:blunder={m.mark.glyph === '??'}
+              class:mistake={m.mark.glyph === '?'}
+              title={markTitle(m.mark)}>{m.mark.glyph}</span
+            >{/if}{#if m.folded}<span class="folded">+{m.folded}</span>{/if}</span
         >
         {#if m.eval}<span class="eval" title="{formatEval(m.eval)}, from gold's side">{shortEval(m.eval)}</span>{/if}
       </button>
@@ -297,6 +300,20 @@
     color: inherit;
   }
   .current .label {
+    color: inherit;
+  }
+  .mark {
+    margin-left: 4px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .mark.mistake {
+    color: var(--warn);
+  }
+  .mark.blunder {
+    color: #d9534f;
+  }
+  .current .mark {
     color: inherit;
   }
   .eval {

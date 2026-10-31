@@ -76,6 +76,9 @@ export interface NewGameSpec {
  * as the browser lobby does. */
 const REFRESH_MS = 20_000;
 
+/** The least time between fetches of the page of recent games. */
+const RECENT_PAGE_MS = 5 * 60_000;
+
 const pickSide = (side: Color | 'random'): Color =>
   side === 'random' ? (Math.random() < 0.5 ? 'gold' : 'silver') : side;
 
@@ -106,6 +109,12 @@ class GameroomStore {
   players = $state<PlayerMatchView[] | null>(null);
   /** The player whose games are shown, with the pages loaded so far. */
   picked = $state<{ player: PlayerMatchView; games: PastGameView[]; next: number | null } | null>(null);
+
+  /** The last games finished, from the page of them, once asked for. */
+  recentPage = $state<PastGameView[] | null>(null);
+  recentPageLoading = $state(false);
+  recentPageError = $state<string | null>(null);
+  #recentPageAt = -Infinity;
 
   /** The New game dialog, open with these starting values. */
   newGame = $state<Partial<NewGameSpec> | null>(null);
@@ -429,6 +438,29 @@ class GameroomStore {
       const page = await api.gameroomPlayerGames(p.player.id, next);
       this.picked = { player: p.player, games: [...p.games, ...page.games], next: page.next };
     });
+  }
+
+  /** Fetches the page of recent games if it's missing, or stale with a
+   * newer game in the lobby's list. The page is large, and this is called
+   * with every update of the lists, so it's kept to one in `RECENT_PAGE_MS`;
+   * `retry` asks again after a failure. Its errors stay in the panel. */
+  async loadRecentPage(retry = false) {
+    if (this.recentPageLoading) return;
+    const page = this.recentPage;
+    const fresh = page != null || this.recentPageError != null;
+    const known = new Set(page?.map((g) => g.gid));
+    const stale = this.games?.recent.some((g) => !g.postal && !known.has(g.gid));
+    if (!retry && fresh && (!stale || performance.now() - this.#recentPageAt < RECENT_PAGE_MS)) return;
+    this.#recentPageAt = performance.now();
+    this.recentPageLoading = true;
+    try {
+      this.recentPage = await api.gameroomRecentGames();
+      this.recentPageError = null;
+    } catch (e) {
+      this.recentPageError = errorMessage(e);
+    } finally {
+      this.recentPageLoading = false;
+    }
   }
 
   hideAnnouncement(a: AnnouncementView) {

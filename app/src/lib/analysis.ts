@@ -3,6 +3,7 @@
 import type { AnalysisLine } from './bindings/AnalysisLine';
 import type { EngineSpec } from './bindings/EngineSpec';
 import type { Eval } from './bindings/Eval';
+import type { MoveMark } from './bindings/MoveMark';
 import type { MoveNodeView } from './bindings/MoveNodeView';
 import type { NodeId } from './bindings/NodeId';
 
@@ -29,6 +30,12 @@ export function formatEval(e: Eval | null): string {
 export function shortEval(e: Eval): string {
   if (e.kind === 'decided') return e.winner === 'gold' ? 'W' : 'L';
   return formatRabbits(e.value);
+}
+
+/** What a mark's glyph says, with the engine's choice if there is one. */
+export function markTitle(mark: MoveMark): string {
+  const name = mark.glyph === '??' ? 'Blunder' : mark.glyph === '?' ? 'Mistake' : 'Dubious';
+  return mark.best ? `${name}, by the engine. Best was ${mark.best}` : `${name}, by the engine`;
 }
 
 /** One move on the eval graph. */

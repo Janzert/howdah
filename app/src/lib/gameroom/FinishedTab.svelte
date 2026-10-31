@@ -1,9 +1,10 @@
 <script lang="ts">
-  // Finished games: the gameroom's recently finished list, a player's
+  // Finished games: the gameroom's recently finished games (the lobby's
+  // few at once, then the page of the last 100, shown a batch at a time), a player's
   // past games (search; an exact username goes straight to their games,
   // with "Older games" paging), and any game by id.
-  import { pastMeta } from './format';
-  import Matchup from './Matchup.svelte';
+  import { finishedRows } from '../gameroom';
+  import PastGameRow from './PastGameRow.svelte';
   import RecentGameRow from './RecentGameRow.svelte';
   import { gameroom } from './store.svelte';
 
@@ -12,6 +13,16 @@
   const games = $derived(gameroom.games);
   const picked = $derived(gameroom.picked);
   const players = $derived(gameroom.players);
+  const rows = $derived(finishedRows(games?.recent ?? [], gameroom.recentPage ?? []));
+
+  /** How many rows of the recently finished list are shown. */
+  const BATCH = 25;
+  let shown = $state(BATCH);
+
+  // Also reads the lists, so a new game can bring the page up to date.
+  $effect(() => {
+    if (games) void gameroom.loadRecentPage();
+  });
 
   function search(e: SubmitEvent) {
     e.preventDefault();
@@ -50,17 +61,7 @@
           <p class="empty">No finished games.</p>
         {:else}
           <ul class="list scroll" aria-label="Games of {picked.player.username}">
-            {#each picked.games as g (g.gid)}
-              <li class="pick">
-                <button onclick={() => gameroom.open(g.gid)} disabled={gameroom.busy} title="Open game {g.gid}">
-                  <span class="row-text">
-                    <span class="row-line"><Matchup gold={g.gold} silver={g.silver} /></span>
-                    <span class="meta">{pastMeta(g)}</span>
-                  </span>
-                  <span class="action">Open</span>
-                </button>
-              </li>
-            {/each}
+            {#each picked.games as g (g.gid)}<PastGameRow game={g} />{/each}
             {#if picked.next != null}
               <li class="more">
                 <button class="subtle" onclick={() => gameroom.olderGames()} disabled={gameroom.busy}
@@ -112,17 +113,34 @@
   <section class="card" aria-labelledby="gr-finished-title">
     <div class="card-head">
       <h2 id="gr-finished-title">
-        Recently finished {#if games}<span class="count">{games.recent.length}</span>{/if}
+        Recently finished {#if games}<span class="count">{rows.length}</span>{/if}
       </h2>
     </div>
     {#if !games}
       <p class="empty">…</p>
-    {:else if games.recent.length === 0}
+    {:else if rows.length === 0 && !gameroom.recentPageLoading}
       <p class="empty">The gameroom lists no finished games.</p>
     {:else}
       <ul class="list scroll" aria-label="Recently finished games">
-        {#each games.recent as g (g.gid)}<RecentGameRow game={g} />{/each}
+        {#each rows.slice(0, shown) as row ('recent' in row ? row.recent.gid : row.past.gid)}
+          {#if 'recent' in row}<RecentGameRow game={row.recent} />{:else}<PastGameRow game={row.past} />{/if}
+        {/each}
+        {#if rows.length > shown}
+          <li class="more">
+            <button class="subtle" onclick={() => (shown += BATCH)}>More games</button>
+          </li>
+        {/if}
       </ul>
+      {#if gameroom.recentPageLoading && !gameroom.recentPage}
+        <p class="hint">Loading more games…</p>
+      {:else if gameroom.recentPageError}
+        <p class="hint">
+          Couldn't load more games: {gameroom.recentPageError}
+          <button class="link" onclick={() => gameroom.loadRecentPage(true)}>Try again</button>
+        </p>
+      {:else if gameroom.recentPage && rows.length <= shown}
+        <p class="hint">arimaa.com lists the last 100 games. For older ones, search for a player.</p>
+      {/if}
     {/if}
   </section>
 </div>

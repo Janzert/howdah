@@ -242,8 +242,8 @@ The current engine panel shows depth, eval, PV and log per side.
   - [have] Run an engine over every ply in the background.
   - [have] Plot an eval graph (lichess `ui/chart`); clicking the graph
     jumps to that ply.
-  - Mark inaccuracies, mistakes and blunders from eval swings (lichess
-    `nodeFinder.evalSwings`).
+  - [have] Mark inaccuracies, mistakes and blunders from eval swings
+    (lichess `nodeFinder.evalSwings`).
   - Cache results per position hash (lichess `evalCache`).
 - **[P3] "Learn from your mistakes"** (lichess `retrospect`): step through
   your large eval drops and try to find the better move. It builds on

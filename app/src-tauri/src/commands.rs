@@ -8,7 +8,7 @@ use crate::backend::{self, Backend};
 use crate::dto::{
     ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatMessageView, ChatRoomView,
     EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames, GameroomStatus,
-    MatchSpec, MoveReplay, NewTestSpec, PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec,
+    MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PositionCheck, PositionSpec,
     PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView, SpsaStepView,
     StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
 };
@@ -373,6 +373,11 @@ pub fn stop_sweep(state: State<Backend>, session: SessionId) -> Result<(), ApiEr
 }
 
 #[tauri::command]
+pub fn annotate_game(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
+    state.annotate_game(session)
+}
+
+#[tauri::command]
 pub fn add_line(
     state: State<Backend>,
     session: SessionId,
@@ -551,6 +556,11 @@ pub async fn gameroom_player_games(
     offset: u32,
 ) -> Result<PlayerGamesView, ApiError> {
     state.gameroom_player_games(&player_id, offset).await
+}
+
+#[tauri::command]
+pub async fn gameroom_recent_games(state: State<'_, Backend>) -> Result<Vec<PastGameView>, ApiError> {
+    state.gameroom_recent_games().await
 }
 
 #[tauri::command]

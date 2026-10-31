@@ -39,10 +39,10 @@ use howdah_arimaa::{
 };
 
 use crate::dto::{
-    AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, EngineOutput,
-    LastMoveView, LastStepView, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId, PieceView,
-    PlayerKind, PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView, SessionView, SideClockView,
-    StepTarget, SweepView, TakebackView, TestGameTag, TurnStepView, TurnView,
+    AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, EngineOutput, Eval,
+    LastMoveView, LastStepView, MoveMark, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId,
+    PieceView, PlayerKind, PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView, SessionView,
+    SideClockView, StepTarget, SweepView, TakebackView, TestGameTag, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -311,6 +311,42 @@ impl AnalysisTarget {
     pub fn same(&self, other: &AnalysisTarget) -> bool {
         (self.generation, self.node, self.time) == (other.generation, other.node, other.time)
     }
+}
+
+/// How much of the eval bar's share a move must lose to be marked, worst
+/// first. A rabbit from an even position is about 0.08. Share rather than
+/// rabbits, since the same drop matters less the further ahead a side is.
+const MARK_DROPS: [(f64, Glyph); 3] =
+    [(0.25, Glyph::BLUNDER), (0.15, Glyph::MISTAKE), (0.10, Glyph::DUBIOUS)];
+
+/// How many turns of an engine's line `annotate_game` adds.
+const ANNOTATED_TURNS: usize = 8;
+
+/// Gold's share of the eval bar, 0..1 (`goldShare` in `analysis.ts`).
+fn gold_share(eval: Eval) -> f64 {
+    match eval {
+        Eval::Decided { winner } => (winner == Color::Gold).into(),
+        Eval::CentiRabbits { value } => 1.0 / (1.0 + (-f64::from(value) / 300.0).exp()),
+    }
+}
+
+/// An eval in rabbits from gold's side (`+0.35`), or who has a proven win.
+fn format_eval(eval: Eval) -> String {
+    match eval {
+        Eval::Decided { winner: Color::Gold } => "Gold wins".into(),
+        Eval::Decided { winner: Color::Silver } => "Silver wins".into(),
+        Eval::CentiRabbits { value } => format!("{:+.2}", f64::from(value) / 100.0),
+    }
+}
+
+/// Whether two turns are the same steps, perhaps in another order.
+fn same_turn(a: &str, b: &str) -> bool {
+    let steps = |t: &str| {
+        let mut s: Vec<String> = t.split_whitespace().map(str::to_string).collect();
+        s.sort();
+        s
+    };
+    steps(a) == steps(b)
 }
 
 /// Orders analysis depths as engines write them (`12`, `12+`, `12.4+`):
@@ -1949,6 +1985,68 @@ impl Session {
         self.evals.get(self.evals_engine.as_ref()?)?.get(&node)
     }
 
+    /// How analysis judges `id`'s move, from the shown engine's evals
+    /// before and after it: the glyph, and the line it preferred. Nothing
+    /// if the move already has a glyph, or is the engine's own choice (its
+    /// eval just changed its mind). Setups aren't judged.
+    fn judge_move(&self, id: NodeId) -> Option<(Glyph, &AnalysisLine)> {
+        let node = &self.tree[id];
+        let parent = node.parent()?;
+        if self.tree.setup_due(parent) || node.annotation().glyphs.iter().any(|g| g.symbol().is_some()) {
+            return None;
+        }
+        let line = self.shown_eval(parent)?;
+        let (before, after) = (gold_share(line.eval?), gold_share(self.shown_eval(id)?.eval?));
+        let drop = match self.tree[parent].position().side_to_move() {
+            Color::Gold => before - after,
+            Color::Silver => after - before,
+        };
+        let played = node.mv()?.notation();
+        if line.pv.first().is_some_and(|t| same_turn(&t.notation, &played)) {
+            return None;
+        }
+        let &(_, glyph) = MARK_DROPS.iter().find(|(d, _)| drop >= *d)?;
+        Some((glyph, line))
+    }
+
+    /// Adds analysis's marks on the main line to the game: each move's
+    /// glyph, and the engine's line as a folded variation.
+    pub fn annotate_game(&mut self) -> Result<(), ApiError> {
+        let Some(engine) = self.analysis.as_ref().map(|a| a.name.clone()) else {
+            return Err(ApiError::state("analysis is off"));
+        };
+        let marks: Vec<(NodeId, Glyph, AnalysisLine)> = (self.tree.main_line().into_iter())
+            .filter_map(|n| self.judge_move(n).map(|(g, l)| (n, g, l.clone())))
+            .collect();
+        if marks.is_empty() {
+            return Err(ApiError::state("no moves to mark"));
+        }
+        let mut tree = self.tree.clone();
+        for (node, glyph, line) in marks {
+            tree.annotation_mut(node).map_err(ApiError::illegal)?.set_glyph(glyph);
+            let parent = line.node;
+            let known = tree[parent].children().len();
+            let mut at = parent;
+            let mut first = None;
+            for turn in line.pv.iter().take(ANNOTATED_TURNS) {
+                let Ok(next) = tree.add_notation(at, &turn.notation) else { break };
+                first.get_or_insert(next);
+                at = next;
+            }
+            let Some(first) = first else { continue };
+            if tree[parent].children().len() > known {
+                let eval = line.eval.map_or_else(String::new, format_eval);
+                tree.annotation_mut(first).map_err(ApiError::illegal)?.intro =
+                    Some(format!("{engine} {eval}"));
+            }
+            if at != first {
+                self.collapsed.insert(first);
+            }
+        }
+        self.tree = tree;
+        Ok(())
+    }
+
     /// Adds `moves` (in notation) as a line from `from`, reusing moves that
     /// are there already, and shows its last move. Nothing is added if a
     /// move is illegal. In a match this never plays the live move: a line
@@ -2725,6 +2823,10 @@ impl Session {
             collapsible: false,
             folded: 0,
             eval: self.shown_eval(id).and_then(|l| l.eval),
+            mark: self.judge_move(id).map(|(glyph, line)| MoveMark {
+                glyph: glyph.to_string(),
+                best: line.pv.first().map(|t| t.notation.clone()),
+            }),
         }
     }
 
@@ -2900,7 +3002,7 @@ fn position_view(pos: &Position, ids: &IdMap) -> PositionView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::Eval;
+    use crate::dto::PvTurn;
 
     const SAMPLE: &str = include_str!("../../../crates/howdah-arimaa/tests/data/sample_game.txt");
 
@@ -4653,6 +4755,75 @@ mod tests {
         assert!(s.view().sweep.is_none());
         s.set_analysis(None).unwrap();
         assert!(s.start_sweep(1).is_err(), "analysis is off");
+    }
+
+    /// `SAMPLE` with evals before and after 2g, with `best` preferred there.
+    fn judged(before: i32, after: i32, best: &str) -> Session {
+        let mut s = sample_to_sweep();
+        let line = s.tree.main_line();
+        let eval = |node, value, pv: &[&str]| AnalysisLine {
+            node,
+            depth: Some("9".into()),
+            eval: Some(Eval::CentiRabbits { value }),
+            pv: pv
+                .iter()
+                .map(|t| PvTurn { label: "".into(), notation: t.to_string(), steps: None })
+                .collect(),
+            nodes: None,
+            time_ms: Some(1000),
+        };
+        s.store_analysis(s.generation(), "e", &eval(line[2], before, &[best]));
+        s.store_analysis(s.generation(), "e", &eval(line[3], after, &[]));
+        s
+    }
+
+    fn mark_of(s: &Session) -> Option<MoveMark> {
+        s.view().tree[2].mark.clone()
+    }
+
+    #[test]
+    fn moves_are_marked_by_how_much_they_lose() {
+        let glyph = |after| mark_of(&judged(0, after, "Md2n")).map(|m| m.glyph);
+        assert_eq!(glyph(-60), None, "a small drop");
+        assert_eq!(glyph(-150), Some("?!".into()));
+        assert_eq!(glyph(-250), Some("?".into()));
+        assert_eq!(glyph(-400), Some("??".into()));
+        assert_eq!(glyph(400), None, "a gain");
+        assert_eq!(mark_of(&judged(0, -400, "Md2n")).unwrap().best.as_deref(), Some("Md2n"));
+    }
+
+    #[test]
+    fn the_same_drop_matters_less_when_far_ahead() {
+        assert!(mark_of(&judged(2000, 1600, "Md2n")).is_none());
+    }
+
+    #[test]
+    fn the_engines_own_choice_isnt_marked() {
+        assert!(mark_of(&judged(0, -400, "Ee2n Ee3n Ee4n Ee5e")).is_none());
+        assert!(mark_of(&judged(0, -400, "Ee3n Ee2n Ee5e Ee4n")).is_none(), "in another order");
+    }
+
+    #[test]
+    fn a_glyph_of_the_users_replaces_the_mark() {
+        let mut s = judged(0, -400, "Md2n");
+        s.toggle_glyph(s.tree.main_line()[3], Glyph::GOOD).unwrap();
+        assert!(mark_of(&s).is_none());
+    }
+
+    #[test]
+    fn annotating_adds_the_glyph_and_the_engines_line() {
+        let mut s = judged(0, -400, "Md2n");
+        s.annotate_game().unwrap();
+        let tree = s.view().tree;
+        let played = &tree[2];
+        assert_eq!(played.glyphs, ["??"]);
+        assert!(played.mark.is_none());
+        let line = s.tree.main_line();
+        let alt = tree.iter().find(|m| m.parent == line[2] && m.id != line[3]).unwrap();
+        assert_eq!(alt.notation, "Md2n");
+        assert_eq!(alt.intro.as_deref(), Some("E +0.00"));
+        assert_eq!(s.tree.main_line(), line, "the main line stays");
+        assert!(s.annotate_game().is_err(), "nothing left to mark");
     }
 
     #[test]

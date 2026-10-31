@@ -57,6 +57,7 @@
   /** Search times to choose from for a run over the game. */
   const SWEEP_SECONDS = [1, 2, 5, 10, 30];
   let sweepSeconds = $state(2);
+  const marks = $derived(view.tree.filter((m) => m.depth === 0 && m.mark).length);
 
   const engine = $derived(engines.find((e) => e.id === view.analysisEngine));
   let showOptions = $state(false);
@@ -197,6 +198,12 @@
           <option value={s}>{s}s a position</option>
         {/each}
       </select>
+      {#if marks}
+        <button
+          title="Add the marks to the game, with the engine's better lines as variations"
+          onclick={() => run(api.annotateGame())}>Add {marks} {marks === 1 ? 'mark' : 'marks'}</button
+        >
+      {/if}
     {/if}
   </div>
   <EvalGraph tree={view.tree} cursor={view.cursor} onGoto={onGotoNode} />
