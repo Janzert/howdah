@@ -297,15 +297,18 @@
   async function openGameroom(
     start: (a: Api) => Promise<void>,
     game?: { gid: string; play: boolean },
+    what?: string,
   ): Promise<string | null> {
     const id = game ? await api.gameroomGameSession(game.gid).catch(() => null) : null;
     if (id == null) {
       // The board shows at once and waits for arimaa.com there.
-      const loading = game?.play
-        ? 'Taking your seat on arimaa.com…'
-        : game
-          ? `Opening game ${game.gid} from arimaa.com…`
-          : 'Setting up the game on arimaa.com…';
+      const loading =
+        what ??
+        (game?.play
+          ? 'Taking your seat on arimaa.com…'
+          : game
+            ? `Opening game ${game.gid} from arimaa.com…`
+            : 'Setting up the game on arimaa.com…');
       return openNew(start, null, loading);
     }
     try {

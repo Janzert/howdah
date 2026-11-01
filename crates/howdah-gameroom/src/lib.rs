@@ -49,7 +49,8 @@ pub mod wire;
 pub use announcements::{Announcement, Block, Span};
 pub use bots::{BotInfo, BotLadder, LadderBot, ServerBot};
 pub use chat::{
-    ChatClient, ChatEvent, ChatKind, DEFAULT_CHAT, Fetched, FormattedMessage, MessagePart, format_message,
+    ChatClient, ChatEvent, ChatKind, DEFAULT_CHAT, Fetched, FormattedMessage, MessagePart, PositionLink,
+    format_message, game_link, position_link, puzzle_link,
 };
 pub use client::{
     Actions, Asip, DEFAULT_GAMEROOM, Error, Exchange, GameInfo, GameServer, Http, Lobby, LobbyGames, NetLog,

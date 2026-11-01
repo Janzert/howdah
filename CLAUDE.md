@@ -214,7 +214,10 @@ plans the engine test and tournament runner.
     `state`'s `me` (`LobbyGames.chat_auth`; `chat_count` is
     `chatCount`), `ChatEvent`s from the log, and `format_message`, the
     room's formatting as `MessagePart`s (links, faces, piece symbols,
-    `/me` emotes). `archive` asks `archsrv.cgi` (no login) for the 24
+    `/me` emotes); `position_link` reads the game in a `planGame.cgi`
+    link (a viewer's `movelist`) or the position in a `boardimg.php` one
+    (`ranks`; its side to move is a guess from `orient`); `game_link` and
+    `puzzle_link` the ids in links to a finished game or a puzzle. `archive` asks `archsrv.cgi` (no login) for the 24
     hours from a moment; `ChatEvent::to_line` writes an event back as a
     log line.
   - `puzzles`: the puzzle pages (`/arimaa/puzzles/`, no login, the
@@ -366,6 +369,9 @@ plans the engine test and tournament runner.
       The taken-back moves stay as the continuation, and become a
       variation when a different move is played. The controller stops an
       engine whose turn was taken back and ignores its reply.
+    - `SessionView.startSetups` writes a set position from move 2 as the
+      setups that would place it, for the move list only: the tree stays
+      rooted at the position, since those setups are rarely legal.
     - Games from a set position: `new_game_from` (free play) and
       `start_match_from` (`start_match` is it with none) refuse a
       position `check_start_position` finds problems with; `shown_start`
@@ -899,7 +905,11 @@ plans the engine test and tournament runner.
     kept or part kept, `chatArchive.svelte.ts`) beside the day open,
     which asks arimaa.com only for what isn't kept, following
     `chatarchive://changed`. `ChatLine.svelte` draws one event of the
-    room or the archive (spoilers keep their own shown state), and
+    room or the archive (spoilers keep their own shown state; a position
+    link, `ChatPlanView`, shows a `MiniBoard` of its end, and it and the
+    link open a board with `load_game`; game and puzzle links open theirs,
+    and `browserCanOpen` leaves Open in browser out of a link's menu for
+    pages behind the gameroom's Referer gate), and
     `darkMode.svelte.ts` follows the appearance for colors worked out in
     code.
     `ChatRoomTab` is the chat room (store in `chatroom.svelte.ts`:

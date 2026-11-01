@@ -9,6 +9,13 @@ young).
 
 ### Added
 
+- Position links in the arimaa.com chat room and its archive
+  (`planGame.cgi?movelist=...` and `boardimg.php?ranks=...`) show their
+  final position in the chat, and open on a board, as do links to finished
+  games and puzzles. Right-clicking a chat link copies it or opens it in
+  the browser.
+- The move list shows a set position from move 2 as the setups that would
+  place it, in place of `start`.
 - A banner over the board while its arimaa.com game has lost the
   connection, or has stopped following the game.
 - Analyse game, in the analysis panel: the engine searches each position

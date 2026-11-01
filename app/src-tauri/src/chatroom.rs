@@ -20,15 +20,18 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use howdah_gameroom::{
-    ChatClient, ChatEvent, ChatKind, Fetched, GameState, MessagePart, Role, format_message,
+    ChatClient, ChatEvent, ChatKind, Fetched, GameState, MessagePart, PositionLink, Role, format_message,
+    game_link, position_link, puzzle_link,
 };
 use tokio::sync::Notify;
 
 use crate::backend::{Events, emit};
 use crate::chat_archive::SharedArchive;
 use crate::dto::{
-    ApiError, ChatEventKind, ChatEventView, ChatMessageView, ChatPartView, ChatRoomState, ChatRoomView,
+    ApiError, ChatEventKind, ChatEventView, ChatMessageView, ChatPartView, ChatPlanView, ChatRoomState,
+    ChatRoomView,
 };
+use crate::session::position_view;
 
 /// Event carrying a [`ChatRoomView`].
 pub const CHAT_UPDATE: &str = "chatroom://changed";
@@ -425,10 +428,20 @@ pub(crate) fn message_view(text: &str) -> ChatMessageView {
     ChatMessageView { emote: f.emote, parts: f.parts.into_iter().map(part_view).collect() }
 }
 
+fn plan_view(link: PositionLink) -> ChatPlanView {
+    let PositionLink { record, flipped, knows_side } = link;
+    let end = *record.tree.main_line().last().expect("the main line has the root");
+    let position = position_view(record.tree[end].position(), &[None; 64]);
+    ChatPlanView { record: record.to_record(), position, flipped, knows_side }
+}
+
 fn part_view(p: MessagePart) -> ChatPartView {
     match p {
         MessagePart::Text(text) => ChatPartView::Text { text },
-        MessagePart::Link(url) => ChatPartView::Link { url },
+        MessagePart::Link(url) => {
+            let plan = position_link(&url).map(plan_view);
+            ChatPartView::Link { game: game_link(&url), puzzle: puzzle_link(&url), url, plan }
+        }
         MessagePart::Face { name, symbol } => ChatPartView::Face { name: name.into(), symbol: symbol.into() },
         MessagePart::Piece { color, kind } => ChatPartView::Piece { color, piece: kind },
     }

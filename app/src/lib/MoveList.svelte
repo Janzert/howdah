@@ -108,10 +108,24 @@
      through the game from there, and the menu key opens a move's menu. -->
 <ol class="moves" class:timed={settings.moveTimes !== 'off'} bind:this={list} aria-label="Moves">
   <li class="start">
-    <button class="move" class:current={view.ply === 0} tabindex={view.ply === 0 ? 0 : -1} onclick={() => onGoto(0)}>
-      {#if settings.moveTimes !== 'off'}<span class="time"></span>{/if}
-      <span class="label">start</span>
-    </button>
+    {#each view.startSetups as s, i (s.label)}
+      {@const last = i === view.startSetups.length - 1}
+      <button
+        class="move"
+        class:current={last && view.ply === 0}
+        tabindex={last && view.ply === 0 ? 0 : -1}
+        onclick={() => onGoto(0)}
+      >
+        {#if settings.moveTimes !== 'off'}<span class="time"></span>{/if}
+        <span class="label">{s.label}</span>
+        <span class="notation">{s.notation}</span>
+      </button>
+    {:else}
+      <button class="move" class:current={view.ply === 0} tabindex={view.ply === 0 ? 0 : -1} onclick={() => onGoto(0)}>
+        {#if settings.moveTimes !== 'off'}<span class="time"></span>{/if}
+        <span class="label">start</span>
+      </button>
+    {/each}
     {#if view.gameComment}<div class="comment game">{view.gameComment}</div>{/if}
   </li>
   {#each view.tree as m (m.id)}

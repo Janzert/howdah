@@ -127,3 +127,9 @@ export const PIECE_SYMBOLS: { symbol: string; color: Color; piece: PieceKind }[]
 ).flatMap((color) =>
   KINDS.map((piece) => ({ symbol: `:${color[0]}${piece === 'camel' ? 'm' : piece[0]}`, color, piece })),
 );
+
+/** Whether a link can open in a browser. arimaa.com answers pages under
+ * its gameroom only to a visitor coming from the gameroom. */
+export function browserCanOpen(url: string): boolean {
+  return !/^https?:\/\/(www\.)?arimaa\.com\/arimaa\/gameroom\//i.test(url);
+}

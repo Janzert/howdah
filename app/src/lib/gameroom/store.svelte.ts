@@ -60,6 +60,7 @@ export const NO_LOGIN_PANELS: GameroomTab[] = ['archive'];
 export type Opener = (
   start: (a: Api) => Promise<void>,
   game?: { gid: string; play: boolean },
+  loading?: string,
 ) => Promise<string | null>;
 
 /** What the New game dialog asks for. */
@@ -292,9 +293,9 @@ class GameroomStore {
     });
   }
 
-  async enter(start: (a: Api) => Promise<void>, game?: { gid: string; play: boolean }) {
+  async enter(start: (a: Api) => Promise<void>, game?: { gid: string; play: boolean }, loading?: string) {
     this.busy = true;
-    this.error = await this.#opener(start, game);
+    this.error = await this.#opener(start, game, loading);
     this.busy = false;
   }
 

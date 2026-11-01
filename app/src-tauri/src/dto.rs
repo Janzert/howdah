@@ -40,7 +40,7 @@ pub struct ShowBoard {
     pub board: SessionId,
 }
 
-#[derive(Clone, Debug, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct PieceView {
@@ -50,7 +50,7 @@ pub struct PieceView {
     pub frozen: bool,
 }
 
-#[derive(Clone, Debug, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct PositionView {
@@ -238,6 +238,9 @@ pub struct SessionView {
     pub tree: Vec<MoveNodeView>,
     /// The comment on the whole game (before the first move).
     pub game_comment: Option<String>,
+    /// A set position from move 2, written as the setups that would place
+    /// it, for the move list. They aren't moves of the game.
+    pub start_setups: Vec<StartSetupView>,
     /// The node being shown (the root before any move).
     pub cursor: NodeId,
     /// In a match, the live node: the end of the game being played.
@@ -1381,6 +1384,29 @@ pub enum ChatEventKind {
 }
 
 /// A part of a chat room message.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StartSetupView {
+    pub label: String,
+    pub notation: String,
+}
+
+/// The game in an arimaa.com position link (`howdah_gameroom::position_link`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatPlanView {
+    /// The game as a record, for `load_game`.
+    pub record: String,
+    /// The position at the end of its moves.
+    pub position: PositionView,
+    /// Show it from silver's side.
+    pub flipped: bool,
+    /// The link says whose move it is.
+    pub knows_side: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase", tag = "type")]
 #[ts(export)]
@@ -1388,9 +1414,15 @@ pub enum ChatPartView {
     Text {
         text: String,
     },
-    /// An http(s) link, opened in the system's browser (`open_url`).
+    /// An http(s) link, opened in the system's browser (`open_url`), or
+    /// on a board if it's a position link, a game or a puzzle.
     Link {
         url: String,
+        plan: Option<ChatPlanView>,
+        /// The permanent id of the finished game it shows.
+        game: Option<String>,
+        /// The puzzle it shows.
+        puzzle: Option<String>,
     },
     /// One of the room's faces (`smiley`, `wink`, …) and the symbol typed.
     Face {

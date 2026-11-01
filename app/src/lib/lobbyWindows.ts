@@ -34,7 +34,8 @@ function kind(v: SessionView, watch: WatchView | undefined): string {
     return engine ? 'Against an engine' : 'Game';
   }
   if (v.analysisEngine) return 'Analysis';
-  return v.moves.length > 0 ? `${v.moves.length} moves` : 'Empty board';
+  if (v.moves.length > 0) return `${v.moves.length} moves`;
+  return v.position.pieces.length > 0 ? 'Position' : 'Empty board';
 }
 
 /** One board's entry; `now - at` is how long ago its view arrived, and

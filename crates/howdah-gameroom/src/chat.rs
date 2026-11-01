@@ -29,7 +29,7 @@
 
 use std::time::Duration;
 
-use howdah_arimaa::{Color, PieceKind};
+use howdah_arimaa::{Color, GameRecord, Piece, PieceKind, Position, ViewerGame, parse_viewer_vars};
 
 use crate::client::{Error, Http};
 use crate::wire::{Format, encode_request};
@@ -319,6 +319,138 @@ pub fn format_message(text: &str) -> FormattedMessage {
     FormattedMessage { emote, parts }
 }
 
+/// A link to a position or game on arimaa.com, which the room's people use
+/// to share them.
+#[derive(Clone, Debug)]
+pub struct PositionLink {
+    /// The game, played out to its end.
+    pub record: GameRecord,
+    /// The link asks to see the board from silver's side.
+    pub flipped: bool,
+    /// The link says whose move it is; a board image only shows the
+    /// pieces, and `record` then has the side the image is seen from.
+    pub knows_side: bool,
+}
+
+/// Reads `planGame.cgi?movelist=...` (a viewer's move list,
+/// `howdah_arimaa::viewer`, see [`tidy_movelist`]) and
+/// `boardimg.php?ranks=...` (see [`read_ranks`]). None for any other link,
+/// or one that can't be read.
+pub fn position_link(url: &str) -> Option<PositionLink> {
+    let (path, query) = arimaa_link(url)?;
+    match path {
+        "arimaa/games/planGame.cgi" => {
+            let vars = format!("&movelist={}\n", tidy_movelist(query_param(query, "movelist")?)?);
+            let record = ViewerGame::parse(&vars).ok()?.record;
+            Some(PositionLink { record, flipped: false, knows_side: true })
+        }
+        "arimaa/notconv/old/boardimg.php" => {
+            let flipped = query_param(query, "orient") == Some("s");
+            let side = if flipped { Color::Silver } else { Color::Gold };
+            let ranks = query_param(query, "ranks")?.replace("%2F", "/").replace("%2f", "/");
+            let position = read_ranks(&ranks, side)?;
+            let tag = format!("[Position \"{} {}\"]\n\n", side.letter(), position.to_short_string());
+            Some(PositionLink { record: GameRecord::parse(&tag).ok()?, flipped, knows_side: false })
+        }
+        _ => None,
+    }
+}
+
+/// The permanent id of the finished game a link shows.
+pub fn game_link(url: &str) -> Option<String> {
+    let (path, query) = arimaa_link(url)?;
+    let game_page = matches!(
+        path,
+        "arimaa/gameroom/comments.cgi" | "arimaa/games/jsShowGame.cgi" | "arimaa/games/showGame.cgi"
+    );
+    let gid = query_param(query, "gid").filter(|_| game_page)?;
+    (!gid.is_empty() && gid.chars().all(|c| c.is_ascii_digit())).then(|| gid.to_string())
+}
+
+/// The id of the puzzle a link shows, its question (`p=`) or answer (`a=`).
+pub fn puzzle_link(url: &str) -> Option<String> {
+    let (path, query) = arimaa_link(url)?;
+    if path != "arimaa/puzzles/show.cgi" {
+        return None;
+    }
+    let id = query_param(query, "p").or_else(|| query_param(query, "a"))?;
+    (!id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric())).then(|| id.to_string())
+}
+
+/// Splits a link to arimaa.com into its path, without the leading `/`, and
+/// query, leaving out punctuation that ends the sentence around it.
+fn arimaa_link(url: &str) -> Option<(&str, &str)> {
+    let url = url.trim_end_matches(['.', ',', ';', ':', '!', '?', ')']);
+    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://"))?;
+    let (place, query) = rest.split_once('?')?;
+    let place = place.strip_prefix("www.").unwrap_or(place);
+    let host = place.get(..11).filter(|h| h.eq_ignore_ascii_case("arimaa.com/"))?;
+    Some((&place[host.len()..], query.split('#').next()?))
+}
+
+fn query_param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
+    query.split('&').find_map(|p| p.split_once('=').filter(|(n, _)| *n == name).map(|(_, v)| v))
+}
+
+/// A plan link's move list in the viewer's form. People wrote these by
+/// hand, so lines may have no labels (gold's setup first, taking turns from
+/// there), a label run into the moves (`2wpass`), or a typed `\\n` for a
+/// line break. None for an empty list.
+fn tidy_movelist(raw: &str) -> Option<String> {
+    let raw = raw.replace('+', "%20").replace("\\n", "%0A");
+    let vars = parse_viewer_vars(&format!("&movelist={raw}\n"));
+    let lines: Vec<&str> =
+        vars.first()?.1.split(['\r', '\n']).map(str::trim).filter(|l| !l.is_empty()).collect();
+    let tidied: Vec<String> = lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let number = l.find(|c: char| !c.is_ascii_digit()).unwrap_or(l.len());
+            match l[number..].chars().next() {
+                Some(c) if number > 0 && "wbgs".contains(c) => {
+                    format!("{} {}", &l[..=number], l[number + 1..].trim())
+                }
+                _ => format!("{}{} {l}", i / 2 + 1, if i % 2 == 0 { 'w' } else { 'b' }),
+            }
+        })
+        .collect();
+    (!tidied.is_empty()).then(|| tidied.join("%0A"))
+}
+
+/// Reads a board as `/`-separated ranks from the 8th down: piece letters,
+/// and digits for runs of empty squares. A rank may stop short, and the
+/// ranks may stop before the 1st, the other squares empty. None for a board
+/// with no pieces.
+fn read_ranks(ranks: &str, side: Color) -> Option<Position> {
+    let ranks: Vec<&str> = ranks.split('/').collect();
+    if ranks.len() > 8 {
+        return None;
+    }
+    let mut pieces = Vec::new();
+    for (row, rank) in ranks.iter().enumerate() {
+        let mut file = 0;
+        for c in rank.chars() {
+            if let Some(run) = c.to_digit(10) {
+                file += run;
+                continue;
+            }
+            if file >= 8 {
+                return None;
+            }
+            let square = format!("{}{}", (b'a' + file as u8) as char, 8 - row).parse().ok()?;
+            pieces.push((Piece::from_letter(c)?, square));
+            file += 1;
+        }
+        if file > 8 {
+            return None;
+        }
+    }
+    if pieces.is_empty() {
+        return None;
+    }
+    Position::from_pieces(side, pieces).ok()
+}
+
 /// Splits out `https?://` followed by anything but whitespace or `$`.
 fn links(text: &str) -> Vec<MessagePart> {
     let mut parts = Vec::new();
@@ -362,9 +494,108 @@ fn replace(parts: Vec<MessagePart>, symbol: &str, part: &dyn Fn() -> MessagePart
 #[cfg(test)]
 mod tests {
     use super::*;
+    use howdah_arimaa::GameTree;
 
     fn text(s: &str) -> MessagePart {
         MessagePart::Text(s.into())
+    }
+
+    const PLAN: &str = "http://arimaa.com/arimaa/games/planGame.cgi?movelist=1w%20Hb7%20Dd7%20Ra6%20Ra5\
+        %20Rb3%20Rd3%20Rf3%20Hg3%20Eb2%20Rh2%20Rg1%0A1b%20ra8%20rb8%20ec7%20re7%20rf7%20rd6%20rg6%20cb5\
+        %20cg5%20de4%20hf4%20rg4%20hh4%20ra3%20mg2%20de1%0A2w%20pass%0A";
+
+    #[test]
+    fn plan_link_reads_a_puzzle_position() {
+        let record = position_link(PLAN).unwrap().record;
+        let root = record.tree[GameTree::ROOT].position();
+        assert_eq!(root.side_to_move(), Color::Silver);
+        assert_eq!(root.pieces().count(), 27);
+        // What the app sends to a board reads back as the same position.
+        let again = GameRecord::parse(&record.to_record()).unwrap();
+        assert_eq!(again.tree[GameTree::ROOT].position(), root);
+        assert_eq!(again.tree.start_ply(), record.tree.start_ply());
+    }
+
+    #[test]
+    fn plan_link_plays_out_the_moves() {
+        let url = "https://www.arimaa.com/arimaa/games/planGame.cgi?x=1&movelist=1w+Ra2+Ee1%0A1b+rh7+ee8\
+            %0A2w+Ra2n%0A2b+#top";
+        let record = position_link(url).unwrap().record;
+        let end = *record.tree.main_line().last().unwrap();
+        assert_eq!(record.tree[end].position().side_to_move(), Color::Silver);
+        assert!(record.tree[end].position().pieces().any(|(s, _)| s.to_string() == "a3"));
+    }
+
+    #[test]
+    fn board_image_links() {
+        let url = "http://arimaa.com/arimaa/notconv/old/boardimg.php?orient=s&size=500&imgtype=jpeg\
+            &ranks=5r/2c2r1r/r3e/r1r/mD1d2r/1dCh2c/2ERh/R2R2RR";
+        let link = position_link(url).unwrap();
+        assert!(link.flipped && !link.knows_side);
+        let root = link.record.tree[GameTree::ROOT].position();
+        assert_eq!(root.side_to_move(), Color::Silver);
+        assert_eq!(
+            root.to_short_string(),
+            "[     r    c  r rr   e   r r     mD d  r  dCh  c   ERh   R  R  RR]"
+        );
+        // Empty ranks at the end are left out.
+        let short =
+            position_link("http://arimaa.com/arimaa/notconv/old/boardimg.php?orient=n&ranks=/1E").unwrap();
+        assert!(short.record.tree[GameTree::ROOT].position().pieces().any(|(s, _)| s.to_string() == "b7"));
+        let gold =
+            position_link("http://www.arimaa.com/arimaa/notconv/old/boardimg.php?ranks=8/8/8/8/8/8/8/E")
+                .unwrap();
+        assert!(!gold.flipped);
+        assert_eq!(gold.record.tree[GameTree::ROOT].position().side_to_move(), Color::Gold);
+    }
+
+    #[test]
+    fn plan_links_written_by_hand() {
+        let base = "http://arimaa.com/arimaa/games/planGame.cgi?movelist=";
+        for list in ["Ra2%20Ee1%0Arh7%20ee8%0A", "Ra2%20Ee1\\n%20rh7%20ee8", "1gRa2%20Ee1%0Arh7%20ee8"] {
+            let record = position_link(&format!("{base}{list}")).unwrap().record;
+            assert_eq!(record.tree[GameTree::ROOT].position().pieces().count(), 4, "{list}");
+            assert_eq!(record.tree[GameTree::ROOT].position().side_to_move(), Color::Gold, "{list}");
+        }
+        let silver = position_link(&format!("{base}1w%20Ra2%0A1b%20rh7%0A2wpass")).unwrap().record;
+        assert_eq!(silver.tree[GameTree::ROOT].position().side_to_move(), Color::Silver);
+        // A sentence's end isn't part of the link.
+        assert!(position_link(&format!("{base}1w%20Ra2%0A1b%20rh7%0A).")).is_some());
+    }
+
+    #[test]
+    fn game_and_puzzle_links() {
+        let game = |u: &str| game_link(&format!("http://arimaa.com/arimaa/{u}"));
+        assert_eq!(game("gameroom/comments.cgi?gid=668541").as_deref(), Some("668541"));
+        assert_eq!(game("games/jsShowGame.cgi?gid=236499&s=b").as_deref(), Some("236499"));
+        assert_eq!(game("games/showGame.cgi?gid=86680&s=w&client=1").as_deref(), Some("86680"));
+        assert_eq!(game("gameroom/comments.cgi?gid=668541).").as_deref(), Some("668541"));
+        // A live table's id isn't a game's.
+        assert_eq!(game("gameroom/comments.cgi?tgid=516183"), None);
+        assert_eq!(game("gameroom/comments.cgi?gid=x"), None);
+        assert_eq!(game("gameroom/pastgames.cgi?gid=1"), None);
+
+        let puzzle = |u: &str| puzzle_link(&format!("http://arimaa.com/arimaa/puzzles/{u}"));
+        assert_eq!(puzzle("show.cgi?p=p95?").as_deref(), Some("p95"));
+        assert_eq!(puzzle("show.cgi?a=p90").as_deref(), Some("p90"));
+        assert_eq!(puzzle("list.cgi?p=p95"), None);
+    }
+
+    #[test]
+    fn other_links_are_not_plans() {
+        for url in [
+            "http://arimaa.com/arimaa/games/jsShowGame.cgi?gid=1",
+            "http://example.com/arimaa/games/planGame.cgi?movelist=1w%20Ra2",
+            "http://arimaa.com/arimaa/games/planGame.cgi",
+            "http://arimaa.com/arimaa/games/planGame.cgi?movelist=",
+            "http://arimaa.com/arimaa/games/planGame.cgi?movelist=nonsense",
+            "http://arimaa.com/arimaa/notconv/old/boardimg.php?ranks=",
+            "http://arimaa.com/arimaa/notconv/old/boardimg.php?ranks=1/2/3/4/5/6/7/8/E",
+            "http://arimaa.com/arimaa/notconv/old/boardimg.php?ranks=9R/8/8/8/8/8/8/8",
+            "http://arimaa.com/arimaa/notconv/old/boardimg.php?ranks=x/8/8/8/8/8/8/8",
+        ] {
+            assert!(position_link(url).is_none(), "{url}");
+        }
     }
 
     #[test]

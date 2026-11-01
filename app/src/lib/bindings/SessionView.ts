@@ -13,6 +13,7 @@ import type { Phase } from "./Phase";
 import type { PlayersView } from "./PlayersView";
 import type { PositionView } from "./PositionView";
 import type { PuzzleView } from "./PuzzleView";
+import type { StartSetupView } from "./StartSetupView";
 import type { SweepView } from "./SweepView";
 import type { TakebackView } from "./TakebackView";
 import type { TestGameTag } from "./TestGameTag";
@@ -35,6 +36,11 @@ tree: Array<MoveNodeView>,
  * The comment on the whole game (before the first move).
  */
 gameComment: string | null, 
+/**
+ * A set position from move 2, written as the setups that would place
+ * it, for the move list. They aren't moves of the game.
+ */
+startSetups: Array<StartSetupView>, 
 /**
  * The node being shown (the root before any move).
  */

@@ -38,11 +38,13 @@ use howdah_arimaa::{
     is_viewer_vars,
 };
 
+use howdah_arimaa::notation;
+
 use crate::dto::{
     AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, EngineOutput, Eval,
     LastMoveView, LastStepView, MoveMark, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId,
     PieceView, PlayerKind, PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView, SessionView,
-    SideClockView, StepTarget, SweepView, TakebackView, TestGameTag, TurnStepView, TurnView,
+    SideClockView, StartSetupView, StepTarget, SweepView, TakebackView, TestGameTag, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2684,6 +2686,7 @@ impl Session {
             moves,
             tree: self.tree_view(),
             game_comment: self.tree[GameTree::ROOT].annotation().comment_text(),
+            start_setups: start_setups(&self.tree),
             cursor: self.cursor_node(),
             live: self.matchup.as_ref().map(|m| m.live),
             sent: self.matchup.as_ref().and_then(|m| m.outgoing),
@@ -2985,7 +2988,34 @@ impl Session {
     }
 }
 
-fn position_view(pos: &Position, ids: &IdMap) -> PositionView {
+/// The setups that would place the tree's set position, strongest pieces
+/// first, and gold's pass when silver moves first. Only a position from
+/// move 2 follows setups.
+fn start_setups(tree: &GameTree) -> Vec<StartSetupView> {
+    let start = tree.start_ply();
+    if !(2..=3).contains(&start) {
+        return Vec::new();
+    }
+    let position = tree[GameTree::ROOT].position();
+    let setup = |color: Color| {
+        let mut placed: Vec<Placement> = position
+            .pieces()
+            .filter(|(_, piece)| piece.color == color)
+            .map(|(square, piece)| Placement { piece, square })
+            .collect();
+        placed.sort_by_key(|p| (std::cmp::Reverse(p.piece.kind), p.square.index()));
+        if placed.is_empty() { "pass".to_string() } else { notation::format_placements(&placed) }
+    };
+    let mut rows = vec![(0, setup(Color::Gold)), (1, setup(Color::Silver))];
+    if start == 3 {
+        rows.push((2, "pass".to_string()));
+    }
+    rows.into_iter()
+        .map(|(ply, notation)| StartSetupView { label: notation::move_label(ply), notation })
+        .collect()
+}
+
+pub(crate) fn position_view(pos: &Position, ids: &IdMap) -> PositionView {
     let pieces = pos
         .pieces()
         .map(|(sq, piece)| PieceView {
@@ -3003,6 +3033,18 @@ fn position_view(pos: &Position, ids: &IdMap) -> PositionView {
 mod tests {
     use super::*;
     use crate::dto::PvTurn;
+
+    #[test]
+    fn a_set_position_lists_its_setups() {
+        let mut s = Session::new();
+        assert!(s.view().start_setups.is_empty());
+        s.load("[Position \"s [    e          r                                R           E   ]\"]\n\n")
+            .unwrap();
+        let rows: Vec<(String, String)> =
+            s.view().start_setups.into_iter().map(|r| (r.label, r.notation)).collect();
+        let row = |l: &str, n: &str| (l.to_string(), n.to_string());
+        assert_eq!(rows, [row("1g", "Ee1 Ra2"), row("1s", "ee8 rh7"), row("2g", "pass")]);
+    }
 
     const SAMPLE: &str = include_str!("../../../crates/howdah-arimaa/tests/data/sample_game.txt");
 

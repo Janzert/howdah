@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chatTime, FACE_EMOJI, luminance, messageColor, parseHex, PIECE_SYMBOLS } from './chatroom';
+import { browserCanOpen, chatTime, FACE_EMOJI, luminance, messageColor, parseHex, PIECE_SYMBOLS } from './chatroom';
 
 describe('chat room colors', () => {
   it('hides white, the spoiler tag, and only white', () => {
@@ -55,5 +55,14 @@ describe('typed colors', () => {
     expect(parseHex(' 0a8 ')).toBe('00aa88');
     expect(parseHex('12345')).toBeNull();
     expect(parseHex('red')).toBeNull();
+  });
+});
+
+describe('browserCanOpen', () => {
+  it('leaves out pages behind the gameroom', () => {
+    expect(browserCanOpen('http://arimaa.com/arimaa/gameroom/comments.cgi?gid=1')).toBe(false);
+    expect(browserCanOpen('http://www.arimaa.com/arimaa/gameroom/playerpage.cgi?id=1')).toBe(false);
+    expect(browserCanOpen('http://arimaa.com/arimaa/games/jsShowGame.cgi?gid=1')).toBe(true);
+    expect(browserCanOpen('https://example.com/arimaa/gameroom/')).toBe(true);
   });
 });
