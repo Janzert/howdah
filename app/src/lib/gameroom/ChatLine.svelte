@@ -54,8 +54,7 @@
       // A new board starts with the last view, so this is the link's view.
       savePref('flipped', p.plan.flipped ? '1' : '0');
       gameroom.enter((a) => a.loadGame(p.plan!.record));
-    }
-    else if (p.game) gameroom.open(p.game);
+    } else if (p.game) gameroom.open(p.game);
     else if (p.puzzle) gameroom.enter((a) => a.openPuzzle(p.puzzle!), undefined, 'Loading the puzzle…');
     else api.openUrl(p.url).catch(() => {});
   }
