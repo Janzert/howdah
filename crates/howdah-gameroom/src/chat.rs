@@ -327,8 +327,9 @@ pub struct PositionLink {
     pub record: GameRecord,
     /// The link asks to see the board from silver's side.
     pub flipped: bool,
-    /// The link says whose move it is; a board image only shows the
-    /// pieces, and `record` then has the side the image is seen from.
+    /// The link says whose move it is: a board image is seen from the side
+    /// to move, so it needs an `orient`. Without one `record` has gold to
+    /// move.
     pub knows_side: bool,
 }
 
@@ -345,12 +346,17 @@ pub fn position_link(url: &str) -> Option<PositionLink> {
             Some(PositionLink { record, flipped: false, knows_side: true })
         }
         "arimaa/notconv/old/boardimg.php" => {
-            let flipped = query_param(query, "orient") == Some("s");
+            let orient = query_param(query, "orient");
+            let flipped = orient == Some("s");
             let side = if flipped { Color::Silver } else { Color::Gold };
             let ranks = query_param(query, "ranks")?.replace("%2F", "/").replace("%2f", "/");
             let position = read_ranks(&ranks, side)?;
             let tag = format!("[Position \"{} {}\"]\n\n", side.letter(), position.to_short_string());
-            Some(PositionLink { record: GameRecord::parse(&tag).ok()?, flipped, knows_side: false })
+            Some(PositionLink {
+                record: GameRecord::parse(&tag).ok()?,
+                flipped,
+                knows_side: orient.is_some_and(|o| !o.is_empty()),
+            })
         }
         _ => None,
     }
@@ -531,7 +537,7 @@ mod tests {
         let url = "http://arimaa.com/arimaa/notconv/old/boardimg.php?orient=s&size=500&imgtype=jpeg\
             &ranks=5r/2c2r1r/r3e/r1r/mD1d2r/1dCh2c/2ERh/R2R2RR";
         let link = position_link(url).unwrap();
-        assert!(link.flipped && !link.knows_side);
+        assert!(link.flipped && link.knows_side);
         let root = link.record.tree[GameTree::ROOT].position();
         assert_eq!(root.side_to_move(), Color::Silver);
         assert_eq!(
@@ -545,7 +551,7 @@ mod tests {
         let gold =
             position_link("http://www.arimaa.com/arimaa/notconv/old/boardimg.php?ranks=8/8/8/8/8/8/8/E")
                 .unwrap();
-        assert!(!gold.flipped);
+        assert!(!gold.flipped && !gold.knows_side);
         assert_eq!(gold.record.tree[GameTree::ROOT].position().side_to_move(), Color::Gold);
     }
 
