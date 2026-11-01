@@ -822,6 +822,9 @@
     planTurn: (v) => {
       if (v.turn && v.canInput) run(api.commitTurn(true));
     },
+    pass: (v) => {
+      if (v.canPass) run(api.passTurn());
+    },
     undoStep: (v) => {
       if (v.canUndo) run(api.undoStep());
     },
@@ -972,6 +975,7 @@
           {view}
           onCommit={commit}
           onUndo={() => run(api.undoStep())}
+          onPass={() => run(api.passTurn())}
           onTakeBack={() => run(api.takeBack())}
           onGotoLive={gotoEnd}
           onCancel={() => run(api.cancelTurn())}

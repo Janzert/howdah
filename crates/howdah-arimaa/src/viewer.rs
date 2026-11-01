@@ -242,7 +242,13 @@ fn normalize(movelist: &str) -> Result<String, RecordError> {
         }
         text.push_str(&format!("[Position \"{}\"]\n\n", StartPosition::new(position).to_short_string()));
     }
-    for l in rest {
+    for (i, l) in rest.iter().enumerate() {
+        if l.body.eq_ignore_ascii_case("pass") {
+            return Err(line_error(
+                lines.len() - rest.len() + i + 1,
+                format!("unexpected pass in {} {}", l.label, l.body),
+            ));
+        }
         text.push_str(&format!("{} {}\n", l.label, l.body));
     }
     Ok(text)

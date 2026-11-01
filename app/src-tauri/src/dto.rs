@@ -300,6 +300,8 @@ pub struct SessionView {
     /// Whether Undo step (Backspace) has something to undo: a step, the
     /// move into the shown position, or a takeback.
     pub can_undo: bool,
+    /// Whether the side to move can pass (analysis only).
+    pub can_pass: bool,
     /// Whether played moves can be taken back now (a match with takebacks,
     /// shown at the live position).
     pub can_take_back: bool,

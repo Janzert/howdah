@@ -482,6 +482,33 @@ impl GameTree {
         Ok(self.add_child(parent, Move::Setup(placements), next, None))
     }
 
+    /// Adds a pass from `parent`: the same pieces with the other side to
+    /// move. It isn't a legal move, so a game never has one; analysis adds
+    /// them, and the position it leaves isn't judged.
+    pub fn add_pass(&mut self, parent: NodeId) -> Result<NodeId, GameError> {
+        let node = self.check_can_move(parent)?;
+        if Game::is_setup_ply(self.start + node.ply) {
+            return Err(GameError::ExpectedSetup);
+        }
+        let mut next = node.position.clone();
+        next.set_side_to_move(next.side_to_move().opponent());
+        Ok(self.add_child(parent, Move::Pass, next, None))
+    }
+
+    /// The line to `node` as an engine can take it: the position to set and
+    /// the moves after it. AEI has no pass, so the line starts from the last
+    /// one.
+    pub fn engine_line(&self, node: NodeId) -> (Option<Position>, Vec<String>) {
+        let path = self.path(node);
+        let pass = path.iter().rposition(|&id| self[id].mv == Some(Move::Pass));
+        let start = match pass {
+            Some(i) => Some(self[path[i]].position.clone()),
+            None => self.start_position().cloned(),
+        };
+        let after = pass.map_or(1, |i| i + 1);
+        (start, path[after..].iter().filter_map(|&id| self[id].mv().map(Move::notation)).collect())
+    }
+
     /// Starts a turn from the position at `parent`.
     pub fn begin_turn(&self, parent: NodeId) -> Result<TurnBuilder, GameError> {
         let node = self.check_can_move(parent)?;
@@ -556,6 +583,7 @@ impl GameTree {
         let (body, _marker) = notation::parse_move_body(text)?;
         match body {
             MoveBody::Empty => Err(GameError::EmptyMove),
+            MoveBody::Pass => Err(GameError::Pass),
             MoveBody::Setup(p) => self.add_setup(parent, p),
             MoveBody::Steps(steps) => {
                 let turn = build_turn(self.begin_turn(parent)?, &steps)?;
@@ -735,6 +763,36 @@ impl GameTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pass_gives_the_move_to_the_other_side() {
+        let mut t = GameTree::from_position(
+            Position::from_pieces(
+                Color::Gold,
+                "Ee2 ee7".split(' ').map(|p| {
+                    (
+                        crate::types::Piece::from_letter(p.chars().next().unwrap()).unwrap(),
+                        p[1..].parse().unwrap(),
+                    )
+                }),
+            )
+            .unwrap(),
+            2,
+        )
+        .unwrap();
+        let pass = t.add_pass(GameTree::ROOT).unwrap();
+        assert_eq!(t[pass].position().side_to_move(), Color::Silver);
+        assert_eq!(t.add_pass(GameTree::ROOT).unwrap(), pass, "the same pass again");
+        let moved = t.add_notation(pass, "ee7s").unwrap();
+        // Engines start from after the pass.
+        let (start, moves) = t.engine_line(moved);
+        assert_eq!(start.as_ref(), Some(t[pass].position()));
+        assert_eq!(moves, ["ee7s"]);
+        assert_eq!(t.engine_line(GameTree::ROOT).1, Vec::<String>::new());
+        // Engines and servers can't send one.
+        assert!(matches!(t.add_notation(moved, "pass"), Err(GameError::Pass)));
+        assert!(matches!(GameTree::new().add_pass(GameTree::ROOT), Err(GameError::ExpectedSetup)));
+    }
 
     #[test]
     fn score_follows_the_path_to_the_node() {

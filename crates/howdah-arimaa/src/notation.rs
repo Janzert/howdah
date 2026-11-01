@@ -30,6 +30,8 @@ pub struct RecordStep {
 pub enum MoveBody {
     Setup(Vec<Placement>),
     Steps(Vec<RecordStep>),
+    /// `pass`, which only a record can hold ([`crate::Move::Pass`]).
+    Pass,
     /// A move number with nothing after it, as at the end of an unfinished record.
     Empty,
 }
@@ -76,6 +78,11 @@ pub fn parse_move_body(text: &str) -> Result<(MoveBody, Option<String>), ParseEr
     };
     if tokens.is_empty() {
         return Ok((MoveBody::Empty, marker));
+    }
+    if let [word] = tokens[..]
+        && word.eq_ignore_ascii_case("pass")
+    {
+        return Ok((MoveBody::Pass, marker));
     }
     let mut placements = Vec::new();
     let mut steps: Vec<RecordStep> = Vec::new();

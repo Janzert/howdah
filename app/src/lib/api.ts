@@ -133,6 +133,7 @@ function makeApi(sid: () => SessionId | null) {
       invoke<Square[] | null>('plan_route', { session: sid(), from, to, path }),
     tryRoute: (from: Square, to: Square, path: Square[]) =>
       invoke<void>('try_route', { session: sid(), from, to, path }),
+    passTurn: () => invoke<void>('pass_turn', { session: sid() }),
     undoStep: () => invoke<void>('undo_step', { session: sid() }),
     cancelTurn: () => invoke<void>('cancel_turn', { session: sid() }),
     /** Ends the turn; `plan` keeps a turn on your move in a match as a plan

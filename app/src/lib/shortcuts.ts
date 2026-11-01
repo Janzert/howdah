@@ -14,6 +14,7 @@ export type ShortcutId =
   | 'nextBranch'
   | 'commit'
   | 'planTurn'
+  | 'pass'
   | 'undoStep'
   | 'resetTurn'
   | 'moveNow'
@@ -55,6 +56,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     label: 'Play the move (end the turn in a plan), or confirm the setup',
   },
   { id: 'planTurn', group: 'Your turn', keys: ['Shift+Enter'], label: 'End the turn without playing it (plan ahead)' },
+  { id: 'pass', group: 'Your turn', keys: ['P'], label: 'Pass to the other side (analysis only)' },
   { id: 'undoStep', group: 'Your turn', keys: ['Backspace'], label: 'Undo a step' },
   { id: 'resetTurn', group: 'Your turn', keys: ['Escape'], label: 'Undo the whole turn' },
   { id: 'analysis', group: 'Engines', keys: ['l'], label: 'Analysis on or off' },

@@ -429,6 +429,10 @@ impl Backend {
         self.mutate(id, |s| s.try_route(from, to, path))
     }
 
+    pub fn pass_turn(&self, id: SessionId) -> Result<(), ApiError> {
+        self.mutate(id, |s| s.pass().map(|_| Vec::new()))
+    }
+
     pub fn undo_step(&self, id: SessionId) -> Result<(), ApiError> {
         self.mutate(id, |s| s.undo_step())
     }
@@ -1286,6 +1290,7 @@ impl Backend {
                 arg(args, "to")?,
                 &arg::<Vec<Square>>(args, "path")?,
             )?),
+            "pass_turn" => ok(self.pass_turn(sid()?)?),
             "undo_step" => ok(self.undo_step(sid()?)?),
             "cancel_turn" => ok(self.cancel_turn(sid()?)?),
             "commit_turn" => ok(self.commit_turn(sid()?, arg(args, "plan")?)?),

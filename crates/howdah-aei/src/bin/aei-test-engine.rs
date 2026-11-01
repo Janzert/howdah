@@ -150,6 +150,7 @@ impl State {
                 tb.finish().map_err(|e| e.to_string())?.end
             }
             MoveBody::Empty => return Err("empty move".into()),
+            MoveBody::Pass => return Err("AEI has no pass".into()),
         };
         self.history.push(self.pos.clone());
         Ok(())

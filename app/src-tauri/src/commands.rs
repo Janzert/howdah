@@ -214,6 +214,11 @@ pub fn try_route(
 }
 
 #[tauri::command]
+pub fn pass_turn(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
+    state.pass_turn(session)
+}
+
+#[tauri::command]
 pub fn undo_step(state: State<Backend>, session: SessionId) -> Result<(), ApiError> {
     state.undo_step(session)
 }

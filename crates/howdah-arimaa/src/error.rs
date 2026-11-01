@@ -112,6 +112,8 @@ pub enum GameError {
     Repetition,
     #[error("the move has no steps or placements")]
     EmptyMove,
+    #[error("a pass isn't a legal move")]
+    Pass,
     #[error("no such move in the game tree")]
     NoSuchNode,
     #[error("the start of the game can't be changed")]

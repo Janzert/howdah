@@ -7,13 +7,14 @@
     view: SessionView;
     onCommit: () => void;
     onUndo: () => void;
+    onPass: () => void;
     onTakeBack: () => void;
     onGotoLive: () => void;
     onCancel: () => void;
     onMoveNow: () => void;
     onEndMatch: () => void;
   }
-  let { view, onCommit, onUndo, onTakeBack, onGotoLive, onCancel, onMoveNow, onEndMatch }: Props = $props();
+  let { view, onCommit, onUndo, onPass, onTakeBack, onGotoLive, onCancel, onMoveNow, onEndMatch }: Props = $props();
   const inMatch = $derived(view.players != null);
   /** Both sides play elsewhere: a game watched on arimaa.com. */
   const watching = $derived(view.players?.gold.kind === 'remote' && view.players.silver.kind === 'remote');
@@ -103,6 +104,11 @@
     {#if !watching || turn}
       <div class="buttons">
         <button onclick={onUndo} disabled={!view.canUndo}>Undo step <kbd>⌫</kbd></button>
+        {#if view.canPass}
+          <button onclick={onPass} title="Leave the pieces and give the other side the move, to see what it could do">
+            Pass <kbd>P</kbd>
+          </button>
+        {/if}
         <button onclick={onCancel} disabled={!turn}>Reset <kbd>Esc</kbd></button>
         <button
           class="primary"

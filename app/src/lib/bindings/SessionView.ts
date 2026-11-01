@@ -144,6 +144,10 @@ liveMove: string | null,
  */
 canUndo: boolean, 
 /**
+ * Whether the side to move can pass (analysis only).
+ */
+canPass: boolean, 
+/**
  * Whether played moves can be taken back now (a match with takebacks,
  * shown at the live position).
  */

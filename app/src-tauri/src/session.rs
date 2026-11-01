@@ -429,6 +429,7 @@ fn compute_ids(game: &Game) -> Vec<IdMap> {
                     apply_ids(&mut map, e, Color::Gold);
                 }
             }
+            Move::Pass => {}
         }
         maps.push(map);
     }
@@ -1113,14 +1114,14 @@ impl Session {
         }
         let side = self.live_side();
         let Player::Engine { id, .. } = &m.players[side.index()] else { return None };
-        let path = self.tree.path(m.live);
+        let (start, moves) = self.tree.engine_line(m.live);
         Some(EngineTurn {
             generation: self.generation,
             side,
             engine_id: id.clone(),
             ply: self.tree[m.live].ply(),
-            start: self.tree.start_position().cloned(),
-            moves: path[1..].iter().filter_map(|&id| self.tree[id].mv().map(Move::notation)).collect(),
+            start,
+            moves,
             time_control: m.clock.as_ref().and_then(|c| c.tc(side)),
             reserves: m.clock.as_ref().map(|c| c.reserves),
             deadline: self.turn_deadline(),
@@ -1952,12 +1953,13 @@ impl Session {
         }
         let mut game = self.tree.to_game(node).expect("the node exists");
         game.reopen();
+        let (start, moves) = self.tree.engine_line(node);
         Some(AnalysisTarget {
             generation: self.generation,
             node,
             label: self.tree.label_after(node),
-            start: self.tree.start_position().cloned(),
-            moves: game.moves().iter().map(Move::notation).collect(),
+            start,
+            moves,
             game,
             time: sweep.map(|(_, time)| time),
         })
@@ -2185,7 +2187,7 @@ impl Session {
                 let mover = self.game.position_at(ply).map_or(Color::Gold, Position::side_to_move);
                 effects.iter().map(|e| apply_ids(&mut map, e, mover)).collect()
             }
-            Move::Setup(_) => Vec::new(),
+            Move::Setup(_) | Move::Pass => Vec::new(),
         }
     }
 
@@ -2348,6 +2350,10 @@ impl Session {
     /// position before it, minus its last step; the cursor moves back to
     /// that position. The move stays in the tree.
     fn reopen(&mut self) -> Result<Vec<AnimStep>, ApiError> {
+        if self.tree[self.cursor_node()].mv() == Some(&Move::Pass) {
+            self.show(self.line[self.cursor - 1]);
+            return Ok(Vec::new());
+        }
         let Some(Move::Steps(effects)) = self.tree[self.cursor_node()].mv().cloned() else {
             return Err(ApiError::state("no step to undo"));
         };
@@ -2367,7 +2373,7 @@ impl Session {
         if self.turn.is_some() {
             return true;
         }
-        if !matches!(self.tree[self.cursor_node()].mv(), Some(Move::Steps(_))) {
+        if !matches!(self.tree[self.cursor_node()].mv(), Some(Move::Steps(_) | Move::Pass)) {
             return false;
         }
         self.matchup.is_none() || self.cursor_node() != self.live() || self.take_back_target().is_some()
@@ -2494,6 +2500,28 @@ impl Session {
             self.after_move(mover, ply);
             self.show(node);
         }
+        Ok(())
+    }
+
+    /// Whether the side to move can pass here: on a board for analysis, or
+    /// after a game has ended, with no turn being entered.
+    fn can_pass(&self) -> bool {
+        let node = self.cursor_node();
+        self.turn.is_none()
+            && self.puzzle.is_none()
+            && (self.matchup.is_none() || self.live_result().is_some())
+            && !self.tree.setup_due(node)
+            && !self.tree[node].is_terminal()
+    }
+
+    /// Passes from the shown position, as a new branch (or the existing
+    /// pass, if it's already there), leaving the other side to move.
+    pub fn pass(&mut self) -> Result<(), ApiError> {
+        if !self.can_pass() {
+            return Err(ApiError::state("passing is only for analysis"));
+        }
+        let node = self.tree.add_pass(self.cursor_node()).map_err(ApiError::illegal)?;
+        self.show(node);
         Ok(())
     }
 
@@ -2736,6 +2764,7 @@ impl Session {
                 Some(format!("{} {}", self.tree.label_of(m.live)?, n.mv()?.notation()))
             }),
             can_undo: self.can_undo(),
+            can_pass: self.can_pass(),
             can_take_back: self.take_back_target().is_some(),
             plan_move: self.plan_to_play().and_then(|n| {
                 let mv = self.tree[n].mv()?;
@@ -2842,7 +2871,7 @@ impl Session {
     fn captured_view(&self) -> CapturedView {
         let played = self.game.moves()[..self.cursor].iter().flat_map(|m| match m {
             Move::Steps(steps) => steps.as_slice(),
-            Move::Setup(_) => &[],
+            Move::Setup(_) | Move::Pass => &[],
         });
         let entering = self.turn.iter().flat_map(|tb| tb.steps().iter().map(|s| &s.effect));
         let mut view = CapturedView::default();
@@ -3054,6 +3083,28 @@ mod tests {
 
     fn id_at(view: &SessionView, s: &str) -> PieceId {
         view.position.pieces.iter().find(|p| p.square == sq(s)).unwrap().id
+    }
+
+    #[test]
+    fn a_pass_is_only_for_analysis() {
+        let mut s = Session::new();
+        assert!(!s.view().can_pass, "not during the setups");
+        s.commit_setup().unwrap();
+        s.commit_setup().unwrap();
+        assert!(s.view().can_pass);
+        s.pass().unwrap();
+        let v = s.view();
+        assert_eq!(v.position.side_to_move, Color::Silver);
+        assert_eq!(v.moves.last().unwrap().notation, "pass");
+        assert!(v.can_undo);
+        s.undo_step().unwrap();
+        assert_eq!(s.view().position.side_to_move, Color::Gold);
+
+        s.start_match([Player::Human, Player::Human], [None, None], false);
+        s.commit_setup().unwrap();
+        s.commit_setup().unwrap();
+        assert!(!s.view().can_pass, "not in a game");
+        assert!(s.pass().is_err());
     }
 
     #[test]

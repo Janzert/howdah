@@ -15,6 +15,9 @@ young).
   earlier chat loads as you near the top, or with Load earlier.
 - A button in the chat room shows how many new messages have come in
   while scrolled back, and goes to them.
+- Pass (`P`) on an analysis board gives the other side the move, to see
+  what it could do. It shows as `pass` in the move list and in records;
+  engines analyse the position after it. Passing isn't offered in a game.
 
 ### Fixed
 

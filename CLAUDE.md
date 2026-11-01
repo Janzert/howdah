@@ -32,6 +32,9 @@ plans the engine test and tournament runner.
     (simple steps only, the piece must survive), and `Route::best_along`
     picks the one entering the most squares of a dragged path, then the
     one losing the fewest friends on traps.
+  - `Move::Pass` is analysis only: records and the tree hold it, games and
+    notation from engines or servers refuse it, and engines get the position
+    after the last pass (`GameTree::engine_line`), as AEI has none.
   - `setup`, `outcome` (goal, elimination, immobilization; `WinReason` also
     covers timeout/resignation/illegal move/score/forfeit, with arimaa.com
     letters; `limit_score_winner` is arimaa.com's score rule for game and

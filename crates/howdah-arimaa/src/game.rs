@@ -21,6 +21,9 @@ use crate::types::Color;
 pub enum Move {
     Setup(Vec<Placement>),
     Steps(Vec<StepEffect>),
+    /// The side to move gives its turn to the other. Not a legal move: it's
+    /// for trying out the other side's options in analysis.
+    Pass,
 }
 
 impl Move {
@@ -29,6 +32,7 @@ impl Move {
         match self {
             Move::Setup(p) => notation::format_placements(p),
             Move::Steps(s) => notation::format_steps(s),
+            Move::Pass => "pass".to_string(),
         }
     }
 }
@@ -234,6 +238,7 @@ impl Game {
         let (body, _marker) = notation::parse_move_body(text)?;
         match body {
             MoveBody::Empty => Err(GameError::EmptyMove),
+            MoveBody::Pass => Err(GameError::Pass),
             MoveBody::Setup(p) => self.play_setup(p).map(|_| None),
             MoveBody::Steps(steps) => self.play_steps(&steps),
         }

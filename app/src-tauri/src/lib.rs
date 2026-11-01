@@ -134,6 +134,7 @@ pub fn run() {
             commands::plan_route,
             commands::try_route,
             commands::try_step,
+            commands::pass_turn,
             commands::undo_step,
             commands::cancel_turn,
             commands::commit_turn,

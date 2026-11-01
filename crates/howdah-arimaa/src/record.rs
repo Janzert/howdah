@@ -547,6 +547,7 @@ impl GameParser {
                 self.top().ended = true;
                 return Ok(());
             }
+            MoveBody::Pass => tree.add_pass(parent).map_err(at)?,
             MoveBody::Setup(p) => tree.add_setup(parent, p).map_err(at)?,
             MoveBody::Steps(steps) => {
                 let turn = build_turn(tree.begin_turn(parent).map_err(at)?, &steps).map_err(at)?;
@@ -806,6 +807,14 @@ mod tests {
 
     fn main_moves(r: &GameRecord) -> Vec<String> {
         r.tree.main_line()[3..].iter().map(|&id| r.tree[id].mv().unwrap().notation()).collect()
+    }
+
+    #[test]
+    fn a_pass_round_trips() {
+        let text = format!("{}2g pass\n2s ha7s\n", setups());
+        let r = GameRecord::parse(&text).unwrap();
+        assert_eq!(main_moves(&r), ["pass", "ha7s"]);
+        assert_eq!(main_moves(&GameRecord::parse(&r.to_record()).unwrap()), ["pass", "ha7s"]);
     }
 
     #[test]
