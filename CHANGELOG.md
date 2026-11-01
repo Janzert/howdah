@@ -7,6 +7,8 @@ young).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-01
+
 ### Added
 
 - Position links in the arimaa.com chat room and its archive
@@ -18,9 +20,10 @@ young).
   place it, in place of `start`.
 - A banner over the board while its arimaa.com game has lost the
   connection, or has stopped following the game.
-- Analyse game, in the analysis panel: the engine searches each position
-  of the main line for a set time, and the evals show in the move list
-  and on a graph of the game; clicking the graph goes to that move.
+- Analyse game, in the analysis panel, a very early version that needs
+  more work: the engine searches each position of the main line for a
+  set time, and the evals show in the move list and on a graph of the
+  game; clicking the graph goes to that move.
   Moves that lose ground are marked `?!`, `?` or `??`, and the panel can
   add the marks to the game with the engine's better lines as variations.
 - The arimaa.com Finished games panel lists the last 100 games, not five,
@@ -450,7 +453,8 @@ Gatekeeper.
 - Keeps playing through network drops and sleep, and resumes games in
   progress.
 
-[Unreleased]: https://github.com/Janzert/howdah/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Janzert/howdah/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Janzert/howdah/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Janzert/howdah/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Janzert/howdah/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Janzert/howdah/compare/v0.2.1...v0.3.0
