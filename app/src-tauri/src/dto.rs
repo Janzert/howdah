@@ -1320,6 +1320,16 @@ pub enum ChatRoomState {
     In,
 }
 
+/// A release newer than this app.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct UpdateView {
+    pub version: String,
+    /// Its page, opened in the system's browser.
+    pub url: String,
+}
+
 /// The gameroom's chat room, sent as `chatroom://changed` whenever it
 /// changes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]

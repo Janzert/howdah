@@ -206,6 +206,16 @@
         starts. You can enter again during the game.
       </p>
     </section>
+    <section>
+      <h3>Updates</h3>
+      <label class="check">
+        <input type="checkbox" bind:checked={settings.checkForUpdates} />
+        Check for new versions of Howdah
+      </label>
+      <p class="hint">
+        Asks GitHub for the newest release when Howdah starts and once a day, and says on Home when there's a new one.
+      </p>
+    </section>
   </div>
 </div>
 

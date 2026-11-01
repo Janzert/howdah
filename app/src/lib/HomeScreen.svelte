@@ -8,6 +8,7 @@
   import type { EngineSpec } from './bindings/EngineSpec';
   import EngineStarter from './EngineStarter.svelte';
   import type { ListedWindow } from './lobbyWindows';
+  import { update } from './update.svelte';
 
   interface Props {
     windows: ListedWindow[];
@@ -76,6 +77,16 @@
       </span>
       <span class="spacer"></span>
       <button onclick={onGameroom}>Show</button>
+    </div>
+  {/if}
+
+  {#if update.notice}
+    <div class="attention" role="status">
+      <Icon name="bulb" />
+      <span>Howdah {update.notice.version} is available</span>
+      <span class="spacer"></span>
+      <button onclick={() => update.open()}>See the release</button>
+      <button class="subtle" onclick={() => update.dismiss()}>Dismiss</button>
     </div>
   {/if}
 

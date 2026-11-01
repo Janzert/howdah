@@ -40,6 +40,7 @@ import type { SpsaStepView } from './bindings/SpsaStepView';
 import type { TestDetailView } from './bindings/TestDetailView';
 import type { TestView } from './bindings/TestView';
 import type { TourneyStatusView } from './bindings/TourneyStatusView';
+import type { UpdateView } from './bindings/UpdateView';
 import type { WatchView } from './bindings/WatchView';
 
 /** The session this window shows, from `?session=<id>` in its URL: a
@@ -207,6 +208,7 @@ function makeApi(sid: () => SessionId | null) {
     gameroomLastGames: () => invoke<GameroomGames | null>('gameroom_last_games'),
     /** Opens an http(s) URL in the system's browser. */
     appVersion: () => invoke<string>('app_version'),
+    checkForUpdate: () => invoke<UpdateView | null>('check_for_update'),
     openUrl: (url: string) => invoke<void>('open_url', { url }),
     /** The gameroom's chat room as it stands; changes come as
      * `chatroom://changed`. */

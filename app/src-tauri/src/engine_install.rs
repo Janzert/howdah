@@ -153,7 +153,7 @@ impl EngineCatalog {
 
 /// The client for manifests and engine files: https only, also when
 /// following redirects (GitHub's `releases/latest` redirects twice).
-fn http_client() -> Result<reqwest::Client, ApiError> {
+pub(crate) fn http_client() -> Result<reqwest::Client, ApiError> {
     let policy = reqwest::redirect::Policy::custom(|attempt| {
         if attempt.url().scheme() != "https" {
             attempt.error("a redirect left https")
@@ -173,7 +173,7 @@ fn http_client() -> Result<reqwest::Client, ApiError> {
 }
 
 /// Fetches `url` (https only), up to `max` bytes.
-async fn fetch(http: &reqwest::Client, url: &str, max: usize) -> Result<Vec<u8>, ApiError> {
+pub(crate) async fn fetch(http: &reqwest::Client, url: &str, max: usize) -> Result<Vec<u8>, ApiError> {
     if !url.to_ascii_lowercase().starts_with("https://") {
         return Err(ApiError::illegal(format!("only https addresses are used: {url}")));
     }

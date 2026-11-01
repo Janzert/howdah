@@ -11,7 +11,7 @@ use crate::dto::{
     GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView,
     PlayerMatchView, PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
     ServerBotsView, SessionId, SessionView, SpsaStepView, StartedBotView, StepTarget, TestDetailView,
-    TestView, TourneyStatusView, WatchView,
+    TestView, TourneyStatusView, UpdateView, WatchView,
 };
 
 #[tauri::command]
@@ -436,6 +436,11 @@ pub fn gameroom_game_session(state: State<Backend>, gid: String) -> Option<Sessi
 #[tauri::command]
 pub fn app_version(state: State<Backend>) -> String {
     state.app_version()
+}
+
+#[tauri::command]
+pub async fn check_for_update(state: State<'_, Backend>) -> Result<Option<UpdateView>, ApiError> {
+    state.check_for_update().await
 }
 
 #[tauri::command]

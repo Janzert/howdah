@@ -49,6 +49,8 @@ export interface SettingsData {
   /** The size of the chat room's and its archive's text, in px; a game's
    * chat is a pixel smaller. */
   chatFontSize: number;
+  /** Ask GitHub whether a newer release of Howdah is out. */
+  checkForUpdates: boolean;
 }
 
 const KEY = 'settings';
@@ -69,6 +71,7 @@ export const DEFAULTS: SettingsData = {
   moveTimes: 'off',
   leaveChatForGames: true,
   chatFontSize: 14,
+  checkForUpdates: true,
 };
 
 function read(key: string): string | null {
@@ -115,6 +118,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   if (typeof raw.chatFontSize === 'number' && Number.isFinite(raw.chatFontSize)) {
     s.chatFontSize = Math.round(Math.min(MAX_CHAT_FONT, Math.max(MIN_CHAT_FONT, raw.chatFontSize)));
   }
+  if (typeof raw.checkForUpdates === 'boolean') s.checkForUpdates = raw.checkForUpdates;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
   if (raw.hoverInput === 'off' || raw.hoverInput === 'arrows' || raw.hoverInput === 'step') {
     s.hoverInput = raw.hoverInput;
@@ -209,6 +213,13 @@ class Settings {
   }
   set chatFontSize(v: number) {
     this.update({ chatFontSize: v });
+  }
+
+  get checkForUpdates() {
+    return this.#data.checkForUpdates;
+  }
+  set checkForUpdates(v: boolean) {
+    this.update({ checkForUpdates: v });
   }
 
   get analysisEngine() {

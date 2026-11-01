@@ -16,6 +16,7 @@ pub mod gameroom;
 mod puzzles;
 pub mod session;
 pub mod tourney;
+mod update;
 
 use std::sync::Arc;
 
@@ -171,6 +172,7 @@ pub fn run() {
             commands::gameroom_games,
             commands::gameroom_last_games,
             commands::app_version,
+            commands::check_for_update,
             commands::open_url,
             commands::chatroom_state,
             commands::chat_archive_month,

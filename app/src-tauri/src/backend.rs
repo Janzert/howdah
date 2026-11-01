@@ -37,7 +37,7 @@ use crate::dto::{
     PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView,
     PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
     ShowBoard, SpsaStepView, StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView,
-    WatchView,
+    UpdateView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -777,6 +777,11 @@ impl Backend {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
+    /// The newest release, if it's newer than this app.
+    pub async fn check_for_update(&self) -> Result<Option<UpdateView>, ApiError> {
+        crate::update::check(&self.app_version()).await
+    }
+
     /// Opens a web page in the system's browser (links in the gameroom's
     /// announcements). Only http(s) URLs.
     pub fn open_url(&self, url: &str) -> Result<(), ApiError> {
@@ -1350,6 +1355,7 @@ impl Backend {
             "gameroom_games" => ok(self.gameroom_games().await?),
             "gameroom_last_games" => ok(self.gameroom_last_games()),
             "app_version" => ok(self.app_version()),
+            "check_for_update" => ok(self.check_for_update().await?),
             "open_url" => ok(self.open_url(&arg::<String>(args, "url")?)?),
             "chatroom_state" => ok(self.chatroom_state()),
             "chat_archive_month" => ok(self.chat_archive_month(arg(args, "year")?, arg(args, "month")?)?),

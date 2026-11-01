@@ -1190,6 +1190,12 @@ plans the engine test and tournament runner.
     saved to localStorage as JSON (`parse` validates and reads the older
     `theme`/`muted` keys).
     `HelpDialog.svelte`'s panel also has About: `app_version` and links.
+    `lib/update.svelte.ts` (`update`, followed by the lobby at the start
+    and daily while `checkForUpdates` is on) asks `check_for_update`
+    (`update.rs`: GitHub's newest release, compared with this version;
+    debug builds ask only `HOWDAH_UPDATE_RELEASE`, a stand-in for the
+    reply). Home shows a new one until dismissed, for that version
+    (`update.dismissed` in localStorage), and About always.
     `SettingsPanel.svelte` (the lobby's Settings panel) binds to it directly; add new
     options to both.
     A `storage` event (another window saved) reloads it, so changes apply
@@ -1273,7 +1279,8 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
   its own, `TourneyStatusView.daemon_version`); the
   run stops if the tag doesn't match them all. Run by hand, it only
   keeps the installers as artifacts. No code signing (macOS is signed ad
-  hoc, `bundle.macOS.signingIdentity`) and no auto-updater yet.
+  hoc, `bundle.macOS.signingIdentity`) and no auto-updater yet (the app
+  only says when a new release is out).
   Installers bundle `howdah-tourney` as a sidecar: `npm run sidecar`
   (`app/scripts/sidecar.mjs`) builds it into `src-tauri/binaries/`
   (gitignored) with the target triple in its name, and `tauri build

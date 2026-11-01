@@ -7,6 +7,12 @@ young).
 
 ## [Unreleased]
 
+### Added
+
+- Howdah says on Home when a new version is out, with a link to the
+  release. It asks GitHub at the start and once a day; Settings turns
+  this off.
+
 ## [0.6.1] - 2026-11-01
 
 ### Added

@@ -3,6 +3,7 @@
   // panel in the lobby window (`panel`).
   import { api } from './api';
   import { keyName, shortcutFor, shortcutGroups } from './shortcuts';
+  import { update } from './update.svelte';
 
   let { onClose, panel = false }: { onClose?: () => void; panel?: boolean } = $props();
 
@@ -105,6 +106,12 @@
         Version {version ?? '…'}
         <button class="subtle" onclick={copyVersion} disabled={version == null}>{copied ? 'Copied' : 'Copy'}</button>
       </p>
+      {#if update.available}
+        <p class="version">
+          {update.available.version} is available
+          <button class="subtle" onclick={() => update.open()}>See the release</button>
+        </p>
+      {/if}
       <p class="links">
         {#each [['Releases', `${REPO}/releases`], ['Changelog', `${REPO}/blob/main/CHANGELOG.md`], ['Source', REPO], ['Acknowledgements', `${REPO}#acknowledgements`]] as [label, url] (url)}
           <button class="link" onclick={() => api.openUrl(url).catch(() => {})}>{label}</button>

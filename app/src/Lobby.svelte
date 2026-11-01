@@ -55,6 +55,7 @@
   import TestsScreen from './lib/TestsScreen.svelte';
   import { findTheme } from '@howdah/board/theme';
   import { tourney } from './lib/tourney.svelte';
+  import { update } from './lib/update.svelte';
   import { matchGoesOn } from './lib/windowList';
   import { focusGameWindow, inTauri, openBoard, openWindowFor, showBoard } from './lib/windows';
   import './lobby.css';
@@ -207,6 +208,7 @@
   $effect(() => setChatFontSize(settings.chatFontSize));
   $effect(() => setMuted(!settings.sound));
   $effect(() => setVolume(settings.volume));
+  $effect(() => update.follow(settings.checkForUpdates));
 
   // Clocks tick while any game's runs.
   $effect(() => {
