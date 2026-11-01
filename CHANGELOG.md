@@ -7,6 +7,8 @@ young).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-01
+
 ### Added
 
 - A text size for the arimaa.com chat room, its archive and a game's
@@ -474,7 +476,8 @@ Gatekeeper.
 - Keeps playing through network drops and sleep, and resumes games in
   progress.
 
-[Unreleased]: https://github.com/Janzert/howdah/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Janzert/howdah/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Janzert/howdah/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Janzert/howdah/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Janzert/howdah/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Janzert/howdah/compare/v0.3.0...v0.4.0

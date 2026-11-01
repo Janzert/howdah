@@ -1,6 +1,6 @@
 [package]
 name = "howdah-tourney"
-version = "0.6.0"
+version = "0.6.1"
 description = "Engine tests and tournaments for Arimaa AEI engines"
 edition.workspace = true
 license.workspace = true
