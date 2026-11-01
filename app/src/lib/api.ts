@@ -3,6 +3,7 @@
 // `game://changed` event (see events.ts).
 import { invoke } from './ipc';
 import type { ChatArchiveDay } from './bindings/ChatArchiveDay';
+import type { ChatArchiveEarlier } from './bindings/ChatArchiveEarlier';
 import type { ChatArchiveMonth } from './bindings/ChatArchiveMonth';
 import type { ChatMessageView } from './bindings/ChatMessageView';
 import type { ChatRoomView } from './bindings/ChatRoomView';
@@ -218,6 +219,9 @@ function makeApi(sid: () => SessionId | null) {
     /** A day (`YYYY-MM-DD`) of the chat archive; with `fetch`, what the
      * local archive lacks of it is asked of arimaa.com first. */
     chatArchiveDay: (date: string, fetch: boolean) => invoke<ChatArchiveDay>('chat_archive_day', { date, fetch }),
+    /** The chat room's log before `until`, less its last `skip` events. */
+    chatArchiveEarlier: (until: number, skip: number) =>
+      invoke<ChatArchiveEarlier>('chat_archive_earlier', { until, skip }),
     /** `text` as the chat room would show it (a preview). */
     formatChatMessage: (text: string) => invoke<ChatMessageView>('format_chat_message', { text }),
     /** Says `text` in the chat room in `color` (`rrggbb`). */

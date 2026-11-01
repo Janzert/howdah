@@ -16,7 +16,7 @@
   import { settings } from '../settings.svelte';
   import { findTheme } from '@howdah/board/theme';
   import { darkMode } from './darkMode.svelte';
-  import { gameroom } from './store.svelte';
+  import { gameroom, savePref } from './store.svelte';
 
   let {
     event: e,
@@ -50,20 +50,33 @@
   function openLink(ev: MouseEvent, p: Extract<ChatPartView, { type: 'link' }>) {
     ev.preventDefault();
     ev.stopPropagation();
-    if (p.plan) gameroom.enter((a) => a.loadGame(p.plan!.record));
+    if (p.plan) {
+      // A new board starts with the last view, so this is the link's view.
+      savePref('flipped', p.plan.flipped ? '1' : '0');
+      gameroom.enter((a) => a.loadGame(p.plan!.record));
+    }
     else if (p.game) gameroom.open(p.game);
     else if (p.puzzle) gameroom.enter((a) => a.openPuzzle(p.puzzle!), undefined, 'Loading the puzzle…');
     else api.openUrl(p.url).catch(() => {});
   }
-</script>
 
-<svelte:window
-  onclick={() => (menu = null)}
-  oncontextmenucapture={() => (menu = null)}
-  onkeydowncapture={(k) => {
-    if (menu && k.key === 'Escape') menu = null;
-  }}
-/>
+  // Listening only while the menu is open: a log can have thousands of lines.
+  $effect(() => {
+    if (!menu) return;
+    const close = () => (menu = null);
+    const escape = (k: KeyboardEvent) => {
+      if (k.key === 'Escape') close();
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('contextmenu', close, true);
+    window.addEventListener('keydown', escape, true);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('contextmenu', close, true);
+      window.removeEventListener('keydown', escape, true);
+    };
+  });
+</script>
 
 {#snippet parts()}{#each e.parts as p, i (i)}{#if p.type === 'text'}{p.text}{:else if p.type === 'link'}<a
         href={p.url}
@@ -136,9 +149,9 @@
   .time {
     flex: none;
     color: var(--muted);
-    font-size: 12px;
+    font-size: 0.86em;
     font-variant-numeric: tabular-nums;
-    padding-top: 1px;
+    padding-top: 0.08em;
   }
   .coming {
     color: var(--muted);

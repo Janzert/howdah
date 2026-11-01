@@ -26,6 +26,7 @@ describe('settings parse', () => {
         continueTurns: false,
         moveTimes: 'game',
         leaveChatForGames: false,
+        chatFontSize: 18,
       }),
       none,
     );
@@ -44,6 +45,7 @@ describe('settings parse', () => {
       continueTurns: false,
       moveTimes: 'game',
       leaveChatForGames: false,
+      chatFontSize: 18,
     });
     const bad = parse(
       JSON.stringify({
@@ -58,8 +60,8 @@ describe('settings parse', () => {
       none,
     );
     expect(bad).toEqual(DEFAULTS);
-    const out = parse(JSON.stringify({ volume: 250, stepMs: -5 }), none);
-    expect([out.volume, out.stepMs]).toEqual([100, 0]);
+    const out = parse(JSON.stringify({ volume: 250, stepMs: -5, chatFontSize: 99 }), none);
+    expect([out.volume, out.stepMs, out.chatFontSize]).toEqual([100, 0, 24]);
   });
 
   it('reads the keys older versions used', () => {

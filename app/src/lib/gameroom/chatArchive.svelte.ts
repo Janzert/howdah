@@ -37,6 +37,8 @@ class ChatArchiveStore {
   /** Asking arimaa.com for the open day. */
   fetching = $state(false);
   error = $state<string | null>(null);
+  /** Where the open day is scrolled to, for the panel coming back to it. */
+  scrollTop = 0;
   #started = false;
 
   /** Follows the local archive's changes; once. */
@@ -85,6 +87,7 @@ class ChatArchiveStore {
     if (d.getFullYear() !== this.year || d.getMonth() + 1 !== this.month) {
       this.showMonth(d.getFullYear(), d.getMonth() + 1);
     }
+    if (date !== this.selected) this.scrollTop = 0;
     this.selected = date;
     this.error = null;
     // What's here at once, then the rest.

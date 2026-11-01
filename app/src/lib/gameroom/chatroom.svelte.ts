@@ -3,6 +3,7 @@
 // instance, `chatroom`, in the lobby window.
 import { api, errorMessage } from '../api';
 import { CHAT_PALETTE, SPOILER_COLOR } from '../chatroom';
+import type { ChatEventView } from '../bindings/ChatEventView';
 import type { ChatRoomView } from '../bindings/ChatRoomView';
 import { on } from '../events';
 import { settings } from '../settings.svelte';
@@ -21,6 +22,30 @@ class ChatRoomStore {
   /** The newest event the user has seen in the panel. */
   #seen = $state(-1);
   #started = false;
+  /** What's before the room's own log, from the archive, oldest first,
+   * and the events the room has dropped from its log since. Their ids
+   * are the store's own, below zero; dropped events keep theirs. */
+  older = $state<ChatEventView[]>([]);
+  /** Bumped as earlier events go in front of `older`. */
+  added = $state(0);
+  earlierBusy = $state(false);
+  earlierError = $state<string | null>(null);
+  /** The start of the log was reached. */
+  atStart = $state(false);
+  /** The last search found nothing, back to this moment. */
+  quietTo = $state<number | null>(null);
+  /** Where the next search ends and what it leaves out; null before the
+   * first, when that's the room's log. */
+  #until: number | null = null;
+  #skip = 0;
+  #olderId = -1;
+  /** A new one drops the answer to a search still going. */
+  #visit = 0;
+  /** Where the log is scrolled to, for the panel coming back to it; null
+   * at its end. */
+  scrollTop: number | null = null;
+  /** The newest event seen with the log at its end. */
+  #readTo = $state(-1);
 
   inRoom = $derived(this.view?.state === 'in');
   /** Others' messages since the user last looked, while in the room. */
@@ -29,6 +54,8 @@ class ChatRoomStore {
       ? this.view.events.filter((e) => e.id > this.#seen && e.kind === 'message' && e.user !== this.view?.user).length
       : 0,
   );
+  /** Messages below where the log is scrolled back to. */
+  newBelow = $derived(this.view?.events.filter((e) => e.id > this.#readTo && e.kind === 'message').length ?? 0);
   /** How many are in the room: its list while the user is in, else the
    * lobby's count. */
   count = $derived(this.view?.state === 'in' ? this.view.users.length : (this.view?.count ?? 0));
@@ -41,6 +68,8 @@ class ChatRoomStore {
     const unlisten = on('chatroom://changed', (v) => {
       // What the room sends on entering is its recent past, not news.
       if (v.state === 'in' && this.view?.state !== 'in') this.#seen = v.events.at(-1)?.id ?? -1;
+      if (v.state === 'out') this.#resetEarlier();
+      else this.#keepDropped(v);
       this.view = v;
     });
     api.chatroomState().then((v) => {
@@ -58,6 +87,63 @@ class ChatRoomStore {
       stopSync();
       void unlisten.then((f) => f());
     };
+  }
+
+  #resetEarlier() {
+    this.older = [];
+    this.earlierBusy = false;
+    this.earlierError = null;
+    this.atStart = false;
+    this.quietTo = null;
+    this.#until = null;
+    this.#skip = 0;
+    this.#visit++;
+    this.scrollTop = null;
+    this.#readTo = -1;
+  }
+
+  /** The log is at its end, showing everything. */
+  readToEnd() {
+    this.scrollTop = null;
+    this.#readTo = this.view?.events.at(-1)?.id ?? -1;
+  }
+
+  /** With earlier events shown, what the room is about to drop from its
+   * log moves to them, leaving no gap. */
+  #keepDropped(next: ChatRoomView) {
+    const first = next.events[0]?.id;
+    if (this.#until === null || first === undefined) return;
+    const dropped = this.view?.events.filter((e) => e.id < first) ?? [];
+    if (dropped.length > 0) this.older = [...this.older, ...dropped];
+  }
+
+  /** Puts what's before the shown log in front of it. */
+  async loadEarlier() {
+    if (this.earlierBusy || this.atStart) return;
+    if (this.#until === null) {
+      // The log's first second may hold more events than it shows.
+      const events = this.view?.events ?? [];
+      const first = events[0]?.time;
+      this.#until = first === undefined ? Math.floor(Date.now() / 1000) : first + 1;
+      this.#skip = events.filter((e) => e.time === first).length;
+    }
+    const visit = this.#visit;
+    this.earlierBusy = true;
+    this.earlierError = null;
+    try {
+      const r = await api.chatArchiveEarlier(this.#until, this.#skip);
+      if (visit !== this.#visit) return;
+      this.#until = r.from;
+      this.#skip = 0;
+      this.atStart = r.atStart;
+      this.quietTo = r.events.length > 0 ? null : r.from;
+      this.older = [...r.events.map((e) => ({ ...e, id: this.#olderId-- })), ...this.older];
+      this.added++;
+    } catch (e) {
+      if (visit === this.#visit) this.earlierError = errorMessage(e);
+    } finally {
+      if (visit === this.#visit) this.earlierBusy = false;
+    }
   }
 
   /** Marks everything shown as read. */

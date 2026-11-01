@@ -174,6 +174,7 @@ pub fn run() {
             commands::chatroom_state,
             commands::chat_archive_month,
             commands::chat_archive_day,
+            commands::chat_archive_earlier,
             commands::enter_chatroom,
             commands::leave_chatroom,
             commands::format_chat_message,

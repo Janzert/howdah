@@ -6,11 +6,12 @@ use tauri::State;
 
 use crate::backend::{self, Backend};
 use crate::dto::{
-    ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatMessageView, ChatRoomView,
-    EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames, GameroomStatus,
-    MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PositionCheck,
-    PositionSpec, PositionView, PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionView,
-    SpsaStepView, StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
+    ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
+    ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
+    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView,
+    PlayerMatchView, PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
+    ServerBotsView, SessionId, SessionView, SpsaStepView, StartedBotView, StepTarget, TestDetailView,
+    TestView, TourneyStatusView, WatchView,
 };
 
 #[tauri::command]
@@ -444,6 +445,15 @@ pub fn chat_archive_month(
     month: u32,
 ) -> Result<ChatArchiveMonth, ApiError> {
     state.chat_archive_month(year, month)
+}
+
+#[tauri::command]
+pub async fn chat_archive_earlier(
+    until: i64,
+    skip: u32,
+    state: State<'_, Backend>,
+) -> Result<ChatArchiveEarlier, ApiError> {
+    state.chat_archive_earlier(until, skip).await
 }
 
 #[tauri::command]

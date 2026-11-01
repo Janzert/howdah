@@ -14,7 +14,7 @@
   import { onMount, tick } from 'svelte';
   import { analysisEngine } from './lib/analysis';
   import { type Api, api, apiFor, errorMessage } from './lib/api';
-  import { setAppearance } from './lib/appearance';
+  import { setAppearance, setChatFontSize } from './lib/appearance';
   import { requestAttention } from './lib/attention';
   import type { EngineSpec } from './lib/bindings/EngineSpec';
   import type { GameroomGames } from './lib/bindings/GameroomGames';
@@ -204,6 +204,7 @@
   const theme = $derived(findTheme(settings.theme));
 
   $effect(() => setAppearance(settings.appearance));
+  $effect(() => setChatFontSize(settings.chatFontSize));
   $effect(() => setMuted(!settings.sound));
   $effect(() => setVolume(settings.volume));
 

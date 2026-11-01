@@ -15,6 +15,10 @@ export type Appearance = 'system' | 'light' | 'dark';
 /** The slowest step animation the setting allows, in ms. */
 export const MAX_STEP_MS = 600;
 
+/** The sizes the chat text can be, in px. */
+export const MIN_CHAT_FONT = 11;
+export const MAX_CHAT_FONT = 24;
+
 export interface SettingsData {
   appearance: Appearance;
   theme: string;
@@ -42,6 +46,9 @@ export interface SettingsData {
   /** Leave the gameroom's chat room when playing a rated game against a
    * person that isn't postal, or an event game. */
   leaveChatForGames: boolean;
+  /** The size of the chat room's and its archive's text, in px; a game's
+   * chat is a pixel smaller. */
+  chatFontSize: number;
 }
 
 const KEY = 'settings';
@@ -61,6 +68,7 @@ export const DEFAULTS: SettingsData = {
   analysisEngine: null,
   moveTimes: 'off',
   leaveChatForGames: true,
+  chatFontSize: 14,
 };
 
 function read(key: string): string | null {
@@ -104,6 +112,9 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   if (typeof raw.analysisEngine === 'string') s.analysisEngine = raw.analysisEngine;
   if (raw.moveTimes === 'off' || raw.moveTimes === 'move' || raw.moveTimes === 'game') s.moveTimes = raw.moveTimes;
   if (typeof raw.leaveChatForGames === 'boolean') s.leaveChatForGames = raw.leaveChatForGames;
+  if (typeof raw.chatFontSize === 'number' && Number.isFinite(raw.chatFontSize)) {
+    s.chatFontSize = Math.round(Math.min(MAX_CHAT_FONT, Math.max(MIN_CHAT_FONT, raw.chatFontSize)));
+  }
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
   if (raw.hoverInput === 'off' || raw.hoverInput === 'arrows' || raw.hoverInput === 'step') {
     s.hoverInput = raw.hoverInput;
@@ -191,6 +202,13 @@ class Settings {
   }
   set leaveChatForGames(v: boolean) {
     this.update({ leaveChatForGames: v });
+  }
+
+  get chatFontSize() {
+    return this.#data.chatFontSize;
+  }
+  set chatFontSize(v: number) {
+    this.update({ chatFontSize: v });
   }
 
   get analysisEngine() {

@@ -44,6 +44,8 @@
   let symbolsOpen = $state(false);
   let entry: HTMLElement | undefined = $state();
   const MAX_LENGTH = 2000;
+  /** How near the top of the log, in px, earlier events start loading. */
+  const LOAD_WITHIN = 300;
   const theme = $derived(findTheme(settings.theme));
 
   // Asked more often while in view; what's shown counts as read.
@@ -61,16 +63,75 @@
   });
 
   // Keep to the bottom of the log as lines arrive, unless scrolled up.
-  let stick = true;
+  let stick = chatroom.scrollTop == null;
+  const atEnd = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   $effect.pre(() => {
-    void view?.events.length;
-    if (log) stick = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    void view?.events.at(-1)?.id;
+    if (log) stick = atEnd(log);
   });
   $effect(() => {
-    void view?.events.length;
-    if (log && stick) log.scrollTop = log.scrollHeight;
+    void view?.events.at(-1)?.id;
+    if (log && stick) {
+      log.scrollTop = log.scrollHeight;
+      untrack(() => chatroom.readToEnd());
+    }
     if (!document.hidden) chatroom.markSeen();
   });
+
+  // Back at the place the panel was left.
+  $effect(() => {
+    const top = untrack(() => chatroom.scrollTop);
+    if (log && top != null) log.scrollTop = lastTop = top;
+  });
+
+  // The log changing height (the preview taking room from it, the window)
+  // keeps its bottom edge, where the lines being answered are.
+  $effect(() => {
+    const el = log;
+    if (!el) return;
+    let height = el.clientHeight;
+    const observer = new ResizeObserver(() => {
+      // Growing at the end, the browser has already moved it.
+      const grown = el.clientHeight > height && el.scrollHeight - el.scrollTop - el.clientHeight < 1;
+      if (!grown) el.scrollTop += height - el.clientHeight;
+      lastTop = el.scrollTop;
+      height = el.clientHeight;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
+
+  // Earlier events going in above leave what's in view where it is
+  // (WebKit has no scroll anchoring).
+  let fromBottom = 0;
+  let added = chatroom.added;
+  $effect.pre(() => {
+    void chatroom.added;
+    if (log) fromBottom = log.scrollHeight - log.scrollTop;
+  });
+  $effect(() => {
+    if (chatroom.added === added) return;
+    added = chatroom.added;
+    if (log) log.scrollTop = log.scrollHeight - fromBottom;
+  });
+
+  /** Scrolling up near the top loads what's earlier; only the user's
+   * scrolling does, not the log moving to its end on entering. */
+  let lastTop = 0;
+  function scrolled() {
+    if (!log) return;
+    const up = log.scrollTop < lastTop;
+    lastTop = log.scrollTop;
+    if (atEnd(log)) chatroom.readToEnd();
+    else chatroom.scrollTop = log.scrollTop;
+    if (up && log.scrollTop < LOAD_WITHIN) void chatroom.loadEarlier();
+  }
+  const quietDate = (unix: number) =>
+    new Date(unix * 1000).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+
+  function toEnd() {
+    if (log) log.scrollTop = log.scrollHeight;
+  }
 
   /** Whether the message being written goes out as a spoiler. */
   let spoiler = $state(false);
@@ -83,6 +144,7 @@
     text = '';
     spoiler = false;
     symbolsOpen = false;
+    toEnd();
     // Kept if it didn't go and nothing new was typed meanwhile.
     if (!(await chatroom.say(said, hide)) && !text) {
       text = said;
@@ -203,12 +265,36 @@
       >
     </div>
     {#if view?.note}<p class="note" role="status">{view.note}</p>{/if}
-    <div class="log" bind:this={log} role="log" aria-label="Chat room" aria-live="polite">
-      {#each view?.events ?? [] as e (e.id)}
-        <ChatLine event={e} time={chatTime} />
-      {:else}
-        <p class="empty">Nothing said lately.</p>
-      {/each}
+    <div class="log-box">
+      <div class="log" bind:this={log} onscroll={scrolled}>
+        <div class="earlier">
+          {#if chatroom.atStart}
+            <span>The start of the room's log.</span>
+          {:else}
+            {#if chatroom.quietTo != null}<span>Nothing said back to {quietDate(chatroom.quietTo)}.</span>{/if}
+            <button onclick={() => chatroom.loadEarlier()} disabled={chatroom.earlierBusy}>
+              {chatroom.earlierBusy ? 'Loading…' : 'Load earlier'}
+            </button>
+          {/if}
+          {#if chatroom.earlierError}<span class="error" role="alert">{chatroom.earlierError}</span>{/if}
+        </div>
+        {#each chatroom.older as e (e.id)}
+          <ChatLine event={e} time={chatTime} />
+        {/each}
+        <!-- Apart, so only new lines are announced. -->
+        <div role="log" aria-label="Chat room" aria-live="polite">
+          {#each view?.events ?? [] as e (e.id)}
+            <ChatLine event={e} time={chatTime} />
+          {:else}
+            <p class="empty">Nothing said lately.</p>
+          {/each}
+        </div>
+      </div>
+      {#if chatroom.newBelow > 0}
+        <button class="new-below primary" onclick={toEnd}>
+          ↓ {chatroom.newBelow} new message{chatroom.newBelow === 1 ? '' : 's'}
+        </button>
+      {/if}
     </div>
     {#if preview}
       <div class="preview" aria-label="Preview of your message">
@@ -452,16 +538,44 @@
   .users li.me {
     font-weight: 600;
   }
+  .log-box {
+    position: relative;
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+  .new-below {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 3px 12px;
+    border-radius: 14px;
+    font-size: 12px;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+  }
   .log {
     flex: 1;
+    min-width: 0;
     overflow-y: auto;
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--panel);
-    font-size: 14px;
+    font-size: var(--chat-font);
     line-height: 1.45;
     overflow-wrap: anywhere;
+  }
+  .earlier {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding-bottom: 6px;
+    color: var(--muted);
+    font-size: 12px;
   }
   .say {
     display: flex;
@@ -476,6 +590,7 @@
   .say input {
     flex: 1;
     padding-right: 34px;
+    font-size: var(--chat-font);
   }
   .symbols-toggle {
     position: absolute;
@@ -549,7 +664,7 @@
     border: 1px dashed var(--border);
     border-radius: 8px;
     background: var(--panel);
-    font-size: 14px;
+    font-size: var(--chat-font);
     line-height: 1.45;
     overflow-wrap: anywhere;
     max-height: 7.5em;

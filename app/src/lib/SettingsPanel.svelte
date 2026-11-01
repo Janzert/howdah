@@ -2,7 +2,15 @@
   // The lobby window's Settings panel: display and sound preferences, and
   // where new boards open. Changes apply at once and are saved as they're
   // made (and reach every window).
-  import { MAX_STEP_MS, settings, type Appearance, type Coordinates, type HoverInput } from './settings.svelte';
+  import {
+    MAX_CHAT_FONT,
+    MAX_STEP_MS,
+    MIN_CHAT_FONT,
+    settings,
+    type Appearance,
+    type Coordinates,
+    type HoverInput,
+  } from './settings.svelte';
   import { play } from '@howdah/board/sound';
   import { findTheme, themes } from '@howdah/board/theme';
 
@@ -181,8 +189,15 @@
     </section>
 
     <section>
-      <h3>arimaa.com chat room</h3>
-      <label class="check">
+      <h3>arimaa.com chat</h3>
+      <label class="row">
+        <span>Text size</span>
+        <input type="range" min={MIN_CHAT_FONT} max={MAX_CHAT_FONT} step="1" bind:value={settings.chatFontSize} />
+        <span class="value">{settings.chatFontSize} px</span>
+      </label>
+      <p class="hint">In the chat room, its archive and a game's chat.</p>
+      <p class="sample">Silver's elephant is frozen on d5.</p>
+      <label class="check gap">
         <input type="checkbox" bind:checked={settings.leaveChatForGames} />
         Leave the chat room for rated and event games
       </label>
@@ -293,6 +308,11 @@
     margin: -2px 0 10px 108px;
     font-size: 11px;
     color: var(--muted);
+  }
+  .sample {
+    margin: 6px 0 0 108px;
+    font-size: var(--chat-font);
+    line-height: 1.45;
   }
   .hint {
     margin: -2px 0 0 108px;

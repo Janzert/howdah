@@ -4,12 +4,20 @@
   // the day, or part), and the day open, read in the room's formatting.
   // Opening a day asks arimaa.com only for what isn't kept yet; no login
   // is needed. What the user sees in the room is kept too.
+  import { untrack } from 'svelte';
   import Icon from '../Icon.svelte';
   import type { ChatDaySummary } from '../bindings/ChatDaySummary';
   import ChatLine from './ChatLine.svelte';
   import { addDays, chatArchive, isoDate } from './chatArchive.svelte';
 
   $effect(() => chatArchive.start());
+
+  // A day opens at its top, and the panel comes back to where it was left.
+  let log: HTMLElement | undefined = $state();
+  $effect(() => {
+    void chatArchive.selected;
+    if (log) log.scrollTop = untrack(() => chatArchive.scrollTop);
+  });
 
   const today = isoDate(new Date());
   const monthName = $derived(
@@ -140,7 +148,13 @@
       {#if s}<p class="muted">{describe(s)}</p>{/if}
       {#if chatArchive.fetching}<p class="muted" role="status">Getting it from arimaa.com…</p>{/if}
       {#if chatArchive.error}<p class="error" role="alert">{chatArchive.error}</p>{/if}
-      <div class="log" role="log" aria-label="Chat on {longDate}">
+      <div
+        class="log"
+        bind:this={log}
+        onscroll={() => (chatArchive.scrollTop = log?.scrollTop ?? 0)}
+        role="log"
+        aria-label="Chat on {longDate}"
+      >
         {#each day?.events ?? [] as e (e.id)}
           <ChatLine event={e} time={clock} />
         {:else}
@@ -273,7 +287,7 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--panel);
-    font-size: 14px;
+    font-size: var(--chat-font);
     line-height: 1.45;
     overflow-wrap: anywhere;
   }

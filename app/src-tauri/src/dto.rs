@@ -1490,6 +1490,19 @@ pub struct ChatArchiveDay {
     pub events: Vec<ChatEventView>,
 }
 
+/// A stretch of the chat room's log before a moment: all of it from
+/// `from` (Unix seconds) on, which may hold no events, a quiet stretch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChatArchiveEarlier {
+    pub events: Vec<ChatEventView>,
+    #[ts(type = "number")]
+    pub from: i64,
+    /// Nothing earlier: this is the start of the log.
+    pub at_start: bool,
+}
+
 /// The chat archive gained events in `start..end` (Unix seconds), sent as
 /// `chatarchive://changed`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]

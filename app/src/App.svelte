@@ -5,7 +5,7 @@
   import { api, errorMessage, isDocked, session } from './lib/api';
   import type { AnalysisLine } from './lib/bindings/AnalysisLine';
   import type { AnalysisView } from './lib/bindings/AnalysisView';
-  import { setAppearance } from './lib/appearance';
+  import { setAppearance, setChatFontSize } from './lib/appearance';
   import { requestAttention, setTitle } from './lib/attention';
   import type { Color } from './lib/bindings/Color';
   import type { EngineSpec } from './lib/bindings/EngineSpec';
@@ -299,6 +299,7 @@
 
   $effect(() => savePref('flipped', flipped ? '1' : '0'));
   $effect(() => setAppearance(settings.appearance));
+  $effect(() => setChatFontSize(settings.chatFontSize));
   $effect(() => setMuted(!settings.sound || boardSound === 'muted'));
   $effect(() => setBoardSounds(boardSound === 'all'));
   $effect(() => setVolume(settings.volume));

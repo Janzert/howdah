@@ -7,6 +7,24 @@ young).
 
 ## [Unreleased]
 
+### Added
+
+- A text size for the arimaa.com chat room, its archive and a game's
+  chat, in Settings.
+- The arimaa.com chat room's log scrolls back through the archive:
+  earlier chat loads as you near the top, or with Load earlier.
+- A button in the chat room shows how many new messages have come in
+  while scrolled back, and goes to them.
+
+### Fixed
+
+- The chat room and its archive keep their scroll position when you go
+  to another panel and come back.
+- The chat room's message preview no longer hides the log's last lines.
+- A position opened from a chat link shows the same way up as its preview:
+  a `boardimg.php` link's `orient` now carries over to the board. Its
+  preview also says whose move it is, the side it's seen from.
+
 ## [0.6.0] - 2026-11-01
 
 ### Added

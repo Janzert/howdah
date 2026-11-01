@@ -31,12 +31,13 @@ use serde_json::Value;
 use crate::chatroom;
 use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
-    AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveMonth, ChatMessageView,
-    ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec, GameroomGames,
-    GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView,
-    PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView,
-    PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard,
-    SpsaStepView, StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, WatchView,
+    AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
+    ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
+    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView,
+    PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView,
+    PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
+    ShowBoard, SpsaStepView, StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView,
+    WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -820,6 +821,13 @@ impl Backend {
         self.gameroom.archive.day(date, fetch).await
     }
 
+    /// The chat room's log before `until`, less its last `skip` events:
+    /// what the room's own log has scrolled past. What the local archive
+    /// lacks is asked of arimaa.com, within a limit.
+    pub async fn chat_archive_earlier(&self, until: i64, skip: u32) -> Result<ChatArchiveEarlier, ApiError> {
+        self.gameroom.archive.earlier(until, skip).await
+    }
+
     /// Whether the chat room's panel is in view (it's asked more often).
     pub fn set_chatroom_active(&self, active: bool) {
         self.gameroom.chat.set_active(active);
@@ -1340,6 +1348,9 @@ impl Backend {
             "open_url" => ok(self.open_url(&arg::<String>(args, "url")?)?),
             "chatroom_state" => ok(self.chatroom_state()),
             "chat_archive_month" => ok(self.chat_archive_month(arg(args, "year")?, arg(args, "month")?)?),
+            "chat_archive_earlier" => {
+                ok(self.chat_archive_earlier(arg(args, "until")?, arg(args, "skip")?).await?)
+            }
             "chat_archive_day" => {
                 ok(self.chat_archive_day(&arg::<String>(args, "date")?, arg(args, "fetch")?).await?)
             }

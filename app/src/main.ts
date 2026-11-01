@@ -2,13 +2,14 @@ import { mount } from 'svelte';
 import App from './App.svelte';
 import './app.css';
 import { api, isDocked, isGameWindow, session, useSession } from './lib/api';
-import { setAppearance } from './lib/appearance';
+import { setAppearance, setChatFontSize } from './lib/appearance';
 import { settings } from './lib/settings.svelte';
 import Lobby from './Lobby.svelte';
 import { closeSessionWithPage, inTauri, nameTab } from './lib/windows';
 
 // Before the first paint, so a dark window doesn't flash light.
 setAppearance(settings.appearance);
+setChatFontSize(settings.chatFontSize);
 
 // A board docked in the lobby talks through the lobby (lib/frames.ts); in
 // a plain browser (the Vite preview), the other windows talk to the dev

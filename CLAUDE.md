@@ -584,8 +584,9 @@ plans the engine test and tournament runner.
     overlap, archive chunks win over visits, then the newest; events
     outside every span are merged without duplicates. `month` and `day`
     give `ChatDaySummary`s (messages, people, coverage with the kept
-    stretches) and a day's events; changes go out as
-    `chatarchive://changed`. `chat_base` is arimaa.com's chat directory,
+    stretches) and a day's events; `earlier` the log before a moment,
+    for the room's log (`docs/GAMEROOM.md`, "Scrolling back in the
+    room"); changes go out as `chatarchive://changed`. `chat_base` is arimaa.com's chat directory,
     or `HOWDAH_CHAT_URL` in debug builds.
   - `tourney.rs`: engine tests, as a client of howdah-tourney's daemon
     (plan in `docs/TOURNAMENTS.md`; data dir `howdah_tourney::default_data_dir`,
@@ -913,7 +914,10 @@ plans the engine test and tournament runner.
     `darkMode.svelte.ts` follows the appearance for colors worked out in
     code.
     `ChatRoomTab` is the chat room (store in `chatroom.svelte.ts`:
-    the backend's view, unread count for the sidebar's badge, the user's
+    the backend's view, unread count for the sidebar's badge, the earlier
+    log (`older`, `loadEarlier`, keeping what the room drops once it's
+    shown), `scrollTop` and `newBelow` for the log (the archive's store
+    keeps its `scrollTop` too, since panels unmount), the user's
     color and their own color, `custom`, which takes the palette's last
     slot and is typed in hex in the color popup or chosen in the
     system's color dialog (an `<input type="color">` under its Choose…
@@ -1177,8 +1181,9 @@ plans the engine test and tournament runner.
     theme; theme, coordinates,
     sound and volume, animation speed (`stepMs`, the board's base speed),
     hover input, `humanAtBottom`, which turns the board when a match
-    with one human side starts, and `boardsInWindows`, where the lobby
-    opens new boards) as one reactive `settings` object,
+    with one human side starts, `boardsInWindows`, where the lobby
+    opens new boards, and `chatFontSize`, which `appearance.ts`'s
+    `setChatFontSize` passes to the chat panels as `--chat-font`) as one reactive `settings` object,
     saved to localStorage as JSON (`parse` validates and reads the older
     `theme`/`muted` keys).
     `HelpDialog.svelte`'s panel also has About: `app_version` and links.

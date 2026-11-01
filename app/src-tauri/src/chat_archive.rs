@@ -38,7 +38,8 @@ use serde::{Deserialize, Serialize};
 use crate::backend::{Events, emit};
 use crate::chatroom::event_view;
 use crate::dto::{
-    ApiError, ChatArchiveChanged, ChatArchiveDay, ChatArchiveMonth, ChatCoverage, ChatDaySummary,
+    ApiError, ChatArchiveChanged, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth, ChatCoverage,
+    ChatDaySummary,
 };
 
 /// Event carrying a [`ChatArchiveChanged`].
@@ -60,6 +61,19 @@ const RECENT: i64 = 30;
 
 /// How often a live chunk's end is saved when no events arrive.
 const SAVE_EVERY: Duration = Duration::from_secs(60);
+
+/// How far back the room's log goes, about (the start of March 2008).
+const LOG_START: i64 = 1_204_329_600;
+
+/// The events one [`ChatArchive::earlier`] looks for: most days are short,
+/// so it goes back until it has about a screenful or two...
+const EARLIER_EVENTS: usize = 50;
+
+/// ...but one with a busy day gives only this many, the rest of it next.
+const EARLIER_MOST: usize = 200;
+
+/// The archive requests after which [`ChatArchive::earlier`] stops looking.
+const EARLIER_REQUESTS: usize = 5;
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -270,6 +284,22 @@ fn today() -> NaiveDate {
     Local::now().date_naive()
 }
 
+/// The local day moment `t` is in.
+fn local_date(t: i64) -> NaiveDate {
+    Local.timestamp_opt(t, 0).earliest().map_or_else(today, |d| d.date_naive())
+}
+
+/// Cuts `events`, which start at `from`, to about the last [`EARLIER_MOST`],
+/// keeping a second whole, and gives where they now start.
+fn keep_latest(mut events: Vec<ChatEvent>, from: i64) -> (Vec<ChatEvent>, i64) {
+    if events.len() <= EARLIER_MOST {
+        return (events, from);
+    }
+    let time = events[events.len() - EARLIER_MOST].time;
+    let cut = events.partition_point(|e| e.time < time);
+    (events.split_off(cut), time)
+}
+
 /// The gameroom chat room's log as kept here.
 pub struct ChatArchive {
     store: Mutex<Store>,
@@ -362,17 +392,50 @@ impl ChatArchive {
         Ok(ChatArchiveDay { summary: s, start, end, events })
     }
 
-    /// Asks the archive for the stretches of `date` not yet covered.
-    async fn fetch_day(&self, date: NaiveDate) -> Result<(), ApiError> {
+    /// The log before `until`, less its last `skip` events (those the
+    /// room's log already shows, of a second it shares with what's asked
+    /// for), going back a day at a time and asking the archive for what
+    /// isn't kept. An error after finding something ends the search; the
+    /// next one meets it again.
+    pub async fn earlier(&self, until: i64, skip: u32) -> Result<ChatArchiveEarlier, ApiError> {
+        let mut from = until;
+        let mut found: Vec<ChatEvent> = Vec::new();
+        let mut skip = skip as usize;
+        let mut requests = 0;
+        while found.len() < EARLIER_EVENTS && requests < EARLIER_REQUESTS && from > LOG_START {
+            let date = local_date(from - 1);
+            match self.fetch_day(date).await {
+                Ok(n) => requests += n,
+                Err(_) if !found.is_empty() => break,
+                Err(e) => return Err(e),
+            }
+            let start = day_bounds(date).0;
+            let mut day = lock(&self.store).events(start, from);
+            day.truncate(day.len().saturating_sub(skip));
+            skip = 0;
+            day.append(&mut found);
+            found = day;
+            from = start;
+        }
+        let (found, from) = keep_latest(found, from);
+        let events = found.into_iter().enumerate().map(|(i, e)| event_view(i as u32, e)).collect();
+        Ok(ChatArchiveEarlier { events, from, at_start: from <= LOG_START })
+    }
+
+    /// Asks the archive for the stretches of `date` not yet covered, and
+    /// says how many requests that took.
+    async fn fetch_day(&self, date: NaiveDate) -> Result<usize, ApiError> {
         let _one = self.fetching.lock().await;
         let (start, end) = day_bounds(date);
+        let mut requests = 0;
         for _ in 0..MAX_REQUESTS {
             let until = end.min(now() - CLOCK_MARGIN);
             let gap = lock(&self.store).gaps(start, until).into_iter().next();
-            let Some((from, to)) = gap else { return Ok(()) };
+            let Some((from, to)) = gap else { return Ok(requests) };
             if to - from < RECENT && to == until && until < end {
-                return Ok(());
+                return Ok(requests);
             }
+            requests += 1;
             let events = chat::archive(&self.http, &chat_base(), from)
                 .await
                 .map_err(|e| ApiError::state(format!("couldn't get the archive from arimaa.com: {e}")))?;
@@ -380,7 +443,7 @@ impl ChatArchive {
             lock(&self.store).add(from, covered_to, false, events);
             self.changed(from, covered_to);
         }
-        Ok(())
+        Ok(requests)
     }
 }
 
@@ -484,6 +547,17 @@ mod tests {
         assert_eq!(loaded.chunks.len(), 2);
         assert_eq!(loaded.covered(0, 1000), [(100, 200), (300, 400)]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_busy_day_is_cut_on_a_whole_second() {
+        let few = vec![ev(10, "a"), ev(11, "b")];
+        assert_eq!(keep_latest(few, 5).1, 5);
+        let mut many: Vec<ChatEvent> = (0..300).map(|t| ev(1000 + t, "a")).collect();
+        many.insert(100, ev(1100, "a"));
+        let (kept, from) = keep_latest(many, 5);
+        assert_eq!((from, kept.len()), (1100, 201));
+        assert_eq!(kept[0].time, 1100);
     }
 
     #[test]

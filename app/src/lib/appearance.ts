@@ -24,3 +24,8 @@ export function setAppearance(m: Appearance) {
   mode = m;
   apply();
 }
+
+/** Sets the size of the chat text, which `--chat-font` passes to its panels. */
+export function setChatFontSize(px: number) {
+  document.documentElement.style.setProperty('--chat-font', `${px}px`);
+}

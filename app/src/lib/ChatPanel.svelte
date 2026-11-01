@@ -72,7 +72,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    font-size: 13px;
+    font-size: calc(var(--chat-font) - 1px);
     flex: none;
   }
   .lines {
@@ -100,7 +100,7 @@
   }
   .label {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 0.85em;
   }
   .text {
     white-space: pre-wrap;
@@ -128,6 +128,7 @@
   input {
     flex: 1;
     min-width: 0;
+    font-size: inherit;
   }
   .closed {
     color: var(--muted);

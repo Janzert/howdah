@@ -172,6 +172,15 @@ architecture. Decided and checked against the live server in October 2026.
     archive request cover the same time, the archive (the server's own
     record) is read. Days are the computer's local days, as on the
     archive's own page. Searching the kept log is planned.
+  - **Scrolling back in the room.** Near the top of the room's log,
+    scrolling up (or Load earlier) puts the earlier log in front of it
+    from the same local store. A search goes back a day at a time until
+    it has about 50 events, since most days now hold only a few lines,
+    and stops after about five archive requests; a quiet stretch then
+    says how far back it looked, and Load earlier goes on. A busy day
+    comes about 200 events at a time. The room's first second may hold
+    more events than its log shows, so the search takes that second too,
+    less the ones shown.
   - **Leaving for games.** The custom in the gameroom is to leave the
     chat room while playing a rated game against a person that isn't
     postal, and any event game. With the setting on (the default),
