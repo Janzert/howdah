@@ -27,6 +27,7 @@ describe('settings parse', () => {
         moveTimes: 'game',
         leaveChatForGames: false,
         chatFontSize: 18,
+        checkForUpdates: false,
       }),
       none,
     );
@@ -46,6 +47,7 @@ describe('settings parse', () => {
       moveTimes: 'game',
       leaveChatForGames: false,
       chatFontSize: 18,
+      checkForUpdates: false,
     });
     const bad = parse(
       JSON.stringify({
@@ -56,6 +58,7 @@ describe('settings parse', () => {
         analysisEngine: 3,
         volume: 'loud',
         moveTimes: 'all',
+        checkForUpdates: 'no',
       }),
       none,
     );
