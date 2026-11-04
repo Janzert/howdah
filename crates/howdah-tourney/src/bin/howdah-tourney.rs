@@ -22,7 +22,8 @@
 //! howdah-tourney undecided-below ID PERCENT|off  end undecided under this chance of deciding in time
 //! howdah-tourney concurrency ID N
 //! howdah-tourney add-engine ID NAME PROGRAM [ARG...]   add an engine to a pool
-//! howdah-tourney add-engine ID ENGINE.toml       ... or one described as in a spec's [[engines]]
+//! howdah-tourney add-engine ID ENGINE.toml       ... or one from a file of an [[engines]] entry's
+//!                                                fields, without the [[engines]] header
 //! howdah-tourney retire|unretire ID NAME         stop or restart a pool's engine's new pairs
 //! howdah-tourney slots N
 //! howdah-tourney shutdown [--now|--cancel]

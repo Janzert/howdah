@@ -691,7 +691,9 @@ optional, and without one it plays until stopped.
 - **API and command line.** `POST /tests/{id}/engines` `{"engine":
   EngineSpec}` and `POST /tests/{id}/retire` `{"engine": name,
   "retired": bool}`; `howdah-tourney add-engine ID NAME PROGRAM [ARG...]`
-  (or `ENGINE.toml`, one `[[engines]]` table), `retire` and `unretire`.
+  (or `ENGINE.toml`: an `[[engines]]` entry's fields at the top level,
+  without that header; relative paths in it are from the file's
+  directory), `retire` and `unretire`.
   `show`, `run` and `list` print the ratings, the crosstable (rows
   against columns, both in rank order, `*` marking outliers) and the
   outliers in words. `TestInfo.pool` is `PoolInfo`, and
