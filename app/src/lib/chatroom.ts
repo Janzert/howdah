@@ -88,10 +88,11 @@ export function messageColor(hex: string | null, dark: boolean): { color: string
   return { color: `#${shown}`, spoiler: false };
 }
 
-/** A message's time: the clock time today, else the date too. */
+/** A message's time: the clock time today, else the date too. With
+ * seconds, since the room refers back to a message by its `mm:ss`. */
 export function chatTime(unix: number, now = new Date()): string {
   const d = new Date(unix * 1000);
-  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   if (d.toDateString() === now.toDateString()) return time;
   return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`;
 }

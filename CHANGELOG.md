@@ -13,6 +13,11 @@ young).
   release. It asks GitHub at the start and once a day; Settings turns
   this off.
 
+### Changed
+
+- The arimaa.com chat room shows seconds in its times, since people
+  there refer back to a message by its minutes and seconds.
+
 ## [0.6.1] - 2026-11-01
 
 ### Added

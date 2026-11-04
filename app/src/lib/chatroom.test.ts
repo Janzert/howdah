@@ -35,6 +35,11 @@ describe('chat room times', () => {
     expect(earlier.endsWith(today)).toBe(true);
     expect(earlier.length).toBeGreaterThan(today.length);
   });
+
+  it('shows the seconds', () => {
+    const now = new Date(2026, 9, 18, 12, 0);
+    expect(chatTime(new Date(2026, 9, 18, 9, 5, 37).getTime() / 1000, now)).toContain('05:37');
+  });
 });
 
 describe('chat room symbols', () => {
