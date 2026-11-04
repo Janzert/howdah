@@ -29,6 +29,12 @@ export function movedPastNoise(p: SpsaParamView): boolean {
   return Math.abs(p.value - p.start) > p.c;
 }
 
+/** How far a parameter has moved from its start in multiples of c, in
+ * brief (`2.3c`); null when the daemon doesn't send c. */
+export function cMultipleText(p: SpsaParamView): string | null {
+  return p.c > 0 ? `${(Math.abs(p.value - p.start) / p.c).toFixed(1)}c` : null;
+}
+
 /** A parameter's value as it's shown: an integer's to two decimals (θ
  * stays real; the engine gets it rounded), others to four significant
  * figures. */

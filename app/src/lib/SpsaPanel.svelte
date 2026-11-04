@@ -15,6 +15,7 @@
   import { on } from './events';
   import SpsaChart from './SpsaChart.svelte';
   import {
+    cMultipleText,
     durationText,
     iterationsPerHour,
     meanMovement,
@@ -130,6 +131,7 @@
     ];
     if (p.c > 0) {
       lines.push(`c ${valueText(p.c)}: the next iteration plays ${v(p.value - p.c)} against ${v(p.value + p.c)}`);
+      lines.push(`moved ${cMultipleText(p)} from the start`);
     }
     return lines.join('\n');
   }
@@ -188,7 +190,7 @@
         <span class="aside"
           >{valueText(chosenParam.start, chosenParam.int)} → {valueText(chosenParam.value, chosenParam.int)}
           ({shareText(moved(chosenParam))} of its range){chosenParam.c > 0
-            ? `, c ${valueText(chosenParam.c)}`
+            ? `, c ${valueText(chosenParam.c)}, moved ${cMultipleText(chosenParam)}`
             : ''}</span
         >
         <span class="spacer"></span>

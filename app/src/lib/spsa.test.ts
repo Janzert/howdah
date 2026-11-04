@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SpsaParamView } from './bindings/SpsaParamView';
 import type { SpsaStepView } from './bindings/SpsaStepView';
 import {
+  cMultipleText,
   durationText,
   iterationsPerHour,
   meanMovement,
@@ -28,6 +29,9 @@ describe('spsa', () => {
     expect(moved(p)).toBe(0.25);
     expect(movedPastNoise(p)).toBe(true);
     expect(movedPastNoise(param({ value: 1.05 }))).toBe(false);
+    expect(cMultipleText(p)).toBe('5.0c');
+    expect(cMultipleText(param({ value: 0.77 }))).toBe('2.3c');
+    expect(cMultipleText(param({ value: 1.5, c: 0 }))).toBe(null);
   });
 
   it('words values and shares', () => {
