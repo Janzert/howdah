@@ -46,7 +46,7 @@
   const GAMES_PAGE = 100;
 
   let test = $state<TestView | null>(null);
-  let games = $state<TestGameView[]>([]);
+  let games = $state.raw<TestGameView[]>([]);
   let error = $state<string | null>(null);
   let busy = $state(false);
   let settingsOpen = $state(false);

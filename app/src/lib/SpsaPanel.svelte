@@ -30,11 +30,11 @@
 
   let { test }: { test: TestView & { spsa: SpsaView } } = $props();
 
-  let steps = $state<SpsaStepView[]>([]);
+  let steps = $state.raw<SpsaStepView[]>([]);
   let error = $state<string | null>(null);
   /** The parameter charted (by index), or null for the mean movement. */
   let chosen = $state<number | null>(null);
-  let order = $state<ParamOrder>('spec');
+  let order = $state<ParamOrder>('moved');
   let filter = $state('');
   let copied = $state(false);
 
