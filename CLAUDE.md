@@ -733,7 +733,7 @@ plans the engine test and tournament runner.
     `tourney_spsa_history` a step range at a time; `lib/spsa.ts` words
     and measures it; a pool shows `PoolPanel.svelte`: ratings with
     interval plots, Retire/Bring back, Add an engine, the crosstable shaded
-    by `zShade`, and the outliers, worded by `lib/tests.ts`'s `eloText`,
+    by `zShade`, its cells in a chosen `CrossMode` (`crossCellText`), and the outliers, worded by `lib/tests.ts`'s `eloText`,
     `matchupFor` and the like),
     `NewTestDialog.svelte` and `ArchiveDialog.svelte` (archived tests to
     restore or delete); `lib/tests.ts` words a

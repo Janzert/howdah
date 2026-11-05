@@ -242,6 +242,58 @@ export function matchupFor(
   };
 }
 
+/** What a pool's crosstable cells show: wins–losses, the row's share of
+ * the wins, the Elo difference its games alone give (head to head), or
+ * how far that is from the ratings' difference (the residual). */
+export type CrossMode = 'record' | 'percent' | 'elo' | 'residual';
+
+export const CROSS_MODES: [CrossMode, string, string][] = [
+  ['record', 'W–L', "Each row's wins–losses against each column"],
+  ['percent', 'Win %', "Each row's share of the games won against each column"],
+  ['elo', 'Elo', "Each row's Elo over each column from their games alone"],
+  ['residual', 'Residual', 'How much better (in Elo) each row did against each column than the ratings predict'],
+];
+
+/** The logistic Elo difference for a score of `p` (0 to 1); ±Infinity
+ * for a perfect score. */
+export function eloOfScore(p: number): number {
+  if (p <= 0) return -Infinity;
+  if (p >= 1) return Infinity;
+  return 400 * Math.log10(p / (1 - p));
+}
+
+/** A signed Elo difference in brief: `+35`, `−12`, `0`, `+∞`. */
+export function signedEloText(d: number): string {
+  if (d === Infinity) return '+∞';
+  if (d === -Infinity) return '−∞';
+  const r = Math.round(d);
+  return r === 0 ? '0' : r > 0 ? `+${r}` : `−${-r}`;
+}
+
+/** A crosstable cell's text in `mode` for a row's matchup (from
+ * [`matchupFor`]). */
+export function crossCellText(m: { wins: number; losses: number; expected: number }, mode: CrossMode): string {
+  const n = m.wins + m.losses;
+  switch (mode) {
+    case 'record':
+      return `${m.wins}–${m.losses}`;
+    case 'percent':
+      return n > 0 ? `${Math.round((100 * m.wins) / n)}%` : '–';
+    case 'elo':
+      return n > 0 ? signedEloText(eloOfScore(m.wins / n)) : '–';
+    case 'residual':
+      return n > 0 ? signedEloText(eloOfScore(m.wins / n) - eloOfScore(m.expected)) : '–';
+  }
+}
+
+/** The 95% half-width of a head-to-head Elo from `n` games scoring `p`
+ * (binomial, so a little wide for colour-swapped pairs); null for a
+ * perfect score. */
+export function headToHeadError(p: number, n: number): number | null {
+  if (n === 0 || p <= 0 || p >= 1) return null;
+  return (1.96 * 400) / Math.LN10 / Math.sqrt(n * p * (1 - p));
+}
+
 /** A crosstable cell's shade for how far its result is from the
  * ratings' prediction: the accent (better) or warn (worse) color, mixed
  * in up to 55% by `|z|` up to the outlier threshold; null within half a

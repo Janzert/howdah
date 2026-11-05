@@ -12,6 +12,9 @@ young).
 - Howdah says on Home when a new version is out, with a link to the
   release. It asks GitHub at the start and once a day; Settings turns
   this off.
+- A pool's crosstable can show each matchup as wins–losses, win %,
+  head-to-head Elo, or the residual: how many Elo better or worse it went
+  than the ratings predict. Each cell's tooltip gives all of them.
 
 ### Changed
 

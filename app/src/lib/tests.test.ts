@@ -15,8 +15,12 @@ import {
   gamesPerHour,
   nextGameAfter,
   llrPosition,
+  crossCellText,
+  eloOfScore,
+  headToHeadError,
   matchupFor,
   oddsText,
+  signedEloText,
   pairCount,
   percentCutoff,
   poolEnginesText,
@@ -301,6 +305,26 @@ describe('time left', () => {
     expect([back.wins, back.losses, back.z]).toEqual([9, 3, 2.1]);
     expect(back.expected).toBeCloseTo(0.53);
     expect(matchupFor(p, 0, 3)).toBeNull();
+  });
+
+  it('shows a cell in each crosstable mode', () => {
+    const m = { wins: 3, losses: 1, expected: 0.5 };
+    expect(crossCellText(m, 'record')).toBe('3–1');
+    expect(crossCellText(m, 'percent')).toBe('75%');
+    expect(crossCellText(m, 'elo')).toBe('+191');
+    expect(crossCellText(m, 'residual')).toBe('+191');
+    expect(crossCellText({ ...m, expected: 0.75 }, 'residual')).toBe('0');
+    expect(crossCellText({ wins: 1, losses: 3, expected: 0.5 }, 'elo')).toBe('−191');
+    expect(crossCellText({ wins: 4, losses: 0, expected: 0.9 }, 'elo')).toBe('+∞');
+    expect(crossCellText({ wins: 0, losses: 4, expected: 0.1 }, 'residual')).toBe('−∞');
+    expect(crossCellText({ wins: 0, losses: 0, expected: 0.5 }, 'percent')).toBe('–');
+  });
+
+  it('gives a head-to-head interval unless the score is perfect', () => {
+    expect(headToHeadError(0.5, 100)).toBeCloseTo(68.1, 1);
+    expect(headToHeadError(1, 10)).toBeNull();
+    expect(eloOfScore(0.5)).toBe(0);
+    expect(signedEloText(-0.4)).toBe('0');
   });
 
   it('shades a result by how far out of line it is', () => {

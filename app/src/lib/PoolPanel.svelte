@@ -2,8 +2,9 @@
   // A pool's standings, in place of a test's results in `TestPanel`: the
   // ratings in rank order with their 95% intervals (Elo from the anchor,
   // drawn as a dot and whisker), the crosstable in the same order, each
-  // cell shaded by how far its result is from what the ratings predict,
-  // and the outliers in words. Engines from the engine list can be added
+  // cell shaded by how far its result is from what the ratings predict
+  // and showing wins–losses, win %, head-to-head Elo or that Elo's residual
+  // from the ratings (`CROSS_MODES`), and the outliers in words. Engines from the engine list can be added
   // while it runs (they play their matchups first), and retired (no new
   // pairs; their games still count) or brought back.
   import { onMount } from 'svelte';
@@ -11,7 +12,17 @@
   import type { EngineSpec } from './bindings/EngineSpec';
   import type { PoolView } from './bindings/PoolView';
   import type { TestView } from './bindings/TestView';
-  import { eloText, matchupFor, zShade } from './tests';
+  import {
+    CROSS_MODES,
+    crossCellText,
+    eloOfScore,
+    eloText,
+    headToHeadError,
+    matchupFor,
+    signedEloText,
+    zShade,
+    type CrossMode,
+  } from './tests';
 
   interface Props {
     test: TestView & { pool: PoolView };
@@ -21,6 +32,26 @@
   let { test, onChanged }: Props = $props();
 
   const pool = $derived(test.pool);
+
+  const MODE_KEY = 'pool.crossMode';
+  function savedMode(): CrossMode {
+    try {
+      const m = localStorage.getItem(MODE_KEY);
+      if (CROSS_MODES.some(([k]) => k === m)) return m as CrossMode;
+    } catch {
+      /* not kept */
+    }
+    return 'record';
+  }
+  let mode = $state<CrossMode>(savedMode());
+  $effect(() => {
+    try {
+      localStorage.setItem(MODE_KEY, mode);
+    } catch {
+      /* not kept */
+    }
+  });
+  const modeCaption = $derived(CROSS_MODES.find(([k]) => k === mode)![2]);
   let engines = $state<EngineSpec[]>([]);
   let adding = $state('');
   let busy = $state(false);
@@ -72,8 +103,14 @@
     const n = m.wins + m.losses;
     const pairs = m.pairs === 1 ? '1 pair' : `${m.pairs} pairs`;
     const side = m.z >= 0 ? 'better' : 'worse';
+    const h2h = eloOfScore(m.wins / n);
+    const err = headToHeadError(m.wins / n, n);
+    const model = eloOfScore(m.expected);
     return (
-      `${name(i)} against ${name(j)}: ${m.wins}–${m.losses} in ${n} games (${pairs}).\n` +
+      `${name(i)} against ${name(j)}: ${m.wins}–${m.losses} in ${n} games (${pairs}), ` +
+      `${Math.round((100 * m.wins) / n)}%.\n` +
+      `Head to head ${signedEloText(h2h)}${err != null ? ` ±${Math.round(err)}` : ''} Elo; ` +
+      `the ratings differ by ${signedEloText(model)}, a residual of ${signedEloText(h2h - model)}.\n` +
       `The ratings expect ${(m.expected * n).toFixed(1)}–${((1 - m.expected) * n).toFixed(1)}: ` +
       `this is ${Math.abs(m.z).toFixed(1)} standard deviations ${side}` +
       (m.outlier ? ', out of line.' : '.')
@@ -152,10 +189,19 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
   {#if pool.matchups.length > 0}
-    <h3>Crosstable</h3>
+    <div class="cross-head">
+      <h3 id="cross-title">Crosstable</h3>
+      <div class="segmented" role="radiogroup" aria-labelledby="cross-title">
+        {#each CROSS_MODES as [key, label, caption] (key)}
+          <label class:on={mode === key} title={caption}>
+            <input type="radio" name="pool-cross-mode" value={key} bind:group={mode} />{label}
+          </label>
+        {/each}
+      </div>
+    </div>
     <div class="scroll">
       <table class="cross">
-        <caption class="note">Each row's wins–losses against each column, both in rank order</caption>
+        <caption class="note">{modeCaption}, both in rank order</caption>
         <thead>
           <tr>
             <th></th>
@@ -174,7 +220,7 @@
                   <td
                     class:outlier={m?.outlier}
                     style:background={m ? zShade(m.z, pool.outlierZ) : null}
-                    title={cellTitle(i, j)}>{m ? `${m.wins}–${m.losses}` : ''}{m?.outlier ? '*' : ''}</td
+                    title={cellTitle(i, j)}>{m ? crossCellText(m, mode) : ''}{m?.outlier ? '*' : ''}</td
                   >
                 {/if}
               {/each}
@@ -282,6 +328,42 @@
   h3 {
     margin: 12px 0 4px;
     font-size: 14px;
+  }
+  .cross-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0 4px;
+  }
+  .cross-head h3 {
+    margin: 0;
+  }
+  .segmented {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    font-size: 12px;
+  }
+  .segmented label {
+    padding: 2px 10px;
+    cursor: pointer;
+  }
+  .segmented label + label {
+    border-left: 1px solid var(--border);
+  }
+  .segmented label.on {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+  .segmented input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .segmented label:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .scroll {
     overflow-x: auto;
