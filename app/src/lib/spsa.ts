@@ -41,6 +41,13 @@ export function cMultipleText(p: SpsaParamView): string | null {
   return m != null ? `${m.toFixed(1)}c` : null;
 }
 
+/** The mean of `cMultiple` over the parameters that have a c; null when
+ * none do. */
+export function meanCMultiple(params: SpsaParamView[]): number | null {
+  const ms = params.map(cMultiple).filter((m): m is number => m != null);
+  return ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : null;
+}
+
 /** A parameter's value as it's shown: an integer's to two decimals (θ
  * stays real; the engine gets it rounded), others to four significant
  * figures. */

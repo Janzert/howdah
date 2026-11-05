@@ -3,6 +3,7 @@ import type { SpsaParamView } from './bindings/SpsaParamView';
 import type { SpsaStepView } from './bindings/SpsaStepView';
 import {
   cMultipleText,
+  meanCMultiple,
   durationText,
   iterationsPerHour,
   meanMovement,
@@ -32,6 +33,9 @@ describe('spsa', () => {
     expect(cMultipleText(p)).toBe('5.0c');
     expect(cMultipleText(param({ value: 0.77 }))).toBe('2.3c');
     expect(cMultipleText(param({ value: 1.5, c: 0 }))).toBe(null);
+    // 5c and 2.3c; the one without a c is left out.
+    expect(meanCMultiple([p, param({ value: 0.77 }), param({ value: 1.5, c: 0 })])).toBeCloseTo(3.65);
+    expect(meanCMultiple([param({ c: 0 })])).toBe(null);
   });
 
   it('words values and shares', () => {

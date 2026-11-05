@@ -19,6 +19,7 @@
     cMultipleText,
     durationText,
     iterationsPerHour,
+    meanCMultiple,
     meanMovement,
     moved,
     movedPastNoise,
@@ -73,6 +74,7 @@
   const columns = $derived(params.map((_, i) => steps.map((s) => s.theta[i])));
   const movement = $derived(meanMovement(params, steps));
   const pastNoise = $derived(params.filter(movedPastNoise).length);
+  const meanC = $derived(meanCMultiple(params));
   /** Whether the daemon sends each parameter's c (older ones don't). */
   const hasC = $derived(params.some((p) => p.c > 0));
   /** Furthest in c first by default, when there is a c. */
@@ -176,7 +178,7 @@
       >
         <span class="label">Moved more than c</span>
         <span class="value">{pastNoise}<span class="of"> of {params.length}</span></span>
-        <span class="sub">mean move {shareText(movement.at(-1) ?? 0).replace('+', '')} of range</span>
+        <span class="sub">mean move {meanC != null ? `${meanC.toFixed(1)}c` : '–'}</span>
       </div>
     {:else}
       <div class="tile">
