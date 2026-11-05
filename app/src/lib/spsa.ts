@@ -29,10 +29,16 @@ export function movedPastNoise(p: SpsaParamView): boolean {
   return Math.abs(p.value - p.start) > p.c;
 }
 
-/** How far a parameter has moved from its start in multiples of c, in
- * brief (`2.3c`); null when the daemon doesn't send c. */
+/** How far a parameter has moved from its start in multiples of the next
+ * iteration's c; null when the daemon doesn't send c. */
+export function cMultiple(p: SpsaParamView): number | null {
+  return p.c > 0 ? Math.abs(p.value - p.start) / p.c : null;
+}
+
+/** `cMultiple` in brief (`2.3c`). */
 export function cMultipleText(p: SpsaParamView): string | null {
-  return p.c > 0 ? `${(Math.abs(p.value - p.start) / p.c).toFixed(1)}c` : null;
+  const m = cMultiple(p);
+  return m != null ? `${m.toFixed(1)}c` : null;
 }
 
 /** A parameter's value as it's shown: an integer's to two decimals (θ
@@ -119,14 +125,16 @@ export function durationText(hours: number): string {
 }
 
 /** How the parameter list can be ordered. */
-export type ParamOrder = 'spec' | 'moved' | 'name';
+export type ParamOrder = 'spec' | 'moved' | 'movedC' | 'name';
 
 /** The parameters' indexes, matching `filter` (a substring of the name),
- * in `order`: the spec's, furthest moved first, or by name. */
+ * in `order`: the spec's, furthest moved first (as a share of the range,
+ * or in multiples of c), or by name. */
 export function orderParams(params: SpsaParamView[], order: ParamOrder, filter: string): number[] {
   const f = filter.trim().toLowerCase();
   const idx = params.map((_, i) => i).filter((i) => !f || params[i].name.toLowerCase().includes(f));
   if (order === 'moved') idx.sort((a, b) => Math.abs(moved(params[b])) - Math.abs(moved(params[a])));
+  else if (order === 'movedC') idx.sort((a, b) => (cMultiple(params[b]) ?? 0) - (cMultiple(params[a]) ?? 0));
   else if (order === 'name') idx.sort((a, b) => params[a].name.localeCompare(params[b].name));
   return idx;
 }

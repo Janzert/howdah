@@ -76,6 +76,10 @@ describe('spsa', () => {
     ];
     expect(orderParams(params, 'spec', '')).toEqual([0, 1, 2]);
     expect(orderParams(params, 'moved', '')).toEqual([1, 2, 0]);
+    // c tells them apart from the share of the range: b's 0.1 is 4c
+    const byC = [param({ name: 'b', value: 1.1, c: 0.025 }), ...params.slice(1)];
+    expect(orderParams(byC, 'moved', '')).toEqual([1, 2, 0]);
+    expect(orderParams(byC, 'movedC', '')).toEqual([1, 0, 2]);
     expect(orderParams(params, 'name', '')).toEqual([1, 0, 2]);
     expect(orderParams(params, 'spec', 'C')).toEqual([2]);
   });

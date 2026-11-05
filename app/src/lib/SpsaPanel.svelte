@@ -15,6 +15,7 @@
   import { on } from './events';
   import SpsaChart from './SpsaChart.svelte';
   import {
+    cMultiple,
     cMultipleText,
     durationText,
     iterationsPerHour,
@@ -35,7 +36,8 @@
   let error = $state<string | null>(null);
   /** The parameter charted (by index), or null for the mean movement. */
   let chosen = $state<number | null>(null);
-  let order = $state<ParamOrder>('moved');
+  /** The order picked, or null for the default (`ordering`). */
+  let order = $state<ParamOrder | null>(null);
   let filter = $state('');
   let copied = $state(false);
 
@@ -70,10 +72,12 @@
   /** Each parameter's value after each step. */
   const columns = $derived(params.map((_, i) => steps.map((s) => s.theta[i])));
   const movement = $derived(meanMovement(params, steps));
-  const shown = $derived(orderParams(params, order, filter));
   const pastNoise = $derived(params.filter(movedPastNoise).length);
   /** Whether the daemon sends each parameter's c (older ones don't). */
   const hasC = $derived(params.some((p) => p.c > 0));
+  /** Furthest in c first by default, when there is a c. */
+  const ordering = $derived<ParamOrder>(order ?? (hasC ? 'movedC' : 'moved'));
+  const shown = $derived(orderParams(params, ordering, filter));
 
   const perHour = $derived(iterationsPerHour(steps));
   const left = $derived(spsa.iterations - spsa.done);
@@ -239,9 +243,10 @@
   <div class="params-head">
     <h3>Parameters <span class="count">{params.length}</span></h3>
     <input type="search" placeholder="Filter" aria-label="Filter the parameters by name" bind:value={filter} />
-    <select bind:value={order} aria-label="Order the parameters">
+    <select bind:value={() => ordering, (v) => (order = v)} aria-label="Order the parameters">
       <option value="spec">In the spec's order</option>
-      <option value="moved">Furthest moved first</option>
+      {#if hasC}<option value="movedC">Furthest in c first</option>{/if}
+      <option value="moved">Furthest in range first</option>
       <option value="name">By name</option>
     </select>
     <span class="spacer"></span>
@@ -253,13 +258,20 @@
     >
   </div>
   {#if error && steps.length > 0}<p class="error" role="alert">{error}</p>{/if}
-  <div class="params" role="group" aria-label="Tuned parameters">
+  <div class="params" class:with-c={hasC} role="group" aria-label="Tuned parameters">
     <div class="param header" aria-hidden="true">
       <span>Name</span>
       <span>In its range</span>
       <span>So far</span>
       <span class="num">Now</span>
-      <span class="num">Moved</span>
+      <span class="num" title="Moved from the start, as a share of the range">Moved</span>
+      {#if hasC}
+        <span
+          class="num"
+          title="Moved from the start, in multiples of the next iteration's c (which shrinks as the run goes on)"
+          >×c</span
+        >
+      {/if}
     </div>
     {#each shown as i (params[i].name)}
       {@const p = params[i]}
@@ -288,6 +300,9 @@
         </svg>
         <span class="num">{valueText(p.value, p.int)}</span>
         <span class="num moved" class:quiet={!movedPastNoise(p)}>{shareText(m)}</span>
+        {#if hasC}
+          <span class="num moved" class:quiet={!movedPastNoise(p)}>{cMultiple(p)?.toFixed(1) ?? '–'}</span>
+        {/if}
       </button>
     {:else}
       <p class="note">No parameter matches “{filter}”.</p>
@@ -398,6 +413,9 @@
     text-align: left;
     cursor: pointer;
   }
+  .with-c .param {
+    grid-template-columns: minmax(8em, 1fr) minmax(90px, 160px) 96px 5.5em 4.5em 3em;
+  }
   .param:hover {
     background: var(--hover);
   }
@@ -491,13 +509,14 @@
     margin: 8px 0;
   }
   @media (max-width: 560px) {
-    .param {
+    .param,
+    .with-c .param {
       grid-template-columns: minmax(6em, 1fr) 80px 4.5em;
     }
     .param .spark,
     .param .moved,
     .param.header span:nth-child(3),
-    .param.header span:nth-child(5) {
+    .param.header span:nth-child(n + 5) {
       display: none;
     }
   }
