@@ -15,6 +15,14 @@ young).
 - A pool's crosstable can show each matchup as wins–losses, win %,
   head-to-head Elo, or the residual: how many Elo better or worse it went
   than the ratings predict. Each cell's tooltip gives all of them.
+- A loaded game shows what its record says about it above the move
+  list: the event, time control, whether it was rated, the date and
+  the arimaa.com game id.
+
+### Fixed
+
+- The arimaa.com panel's recently finished games show their time
+  control, as the full list of recent games already did.
 
 ### Changed
 

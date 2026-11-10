@@ -178,7 +178,7 @@ plans the engine test and tournament runner.
   - `finished`: `RecentGame` (the lobby's `recentgames`) and
     `FinishedGame`, read from a finished game's viewer page
     (`opengamewin.cgi`, the `arimaa.vars` lines), with `record()` making a
-    `GameRecord` (players, ratings, time control, date, `GameId`, result,
+    `GameRecord` (players, ratings, time control, `Rated`, date, `GameId`, result,
     and each move's time as `%emt`) and `state()` a final `GameState`.
   - `invitations`: `Invitation` (the lobby's `invitedmegames` and
     `iinvitedgames`, in `LobbyGames`) and the waiting page's answers
@@ -1084,6 +1084,10 @@ plans the engine test and tournament runner.
     The bars show in free play too, named from the record's `Gold`/`Silver`
     tags (`SessionView.tagNames`) when there's no match, and show ratings
     from `GoldRating`/`SilverRating` (`SessionView.tagRatings`).
+    `SessionView.gameInfo` (`GameInfoView`: time controls, `Event`,
+    `Date`, `Rated`, `GameId`) is the line above the move list
+    (`lib/gameInfo.ts`), shown when no `WatchPanel` or puzzle is;
+    finished arimaa.com games and watched ones get a `Rated` tag (`1`/`0`).
     In a time control with fractions of a second
     (`SideClockView.fractional`) the bar uses `formatFractional`: tenths
     while running and milliseconds when stopped, under 10 s, with hidden

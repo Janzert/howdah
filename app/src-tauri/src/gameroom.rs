@@ -1161,6 +1161,7 @@ fn start(s: &mut Session, state: &GameState) {
     if let Some(tc) = &state.time_control {
         tags.push(("TimeControl".into(), tc.clone()));
     }
+    tags.push(("Rated".into(), if state.rated { "1" } else { "0" }.into()));
     s.set_tags(tags);
 }
 

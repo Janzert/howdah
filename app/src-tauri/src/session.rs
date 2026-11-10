@@ -42,9 +42,10 @@ use howdah_arimaa::notation;
 
 use crate::dto::{
     AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, EngineOutput, Eval,
-    LastMoveView, LastStepView, MoveMark, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt, PieceId,
-    PieceView, PlayerKind, PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView, SessionView,
-    SideClockView, StartSetupView, StepTarget, SweepView, TakebackView, TestGameTag, TurnStepView, TurnView,
+    GameInfoView, LastMoveView, LastStepView, MoveMark, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt,
+    PieceId, PieceView, PlayerKind, PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView,
+    SessionView, SideClockView, StartSetupView, StepTarget, SweepView, TakebackView, TestGameTag,
+    TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -628,6 +629,22 @@ impl Session {
     /// A tag's value, unless it's missing or blank.
     fn tag(&self, name: &str) -> Option<String> {
         self.tags.iter().find(|(n, v)| n == name && !v.trim().is_empty()).map(|(_, v)| v.clone())
+    }
+
+    /// The game as its record's tags describe it.
+    fn game_info(&self) -> GameInfoView {
+        let shared = self.tag("TimeControl");
+        GameInfoView {
+            time_controls: ["GoldTimeControl", "SilverTimeControl"].map(|t| self.tag(t).or(shared.clone())),
+            event: self.tag("Event"),
+            date: self.tag("Date"),
+            rated: self.tag("Rated").and_then(|r| match r.trim() {
+                "1" => Some(true),
+                "0" => Some(false),
+                _ => None,
+            }),
+            game_id: self.tag("GameId"),
+        }
     }
 
     /// Sets one tag, replacing any earlier value.
@@ -2754,6 +2771,7 @@ impl Session {
             }),
             tag_names: ["Gold", "Silver"].map(|name| self.tag(name)),
             tag_ratings: ["GoldRating", "SilverRating"].map(|name| self.tag(name)),
+            game_info: self.game_info(),
             clock: self.clock_view(),
             shown_clock: self.shown_clock_view(),
             thinking: self.matchup.as_ref().and_then(|m| m.thinking),
@@ -3616,6 +3634,25 @@ mod tests {
         assert_eq!(s.view().tag_ratings, [None, Some("1500".to_string())]);
         s.new_game();
         assert_eq!(s.view().tag_names, [None, None]);
+    }
+
+    #[test]
+    fn loaded_games_describe_themselves() {
+        let mut s = Session::new();
+        let setup = "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2\n";
+        s.load(&format!(
+            "[Event \"Casual game\"]\n[Date \"2014.01.04\"]\n[TimeControl \"2m/2m/100\"]\n\
+             [SilverTimeControl \"30s/5m\"]\n[Rated \"1\"]\n[GameId \"671438\"]\n\n{setup}"
+        ))
+        .unwrap();
+        let info = s.view().game_info;
+        assert_eq!(info.time_controls, [Some("2m/2m/100".to_string()), Some("30s/5m".to_string())]);
+        assert_eq!(info.event.as_deref(), Some("Casual game"));
+        assert_eq!(info.date.as_deref(), Some("2014.01.04"));
+        assert_eq!(info.rated, Some(true));
+        assert_eq!(info.game_id.as_deref(), Some("671438"));
+        s.new_game();
+        assert_eq!(s.view().game_info, GameInfoView::default());
     }
 
     #[test]

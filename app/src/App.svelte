@@ -18,6 +18,7 @@
   import { nextTick, turnTimeLeft } from '@howdah/board/clock';
   import { ticksFor } from './lib/clockTicks';
   import { barProps } from './lib/playerBar';
+  import { gameInfoText } from './lib/gameInfo';
   import EnginePanel from './lib/EnginePanel.svelte';
   import EnginesDialog from './lib/EnginesDialog.svelte';
   import EvalBar from './lib/EvalBar.svelte';
@@ -985,6 +986,9 @@
         {#if view.puzzle}
           <PuzzlePanel {view} {run} next={nextPuzzleId} onNext={openPuzzle} />
         {/if}
+        {#if !view.puzzle && !watch && gameInfoText(view.gameInfo)}
+          <div class="game-info" title="From the game's record">{gameInfoText(view.gameInfo)}</div>
+        {/if}
         <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
         <CommentBox {view} {run} />
         {#if watch}
@@ -1221,6 +1225,10 @@
     background: var(--panel);
     border-left: 1px solid var(--border);
     min-height: 0;
+  }
+  .game-info {
+    font-size: 12px;
+    color: var(--muted);
   }
   .panel :global(.moves) {
     flex: 1;

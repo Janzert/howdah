@@ -114,7 +114,7 @@ impl FinishedGame {
     }
 
     /// The game as a record: its moves and result, with the players,
-    /// ratings, time control, date and id as tags, and each move's time
+    /// ratings, time control, whether rated, date and id as tags, and each move's time
     /// as a `%emt` command in its comment.
     pub fn record(&self) -> Result<GameRecord, RecordError> {
         let v = &self.vars;
@@ -145,6 +145,7 @@ impl FinishedGame {
             ("GoldRating", v.nonempty("wrating")),
             ("SilverRating", v.nonempty("brating")),
             ("TimeControl", v.nonempty("timecontrol")),
+            ("Rated", v.nonempty("rated").map(|r| if r.trim() == "0" { "0" } else { "1" }.to_string())),
             ("Date", self.date()),
             ("GameId", Some(self.id.clone())),
         ];
@@ -253,6 +254,7 @@ arimaa.window();
         assert_eq!(record.tag("SilverRating"), Some("1848"));
         assert_eq!(record.tag("GameId"), Some("671438"));
         assert_eq!(record.tag("Date"), Some("2026.10.04"));
+        assert_eq!(record.tag("Rated"), Some("0"));
         let end = record.tree.line_end(GameTree::ROOT);
         let main = record.tree.main_line();
         let emt: Vec<_> = main[1..].iter().map(|&n| record.tree[n].annotation().command("emt")).collect();

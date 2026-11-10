@@ -278,6 +278,9 @@ pub struct SessionView {
     pub tag_names: [Option<String>; 2],
     /// The players' ratings from the `GoldRating` and `SilverRating` tags.
     pub tag_ratings: [Option<String>; 2],
+    /// What the record's tags say about the game, for the line above the
+    /// move list.
+    pub game_info: GameInfoView,
     /// The match's live clock.
     pub clock: Option<ClockView>,
     /// The clocks the player bars show: the live clock while the match
@@ -1393,6 +1396,24 @@ pub enum ChatEventKind {
     Out,
     Timeout,
     Message,
+}
+
+/// The game as the record's tags describe it. Every field is `None` when
+/// its tag is missing or blank.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GameInfoView {
+    /// Gold's and silver's time controls: the side's own tag
+    /// (`GoldTimeControl`), else the shared `TimeControl`.
+    pub time_controls: [Option<String>; 2],
+    pub event: Option<String>,
+    /// The `Date` tag as written (`2014.01.04`, perhaps with `??`).
+    pub date: Option<String>,
+    /// Whether the game was rated, from the `Rated` tag (`1` or `0`).
+    pub rated: Option<bool>,
+    /// The `GameId` tag: an arimaa.com game's permanent id.
+    pub game_id: Option<String>,
 }
 
 /// A part of a chat room message.

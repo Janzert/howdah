@@ -4,6 +4,7 @@ import type { CapturedView } from "./CapturedView";
 import type { ClockView } from "./ClockView";
 import type { Color } from "./Color";
 import type { EngineOption } from "./EngineOption";
+import type { GameInfoView } from "./GameInfoView";
 import type { GameResult } from "./GameResult";
 import type { LastMoveView } from "./LastMoveView";
 import type { MoveNodeView } from "./MoveNodeView";
@@ -105,6 +106,11 @@ tagNames: [string | null, string | null],
  * The players' ratings from the `GoldRating` and `SilverRating` tags.
  */
 tagRatings: [string | null, string | null], 
+/**
+ * What the record's tags say about the game, for the line above the
+ * move list.
+ */
+gameInfo: GameInfoView, 
 /**
  * The match's live clock.
  */

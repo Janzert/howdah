@@ -46,7 +46,7 @@ export function pastMeta(g: PastGameView): string {
   ]);
 }
 
-/** "Gold won by goal · 33 moves · Oct 4, 10:23 · rated" */
+/** "Gold won by goal · 33 moves · Oct 4, 10:23 · 2m/2m · rated" */
 export function recentMeta(g: RecentGameView): string {
   const ended =
     g.endedMs != null &&
@@ -56,7 +56,7 @@ export function recentMeta(g: RecentGameView): string {
       hour: 'numeric',
       minute: '2-digit',
     });
-  return join([resultText(g.result), g.moves != null && `${g.moves} moves`, ended, g.rated && 'rated']);
+  return join([resultText(g.result), g.moves != null && `${g.moves} moves`, ended, g.timeControl, g.rated && 'rated']);
 }
 
 /** "You: 6 games, won 1, lost 5 · not beaten yet" */
