@@ -2290,9 +2290,10 @@ impl Session {
     }
 
     /// The route a drop from `from` on `to` would take: the shortest walk of
-    /// that piece, following as many squares of the dragged `path` as it can.
-    /// A drop on an adjacent square is a single step of any kind (including
-    /// pushes and pulls), as in [`Session::try_step`].
+    /// that piece (see [`TurnBuilder::shortest_routes`]), following as many
+    /// squares of the dragged `path` as it can. A drop on an adjacent square
+    /// is a single step of any kind (including pushes and pulls), as in
+    /// [`Session::try_step`].
     fn route(&self, tb: &TurnBuilder, from: Square, to: Square, path: &[Square]) -> Option<Vec<Step>> {
         if from.direction_to(to).is_some() {
             let piece = tb.position().piece_at(from)?;
@@ -2644,9 +2645,12 @@ impl Session {
             .into_iter()
             .filter_map(|(step, kind)| step.to().map(|to| StepTarget { to, kind: Some(kind), steps: 1 }))
             .collect();
+        // An enemy piece's longer route ends by starting a push.
+        let enemy = tb.position().piece_at(from).is_some_and(|p| p.color != tb.position().side_to_move());
+        let far_kind = if enemy { StepKind::PushStart } else { StepKind::Simple };
         for (to, steps) in tb.reachable(from) {
             if steps > 1 {
-                targets.push(StepTarget { to, kind: Some(StepKind::Simple), steps: steps as u8 });
+                targets.push(StepTarget { to, kind: Some(far_kind), steps: steps as u8 });
             }
         }
         targets
@@ -3196,6 +3200,22 @@ mod tests {
         assert_eq!(id_at(&s.view(), "f4"), e);
         assert!(s.try_route(sq("f4"), sq("f7"), &[]).is_err(), "only one step left");
         assert_eq!(s.try_route(sq("f4"), sq("g4"), &[]).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn enemy_drop_two_away_flips_through_the_vacated_square() {
+        let mut s = Session::new();
+        s.new_game_from(&set_start("Ed4 Ra1 cd5 rh8", Color::Gold, 2)).unwrap();
+        s.try_step(sq("d4"), sq("d3")).unwrap();
+        let c4 = s.legal_targets(sq("d5")).into_iter().find(|t| t.to == sq("c4")).unwrap();
+        assert_eq!((c4.kind, c4.steps), (Some(StepKind::PushStart), 2));
+        let cat = id_at(&s.view(), "d5");
+        let anim = s.try_route(sq("d5"), sq("c4"), &[sq("d4"), sq("c4")]).unwrap();
+        assert_eq!(anim.iter().map(|a| a.to).collect::<Vec<_>>(), vec![sq("d4"), sq("c4")]);
+        assert!(anim.iter().all(|a| a.id == cat));
+        s.try_step(sq("d3"), sq("d4")).unwrap();
+        s.commit_turn(false).unwrap();
+        assert_eq!(s.view().moves.last().unwrap().notation, "Ed4s cd5s cd4w Ed3n");
     }
 
     #[test]

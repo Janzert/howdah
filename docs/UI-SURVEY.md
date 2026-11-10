@@ -44,12 +44,19 @@ cover it.
     with its step count beside the piece. Squares more than one step away
     are shown as smaller target dots.
   - Routes move only the dragged piece. A drop on an adjacent square is a
-    single step of any kind, so pushes and pulls work as before.
+    single step of any kind, so pushes and pulls work as before. A longer
+    route for a friendly piece is simple steps, the first of which may
+    finish a push under way. An enemy piece's route can finish a pull and
+    then start a push (the middle of a flip: step the stronger piece away,
+    drag the enemy through its square and on, then step back), as 4steps
+    allows; it may end on a trap, capturing the piece.
   - After the drop, the route's steps are replayed quickly so the player
     sees the steps actually taken. Undo takes them back one at a time.
   - For comparison, 4steps (`GameState::preferredRoute`) also takes a
     shortest route, but breaks ties toward its previous route rather than
-    toward the drag path.
+    toward the drag path. It searches the dragged piece's legal steps of
+    any kind, so it allows the same enemy and push-finishing routes, and
+    also routes a friendly piece onto a trap where it dies.
 - **[P2] Click-to-route.** Click a piece, then a destination. It's the same
   `try_route` call with an empty path.
 - **[have] Hover arrows (arimaa.com's main input)**, as a setting (off by

@@ -28,8 +28,10 @@ plans the engine test and tournament runner.
     An ambiguous enemy step is a pull, and push-finish/pull-finish steps can't
     start a pull. Pusher eligibility (stronger, unfrozen) is the same at push
     start and finish, since the pushed piece's step can't affect friendly pieces.
-    `shortest_routes`/`reachable` find a friendly piece's walks on its own
-    (simple steps only, the piece must survive), and `Route::best_along`
+    `shortest_routes`/`reachable` find one piece's walks by its own steps
+    (a friendly piece: simple steps, the first may finish a push, and it
+    must survive; an enemy piece: a pull's finish then a push's start, as
+    in a flip), and `Route::best_along`
     picks the one entering the most squares of a dragged path, then the
     one losing the fewest friends on traps.
   - `Move::Pass` is analysis only: records and the tree hold it, games and

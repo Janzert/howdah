@@ -18,6 +18,11 @@ young).
 - A loaded game shows what its record says about it above the move
   list: the event, time control, whether it was rated, the date and
   the arimaa.com game id.
+- Dragging an enemy piece two squares can finish a pull and start a
+  push in one drop, as in 4steps: for a flip, step the stronger piece
+  away, drag the enemy piece through its square and on, and step back.
+- A drag of the pushing piece can finish the push and carry on to
+  another square.
 
 ### Fixed
 

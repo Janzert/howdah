@@ -70,7 +70,7 @@ impl Turn {
     }
 }
 
-/// One piece walking on its own, as found by [`TurnBuilder::shortest_routes`].
+/// One piece's steps toward a square, as found by [`TurnBuilder::shortest_routes`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Route {
     pub steps: Vec<Step>,
@@ -267,17 +267,20 @@ impl TurnBuilder {
             .collect()
     }
 
-    /// Every way the friendly piece on `from` can walk to `to` on its own, with
-    /// the fewest steps that the steps left allow. Routes are made of simple
-    /// steps only (no pushes or pulls), each legal at the time it's taken, and
-    /// the piece must survive every step. Empty if `to` can't be reached.
+    /// Every way the piece on `from` can get to `to` by its own steps, with
+    /// the fewest steps that the steps left allow. Each step must be legal
+    /// when it's taken. A friendly piece takes simple steps, the first of
+    /// which may finish a push under way, and must survive every step. An
+    /// enemy piece can finish a pull and then start a push (as in a flip,
+    /// where the puller comes back to push it on), and may end on a trap.
+    /// Empty if `to` can't be reached.
     pub fn shortest_routes(&self, from: Square, to: Square) -> Vec<Route> {
         let walks = self.walks(from);
         let shortest = walks.iter().filter(|r| r.end() == Some(to)).map(|r| r.steps.len()).min();
         walks.into_iter().filter(|r| r.end() == Some(to) && Some(r.steps.len()) == shortest).collect()
     }
 
-    /// Squares the friendly piece on `from` can walk to on its own (as in
+    /// Squares the piece on `from` can get to by its own steps (as in
     /// [`TurnBuilder::shortest_routes`]), each with the fewest steps needed.
     pub fn reachable(&self, from: Square) -> Vec<(Square, usize)> {
         let mut best: Vec<(Square, usize)> = Vec::new();
@@ -291,8 +294,8 @@ impl TurnBuilder {
         best
     }
 
-    /// Every walk of the friendly piece on `from` that never revisits a square
-    /// (a shortest route never does), up to the steps left.
+    /// Every walk of the piece on `from` that never revisits a square (a
+    /// shortest route never does), up to the steps left.
     fn walks(&self, from: Square) -> Vec<Route> {
         let mut out = Vec::new();
         let mut route = Route { steps: Vec::new(), captures: 0 };
@@ -302,26 +305,34 @@ impl TurnBuilder {
 
     fn extend_walk(&self, at: Square, route: &mut Route, out: &mut Vec<Route>) {
         let Some(piece) = self.pos.piece_at(at) else { return };
-        if piece.color != self.pos.side_to_move() {
-            return;
-        }
+        let mover = self.pos.side_to_move();
+        let friendly = piece.color == mover;
         for dir in Dir::ALL {
             let step = Step::new(piece, at, dir);
             let Some(next) = step.to() else { continue };
             let revisit = route.steps.iter().any(|s| s.from == next);
-            if revisit || !matches!(self.classify(step), Ok(StepKind::Simple)) {
+            let fits = match self.classify(step) {
+                Ok(StepKind::Simple | StepKind::PushFinish) => friendly,
+                Ok(StepKind::PullFinish | StepKind::PushStart) => !friendly,
+                Err(_) => false,
+            };
+            if revisit || !fits {
                 continue;
             }
             let mut tb = self.clone();
-            let captured = tb.try_step(step).expect("classified as legal").effect.capture.is_some();
-            if tb.pos.piece_at(next) != Some(piece) {
+            let capture = tb.try_step(step).expect("classified as legal").effect.capture;
+            let lost = capture.is_some_and(|c| c.piece.color == mover);
+            let survived = tb.pos.piece_at(next) == Some(piece);
+            if friendly && !survived {
                 continue; // the piece itself was captured on a trap
             }
             route.steps.push(step);
-            route.captures += usize::from(captured);
+            route.captures += usize::from(lost);
             out.push(route.clone());
-            tb.extend_walk(next, route, out);
-            route.captures -= usize::from(captured);
+            if survived {
+                tb.extend_walk(next, route, out);
+            }
+            route.captures -= usize::from(lost);
             route.steps.pop();
         }
     }
@@ -810,12 +821,63 @@ mod tests {
     }
 
     #[test]
-    fn no_routes_for_enemy_pieces_or_during_a_push() {
+    fn enemy_routes_are_single_steps_without_a_pull() {
+        // Only a push can move the rabbit, and nothing can follow it.
         let tb = builder(Color::Gold, "Ed4 rd5");
         assert!(tb.shortest_routes(sq("d5"), sq("d7")).is_empty());
-        let mut tb = tb;
+        assert!(tb.shortest_routes(sq("d5"), sq("c4")).is_empty());
+        assert_eq!(tb.shortest_routes(sq("d5"), sq("d6")).len(), 1);
+    }
+
+    #[test]
+    fn enemy_route_finishes_a_pull_then_starts_a_push() {
+        // A flip: the elephant steps away, the cat is pulled into d4 and
+        // pushed on to c4 in one route, and the elephant comes back.
+        let mut tb = builder(Color::Gold, "Ed4 cd5");
+        tb.try_step(step("Ed4s")).unwrap();
+        let routes = tb.shortest_routes(sq("d5"), sq("c4"));
+        assert_eq!(routes.iter().map(route_squares).collect::<Vec<_>>(), vec!["d4 c4"]);
+        for &s in &routes[0].steps {
+            tb.try_step(s).unwrap();
+        }
+        assert_eq!(kinds(&tb)[1..], [StepKind::PullFinish, StepKind::PushStart]);
+        assert_eq!(tb.push_pending(), Some(sq("d4")));
+        tb.try_step(step("Ed3n")).unwrap();
+        assert!(tb.can_finish().is_ok());
+        // Three squares away is out of reach: the push leaves the cat stuck.
+        assert!(tb.shortest_routes(sq("c4"), sq("b4")).is_empty());
+    }
+
+    #[test]
+    fn enemy_route_needs_steps_for_the_push_to_finish() {
+        let mut tb = builder(Color::Gold, "Ed4 cd5 Ra1");
+        tb.try_step(step("Ra1n")).unwrap();
+        tb.try_step(step("Ed4s")).unwrap();
+        // Two steps left: the pull fits, the push after it wouldn't finish.
+        assert!(tb.shortest_routes(sq("d5"), sq("c4")).is_empty());
+        assert_eq!(tb.shortest_routes(sq("d5"), sq("d4")).len(), 1);
+    }
+
+    #[test]
+    fn enemy_route_may_end_on_a_trap() {
+        // Pulled into c4 and pushed on into c3, where the cat is captured.
+        let mut tb = builder(Color::Gold, "Ec4 cc5");
+        tb.try_step(step("Ec4e")).unwrap();
+        let routes = tb.shortest_routes(sq("c5"), sq("c3"));
+        assert_eq!(routes.iter().map(route_squares).collect::<Vec<_>>(), vec!["c4 c3"]);
+        assert_eq!(routes[0].captures, 0); // an enemy loss isn't counted
+    }
+
+    #[test]
+    fn friendly_route_can_start_by_finishing_a_push() {
+        let mut tb = builder(Color::Gold, "Ed4 rd5");
         tb.try_step(step("rd5n")).unwrap();
-        assert!(tb.shortest_routes(sq("d4"), sq("c5")).is_empty());
+        let routes = tb.shortest_routes(sq("d4"), sq("c5"));
+        assert_eq!(routes.iter().map(route_squares).collect::<Vec<_>>(), vec!["d5 c5"]);
+        // The push must be finished first, by stepping into d5, even to
+        // reach a square next to the elephant.
+        let routes = tb.shortest_routes(sq("d4"), sq("c4"));
+        assert_eq!(routes.iter().map(route_squares).collect::<Vec<_>>(), vec!["d5 c5 c4"]);
     }
 
     #[test]
