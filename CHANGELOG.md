@@ -7,6 +7,8 @@ young).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-10
+
 ### Added
 
 - Howdah says on Home when a new version is out, with a link to the
@@ -23,11 +25,18 @@ young).
   away, drag the enemy piece through its square and on, and step back.
 - A drag of the pushing piece can finish the push and carry on to
   another square.
+- An SPSA run's panel gives each parameter's move from its start in
+  multiples of c: a ×c column in the parameter table (ordered furthest
+  in c first by default), in a parameter's tooltip and chart header, and
+  as the "Moved more than c" card's mean move.
 
 ### Fixed
 
 - The arimaa.com panel's recently finished games show their time
   control, as the full list of recent games already did.
+- A long SPSA run's panel, and a test with many finished games, no
+  longer take seconds to draw (2,000 steps of 127 parameters: 4.2 s,
+  now 0.17 s).
 
 ### Changed
 
@@ -503,7 +512,8 @@ Gatekeeper.
 - Keeps playing through network drops and sleep, and resumes games in
   progress.
 
-[Unreleased]: https://github.com/Janzert/howdah/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Janzert/howdah/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Janzert/howdah/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Janzert/howdah/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Janzert/howdah/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Janzert/howdah/compare/v0.4.0...v0.5.0
