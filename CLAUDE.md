@@ -560,7 +560,12 @@ plans the engine test and tournament runner.
     the end the permanent id as `GameId` (`WatchView.finishedId` too): from
     the final state's `finishedId`, or else `find_id` asks `findgameid` up
     to four times, 2, 4, 6 and 8 s apart, since the server may not know it
-    right after the end.
+    right after the end. `complete_record` then fetches the finished game
+    and passes its moves to `Session::complete_remote`, which plays any
+    beyond the ended line (`GameTree::unend_line` takes back the early
+    result; the rules' own results stay) and ends it again with the same
+    result, since the server can report a result before the last moves;
+    then its move times fill in the line.
   - `chatroom.rs`: the gameroom's chat room (`docs/GAMEROOM.md`, "The
     chat room"). `ChatRoom` (in `Gameroom.chat`) enters with a
     `ChatClient` from `Gameroom::enter_chat` and runs a task asking the

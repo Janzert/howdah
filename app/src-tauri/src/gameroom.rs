@@ -1586,9 +1586,10 @@ async fn after_end(
 }
 
 /// Completes an ended game's record from the finished game: its
-/// permanent id, and the times of moves made before we sat down (a live
-/// game's state only has the last move's). The finished game is fetched
-/// only if some move has no time.
+/// permanent id, the last moves if the server reported the result before
+/// them (it can, to players and spectators alike, when bots move fast),
+/// and the times of moves made before we sat down (a live game's state
+/// only has the last move's).
 async fn complete_record(
     gameroom: Arc<Gameroom>,
     target: Target,
@@ -1596,11 +1597,25 @@ async fn complete_record(
     view: Arc<Mutex<WatchView>>,
 ) {
     let Some(id) = find_id(&gameroom, &target, generation, &view).await else { return };
-    if !lock(&target.session).missing_move_times(generation) {
-        return;
-    }
     let Ok(Opened::Finished(game)) = gameroom.open(&id).await else { return };
+    complete_moves(&target, generation, &game);
     fill_move_times(&target, generation, &game);
+}
+
+/// Plays the moves the finished game has beyond the ended session's.
+fn complete_moves(target: &Target, generation: u64, game: &FinishedGame) {
+    let mut s = lock(&target.session);
+    let before = s.view().live_ply;
+    let animation = match s.complete_remote(generation, &game.state().moves) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("gameroom: game {} not completed from its record: {}", game.id, e.message);
+            Vec::new()
+        }
+    };
+    if s.view().live_ply != before {
+        emit_session(&target.events, &s, animation, None);
+    }
 }
 
 /// Adds the finished game's move times to the record.

@@ -493,6 +493,9 @@ mod tests {
     /// with the timeout made inside the one `block_on` uses.
     #[test]
     fn leaving_on_exit_runs_outside_a_runtime() {
+        // Tauri's runtime is the tests' shared one, which only
+        // `runtime` may set.
+        crate::backend::tests::runtime();
         let room = ChatRoom::new(Arc::new(NullSink), archive());
         let left = tauri::async_runtime::block_on(async {
             tokio::time::timeout(Duration::from_secs(2), room.leave(None)).await

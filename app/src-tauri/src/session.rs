@@ -1541,6 +1541,44 @@ impl Session {
         Ok(())
     }
 
+    /// Plays the moves an ended game with a remote side is missing, from
+    /// its full list (`moves`, a finished game's record), and ends it again
+    /// with the same result. The server can report a game's result before
+    /// its last moves (bots move fast), and the game was ended where it
+    /// stood. Returns the animation, as [`Session::sync_remote`] does; a
+    /// list that doesn't continue the played line changes nothing.
+    pub fn complete_remote(&mut self, generation: u64, moves: &[String]) -> Result<Vec<AnimStep>, ApiError> {
+        if generation != self.generation || !self.server_game() {
+            return Err(ApiError::state("no game with a remote player"));
+        }
+        let Some(result) = self.live_result() else {
+            return Err(ApiError::state("the game hasn't ended"));
+        };
+        let path = self.tree.path(self.live());
+        if moves.len() < path.len() {
+            return Ok(Vec::new());
+        }
+        // Only a continuation of the line played (checked on a copy, so a
+        // different move leaves no variation).
+        let mut probe = self.tree.clone();
+        let continues =
+            path.windows(2).zip(moves).all(|(pair, text)| probe.add_notation(pair[0], text) == Ok(pair[1]));
+        if !continues {
+            return Ok(Vec::new());
+        }
+        let live = self.live();
+        if self.tree.unend_line(live).is_err() {
+            // The rules ended the game there: nothing can follow.
+            return Ok(Vec::new());
+        }
+        let detail = self.end_detail.take();
+        let played = self.sync_remote(generation, moves, None);
+        if self.live_result().is_none() {
+            self.finish(result, detail);
+        }
+        played
+    }
+
     /// The user's side in a game with a remote side.
     fn user_side(&self) -> Option<Color> {
         let m = self.matchup.as_ref().filter(|m| m.server_clock())?;
@@ -1712,13 +1750,6 @@ impl Session {
             let start = m.turn_start(m.turn_started);
             m.turn_starts.insert(node, start);
         }
-    }
-
-    /// Whether a move of the match's played line has no time (`%emt`).
-    pub fn missing_move_times(&self, generation: u64) -> bool {
-        generation == self.generation
-            && self.matchup.is_some()
-            && self.tree.path(self.live())[1..].iter().any(|&n| self.tree[n].annotation().elapsed().is_none())
     }
 
     /// Sets the times of the match's played line, one per move from the
@@ -4234,6 +4265,31 @@ mod tests {
         assert!(s.sync_remote(g, &sample_moves(1), None).is_err());
         let result = GameResult { winner: Color::Gold, reason: WinReason::Resignation };
         assert!(s.finish_remote(g, result, None).is_err());
+        assert!(s.complete_remote(g, &sample_moves(1)).is_err());
+    }
+
+    #[test]
+    fn an_ended_game_gets_the_moves_the_server_reported_late() {
+        let mut s = Session::new();
+        s.start_match([remote("a"), remote("b")], [None, None], false);
+        let g = s.generation();
+        s.sync_remote(g, &sample_moves(3), None).unwrap();
+        assert!(s.complete_remote(g, &sample_moves(4)).is_err(), "not ended yet");
+        // The result came before the last two moves.
+        let result = GameResult { winner: Color::Gold, reason: WinReason::Resignation };
+        s.finish_remote(g, result, None).unwrap();
+        // A record that doesn't continue the line changes nothing.
+        let mut other = sample_moves(5);
+        other[2] = sample_moves(4)[3].clone();
+        assert!(s.complete_remote(g, &other).unwrap().is_empty());
+        assert!(s.complete_remote(g, &sample_moves(2)).unwrap().is_empty());
+        assert_eq!(s.view().live_ply, Some(3));
+        s.complete_remote(g, &sample_moves(5)).unwrap();
+        let v = s.view();
+        assert_eq!((v.live_ply, v.ply, v.result), (Some(5), 5, Some(result)));
+        assert_eq!(s.tree[s.live()].result(), Some(result), "ended after the last move");
+        assert!(s.tree[s.tree.path(s.live())[3]].result().is_none(), "and not before it");
+        assert!(s.complete_remote(g, &sample_moves(5)).unwrap().is_empty(), "nothing more");
     }
 
     /// A human (gold) against an engine, with both setups played.
@@ -4590,12 +4646,10 @@ mod tests {
         s.start_match([remote("a"), remote("b")], [None, None], false);
         let g = s.generation();
         s.sync_remote(g, &sample_moves(3), Some(Duration::from_secs(9))).unwrap();
-        assert!(s.missing_move_times(g));
         let secs = |v: &[u64]| v.iter().map(|&t| Duration::from_secs(t)).collect::<Vec<_>>();
         assert!(!s.fill_move_times(g, &secs(&[1, 2])), "a count that doesn't match");
         assert!(!s.fill_move_times(g + 1, &secs(&[1, 2, 3])), "old game");
         assert!(s.fill_move_times(g, &secs(&[4, 5, 6])));
-        assert!(!s.missing_move_times(g));
         let times: Vec<_> = s.view().tree.iter().map(|m| m.elapsed_ms).collect();
         assert_eq!(times, [Some(4000), Some(5000), Some(6000)]);
     }

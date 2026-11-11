@@ -603,6 +603,31 @@ impl GameTree {
         Ok(())
     }
 
+    /// Takes back a result [`GameTree::end_line`] gave `node`, so the game
+    /// can go on from it (a server that reported its result before its
+    /// last moves). Returns the result taken back, if any. A result the
+    /// rules give the position stays, and is an error.
+    pub fn unend_line(&mut self, node: NodeId) -> Result<Option<GameResult>, GameError> {
+        let n = self.get(node)?;
+        let Some(result) = n.result else { return Ok(None) };
+        let by_rules = match n.parent.map(|p| &self[p]) {
+            Some(parent) if !Game::is_setup_ply(self.start + parent.ply) => {
+                let mover = parent.position.side_to_move();
+                if self.repetition_immobilization {
+                    outcome_with_history(&n.position, mover, self.repetition_history(node)).is_some()
+                } else {
+                    outcome_after_turn(&n.position, mover).is_some()
+                }
+            }
+            _ => false,
+        };
+        if by_rules {
+            return Err(GameError::GameOver);
+        }
+        self.get_mut(node)?.result = None;
+        Ok(Some(result))
+    }
+
     pub(crate) fn set_end_marker(&mut self, node: NodeId, marker: Option<String>) -> Result<(), GameError> {
         self.get_mut(node)?.end_marker = marker;
         Ok(())
@@ -806,6 +831,22 @@ mod tests {
         assert_eq!(t.score_winner(end), Color::Gold, "gold was ahead last");
         let first_move = t.path(end)[3];
         assert_eq!(t.score_winner(first_move), Color::Silver, "never different");
+    }
+
+    #[test]
+    fn only_an_outside_result_can_be_taken_back() {
+        use crate::outcome::WinReason;
+        use crate::position::tests::pos;
+        let mut t = GameTree::from_position(pos(Color::Gold, "Rb7 ra2 Ec1 eh8"), 2).unwrap();
+        let goal = GameResult { winner: Color::Gold, reason: WinReason::Goal };
+        // A server's goal ending reported before its move.
+        t.end_line(GameTree::ROOT, goal).unwrap();
+        assert_eq!(t.unend_line(GameTree::ROOT), Ok(Some(goal)));
+        assert_eq!(t.unend_line(GameTree::ROOT), Ok(None), "nothing left to take back");
+        let scored = t.add_notation(GameTree::ROOT, "Rb7n").unwrap();
+        assert_eq!(t[scored].result(), Some(goal));
+        assert_eq!(t.unend_line(scored), Err(GameError::GameOver), "the rules' result stays");
+        assert_eq!(t[scored].result(), Some(goal));
     }
 
     #[test]

@@ -1570,7 +1570,7 @@ fn arg<T: DeserializeOwned>(args: &Value, name: &str) -> Result<T, ApiError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     struct NullSink;
@@ -1587,9 +1587,11 @@ mod tests {
         }
     }
 
-    /// One runtime for every test: Tauri's can only be set once, and the
-    /// controllers keep running on it after a test's own runtime would end.
-    fn runtime() -> &'static tokio::runtime::Runtime {
+    /// One runtime for every test: Tauri's can only be set once (and a
+    /// test using `tauri::async_runtime` first would start its own), and
+    /// the controllers keep running on it after a test's own runtime would
+    /// end.
+    pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
         static RT: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
         RT.get_or_init(|| {
             let rt = tokio::runtime::Runtime::new().expect("a runtime");
