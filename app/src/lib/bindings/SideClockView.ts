@@ -15,8 +15,8 @@ fractional: boolean, moveTimeMs: number, reserveMs: number,
  */
 turnAllowanceMs: number, 
 /**
- * In a clock worked out for a past move, the time that move took,
- * on the side that made it (shown in place of the move time, as
- * arimaa.com's game viewer does).
+ * The time the last move took, on the side that made it, while the
+ * other side's clock runs or the clocks stand (shown in place of the
+ * move time, as arimaa.com's gameroom and game viewer do).
  */
 lastUsedMs: number | null, };

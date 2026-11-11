@@ -7,6 +7,20 @@ young).
 
 ## [Unreleased]
 
+### Added
+
+- A game with a game time limit or a turn limit shows the time and turns
+  left under the turn bar, counting down as the game goes.
+
+### Changed
+
+- In a live game, the side waiting for its turn shows the time its last
+  move took beside its reserve, as arimaa.com's gameroom does, rather
+  than the move time its next turn will have.
+- Under a maximum turn time, the side to move shows only the reserve it
+  can use this turn, as arimaa.com does; the waiting side still shows
+  all of its reserve.
+
 ## [0.7.0] - 2026-11-10
 
 ### Added

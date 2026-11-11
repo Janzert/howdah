@@ -5,6 +5,7 @@ import {
   formatClock,
   formatFractional,
   formatShort,
+  gameTimeLeft,
   nextTick,
   sideTimes,
   TICK_TIMES_MS,
@@ -19,6 +20,7 @@ describe('turnTimeLeft', () => {
     turnElapsedMs: 4000,
     turnAllowanceMs: 15_000,
     gameRemainingMs: null,
+    turnsLeft: null,
     past: false,
   };
 
@@ -26,6 +28,29 @@ describe('turnTimeLeft', () => {
     expect(turnTimeLeft(clock, 0)).toBe(11_000);
     expect(turnTimeLeft(clock, 1000)).toBe(10_000);
     expect(turnTimeLeft(clock, 60_000)).toBe(0);
+  });
+});
+
+describe('gameTimeLeft', () => {
+  const clock: ClockView = {
+    gold: null,
+    silver: null,
+    running: 'silver',
+    turnElapsedMs: 0,
+    turnAllowanceMs: 15_000,
+    gameRemainingMs: 5000,
+    turnsLeft: null,
+    past: false,
+  };
+
+  it('counts down while a clock runs and stops at zero', () => {
+    expect(gameTimeLeft(clock, 2000)).toBe(3000);
+    expect(gameTimeLeft(clock, 9000)).toBe(0);
+  });
+
+  it('stands still while no clock runs, and is null without a limit', () => {
+    expect(gameTimeLeft({ ...clock, running: null }, 2000)).toBe(5000);
+    expect(gameTimeLeft({ ...clock, gameRemainingMs: null }, 0)).toBeNull();
   });
 });
 
@@ -46,6 +71,7 @@ describe('sideTimes', () => {
       turnElapsedMs: 40_000,
       turnAllowanceMs: 150_000,
       gameRemainingMs: null,
+      turnsLeft: null,
       past: false,
     };
     expect(sideTimes(clock, 'gold', 0)).toEqual({
@@ -58,6 +84,24 @@ describe('sideTimes', () => {
     expect(sideTimes(clock, 'silver', 0)).toBeNull();
   });
 
+  it('shows the running side only the reserve a maximum turn time leaves it', () => {
+    // 30s/2m with a 45 s turn limit: 15 s of the reserve can be used.
+    const capped = { ...side, turnAllowanceMs: 45_000, lastUsedMs: null };
+    const clock: ClockView = {
+      gold: capped,
+      silver: capped,
+      running: 'gold',
+      turnElapsedMs: 10_000,
+      turnAllowanceMs: 45_000,
+      gameRemainingMs: null,
+      turnsLeft: null,
+      past: false,
+    };
+    expect(sideTimes(clock, 'gold', 0)).toMatchObject({ move: 20_000, reserve: 15_000 });
+    expect(sideTimes(clock, 'gold', 30_000)).toMatchObject({ move: 0, reserve: 5000 });
+    expect(sideTimes(clock, 'silver', 0)).toMatchObject({ reserve: 120_000, running: false });
+  });
+
   it('shows the time a past move took on the side that made it', () => {
     const clock: ClockView = {
       gold: { ...side, lastUsedMs: 12_000 },
@@ -66,6 +110,7 @@ describe('sideTimes', () => {
       turnElapsedMs: 0,
       turnAllowanceMs: 0,
       gameRemainingMs: null,
+      turnsLeft: null,
       past: true,
     };
     expect(sideTimes(clock, 'gold', 9999)).toEqual({

@@ -472,9 +472,9 @@ pub struct SideClockView {
     /// included). The UI colors the clock by it.
     #[ts(type = "number")]
     pub turn_allowance_ms: u64,
-    /// In a clock worked out for a past move, the time that move took,
-    /// on the side that made it (shown in place of the move time, as
-    /// arimaa.com's game viewer does).
+    /// The time the last move took, on the side that made it, while the
+    /// other side's clock runs or the clocks stand (shown in place of the
+    /// move time, as arimaa.com's gameroom and game viewer do).
     #[ts(type = "number | null")]
     pub last_used_ms: Option<u64>,
 }
@@ -499,6 +499,9 @@ pub struct ClockView {
     /// Time left before the game time limit, if there is one.
     #[ts(type = "number | null")]
     pub game_remaining_ms: Option<u64>,
+    /// Turns left before the turn limit, if there is one, the current
+    /// turn included (1: the last turn).
+    pub turns_left: Option<u32>,
     /// Worked out for the shown move from the move times and the time
     /// control, rather than the live clock.
     pub past: bool,

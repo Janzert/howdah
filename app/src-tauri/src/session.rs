@@ -2922,6 +2922,10 @@ impl Session {
             }
             None => (Duration::ZERO, Duration::ZERO),
         };
+        // The time the live move took, for the side that made it.
+        let live = m.live;
+        let mover = self.tree[live].parent().map(|p| self.tree[p].position().side_to_move());
+        let last_used = self.tree[live].annotation().elapsed().map(ms);
         let side_view = |side: Color| {
             clock.tc(side).map(|tc| SideClockView {
                 time_control: tc.to_string(),
@@ -2933,7 +2937,7 @@ impl Session {
                 }),
                 reserve_ms: ms(clock.reserves[side.index()]),
                 turn_allowance_ms: ms(self.allowance(side, tc, clock.reserves[side.index()])),
-                last_used_ms: None,
+                last_used_ms: last_used.filter(|_| running != Some(side) && mover == Some(side)),
             })
         };
         Some(ClockView {
@@ -2943,8 +2947,18 @@ impl Session {
             turn_elapsed_ms: ms(elapsed),
             turn_allowance_ms: ms(allowance),
             game_remaining_ms: clock.game_deadline().map(|d| ms(d.saturating_duration_since(Instant::now()))),
+            turns_left: self.turns_left(clock.turn_limit(), live),
             past: false,
         })
+    }
+
+    /// Turns left at node `id` before a turn limit of `limit`, the turn to
+    /// play there included, counted as `after_move` ends the game: after
+    /// silver's move in turn `limit`. `None` without a limit or once the
+    /// limit is reached.
+    fn turns_left(&self, limit: Option<u32>, id: NodeId) -> Option<u32> {
+        let turn = (self.tree[id].ply() / 2) as u32;
+        limit.filter(|&l| l > turn).map(|l| l - turn)
     }
 
     /// The clocks for the player bars: the live clock while a match goes
@@ -3034,6 +3048,8 @@ impl Session {
             turn_allowance_ms: 0,
             game_remaining_ms: time_limit
                 .and_then(|limit| Some(ms(limit.saturating_sub(self.game_time(id)?)))),
+            turns_left: self
+                .turns_left(tcs.iter().flatten().map(|tc| tc.turn_limit).filter(|&t| t > 0).min(), id),
             past: true,
         })
     }
@@ -4730,6 +4746,40 @@ mod tests {
         let v = s.view();
         assert_eq!(v.result.unwrap().reason, WinReason::Score);
         assert_eq!(v.end_detail.as_deref(), Some("game time limit reached"));
+    }
+
+    #[test]
+    fn live_clock_shows_the_last_move_time_and_turns_left() {
+        let mut s = Session::new();
+        let tc: TimeControl = "1m/5m/100/0/3t".parse().unwrap();
+        s.start_match([engine("a"), engine("b")], [Some(tc); 2], false);
+        let clock = s.view().clock.unwrap();
+        assert_eq!(clock.turns_left, Some(3));
+        assert_eq!(clock.gold.unwrap().last_used_ms, None, "no move yet");
+        std::thread::sleep(Duration::from_millis(20));
+        s.apply_engine_move(s.generation(), Color::Gold, 0, &setup_text(Color::Gold)).unwrap();
+        let clock = s.view().clock.unwrap();
+        assert_eq!(clock.running, Some(Color::Silver));
+        assert!(clock.gold.unwrap().last_used_ms.is_some(), "gold made the last move");
+        assert_eq!(clock.silver.unwrap().last_used_ms, None, "silver's clock runs");
+        assert_eq!(clock.turns_left, Some(3), "still turn 1");
+        s.apply_engine_move(s.generation(), Color::Silver, 1, &setup_text(Color::Silver)).unwrap();
+        let clock = s.view().clock.unwrap();
+        assert_eq!(clock.turns_left, Some(2));
+        assert!(clock.silver.unwrap().last_used_ms.is_some());
+        assert_eq!(clock.gold.unwrap().last_used_ms, None);
+    }
+
+    #[test]
+    fn past_clock_counts_turns_left() {
+        let mut s = Session::new();
+        s.load(
+            "[TimeControl \"1m/5m/100/0/40t\"]\n\n\
+             1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2 {[%emt 0:00:05]}\n",
+        )
+        .unwrap();
+        let clock = s.view().shown_clock.unwrap();
+        assert_eq!(clock.turns_left, Some(40), "silver's setup is still turn 1");
     }
 
     #[test]

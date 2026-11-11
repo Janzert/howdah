@@ -101,7 +101,9 @@
       class="clock {times.level}"
       class:running={times.running}
       title={times.used
-        ? 'time this move took · reserve after it'
+        ? clock?.past
+          ? 'time this move took · reserve after it'
+          : 'time the last move took · reserve'
         : clock?.past
           ? 'move time · reserve at this move'
           : 'move time · reserve'}
@@ -238,7 +240,7 @@
   .spare {
     visibility: hidden;
   }
-  /* The time a past move took stands out from the clocks' other times. */
+  /* The time the last move took stands out from the clocks' other times. */
   .move.used {
     color: var(--text);
   }

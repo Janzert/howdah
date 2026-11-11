@@ -28,6 +28,11 @@ turnAllowanceMs: number,
  */
 gameRemainingMs: number | null, 
 /**
+ * Turns left before the turn limit, if there is one, the current
+ * turn included (1: the last turn).
+ */
+turnsLeft: number | null, 
+/**
  * Worked out for the shown move from the move times and the time
  * control, rather than the live clock.
  */

@@ -37,6 +37,7 @@
   import ChatPanel from './lib/ChatPanel.svelte';
   import CloseWindowDialog from './lib/CloseWindowDialog.svelte';
   import PlayerBar from '@howdah/board/PlayerBar.svelte';
+  import GameLimits from './lib/GameLimits.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
   import { justEnded } from './lib/result';
   import { settings, type HoverInput } from './lib/settings.svelte';
@@ -983,6 +984,7 @@
           onMoveNow={() => run(api.engineMoveNow())}
           onEndMatch={() => run(api.endMatch())}
         />
+        <GameLimits clock={view.shownClock} {receivedAt} {now} />
         {#if view.puzzle}
           <PuzzlePanel {view} {run} next={nextPuzzleId} onNext={openPuzzle} />
         {/if}

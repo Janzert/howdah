@@ -50,8 +50,8 @@ export type LastMoveView = { color: Color; steps: Array<LastStepView> };
 export type PositionView = { sideToMove: Color; pieces: Array<PieceView>; short: string };
 
 /** One side's clock. `turnAllowanceMs` is the time it has for a turn from
- * its start; `lastUsedMs`, in a clock for a past move, the time that move
- * took. */
+ * its start; `lastUsedMs`, on the side that made the last move while it
+ * isn't running, the time that move took. */
 export type SideClockView = {
   timeControl: string;
   fractional: boolean;
@@ -61,7 +61,8 @@ export type SideClockView = {
   lastUsedMs: number | null;
 };
 
-/** A clock snapshot; the running side counts down from `turnElapsedMs`.
+/** A clock snapshot; the running side counts down from `turnElapsedMs`,
+ * and `gameRemainingMs` counts down while a side runs.
  * `past` marks clocks worked out for a past move. */
 export type ClockView = {
   gold: SideClockView | null;
@@ -70,6 +71,8 @@ export type ClockView = {
   turnElapsedMs: number;
   turnAllowanceMs: number;
   gameRemainingMs: number | null;
+  /** Turns left before the turn limit, the current one included. */
+  turnsLeft: number | null;
   past: boolean;
 };
 

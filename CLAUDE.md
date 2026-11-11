@@ -1080,7 +1080,11 @@ plans the engine test and tournament runner.
     `WhiteTimeControl`, which the reader maps; and the `SetupMinimum`
     tag, which `start_match` writes for engine-only matches, whose
     setups get no minute), with the time the move took (`SideClockView.lastUsedMs`) in
-    place of the mover's move time. None if a move on the line has no
+    place of the mover's move time. The live clock gives it too, from
+    the live move's `%emt`, while the other side runs or the clocks
+    stand, as the gameroom shows it. `GameLimits.svelte` under the
+    TurnBar shows `ClockView.gameRemainingMs` (counted down while a
+    clock runs, `gameTimeLeft`) and `turnsLeft`. None if a move on the line has no
     time. The viewer (`arimaa.js`, `buildUsedResvTimeArrays`) adds all
     unused move time, ignoring the percentage; we follow the time control.
     The bars show in free play too, named from the record's `Gold`/`Silver`

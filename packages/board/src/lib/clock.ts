@@ -7,11 +7,22 @@ export function turnTimeLeft(clock: ClockView, sinceViewMs: number): number {
   return Math.max(0, clock.turnAllowanceMs - clock.turnElapsedMs - sinceViewMs);
 }
 
+/** Time left before the game time limit, `sinceViewMs` after the view
+ * carrying `clock` arrived (counting down only while a clock runs), or
+ * null without a limit. */
+export function gameTimeLeft(clock: ClockView, sinceViewMs: number): number | null {
+  if (clock.gameRemainingMs == null) return null;
+  return Math.max(0, clock.gameRemainingMs - (clock.running ? sinceViewMs : 0));
+}
+
 /** A side's clock as shown: move time and reserve, counted down while
  * it runs (`sinceViewMs` after the view arrived), and how urgent it is by
  * the time left for the turn (otherwise what its next turn will have).
- * In a past clock, the side that made the shown move shows the time it
- * took in place of the move time (`used`), as arimaa.com's viewer does.
+ * The running side shows only the reserve it can use this turn (less than
+ * all of it under a maximum turn time); a waiting side, all of it.
+ * The side that made the last move shows the time it took in place of
+ * the move time (`used`) while the other side's clock runs or the clocks
+ * stand, as arimaa.com's gameroom and viewer do.
  * Null for an untimed side. */
 export function sideTimes(
   clock: ClockView,
@@ -29,7 +40,10 @@ export function sideTimes(
   const elapsed = clock.turnElapsedMs + sinceViewMs;
   const left = Math.max(0, clock.turnAllowanceMs - elapsed);
   const move = Math.min(left, Math.max(0, moveTimeMs - elapsed));
-  const reserve = Math.min(left, Math.max(0, reserveMs - Math.max(0, elapsed - moveTimeMs)));
+  // Only the reserve this turn can use: with a maximum turn time, what's
+  // left of it after the move time (arimaa.com's client shows the same).
+  const usable = Math.min(reserveMs, Math.max(0, turnAllowanceMs - moveTimeMs));
+  const reserve = Math.min(left, Math.max(0, usable - Math.max(0, elapsed - moveTimeMs)));
   return { move, reserve, running: true, used: false, level: clockLevel(left) };
 }
 
