@@ -28,14 +28,29 @@ export function sideTimes(
   clock: ClockView,
   side: Color,
   sinceViewMs: number,
-): { move: number; reserve: number; running: boolean; used: boolean; level: ClockLevel } | null {
+): {
+  move: number;
+  reserve: number;
+  /** The whole reserve, while the side runs and can use only part of it. */
+  fullReserve: number | null;
+  running: boolean;
+  used: boolean;
+  level: ClockLevel;
+} | null {
   const mine = clock[side];
   if (!mine) return null;
   const { moveTimeMs, reserveMs, turnAllowanceMs, lastUsedMs } = mine;
   if (clock.running !== side) {
     const used = lastUsedMs != null;
     const move = lastUsedMs ?? moveTimeMs;
-    return { move, reserve: reserveMs, running: false, used, level: clockLevel(turnAllowanceMs) };
+    return {
+      move,
+      reserve: reserveMs,
+      fullReserve: null,
+      running: false,
+      used,
+      level: clockLevel(turnAllowanceMs),
+    };
   }
   const elapsed = clock.turnElapsedMs + sinceViewMs;
   const left = Math.max(0, clock.turnAllowanceMs - elapsed);
@@ -43,8 +58,10 @@ export function sideTimes(
   // Only the reserve this turn can use: with a maximum turn time, what's
   // left of it after the move time (arimaa.com's client shows the same).
   const usable = Math.min(reserveMs, Math.max(0, turnAllowanceMs - moveTimeMs));
-  const reserve = Math.min(left, Math.max(0, usable - Math.max(0, elapsed - moveTimeMs)));
-  return { move, reserve, running: true, used: false, level: clockLevel(left) };
+  const spent = Math.max(0, elapsed - moveTimeMs);
+  const reserve = Math.min(left, Math.max(0, usable - spent));
+  const fullReserve = usable < reserveMs ? Math.max(0, reserveMs - spent) : null;
+  return { move, reserve, fullReserve, running: true, used: false, level: clockLevel(left) };
 }
 
 /** How urgent a clock looks, by the time left for the turn (move time plus

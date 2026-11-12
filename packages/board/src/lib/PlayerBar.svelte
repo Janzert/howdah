@@ -104,9 +104,11 @@
         ? clock?.past
           ? 'time this move took · reserve after it'
           : 'time the last move took · reserve'
-        : clock?.past
-          ? 'move time · reserve at this move'
-          : 'move time · reserve'}
+        : times.fullReserve != null
+          ? `move time · reserve this turn can use (${formatClock(times.fullReserve)} in all)`
+          : clock?.past
+            ? 'move time · reserve at this move'
+            : 'move time · reserve'}
     >
       <span class="move" class:used={times.used}>{@render time(times.move, times.running)}</span>
       <span class="sep">·</span>

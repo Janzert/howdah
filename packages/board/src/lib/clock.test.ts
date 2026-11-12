@@ -77,6 +77,7 @@ describe('sideTimes', () => {
     expect(sideTimes(clock, 'gold', 0)).toEqual({
       move: 0,
       reserve: 110_000,
+      fullReserve: null,
       running: true,
       used: false,
       level: 'ok',
@@ -97,8 +98,8 @@ describe('sideTimes', () => {
       turnsLeft: null,
       past: false,
     };
-    expect(sideTimes(clock, 'gold', 0)).toMatchObject({ move: 20_000, reserve: 15_000 });
-    expect(sideTimes(clock, 'gold', 30_000)).toMatchObject({ move: 0, reserve: 5000 });
+    expect(sideTimes(clock, 'gold', 0)).toMatchObject({ move: 20_000, reserve: 15_000, fullReserve: 120_000 });
+    expect(sideTimes(clock, 'gold', 30_000)).toMatchObject({ move: 0, reserve: 5000, fullReserve: 110_000 });
     expect(sideTimes(clock, 'silver', 0)).toMatchObject({ reserve: 120_000, running: false });
   });
 
@@ -116,6 +117,7 @@ describe('sideTimes', () => {
     expect(sideTimes(clock, 'gold', 9999)).toEqual({
       move: 12_000,
       reserve: 120_000,
+      fullReserve: null,
       running: false,
       used: true,
       level: 'ok',
