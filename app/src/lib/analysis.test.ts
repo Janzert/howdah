@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   analysisEngine,
+  barEval,
   evalGraph,
   formatEval,
   formatRabbits,
@@ -105,5 +106,22 @@ describe('markTitle', () => {
   it('names the mark and the better move', () => {
     expect(markTitle({ glyph: '??', best: 'Ee2n' })).toBe('Blunder, by the engine. Best was Ee2n');
     expect(markTitle({ glyph: '?!', best: null })).toBe('Dubious, by the engine');
+  });
+});
+
+describe('barEval', () => {
+  const searched: Eval = { kind: 'centiRabbits', value: 0 };
+  it('gives the winner the bar when the position ends the game', () => {
+    for (const reason of ['goal', 'elimination', 'immobilization'] as const) {
+      expect(barEval({ winner: 'silver', reason }, searched)).toEqual({ kind: 'decided', winner: 'silver' });
+    }
+    expect(barEval({ winner: 'gold', reason: 'goal' }, null)).toEqual({ kind: 'decided', winner: 'gold' });
+  });
+  it("keeps the search's eval for a result decided off the board", () => {
+    for (const reason of ['timeout', 'resignation', 'illegalMove', 'score', 'forfeit'] as const) {
+      expect(barEval({ winner: 'gold', reason }, searched)).toBe(searched);
+    }
+    expect(barEval(null, searched)).toBe(searched);
+    expect(barEval(null, null)).toBeNull();
   });
 });

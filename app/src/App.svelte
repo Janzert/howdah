@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { analysisEngine, pvMoves } from './lib/analysis';
+  import { analysisEngine, barEval, pvMoves } from './lib/analysis';
   import AnalysisPanel from './lib/AnalysisPanel.svelte';
   import { api, errorMessage, isDocked, session } from './lib/api';
   import type { AnalysisLine } from './lib/bindings/AnalysisLine';
@@ -902,7 +902,7 @@
       <div class="board-wrap" class:with-bar={analysing}>
         {#if analysing}
           <div class="eval-box">
-            <EvalBar evaluation={shown.line?.eval ?? null} {flipped} />
+            <EvalBar evaluation={barEval(view?.result ?? null, shown.line?.eval ?? null)} {flipped} />
           </div>
         {/if}
         {#if missedMove && view?.players}

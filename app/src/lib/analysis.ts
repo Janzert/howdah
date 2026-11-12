@@ -3,6 +3,7 @@
 import type { AnalysisLine } from './bindings/AnalysisLine';
 import type { EngineSpec } from './bindings/EngineSpec';
 import type { Eval } from './bindings/Eval';
+import type { GameResult } from './bindings/GameResult';
 import type { MoveMark } from './bindings/MoveMark';
 import type { MoveNodeView } from './bindings/MoveNodeView';
 import type { NodeId } from './bindings/NodeId';
@@ -16,6 +17,18 @@ export function goldShare(e: Eval | null): number {
   if (!e) return 0.5;
   if (e.kind === 'decided') return e.winner === 'gold' ? 1 : 0;
   return 1 / (1 + Math.exp(-e.value / EVAL_BAR_SCALE));
+}
+
+/** The eval the bar shows at a node: a win for the winner when the
+ * position itself ends the game (goal, elimination, immobilization),
+ * since engines don't search a finished position; otherwise the search's
+ * eval. A result decided off the board (timeout, resignation, ...) keeps
+ * the search's eval of the position. */
+export function barEval(result: GameResult | null, searched: Eval | null): Eval | null {
+  if (result && (result.reason === 'goal' || result.reason === 'elimination' || result.reason === 'immobilization')) {
+    return { kind: 'decided', winner: result.winner };
+  }
+  return searched;
 }
 
 /** An eval in rabbits from gold's side (`+0.35`), or who has a proven win. */

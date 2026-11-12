@@ -29,6 +29,13 @@ young).
   reported while the side waited, since on its turn it reports only the
   usable part); the waiting side still shows all of its reserve.
 
+### Fixed
+
+- With analysis on, a position that ends the game (goal, elimination or
+  immobilization) fills the eval bar for the winner, rather than showing
+  it even. A loss on time or by resignation still shows the engine's
+  eval of the position.
+
 ## [0.7.0] - 2026-11-10
 
 ### Added
