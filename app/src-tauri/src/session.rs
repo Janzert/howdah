@@ -140,6 +140,11 @@ struct Match {
     /// In a game with a remote side, whether the server has stopped the
     /// clock (before the game starts).
     clock_stopped: bool,
+    /// In a game with a remote side, each side's reserve as last reported
+    /// while it wasn't moving. On a side's turn arimaa.com reports only
+    /// the reserve the turn can use under a maximum turn time, so this
+    /// keeps the whole reserve for the clock's display.
+    idle_reserves: [Option<Duration>; 2],
 }
 
 /// A takeback request in a game on a server, as far as it got.
@@ -1063,6 +1068,7 @@ impl Session {
             takeback: None,
             takeback_requests: true,
             clock_stopped: false,
+            idle_reserves: [None; 2],
         };
         matchup.turn_starts.insert(GameTree::ROOT, matchup.turn_start(now));
         // The record keeps the time controls, so the clocks can be worked
@@ -1497,11 +1503,15 @@ impl Session {
         if generation != self.generation {
             return Err(ApiError::state("stale remote clock"));
         }
+        let live_side = self.live_side();
         let Some(m) = self.matchup.as_mut().filter(|m| m.server_clock()) else {
             return Err(ApiError::state("no game with a remote player"));
         };
         let now = Instant::now();
         let back = |d: Duration| now.checked_sub(d).unwrap_or(now);
+        for side in Color::ALL.into_iter().filter(|&s| !reported.running || s != live_side) {
+            m.idle_reserves[side.index()] = Some(reported.reserves[side.index()]);
+        }
         m.turn_started = reported.turn_started.unwrap_or_else(|| back(reported.turn_elapsed));
         m.clock_stopped = !reported.running;
         if let Some(clock) = &mut m.clock {
@@ -2957,6 +2967,15 @@ impl Session {
         let live = m.live;
         let mover = self.tree[live].parent().map(|p| self.tree[p].position().side_to_move());
         let last_used = self.tree[live].annotation().elapsed().map(ms);
+        // The running side's whole reserve, where the server reported only
+        // the part its turn can use.
+        let reserve = |side: Color| {
+            let reported = clock.reserves[side.index()];
+            match m.idle_reserves[side.index()] {
+                Some(idle) if running == Some(side) => idle.max(reported),
+                _ => reported,
+            }
+        };
         let side_view = |side: Color| {
             clock.tc(side).map(|tc| SideClockView {
                 time_control: tc.to_string(),
@@ -2966,8 +2985,8 @@ impl Session {
                 } else {
                     tc.move_time()
                 }),
-                reserve_ms: ms(clock.reserves[side.index()]),
-                turn_allowance_ms: ms(self.allowance(side, tc, clock.reserves[side.index()])),
+                reserve_ms: ms(reserve(side)),
+                turn_allowance_ms: ms(self.allowance(side, tc, reserve(side))),
                 last_used_ms: last_used.filter(|_| running != Some(side) && mover == Some(side)),
             })
         };
@@ -3979,6 +3998,36 @@ mod tests {
         assert!(e.message.contains("server move 3"), "{}", e.message);
         let v = s.view();
         assert_eq!((v.live_ply, v.result), (Some(2), None), "the moves before it stay");
+    }
+
+    #[test]
+    fn a_remote_turn_shows_the_whole_reserve_the_server_capped() {
+        let mut s = Session::new();
+        let tc: TimeControl = "2m/6m/100/0/8h/6m".parse().unwrap();
+        s.start_match([remote("a"), remote("b")], [Some(tc); 2], false);
+        let g = s.generation();
+        s.sync_remote(g, &sample_moves(3), None).unwrap();
+        let mins = |m: u64| Duration::from_secs(60 * m);
+        let report = |gold, silver| RemoteClock {
+            reserves: [mins(gold), mins(silver)],
+            turn_elapsed: Duration::ZERO,
+            game_elapsed: None,
+            running: true,
+            turn_started: None,
+            game_started: None,
+        };
+        let reserves = |s: &Session| {
+            let c = s.view().clock.unwrap();
+            (c.gold.unwrap().reserve_ms / 60_000, c.silver.unwrap().reserve_ms / 60_000)
+        };
+        // Silver moves; gold, waiting, has 56 minutes.
+        s.set_remote_clock(g, report(56, 10)).unwrap();
+        assert_eq!(reserves(&s), (56, 10));
+        // On gold's turn the server reports only the 4 minutes it can use.
+        s.sync_remote(g, &sample_moves(4), None).unwrap();
+        s.set_remote_clock(g, report(4, 11)).unwrap();
+        assert_eq!(reserves(&s), (56, 11));
+        assert_eq!(s.view().clock.unwrap().turn_allowance_ms, 360_000);
     }
 
     #[test]

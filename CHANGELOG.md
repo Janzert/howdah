@@ -25,7 +25,9 @@ young).
   than the move time its next turn will have.
 - Under a maximum turn time, the side to move shows only the reserve it
   can use this turn, as arimaa.com does, with its whole reserve in the
-  clock's tooltip; the waiting side still shows all of its reserve.
+  clock's tooltip (in a gameroom game, from the last reserve the server
+  reported while the side waited, since on its turn it reports only the
+  usable part); the waiting side still shows all of its reserve.
 
 ## [0.7.0] - 2026-11-10
 
