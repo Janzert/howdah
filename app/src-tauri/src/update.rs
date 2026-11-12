@@ -1,6 +1,10 @@
 //! Telling the user about a new release. It only asks GitHub for the
 //! newest one and compares versions: how to install it depends on how the
 //! app was installed, so the user is sent to the release's page.
+//!
+//! Packages that bring their own updates (Flatpak, a distribution's
+//! package) build with `HOWDAH_NO_UPDATE_CHECK=1` in the environment:
+//! then the app never asks GitHub, and Settings doesn't offer to.
 
 use serde::Deserialize;
 
@@ -9,6 +13,14 @@ use crate::engine_install;
 
 const LATEST_URL: &str = "https://api.github.com/repos/Janzert/howdah/releases/latest";
 const MAX_REPLY_BYTES: usize = 1 << 20;
+
+/// Whether this build checks for new releases: unless it was built with
+/// `HOWDAH_NO_UPDATE_CHECK` set to anything but empty or `0`. (Cargo
+/// rebuilds when that variable changes.)
+pub const BUILT_IN: bool = match option_env!("HOWDAH_NO_UPDATE_CHECK") {
+    None => true,
+    Some(v) => matches!(v.as_bytes(), b"" | b"0"),
+};
 
 #[derive(Deserialize)]
 struct Release {
@@ -34,10 +46,13 @@ fn newer_release(reply: &[u8], current: &str) -> Result<Option<UpdateView>, ApiE
     Ok(newer.then(|| UpdateView { version: version.to_string(), url: release.html_url }))
 }
 
-/// The newest release, if it's newer than `current`. Debug builds never
-/// ask GitHub (the tests run on them): `HOWDAH_UPDATE_RELEASE` stands in
-/// for its reply, to check the app.
+/// The newest release, if it's newer than `current`; never one in a build
+/// without the check. Debug builds never ask GitHub (the tests run on
+/// them): `HOWDAH_UPDATE_RELEASE` stands in for its reply, to check the app.
 pub async fn check(current: &str) -> Result<Option<UpdateView>, ApiError> {
+    if !BUILT_IN {
+        return Ok(None);
+    }
     if cfg!(debug_assertions) {
         return match std::env::var("HOWDAH_UPDATE_RELEASE") {
             Ok(reply) => newer_release(reply.as_bytes(), current),

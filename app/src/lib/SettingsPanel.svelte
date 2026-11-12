@@ -13,6 +13,7 @@
   } from './settings.svelte';
   import { play } from '@howdah/board/sound';
   import { findTheme, themes } from '@howdah/board/theme';
+  import { update } from './update.svelte';
 
   const appearanceChoices: { value: Appearance; label: string }[] = [
     { value: 'system', label: 'System' },
@@ -206,16 +207,18 @@
         starts. You can enter again during the game.
       </p>
     </section>
-    <section>
-      <h3>Updates</h3>
-      <label class="check">
-        <input type="checkbox" bind:checked={settings.checkForUpdates} />
-        Check for new versions of Howdah
-      </label>
-      <p class="hint">
-        Asks GitHub for the newest release when Howdah starts and once a day, and says on Home when there's a new one.
-      </p>
-    </section>
+    {#if update.builtIn}
+      <section>
+        <h3>Updates</h3>
+        <label class="check">
+          <input type="checkbox" bind:checked={settings.checkForUpdates} />
+          Check for new versions of Howdah
+        </label>
+        <p class="hint">
+          Asks GitHub for the newest release when Howdah starts and once a day, and says on Home when there's a new one.
+        </p>
+      </section>
+    {/if}
   </div>
 </div>
 

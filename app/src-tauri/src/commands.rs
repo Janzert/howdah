@@ -439,6 +439,11 @@ pub fn app_version(state: State<Backend>) -> String {
 }
 
 #[tauri::command]
+pub fn update_checks(state: State<Backend>) -> bool {
+    state.update_checks()
+}
+
+#[tauri::command]
 pub async fn check_for_update(state: State<'_, Backend>) -> Result<Option<UpdateView>, ApiError> {
     state.check_for_update().await
 }

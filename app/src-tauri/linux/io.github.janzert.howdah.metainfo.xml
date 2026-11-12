@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata, for software centres (GNOME Software, KDE
+     Discover, Flathub). The .deb, .rpm and AppImage carry it (see
+     tauri.conf.json); add each release at the top of <releases>. -->
+<component type="desktop-application">
+  <id>io.github.janzert.howdah</id>
+  <name>Howdah</name>
+  <summary>Play and study the board game Arimaa</summary>
+  <developer id="io.github.janzert">
+    <name>Brian Haskin Jr.</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      Howdah is an app for playing and studying Arimaa, a two-player
+      strategy game played with chess pieces on a chess board. Play against
+      engines on your own computer, analyse positions, keep annotated game
+      records, and play, watch and chat on arimaa.com.
+    </p>
+    <ul>
+      <li>The complete rules, with moves that animate and frozen pieces marked</li>
+      <li>A move tree with variations, comments and move glyphs</li>
+      <li>Game records in the Arimaa notation, including arimaa.com's archive</li>
+      <li>Engine analysis with the best line drawn on the board</li>
+      <li>Engine tests for engine developers: many games between engines, with Elo and SPRT</li>
+      <li>Play, watch games and chat on the arimaa.com gameroom</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">Howdah.desktop</launchable>
+  <provides>
+    <binary>howdah</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/Janzert/howdah</url>
+  <url type="bugtracker">https://github.com/Janzert/howdah/issues</url>
+  <url type="vcs-browser">https://github.com/Janzert/howdah</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>A game on its board, with an engine's analysis</caption>
+      <image>https://raw.githubusercontent.com/Janzert/howdah/main/docs/images/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+
+  <categories>
+    <category>Game</category>
+    <category>BoardGame</category>
+  </categories>
+  <keywords>
+    <keyword>arimaa</keyword>
+    <keyword>board game</keyword>
+    <keyword>strategy</keyword>
+  </keywords>
+
+  <requires>
+    <display_length compare="ge">640</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <internet>first-run</internet>
+  </supports>
+
+  <!-- The gameroom's chat room is open to everyone there. -->
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="0.7.0" date="2026-11-10">
+      <url type="details">https://github.com/Janzert/howdah/releases/tag/v0.7.0</url>
+    </release>
+    <release version="0.6.1" date="2026-11-01">
+      <url type="details">https://github.com/Janzert/howdah/releases/tag/v0.6.1</url>
+    </release>
+    <release version="0.6.0" date="2026-11-01">
+      <url type="details">https://github.com/Janzert/howdah/releases/tag/v0.6.0</url>
+    </release>
+    <release version="0.5.0" date="2026-10-30">
+      <url type="details">https://github.com/Janzert/howdah/releases/tag/v0.5.0</url>
+    </release>
+    <release version="0.4.0" date="2026-10-24">
+      <url type="details">https://github.com/Janzert/howdah/releases/tag/v0.4.0</url>
+    </release>
+    <release version="0.3.0" date="2026-10-21">
+      <url type="details">https://github.com/Janzert/howdah/releases/tag/v0.3.0</url>
+    </release>
+    <release version="0.2.1" date="2026-10-17">
+      <url type="details">https://github.com/Janzert/howdah/releases/tag/v0.2.1</url>
+    </release>
+    <release version="0.2.0" date="2026-10-17">
+      <url type="details">https://github.com/Janzert/howdah/releases/tag/v0.2.0</url>
+    </release>
+    <release version="0.1.0" date="2026-10-08">
+      <url type="details">https://github.com/Janzert/howdah/releases/tag/v0.1.0</url>
+    </release>
+  </releases>
+</component>

@@ -1,5 +1,7 @@
 // A newer release of Howdah, if there is one. It's only told about, on
 // the lobby's Home and in About, with a link to the release's page.
+// Builds for packages that bring their own updates have no check
+// (`update_checks`), and Settings doesn't offer it.
 import { api } from './api';
 import type { UpdateView } from './bindings/UpdateView';
 
@@ -17,6 +19,9 @@ function readDismissed(): string | null {
 class Update {
   available = $state<UpdateView | null>(null);
   #dismissed = $state(readDismissed());
+  /** Whether this build checks at all; learned at the first `follow`. */
+  builtIn = $state(true);
+  #askedBuiltIn = false;
 
   /** What Home shows: dismissing hides one version, not the next. */
   get notice() {
@@ -26,6 +31,13 @@ class Update {
   /** Checks now and daily while `on`; returns how to stop. A failed check
    * says nothing: the next one will do. */
   follow(on: boolean) {
+    if (!this.#askedBuiltIn) {
+      this.#askedBuiltIn = true;
+      api
+        .updateChecks()
+        .then((b) => (this.builtIn = b))
+        .catch(() => {});
+    }
     if (!on) {
       this.available = null;
       return;

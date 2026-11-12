@@ -11,6 +11,12 @@ young).
 
 - A game with a game time limit or a turn limit shows the time and turns
   left under the turn bar, counting down as the game goes.
+- The Linux packages carry AppStream metadata, so software centres such
+  as GNOME Software and KDE Discover describe Howdah, and its desktop
+  entry files it under Games.
+- Packagers can build without the check for new versions: with
+  `HOWDAH_NO_UPDATE_CHECK=1` set while building, Howdah never asks
+  GitHub, and Settings doesn't offer it.
 
 ### Changed
 

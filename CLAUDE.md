@@ -1209,7 +1209,9 @@ plans the engine test and tournament runner.
     and daily while `checkForUpdates` is on) asks `check_for_update`
     (`update.rs`: GitHub's newest release, compared with this version;
     debug builds ask only `HOWDAH_UPDATE_RELEASE`, a stand-in for the
-    reply). Home shows a new one until dismissed, for that version
+    reply; a build made with `HOWDAH_NO_UPDATE_CHECK=1`, for packages
+    that bring their own updates, never asks, `update::BUILT_IN`, and
+    `update_checks` tells Settings to leave the option out). Home shows a new one until dismissed, for that version
     (`update.dismissed` in localStorage), and About always.
     `SettingsPanel.svelte` (the lobby's Settings panel) binds to it directly; add new
     options to both.
@@ -1306,7 +1308,14 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
   program, where `tourney.rs` looks for it; on Windows and in an
   AppImage the app runs a copy in the data directory's `bin/` instead.
 - To release: bump the version (not needed for the first, `v0.1.0`),
-  push a `v*` tag, look over the draft and publish it.
+  add a `<release>` for it at the top of the AppStream metadata's
+  `<releases>` (`app/src-tauri/linux/io.github.janzert.howdah.metainfo.xml`;
+  `tests/metainfo.rs` fails without it; `appstreamcli validate` checks
+  the file), push a `v*` tag, look over the draft and publish it.
+- The Linux bundles (`bundle.linux` in `tauri.conf.json`) install the
+  metainfo in `/usr/share/metainfo/`. Its `launchable` is the desktop
+  file Tauri writes, `Howdah.desktop`; a Flatpak would rename that to
+  the app id.
 - App icon: the master is `app/src-tauri/app-icon.svg` (an elephant
   carrying a howdah; the blanket shows a board's edge and its four
   traps). Render it to `app-icon.png` (1024 px), then run

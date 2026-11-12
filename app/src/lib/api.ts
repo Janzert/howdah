@@ -208,6 +208,9 @@ function makeApi(sid: () => SessionId | null) {
     gameroomLastGames: () => invoke<GameroomGames | null>('gameroom_last_games'),
     /** Opens an http(s) URL in the system's browser. */
     appVersion: () => invoke<string>('app_version'),
+    /** False in a build without the update check (a package that brings
+     * its own updates). */
+    updateChecks: () => invoke<boolean>('update_checks'),
     checkForUpdate: () => invoke<UpdateView | null>('check_for_update'),
     openUrl: (url: string) => invoke<void>('open_url', { url }),
     /** The gameroom's chat room as it stands; changes come as

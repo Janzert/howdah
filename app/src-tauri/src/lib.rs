@@ -172,6 +172,7 @@ pub fn run() {
             commands::gameroom_games,
             commands::gameroom_last_games,
             commands::app_version,
+            commands::update_checks,
             commands::check_for_update,
             commands::open_url,
             commands::chatroom_state,

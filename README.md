@@ -158,6 +158,12 @@ npm run tauri dev      # run the app with hot reload
 npm run tauri build    # installers, in target/release/bundle/
 ```
 
+For a package that brings its own updates (a Flatpak, a distribution's
+package), build with `HOWDAH_NO_UPDATE_CHECK=1` in the environment: the
+app then never asks GitHub for new releases, and Settings leaves the
+option out. The AppStream metadata is in
+`app/src-tauri/linux/io.github.janzert.howdah.metainfo.xml`.
+
 Release installers also carry `howdah-tourney`, the engine test daemon:
 
 ```bash

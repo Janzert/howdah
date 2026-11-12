@@ -777,6 +777,11 @@ impl Backend {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
+    /// Whether this build checks for new releases (see `update.rs`).
+    pub fn update_checks(&self) -> bool {
+        crate::update::BUILT_IN
+    }
+
     /// The newest release, if it's newer than this app.
     pub async fn check_for_update(&self) -> Result<Option<UpdateView>, ApiError> {
         crate::update::check(&self.app_version()).await
@@ -1355,6 +1360,7 @@ impl Backend {
             "gameroom_games" => ok(self.gameroom_games().await?),
             "gameroom_last_games" => ok(self.gameroom_last_games()),
             "app_version" => ok(self.app_version()),
+            "update_checks" => ok(self.update_checks()),
             "check_for_update" => ok(self.check_for_update().await?),
             "open_url" => ok(self.open_url(&arg::<String>(args, "url")?)?),
             "chatroom_state" => ok(self.chatroom_state()),
