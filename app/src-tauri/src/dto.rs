@@ -1053,6 +1053,90 @@ pub struct PlayerGamesView {
     pub next: Option<u32>,
 }
 
+/// What an arimaa.com player's page says about them.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlayerProfileView {
+    /// The player id the page was asked for by.
+    pub id: String,
+    pub username: String,
+    /// The page's "Player #N" (not the id).
+    pub number: Option<u32>,
+    /// The real name they gave.
+    pub name: Option<String>,
+    pub rating: Option<u32>,
+    /// The rating's uncertainty (30 the most accurate, 120 the least).
+    pub rating_uncertainty: Option<u32>,
+    pub provisional: bool,
+    pub country: Option<String>,
+    /// "Now Online", "Yesterday" or a date, as the page writes it.
+    pub last_seen: Option<String>,
+    pub online: bool,
+    /// The day they joined, as the page writes it.
+    pub joined: Option<String>,
+    pub games: Option<u32>,
+    pub games_gold: Option<u32>,
+    pub games_silver: Option<u32>,
+    pub wins: Option<u32>,
+    pub losses: Option<u32>,
+    pub draws: Option<u32>,
+    /// The current streak: wins if positive, losses if negative.
+    pub streak: Option<i32>,
+    /// A bot account (a `bot_` name, or the page offers no Invite).
+    pub bot: bool,
+    /// Their time zone, seconds east of UTC.
+    pub utc_offset: Option<i32>,
+}
+
+/// A player's rating before one rated game.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RatingPointView {
+    /// When the game was played, Unix seconds.
+    #[ts(type = "number")]
+    pub time: i64,
+    pub rating: u32,
+    /// The game's permanent id.
+    pub gid: String,
+}
+
+/// Games, wins, losses and draws.
+#[derive(Clone, Copy, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TallyView {
+    pub games: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub draws: u32,
+}
+
+/// A player's record against one opponent, or the totals.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RecordLineView {
+    /// The opponent's player id and username (none for the totals).
+    pub opponent_id: Option<String>,
+    pub opponent: Option<String>,
+    pub all: TallyView,
+    /// The games the player played as gold and as silver.
+    pub gold: TallyView,
+    pub silver: TallyView,
+}
+
+/// A player's record by opponent.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlayerRecordView {
+    pub totals: Option<RecordLineView>,
+    /// Most games first.
+    pub opponents: Vec<RecordLineView>,
+}
+
 /// A bot arimaa.com runs, which anyone can start a game against.
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -1185,6 +1269,8 @@ pub struct AnnouncementSpan {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct OnlinePlayerView {
+    /// The player id, which their page is asked for by.
+    pub id: String,
     pub username: String,
     pub rating: Option<String>,
     pub title: Option<String>,

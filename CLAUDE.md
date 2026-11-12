@@ -200,7 +200,16 @@ plans the engine test and tournament runner.
     leniently from their HTML. The page writes times in the
     session's zone (the login's `timezone`, `Lobby::set_timezone`; the
     app sets the computer's), labelled "YLT", which is dropped. `Lobby::search_players` and
-    `Lobby::player_games` fetch them. `OnlinePlayer` is who's logged in
+    `Lobby::player_games` fetch them. `profile`: a player's page
+    (`playerpage.cgi?id=`, `PlayerProfile`: rating, RU, country, last
+    seen, record, streak, their time zone from the page's clock), their
+    rating history (`playerRatingHist.cgi?u=<username>`, JSON, the rating
+    before each rated game, `RatingPoint`) and record by opponent
+    (`pastrecord.cgi?id=`, `PlayerRecord`, with `RecordFilter` for
+    rated/unrated and bots/humans), and the games against one opponent
+    (`&oid=`, read as past games); `Lobby::player_profile`,
+    `rating_history`, `player_record` and `games_against`, none needing
+    a session. `OnlinePlayer` is who's logged in
     (`state`'s `online`, in `LobbyGames.online`, without those idle over
     `ONLINE_IDLE` as in the browser lobby), with `invite_me` (the
     gameroom's invite icon), `idle` (their last lobby request) and
@@ -909,7 +918,15 @@ plans the engine test and tournament runner.
     player filter), `FinishedTab` (a player's games, a game by id,
     recently finished: the lobby's five at once, then the page of 100
     behind them in the background, `loadRecentPage`, 25 rows at a time)
-    and `PlayersTab` (online, with Games and Invite).
+    and `PlayersTab` (online, with Invite; a name opens their page),
+    and `PlayerTab`, one player's page (`player.svelte.ts`'s
+    `playerPage`, one player at a time with Back through the players
+    shown before; `showPlayerPage` opens it from the Players panel and the
+    overview's online chips; the sidebar lists it by the username): the
+    profile, `RatingChart` (the rating as steps, a point per rated game
+    and the rating now, range buttons, a click opens the game), then
+    Games (paged) or Record by opponent (fetched when first shown, filters,
+    each opponent's page and the games against them).
     `ChatArchiveTab` is the chat archive, which needs no login
     (`NO_LOGIN_PANELS`, `GameroomFrame`'s `noLogin`; logged out, the login
     form links to it): a month calendar (each day's messages and people,
@@ -945,8 +962,7 @@ plans the engine test and tournament runner.
     login (with "Remember password"; a saved login fills the username, and
     the password field says "Saved password"); live games have Watch,
     finished ones Open; the player search goes straight to an exact
-    username's games, with "Older games" paging (a player's Games on the
-    Players panel searches for them); a game id field loads a finished game
+    username's games, with "Older games" paging; a game id field loads a finished game
     by its permanent id, or watches by a gameroom id. The user's games
     have Play to take their seat again, Cancel while nobody has sat ("Your
     move" first, from `mygames`' `turn`), the open games others created

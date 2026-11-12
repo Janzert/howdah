@@ -18,7 +18,9 @@
 //!   ([`FinishedGame`], read from the viewer page), and [`Lobby::games`]
 //!   lists the live and recently finished games.
 //!   [`Lobby::search_players`] and [`Lobby::player_games`] find a
-//!   player's past games ([`PastGames`]). [`Lobby::server_bots`] lists the
+//!   player's past games ([`PastGames`]); [`Lobby::player_profile`],
+//!   [`Lobby::rating_history`], [`Lobby::player_record`] and
+//!   [`Lobby::games_against`] read a player's page and what it links to. [`Lobby::server_bots`] lists the
 //!   server's bots ([`ServerBot`]), and [`Lobby::start_bot`] starts one,
 //!   which opens a game against the user.
 //! - [`ChatClient`]: the gameroom's chat room (entering, its log, saying
@@ -42,6 +44,7 @@ pub mod clock_sync;
 pub mod finished;
 pub mod invitations;
 pub mod players;
+pub mod profile;
 pub mod puzzles;
 pub mod state;
 pub mod wire;
@@ -60,6 +63,7 @@ pub use clock_sync::ClockSync;
 pub use finished::{FinishedGame, RecentGame};
 pub use invitations::{Invitation, InviteOutcome};
 pub use players::{OnlinePlayer, PastGame, PastGames, PlayerMatch, PostalGame};
+pub use profile::{PlayerProfile, PlayerRecord, RatingPoint, RecordFilter, RecordLine, Tally};
 pub use puzzles::{DEFAULT_PUZZLES, PuzzleEntry, PuzzleGroup, PuzzlePage, Puzzles};
 pub use state::{ChatLine, GameState, Role, ServerClock, parse_chat, parse_result, split_moves};
 pub use wire::{Format, Record};

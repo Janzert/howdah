@@ -1,7 +1,8 @@
 <script lang="ts">
   // Who's logged in to the gameroom, with Invite for those who take
   // invitations (once seen using the lobby; see the store's `invitable`)
-  // and their past games.
+  // and their pages.
+  import { showPlayerPage } from './player.svelte';
   import { gameroom } from './store.svelte';
 
   let filter = $state('');
@@ -32,7 +33,9 @@
         <li>
           <span class="row-text">
             <span class="row-line">
-              <span class="name">{p.username}</span>
+              <button class="link name" onclick={() => showPlayerPage(p)} title="{p.username}'s page"
+                >{p.username}</button
+              >
               {#if p.title}<span class="tag">{p.title}</span>{/if}
               {#if p.rating}<span class="rating">{p.rating}</span>{/if}
               {#if p.bot}<span class="tag">bot</span>{/if}
@@ -41,12 +44,6 @@
             </span>
             {#if p.country}<span class="meta">{p.country}</span>{/if}
           </span>
-          <button
-            class="subtle"
-            onclick={() => gameroom.showPlayer(p.username)}
-            disabled={gameroom.busy}
-            aria-label="Past games of {p.username}">Games</button
-          >
           {#if gameroom.invitable.has(p.username)}
             <button
               onclick={() => (gameroom.newGame = { opponent: p.username })}
@@ -65,6 +62,10 @@
 </section>
 
 <style>
+  .name {
+    font-size: inherit;
+    font-weight: 600;
+  }
   .card-head input {
     width: 14em;
   }

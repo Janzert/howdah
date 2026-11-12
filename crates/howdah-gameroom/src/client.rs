@@ -23,6 +23,10 @@ use crate::players::{
     OnlinePlayer, PastGame, PastGames, PlayerMatch, PostalGame, parse_past_games, parse_postal_games,
     parse_search,
 };
+use crate::profile::{
+    PlayerProfile, PlayerRecord, RatingPoint, RecordFilter, parse_player_page, parse_rating_history,
+    parse_record, plain_username,
+};
 use crate::state::{GameState, Role};
 use crate::wire::{Format, Record, encode_request};
 
@@ -1143,6 +1147,49 @@ impl Lobby {
         // The session's cookie makes the times local (in the login's time zone).
         let page = self.http.get_page(&url, self.cookies.as_deref()).await?;
         Ok(parse_past_games(&page, offset))
+    }
+
+    /// What player `player_id`'s page (`playerpage.cgi`) says about them.
+    pub async fn player_profile(&self, player_id: &str) -> Result<PlayerProfile, Error> {
+        let url = format!("{}playerpage.cgi?id={}", self.base, player_query(player_id)?);
+        let page = self.http.get_page(&url, None).await?;
+        parse_player_page(&page).ok_or_else(|| Error::Server(format!("no player page for id {player_id}")))
+    }
+
+    /// Player `username`'s rating before each rated game, oldest first
+    /// (`playerRatingHist.cgi`, the player page's graph; JSON).
+    pub async fn rating_history(&self, username: &str) -> Result<Vec<RatingPoint>, Error> {
+        if !plain_username(username) {
+            return Err(Error::Server(format!("not a username: {username:?}")));
+        }
+        let url = format!("{}playerRatingHist.cgi?u={username}", self.base);
+        parse_rating_history(&self.http.get_page(&url, None).await?)
+    }
+
+    /// Player `player_id`'s record by opponent (`pastrecord.cgi`).
+    pub async fn player_record(&self, player_id: &str, filter: RecordFilter) -> Result<PlayerRecord, Error> {
+        let url = format!("{}pastrecord.cgi?id={}{}", self.base, player_query(player_id)?, filter.query());
+        Ok(parse_record(&self.http.get_page(&url, None).await?))
+    }
+
+    /// Player `player_id`'s games against `opponent_id`, newest first
+    /// (`pastrecord.cgi` with `oid`, every game on one page).
+    pub async fn games_against(
+        &self,
+        player_id: &str,
+        opponent_id: &str,
+        filter: RecordFilter,
+    ) -> Result<Vec<PastGame>, Error> {
+        let url = format!(
+            "{}pastrecord.cgi?id={}&oid={}{}",
+            self.base,
+            player_query(player_id)?,
+            player_query(opponent_id)?,
+            filter.query()
+        );
+        // The session's cookie makes the times local, as in `player_games`.
+        let page = self.http.get_page(&url, self.cookies.as_deref()).await?;
+        Ok(parse_past_games(&page, 0).games)
     }
 
     /// The last 100 games finished in the gameroom, newest first

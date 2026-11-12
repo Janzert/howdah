@@ -36,6 +36,7 @@
   import GameroomScreen from './lib/gameroom/GameroomScreen.svelte';
   import NewGameroomGameDialog from './lib/gameroom/NewGameDialog.svelte';
   import { chatroom } from './lib/gameroom/chatroom.svelte';
+  import { playerPage } from './lib/gameroom/player.svelte';
   import { GAMEROOM_PANELS, type GameroomTab, gameroom, pref, savePref } from './lib/gameroom/store.svelte';
   import HelpDialog from './lib/HelpDialog.svelte';
   import HomeScreen from './lib/HomeScreen.svelte';
@@ -668,23 +669,24 @@
               <ul class="sub" aria-label="arimaa.com panels">
                 {#each gameroomOpen as id (id)}
                   {@const p = GAMEROOM_PANELS.find((g) => g.id === id)!}
+                  {@const label = id === 'player' && playerPage.player ? playerPage.player.username : p.label}
                   <li class="sub-row" class:on={selected === `gameroom:${id}`}>
                     <button
                       class="sub-item bare"
                       aria-current={selected === `gameroom:${id}` ? 'page' : undefined}
                       onclick={() => select(`gameroom:${id}`)}
-                      title={collapsed ? `arimaa.com: ${p.label}` : undefined}
-                      aria-label="arimaa.com: {p.label}"
+                      title={collapsed ? `arimaa.com: ${label}` : undefined}
+                      aria-label="arimaa.com: {label}"
                     >
                       <Icon name={p.icon} size={16} />
-                      {#if !collapsed}<span class="label">{p.label}</span>{/if}
+                      {#if !collapsed}<span class="label">{label}</span>{/if}
                       {#if id === 'chat' && chatroom.unread > 0 && selected !== 'gameroom:chat'}<span
                           class="badge"
                           title="New messages in the chat room">{chatroom.unread}</span
                         >{/if}
                     </button>
                     {@render closeButton(
-                      id === 'chat' && chatroom.inRoom ? 'Leave the chat room and close it' : `Close ${p.label}`,
+                      id === 'chat' && chatroom.inRoom ? 'Leave the chat room and close it' : `Close ${label}`,
                       () => closeGameroomPanel(id),
                     )}
                   </li>

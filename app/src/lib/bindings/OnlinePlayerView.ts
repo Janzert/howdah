@@ -3,7 +3,11 @@
 /**
  * A player logged in to the gameroom.
  */
-export type OnlinePlayerView = { username: string, rating: string | null, title: string | null, country: string | null, bot: boolean, 
+export type OnlinePlayerView = { 
+/**
+ * The player id, which their page is asked for by.
+ */
+id: string, username: string, rating: string | null, title: string | null, country: string | null, bot: boolean, 
 /**
  * Whether they take invitations (their gameroom setting), and
  * whether they're at a table (the browser lobby offers no invitation

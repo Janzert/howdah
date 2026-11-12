@@ -14,6 +14,7 @@
   import Matchup from './Matchup.svelte';
   import RecentGameRow from './RecentGameRow.svelte';
   import { chatroom } from './chatroom.svelte';
+  import { showPlayerPage } from './player.svelte';
   import { gameroom } from './store.svelte';
 
   /** How many of each list the overview shows. */
@@ -186,22 +187,23 @@
       {:else if games}
         <ul class="chips" aria-label="Players online">
           {#each gameroom.online.slice(0, ONLINE_SHOWN) as p (p.username)}
-            <li>
+            <li
+              class="chip"
+              class:me={p.username === gameroom.user}
+              class:invitable={gameroom.invitable.has(p.username)}
+            >
+              <button class="chip-name" onclick={() => showPlayerPage(p)} title="{p.username}'s page">
+                {p.username}{#if p.rating}<span class="rating">{p.rating}</span>{/if}{#if p.bot}<span class="tag"
+                    >bot</span
+                  >{/if}
+              </button>
               {#if gameroom.invitable.has(p.username)}
                 <button
-                  class="chip invitable"
+                  class="chip-invite"
                   onclick={() => (gameroom.newGame = { opponent: p.username })}
                   title="Invite {p.username} to a game"
-                  aria-label="Invite {p.username}"
+                  aria-label="Invite {p.username}"><Icon name="plus" size={12} /></button
                 >
-                  {p.username}{#if p.rating}<span class="rating">{p.rating}</span>{/if}<Icon name="plus" size={12} />
-                </button>
-              {:else}
-                <span class="chip" class:me={p.username === gameroom.user}>
-                  {p.username}{#if p.rating}<span class="rating">{p.rating}</span>{/if}{#if p.bot}<span class="tag"
-                      >bot</span
-                    >{/if}
-                </span>
               {/if}
             </li>
           {/each}
@@ -294,12 +296,28 @@
   }
   .chip {
     display: inline-flex;
+    align-items: stretch;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .chip button {
+    display: inline-flex;
     align-items: center;
     gap: 4px;
     font-size: 12px;
+    border: none;
+    border-radius: 0;
+    background: none;
+  }
+  .chip-name {
     padding: 2px 8px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
+  }
+  .chip-invite {
+    padding: 2px 6px;
+    border-left: 1px solid var(--accent) !important;
+    color: var(--accent);
   }
   .chip.me {
     border-style: dashed;

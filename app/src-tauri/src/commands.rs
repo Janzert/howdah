@@ -9,9 +9,9 @@ use crate::dto::{
     ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
     ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
     GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView,
-    PlayerMatchView, PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
-    ServerBotsView, SessionId, SessionView, SpsaStepView, StartedBotView, StepTarget, TestDetailView,
-    TestView, TourneyStatusView, UpdateView, WatchView,
+    PlayerMatchView, PlayerProfileView, PlayerRecordView, PositionCheck, PositionSpec, PositionView,
+    PostalGameView, PuzzleGroupView, RatingPointView, ServerBotsView, SessionId, SessionView, SpsaStepView,
+    StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
 };
 
 #[tauri::command]
@@ -581,6 +581,43 @@ pub async fn gameroom_player_games(
     offset: u32,
 ) -> Result<PlayerGamesView, ApiError> {
     state.gameroom_player_games(&player_id, offset).await
+}
+
+#[tauri::command]
+pub async fn gameroom_player_profile(
+    state: State<'_, Backend>,
+    player_id: String,
+) -> Result<PlayerProfileView, ApiError> {
+    state.gameroom_player_profile(&player_id).await
+}
+
+#[tauri::command]
+pub async fn gameroom_rating_history(
+    state: State<'_, Backend>,
+    username: String,
+) -> Result<Vec<RatingPointView>, ApiError> {
+    state.gameroom_rating_history(&username).await
+}
+
+#[tauri::command]
+pub async fn gameroom_player_record(
+    state: State<'_, Backend>,
+    player_id: String,
+    rated: Option<bool>,
+    bots: Option<bool>,
+) -> Result<PlayerRecordView, ApiError> {
+    state.gameroom_player_record(&player_id, rated, bots).await
+}
+
+#[tauri::command]
+pub async fn gameroom_games_against(
+    state: State<'_, Backend>,
+    player_id: String,
+    opponent_id: String,
+    rated: Option<bool>,
+    bots: Option<bool>,
+) -> Result<Vec<PastGameView>, ApiError> {
+    state.gameroom_games_against(&player_id, &opponent_id, rated, bots).await
 }
 
 #[tauri::command]

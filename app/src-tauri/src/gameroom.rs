@@ -51,7 +51,7 @@ use howdah_arimaa::{Color, GameRecord, TimeControl, notation};
 use howdah_gameroom::{
     Actions, Announcement, Asip, ChatClient, DEFAULT_GAMEROOM, Error, FinishedGame, GameInfo, GameServer,
     GameState, Http, Invitation, InviteOutcome, Lobby, LobbyGames, OnlinePlayer, Opened, PastGame,
-    RecentGame, Role, ViewerSeat, parse_chat, parse_result,
+    PlayerRecord, RecentGame, RecordFilter, RecordLine, Role, Tally, ViewerSeat, parse_chat, parse_result,
 };
 use tokio::sync::Notify;
 
@@ -63,7 +63,8 @@ use crate::dto::{
     AnimStep, AnnouncementBlock, AnnouncementSpan, AnnouncementView, ApiError, BotInfoView, ChatLineView,
     ChatRoomView, ErrorKind, GameroomGames, GameroomStatus, InvitationAnswer, InvitationOutcome,
     InvitationView, LiveGameView, OnlinePlayerView, PastGameView, PlayerGamesView, PlayerMatchView,
-    PostalGameView, RecentGameView, ServerBotView, ServerBotsView, StartedBotView, WatchState, WatchView,
+    PlayerProfileView, PlayerRecordView, PostalGameView, RatingPointView, RecentGameView, RecordLineView,
+    ServerBotView, ServerBotsView, StartedBotView, TallyView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -738,6 +739,67 @@ impl Gameroom {
         Ok(PlayerGamesView { games: page.games.into_iter().map(past_view).collect(), next: page.next })
     }
 
+    /// What player `player_id`'s page says about them.
+    pub async fn player_profile(&self, player_id: &str) -> Result<PlayerProfileView, ApiError> {
+        let p = with_lobby!(self, |l| l.player_profile(player_id))?;
+        Ok(PlayerProfileView {
+            id: player_id.to_string(),
+            bot: p.username.starts_with("bot_") || !p.invite,
+            username: p.username,
+            number: p.number,
+            name: p.name,
+            rating: p.rating,
+            rating_uncertainty: p.rating_uncertainty,
+            provisional: p.provisional,
+            country: p.country,
+            last_seen: p.last_seen,
+            online: p.online,
+            joined: p.joined,
+            games: p.games,
+            games_gold: p.games_gold,
+            games_silver: p.games_silver,
+            wins: p.wins,
+            losses: p.losses,
+            draws: p.draws,
+            streak: p.streak,
+            utc_offset: p.utc_offset,
+        })
+    }
+
+    /// Player `username`'s rating before each rated game, oldest first.
+    pub async fn rating_history(&self, username: &str) -> Result<Vec<RatingPointView>, ApiError> {
+        let points = with_lobby!(self, |l| l.rating_history(username))?;
+        Ok(points
+            .into_iter()
+            .map(|p| RatingPointView { time: p.time, rating: p.rating, gid: p.game_id })
+            .collect())
+    }
+
+    /// Player `player_id`'s record by opponent, only rated or unrated
+    /// games and only bots or humans when asked.
+    pub async fn player_record(
+        &self,
+        player_id: &str,
+        filter: RecordFilter,
+    ) -> Result<PlayerRecordView, ApiError> {
+        let PlayerRecord { totals, opponents } = with_lobby!(self, |l| l.player_record(player_id, filter))?;
+        Ok(PlayerRecordView {
+            totals: totals.map(record_line_view),
+            opponents: opponents.into_iter().map(record_line_view).collect(),
+        })
+    }
+
+    /// Player `player_id`'s games against `opponent_id`, newest first.
+    pub async fn games_against(
+        &self,
+        player_id: &str,
+        opponent_id: &str,
+        filter: RecordFilter,
+    ) -> Result<Vec<PastGameView>, ApiError> {
+        let games = with_lobby!(self, |l| l.games_against(player_id, opponent_id, filter))?;
+        Ok(games.into_iter().map(past_view).collect())
+    }
+
     /// The last 100 games finished in the gameroom, newest first.
     pub async fn recent_games(&self) -> Result<Vec<PastGameView>, ApiError> {
         // Not through `with_lobby!`, which would hold up every other lobby
@@ -803,6 +865,7 @@ fn announcement_view(a: Announcement, now: Option<i64>) -> AnnouncementView {
 
 fn online_view(p: OnlinePlayer) -> OnlinePlayerView {
     OnlinePlayerView {
+        id: p.id,
         username: p.username,
         rating: p.rating,
         title: p.title,
@@ -845,6 +908,18 @@ fn past_view(g: PastGame) -> PastGameView {
         result,
         moves: g.moves,
         finished: g.finished,
+    }
+}
+
+fn record_line_view(line: RecordLine) -> RecordLineView {
+    let tally = |t: Tally| TallyView { games: t.games, wins: t.wins, losses: t.losses, draws: t.draws };
+    let (opponent_id, opponent) = line.opponent.unzip();
+    RecordLineView {
+        opponent_id,
+        opponent,
+        all: tally(line.all),
+        gold: tally(line.gold),
+        silver: tally(line.silver),
     }
 }
 

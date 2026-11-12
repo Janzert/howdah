@@ -36,17 +36,18 @@ export function savePref(key: string, value: string) {
 
 /** The arimaa.com panels opened from the overview, each listed under
  * arimaa.com in the lobby's sidebar once opened. */
-export type GameroomTab = 'bots' | 'watch' | 'finished' | 'players' | 'chat' | 'archive';
+export type GameroomTab = 'bots' | 'watch' | 'finished' | 'players' | 'player' | 'chat' | 'archive';
 
 export const GAMEROOM_PANELS: {
   id: GameroomTab;
   label: string;
-  icon: 'bot' | 'eye' | 'record' | 'users' | 'chat' | 'calendar';
+  icon: 'bot' | 'eye' | 'record' | 'users' | 'user' | 'chat' | 'calendar';
 }[] = [
   { id: 'bots', label: 'Bots', icon: 'bot' },
   { id: 'watch', label: 'Watch', icon: 'eye' },
   { id: 'finished', label: 'Finished games', icon: 'record' },
   { id: 'players', label: 'Players', icon: 'users' },
+  { id: 'player', label: 'Player', icon: 'user' },
   { id: 'chat', label: 'Chat room', icon: 'chat' },
   { id: 'archive', label: 'Chat archive', icon: 'calendar' },
 ];
@@ -414,13 +415,6 @@ class GameroomStore {
       const exact = found.filter((p) => p.username.toLowerCase() === query.toLowerCase());
       if (exact.length === 1) await this.#pick(exact[0]);
     });
-  }
-
-  /** Shows a player's games on the Finished games panel. */
-  showPlayer(username: string) {
-    this.playerQuery = username;
-    this.show('finished');
-    return this.searchPlayers(username);
   }
 
   pick(player: PlayerMatchView) {

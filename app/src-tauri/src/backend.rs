@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use howdah_arimaa::{Color, Glyph, NodeId, Square, TimeControl};
+use howdah_gameroom::RecordFilter;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -34,10 +35,10 @@ use crate::dto::{
     AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
     ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
     GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView,
-    PlayerMatchView, PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView,
-    PostalGameView, PuzzleGroupView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
-    ShowBoard, SpsaStepView, StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView,
-    UpdateView, WatchView,
+    PlayerMatchView, PlayerProfileView, PlayerRecordView, PlayerSpec, PositionCheck, PositionProblemView,
+    PositionSpec, PositionView, PostalGameView, PuzzleGroupView, RatingPointView, ServerBotsView, SessionId,
+    SessionUpdate, SessionView, SessionsChanged, ShowBoard, SpsaStepView, StartedBotView, StepTarget,
+    TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -933,6 +934,38 @@ impl Backend {
         self.gameroom.player_games(player_id, offset).await
     }
 
+    /// What an arimaa.com player's page says about them.
+    pub async fn gameroom_player_profile(&self, player_id: &str) -> Result<PlayerProfileView, ApiError> {
+        self.gameroom.player_profile(player_id).await
+    }
+
+    /// An arimaa.com player's rating before each rated game, oldest first.
+    pub async fn gameroom_rating_history(&self, username: &str) -> Result<Vec<RatingPointView>, ApiError> {
+        self.gameroom.rating_history(username).await
+    }
+
+    /// An arimaa.com player's record by opponent: rated or unrated games
+    /// only, and bots or humans only, when given.
+    pub async fn gameroom_player_record(
+        &self,
+        player_id: &str,
+        rated: Option<bool>,
+        bots: Option<bool>,
+    ) -> Result<PlayerRecordView, ApiError> {
+        self.gameroom.player_record(player_id, RecordFilter { rated, bots }).await
+    }
+
+    /// An arimaa.com player's games against another, newest first.
+    pub async fn gameroom_games_against(
+        &self,
+        player_id: &str,
+        opponent_id: &str,
+        rated: Option<bool>,
+        bots: Option<bool>,
+    ) -> Result<Vec<PastGameView>, ApiError> {
+        self.gameroom.games_against(player_id, opponent_id, RecordFilter { rated, bots }).await
+    }
+
     /// The last 100 games finished in the gameroom, newest first.
     pub async fn gameroom_recent_games(&self) -> Result<Vec<PastGameView>, ApiError> {
         self.gameroom.recent_games().await
@@ -1423,6 +1456,27 @@ impl Backend {
                 .gameroom_player_games(&arg::<String>(args, "playerId")?, arg(args, "offset")?)
                 .await?),
             "gameroom_recent_games" => ok(self.gameroom_recent_games().await?),
+            "gameroom_player_profile" => {
+                ok(self.gameroom_player_profile(&arg::<String>(args, "playerId")?).await?)
+            }
+            "gameroom_rating_history" => {
+                ok(self.gameroom_rating_history(&arg::<String>(args, "username")?).await?)
+            }
+            "gameroom_player_record" => ok(self
+                .gameroom_player_record(
+                    &arg::<String>(args, "playerId")?,
+                    arg(args, "rated")?,
+                    arg(args, "bots")?,
+                )
+                .await?),
+            "gameroom_games_against" => ok(self
+                .gameroom_games_against(
+                    &arg::<String>(args, "playerId")?,
+                    &arg::<String>(args, "opponentId")?,
+                    arg(args, "rated")?,
+                    arg(args, "bots")?,
+                )
+                .await?),
             "tourney_status" => ok(self.tourney_status().await),
             "tourney_tests" => ok(self.tourney_tests().await?),
             "tourney_test" => ok(self.tourney_test(&arg::<String>(args, "id")?).await?),

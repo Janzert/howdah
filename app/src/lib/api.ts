@@ -25,6 +25,9 @@ import type { NodeId } from './bindings/NodeId';
 import type { PastGameView } from './bindings/PastGameView';
 import type { PlayerGamesView } from './bindings/PlayerGamesView';
 import type { PlayerMatchView } from './bindings/PlayerMatchView';
+import type { PlayerProfileView } from './bindings/PlayerProfileView';
+import type { PlayerRecordView } from './bindings/PlayerRecordView';
+import type { RatingPointView } from './bindings/RatingPointView';
 import type { PositionCheck } from './bindings/PositionCheck';
 import type { PositionSpec } from './bindings/PositionSpec';
 import type { PuzzleGroupView } from './bindings/PuzzleGroupView';
@@ -262,6 +265,16 @@ function makeApi(sid: () => SessionId | null) {
     /** A player's finished games, newest first, 50 from `offset`. */
     gameroomPlayerGames: (playerId: string, offset: number) =>
       invoke<PlayerGamesView>('gameroom_player_games', { playerId, offset }),
+    /** What an arimaa.com player's page says about them. */
+    gameroomPlayerProfile: (playerId: string) => invoke<PlayerProfileView>('gameroom_player_profile', { playerId }),
+    /** A player's rating before each rated game, oldest first. */
+    gameroomRatingHistory: (username: string) => invoke<RatingPointView[]>('gameroom_rating_history', { username }),
+    /** A player's record by opponent; `rated` and `bots` narrow it when given. */
+    gameroomPlayerRecord: (playerId: string, rated: boolean | null, bots: boolean | null) =>
+      invoke<PlayerRecordView>('gameroom_player_record', { playerId, rated, bots }),
+    /** A player's games against another, newest first. */
+    gameroomGamesAgainst: (playerId: string, opponentId: string, rated: boolean | null, bots: boolean | null) =>
+      invoke<PastGameView[]>('gameroom_games_against', { playerId, opponentId, rated, bots }),
     /** The last 100 games finished on arimaa.com, newest first. */
     gameroomRecentGames: () => invoke<PastGameView[]>('gameroom_recent_games'),
     /** Opens an arimaa.com game in this session. A live game (its gameroom
