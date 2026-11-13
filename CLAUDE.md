@@ -947,7 +947,8 @@ plans the engine test and tournament runner.
     the backend's view, unread count for the sidebar's badge, the earlier
     log (`older`, `loadEarlier`, keeping what the room drops once it's
     shown), `scrollTop` and `newBelow` for the log (the archive's store
-    keeps its `scrollTop` too, since panels unmount), the user's
+    keeps its `scrollTop` too, since panels unmount), the message being
+    written (`draft`, `draftSpoiler`, for the same reason), the user's
     color and their own color, `custom`, which takes the palette's last
     slot and is typed in hex in the color popup or chosen in the
     system's color dialog (an `<input type="color">` under its Choose…

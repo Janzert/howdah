@@ -44,6 +44,10 @@ class ChatRoomStore {
   /** Where the log is scrolled to, for the panel coming back to it; null
    * at its end. */
   scrollTop: number | null = null;
+  /** The message being written and whether it goes as a spoiler, kept
+   * while the panel is away (panels unmount). */
+  draft = '';
+  draftSpoiler = false;
   /** The newest event seen with the log at its end. */
   #readTo = $state(-1);
 

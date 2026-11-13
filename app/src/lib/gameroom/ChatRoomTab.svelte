@@ -20,7 +20,11 @@
   const view = $derived(chatroom.view);
   const roomState = $derived(view?.state ?? 'out');
 
-  let text = $state('');
+  // Kept in the store, so a message half written outlasts a panel change.
+  let text = $state(chatroom.draft);
+  $effect(() => {
+    chatroom.draft = text;
+  });
   let log: HTMLElement | undefined = $state();
   let input: HTMLInputElement | undefined = $state();
   let picking = $state(false);
@@ -134,7 +138,10 @@
   }
 
   /** Whether the message being written goes out as a spoiler. */
-  let spoiler = $state(false);
+  let spoiler = $state(chatroom.draftSpoiler);
+  $effect(() => {
+    chatroom.draftSpoiler = spoiler;
+  });
 
   async function send(e: SubmitEvent) {
     e.preventDefault();
