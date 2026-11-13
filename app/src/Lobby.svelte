@@ -36,8 +36,15 @@
   import GameroomScreen from './lib/gameroom/GameroomScreen.svelte';
   import NewGameroomGameDialog from './lib/gameroom/NewGameDialog.svelte';
   import { chatroom } from './lib/gameroom/chatroom.svelte';
-  import { playerPage } from './lib/gameroom/player.svelte';
-  import { GAMEROOM_PANELS, type GameroomTab, gameroom, pref, savePref } from './lib/gameroom/store.svelte';
+  import { playerPages } from './lib/gameroom/player.svelte';
+  import {
+    GAMEROOM_PANELS,
+    type GameroomTab,
+    gameroom,
+    playerPanelId,
+    pref,
+    savePref,
+  } from './lib/gameroom/store.svelte';
   import HelpDialog from './lib/HelpDialog.svelte';
   import HomeScreen from './lib/HomeScreen.svelte';
   import Icon, { type IconName } from './lib/Icon.svelte';
@@ -80,7 +87,10 @@
   let puzzlesOpen = $state(pref('lobby.puzzles') === '1');
   $effect(() => savePref('lobby.puzzles', puzzlesOpen ? '1' : ''));
   let gameroomOpen = $state(
-    readList('lobby.gameroomPanels').filter((p): p is GameroomTab => GAMEROOM_PANELS.some((g) => g.id === p)),
+    readList('lobby.gameroomPanels').filter((p): p is GameroomTab => {
+      const player = playerPanelId(p);
+      return player != null ? playerPages.username(player) != null : GAMEROOM_PANELS.some((g) => g.id === p);
+    }),
   );
   let testsOpen = $state(readList('lobby.testPanels'));
   /** The opened tests' names, for the sidebar while the daemon is away. */
@@ -158,6 +168,8 @@
   function closeGameroomPanel(panel: GameroomTab) {
     // Nobody should sit in the chat room unseen.
     if (panel === 'chat' && chatroom.view?.state !== 'out') void chatroom.leave();
+    const player = playerPanelId(panel);
+    if (player != null) playerPages.remove(player);
     gameroomOpen = gameroomOpen.filter((p) => p !== panel);
     leave(`gameroom:${panel}`, 'gameroom');
   }
@@ -668,8 +680,9 @@
             {#if item.id === 'gameroom' && gameroomOpen.length > 0}
               <ul class="sub" aria-label="arimaa.com panels">
                 {#each gameroomOpen as id (id)}
-                  {@const p = GAMEROOM_PANELS.find((g) => g.id === id)!}
-                  {@const label = id === 'player' && playerPage.player ? playerPage.player.username : p.label}
+                  {@const player = playerPanelId(id)}
+                  {@const p = player != null ? null : GAMEROOM_PANELS.find((g) => g.id === id)}
+                  {@const label = player != null ? (playerPages.username(player) ?? 'Player') : (p?.label ?? id)}
                   <li class="sub-row" class:on={selected === `gameroom:${id}`}>
                     <button
                       class="sub-item bare"
@@ -678,7 +691,7 @@
                       title={collapsed ? `arimaa.com: ${label}` : undefined}
                       aria-label="arimaa.com: {label}"
                     >
-                      <Icon name={p.icon} size={16} />
+                      <Icon name={p?.icon ?? 'user'} size={16} />
                       {#if !collapsed}<span class="label">{label}</span>{/if}
                       {#if id === 'chat' && chatroom.unread > 0 && selected !== 'gameroom:chat'}<span
                           class="badge"

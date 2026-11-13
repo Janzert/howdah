@@ -35,8 +35,9 @@ export function savePref(key: string, value: string) {
 }
 
 /** The arimaa.com panels opened from the overview, each listed under
- * arimaa.com in the lobby's sidebar once opened. */
-export type GameroomTab = 'bots' | 'watch' | 'finished' | 'players' | 'player' | 'chat' | 'archive';
+ * arimaa.com in the lobby's sidebar once opened. A player's page is a
+ * panel of its own per player, `player:<id>`. */
+export type GameroomTab = 'bots' | 'watch' | 'finished' | 'players' | 'chat' | 'archive' | `player:${string}`;
 
 export const GAMEROOM_PANELS: {
   id: GameroomTab;
@@ -47,10 +48,14 @@ export const GAMEROOM_PANELS: {
   { id: 'watch', label: 'Watch', icon: 'eye' },
   { id: 'finished', label: 'Finished games', icon: 'record' },
   { id: 'players', label: 'Players', icon: 'users' },
-  { id: 'player', label: 'Player', icon: 'user' },
   { id: 'chat', label: 'Chat room', icon: 'chat' },
   { id: 'archive', label: 'Chat archive', icon: 'calendar' },
 ];
+
+/** The player id of a player's page panel, or null for another panel. */
+export function playerPanelId(panel: string): string | null {
+  return panel.startsWith('player:') ? panel.slice(7) : null;
+}
 
 /** The panels that work without logging in. */
 export const NO_LOGIN_PANELS: GameroomTab[] = ['archive'];

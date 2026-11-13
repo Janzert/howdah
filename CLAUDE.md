@@ -919,10 +919,13 @@ plans the engine test and tournament runner.
     recently finished: the lobby's five at once, then the page of 100
     behind them in the background, `loadRecentPage`, 25 rows at a time)
     and `PlayersTab` (online, with Invite; a name opens their page),
-    and `PlayerTab`, one player's page (`player.svelte.ts`'s
-    `playerPage`, one player at a time with Back through the players
-    shown before; `showPlayerPage` opens it from the Players panel and the
-    overview's online chips; the sidebar lists it by the username): the
+    and `PlayerTab`, one player's page, a panel per player
+    (`player:<id>`; `player.svelte.ts`'s `PlayerPage`, kept by
+    `playerPages`, which also keeps the open pages' usernames in
+    localStorage, `lobby.playerPanels`; a panel stays its player;
+    `showPlayerPage` opens one, or shows the one already open, from the
+    Players panel, the overview's online chips and the record's
+    opponents; the sidebar lists it by the username): the
     profile, `RatingChart` (the rating as steps, a point per rated game
     and the rating now, range buttons, a click opens the game), then
     Games (paged) or Record by opponent (fetched when first shown, filters,

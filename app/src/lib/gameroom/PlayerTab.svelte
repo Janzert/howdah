@@ -2,21 +2,21 @@
   // One arimaa.com player's page: who they are and their rating (from
   // their player page), their rating over time, and their games or their
   // record by opponent, with the games against each. Opened from the
-  // online players; an opponent in the record opens theirs, with Back.
+  // online players; an opponent in the record opens their own panel.
   import type { RecordLineView } from '../bindings/RecordLineView';
   import type { TallyView } from '../bindings/TallyView';
   import PastGameRow from './PastGameRow.svelte';
-  import { type RecordFilter, playerPage } from './player.svelte';
+  import { type PlayerPage, type RecordFilter, showPlayerPage } from './player.svelte';
   import RatingChart from './RatingChart.svelte';
   import { gameroom } from './store.svelte';
 
-  const p = $derived(playerPage.profile.value);
-  const player = $derived(playerPage.player);
-  const username = $derived(p?.username ?? player?.username ?? '');
+  let { page }: { page: PlayerPage } = $props();
+
+  const p = $derived(page.profile.value);
+  const username = $derived(p?.username ?? page.player.username);
 
   /** Their game being played now, to watch. */
   const live = $derived(gameroom.games?.live.find((g) => g.gold === username || g.silver === username) ?? null);
-  const previous = $derived(playerPage.back.at(-1) ?? null);
 
   /** The time where they are, updated each minute. */
   let now = $state(Date.now());
@@ -51,7 +51,7 @@
   let recordAll = $state(false);
   let recordWords = $state('');
   const recordRows = $derived.by((): RecordLineView[] => {
-    const rows = playerPage.record.value?.opponents ?? [];
+    const rows = page.record.value?.opponents ?? [];
     const words = recordWords.trim().toLowerCase();
     return words ? rows.filter((r) => r.opponent?.toLowerCase().includes(words)) : rows;
   });
@@ -68,250 +68,237 @@
     [true, 'Bots'],
   ];
   function setFilter(change: Partial<RecordFilter>) {
-    playerPage.setRecordFilter({ ...playerPage.recordFilter, ...change });
+    page.setRecordFilter({ ...page.recordFilter, ...change });
   }
 </script>
 
-{#if !player}
-  <section class="card">
-    <p class="empty">Choose a player from the online list to see their page.</p>
-  </section>
-{:else}
-  <section class="card" aria-labelledby="pp-name">
-    <div class="card-head">
-      {#if previous}
-        <button class="subtle" onclick={() => playerPage.goBack()} title="Back to {previous.username}"
-          >← {previous.username}</button
-        >
-      {/if}
-      <h2 id="pp-name">{username}</h2>
-      {#if p?.bot}<span class="tag">bot</span>{/if}
-      {#if p?.online}<span class="tag online">online</span>{/if}
-      <span class="spacer"></span>
-      {#if live}
-        <button onclick={() => gameroom.open(live.gid)} disabled={gameroom.busy} title="Watch game {live.gid}"
-          >Watch</button
-        >
-      {/if}
-      {#if gameroom.invitable.has(username)}
-        <button
-          onclick={() => (gameroom.newGame = { opponent: username })}
-          disabled={gameroom.busy}
-          title="Invite {username} to a game">Invite</button
-        >
-      {/if}
-      <button class="subtle" onclick={() => playerPage.reload()} title="Fetch the page again">Refresh</button>
-    </div>
-    {#if playerPage.profile.loading}
-      <p class="empty">Loading…</p>
-    {:else if playerPage.profile.error}
-      <p class="error">{playerPage.profile.error}</p>
-    {:else if p}
-      <div class="summary">
-        <div class="rating-box">
-          <span class="big">{p.rating ?? '–'}</span>
-          {#if ratingNote}<span class="meta">{ratingNote}</span>{/if}
-        </div>
-        <dl class="facts">
-          {#if p.name}<dt>Name</dt>
-            <dd>{p.name}</dd>{/if}
-          {#if p.country}<dt>From</dt>
-            <dd>{p.country}</dd>{/if}
-          {#if localTime}<dt>Their time</dt>
-            <dd>{localTime}</dd>{/if}
-          {#if p.lastSeen && !p.online}<dt>Last seen</dt>
-            <dd>{p.lastSeen}</dd>{/if}
-          {#if p.joined}<dt>Joined</dt>
-            <dd>
-              {p.joined}{#if p.number != null}<span class="meta">{` · player #${p.number}`}</span>{/if}
-            </dd>{/if}
-        </dl>
-        <dl class="facts">
-          {#if p.games != null}<dt>Games</dt>
-            <dd>
-              {p.games}{#if sides}<span class="meta">{` · ${sides}`}</span>{/if}
-            </dd>{/if}
-          {#if p.wins != null && p.losses != null}<dt>Won</dt>
-            <dd>
-              {p.wins}–{p.losses}{#if p.draws}–{p.draws}{/if}{#if p.games}<span class="meta"
-                  >{` · ${Math.round((100 * p.wins) / p.games)}%`}</span
-                >{/if}
-            </dd>{/if}
-          {#if p.streak != null}<dt>Streak</dt>
-            <dd>{streakText(p.streak)}</dd>{/if}
-        </dl>
-      </div>
+<section class="card" aria-labelledby="pp-name">
+  <div class="card-head">
+    <h2 id="pp-name">{username}</h2>
+    {#if p?.bot}<span class="tag">bot</span>{/if}
+    {#if p?.online}<span class="tag online">online</span>{/if}
+    <span class="spacer"></span>
+    {#if live}
+      <button onclick={() => gameroom.open(live.gid)} disabled={gameroom.busy} title="Watch game {live.gid}"
+        >Watch</button
+      >
     {/if}
-  </section>
-
-  <section class="card" aria-labelledby="pp-rating">
-    <div class="card-head"><h2 id="pp-rating">Rating</h2></div>
-    {#if playerPage.history.loading || (!playerPage.history.value && !playerPage.history.error)}
-      <p class="empty">Loading…</p>
-    {:else if playerPage.history.error}
-      <p class="error">{playerPage.history.error}</p>
-    {:else if playerPage.history.value?.length === 0}
-      <p class="empty">No rated games.</p>
-    {:else if playerPage.history.value}
-      <RatingChart
-        points={playerPage.history.value}
-        current={p?.rating ?? null}
-        onOpen={(gid) => gameroom.open(gid)}
-        label="{username}'s rating over time"
-      />
+    {#if gameroom.invitable.has(username)}
+      <button
+        onclick={() => (gameroom.newGame = { opponent: username })}
+        disabled={gameroom.busy}
+        title="Invite {username} to a game">Invite</button
+      >
     {/if}
-  </section>
-
-  <section class="card" aria-label="Games and record">
-    <div class="card-head">
-      <div class="tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={playerPage.tab === 'games'}
-          class:on={playerPage.tab === 'games'}
-          onclick={() => playerPage.showGames()}>Games</button
-        >
-        <button
-          role="tab"
-          aria-selected={playerPage.tab === 'record'}
-          class:on={playerPage.tab === 'record'}
-          onclick={() => playerPage.showRecord()}>Record by opponent</button
-        >
+    <button class="subtle" onclick={() => page.reload()} title="Fetch the page again">Refresh</button>
+  </div>
+  {#if page.profile.loading}
+    <p class="empty">Loading…</p>
+  {:else if page.profile.error}
+    <p class="error">{page.profile.error}</p>
+  {:else if p}
+    <div class="summary">
+      <div class="rating-box">
+        <span class="big">{p.rating ?? '–'}</span>
+        {#if ratingNote}<span class="meta">{ratingNote}</span>{/if}
       </div>
+      <dl class="facts">
+        {#if p.name}<dt>Name</dt>
+          <dd>{p.name}</dd>{/if}
+        {#if p.country}<dt>From</dt>
+          <dd>{p.country}</dd>{/if}
+        {#if localTime}<dt>Their time</dt>
+          <dd>{localTime}</dd>{/if}
+        {#if p.lastSeen && !p.online}<dt>Last seen</dt>
+          <dd>{p.lastSeen}</dd>{/if}
+        {#if p.joined}<dt>Joined</dt>
+          <dd>
+            {p.joined}{#if p.number != null}<span class="meta">{` · player #${p.number}`}</span>{/if}
+          </dd>{/if}
+      </dl>
+      <dl class="facts">
+        {#if p.games != null}<dt>Games</dt>
+          <dd>
+            {p.games}{#if sides}<span class="meta">{` · ${sides}`}</span>{/if}
+          </dd>{/if}
+        {#if p.wins != null && p.losses != null}<dt>Won</dt>
+          <dd>
+            {p.wins}–{p.losses}{#if p.draws}–{p.draws}{/if}{#if p.games}<span class="meta"
+                >{` · ${Math.round((100 * p.wins) / p.games)}%`}</span
+              >{/if}
+          </dd>{/if}
+        {#if p.streak != null}<dt>Streak</dt>
+          <dd>{streakText(p.streak)}</dd>{/if}
+      </dl>
     </div>
+  {/if}
+</section>
 
-    {#if playerPage.tab === 'games'}
-      {@const part = playerPage.games}
-      {#if part.value}
-        {#if part.value.games.length === 0}
-          <p class="empty">No finished games.</p>
-        {:else}
-          <ul class="list" aria-label="{username}'s games">
-            {#each part.value.games as g (g.gid)}
-              <PastGameRow game={g} />
-            {/each}
-          </ul>
-        {/if}
-        {#if part.value.next != null}
-          <button class="subtle more" onclick={() => playerPage.olderGames()} disabled={part.loading}
-            >{part.loading ? 'Loading…' : 'Older games'}</button
+<section class="card" aria-labelledby="pp-rating">
+  <div class="card-head"><h2 id="pp-rating">Rating</h2></div>
+  {#if page.history.loading || (!page.history.value && !page.history.error)}
+    <p class="empty">Loading…</p>
+  {:else if page.history.error}
+    <p class="error">{page.history.error}</p>
+  {:else if page.history.value?.length === 0}
+    <p class="empty">No rated games.</p>
+  {:else if page.history.value}
+    <RatingChart
+      points={page.history.value}
+      current={p?.rating ?? null}
+      onOpen={(gid) => gameroom.open(gid)}
+      label="{username}'s rating over time"
+    />
+  {/if}
+</section>
+
+<section class="card" aria-label="Games and record">
+  <div class="card-head">
+    <div class="tabs" role="tablist">
+      <button
+        role="tab"
+        aria-selected={page.tab === 'games'}
+        class:on={page.tab === 'games'}
+        onclick={() => page.showGames()}>Games</button
+      >
+      <button
+        role="tab"
+        aria-selected={page.tab === 'record'}
+        class:on={page.tab === 'record'}
+        onclick={() => page.showRecord()}>Record by opponent</button
+      >
+    </div>
+  </div>
+
+  {#if page.tab === 'games'}
+    {@const part = page.games}
+    {#if part.value}
+      {#if part.value.games.length === 0}
+        <p class="empty">No finished games.</p>
+      {:else}
+        <ul class="list" aria-label="{username}'s games">
+          {#each part.value.games as g (g.gid)}
+            <PastGameRow game={g} />
+          {/each}
+        </ul>
+      {/if}
+      {#if part.value.next != null}
+        <button class="subtle more" onclick={() => page.olderGames()} disabled={part.loading}
+          >{part.loading ? 'Loading…' : 'Older games'}</button
+        >
+      {/if}
+    {:else if part.loading || !part.error}
+      <p class="empty">Loading…</p>
+    {/if}
+    {#if part.error}<p class="error">{part.error}</p>{/if}
+  {:else}
+    <div class="filters">
+      <div class="choices" role="group" aria-label="Rated or unrated">
+        {#each ratedChoices as [v, label] (label)}
+          <button
+            class="link"
+            class:on={page.recordFilter.rated === v}
+            aria-pressed={page.recordFilter.rated === v}
+            onclick={() => setFilter({ rated: v })}>{label}</button
           >
-        {/if}
-      {:else if part.loading || !part.error}
-        <p class="empty">Loading…</p>
-      {/if}
-      {#if part.error}<p class="error">{part.error}</p>{/if}
-    {:else}
-      <div class="filters">
-        <div class="choices" role="group" aria-label="Rated or unrated">
-          {#each ratedChoices as [v, label] (label)}
-            <button
-              class="link"
-              class:on={playerPage.recordFilter.rated === v}
-              aria-pressed={playerPage.recordFilter.rated === v}
-              onclick={() => setFilter({ rated: v })}>{label}</button
-            >
-          {/each}
-        </div>
-        <div class="choices" role="group" aria-label="Opponents">
-          {#each botChoices as [v, label] (label)}
-            <button
-              class="link"
-              class:on={playerPage.recordFilter.bots === v}
-              aria-pressed={playerPage.recordFilter.bots === v}
-              onclick={() => setFilter({ bots: v })}>{label}</button
-            >
-          {/each}
-        </div>
-        <span class="spacer"></span>
-        <input bind:value={recordWords} placeholder="Filter by name" aria-label="Filter opponents" autocomplete="off" />
+        {/each}
       </div>
-      {@const part = playerPage.record}
-      {#if part.loading}
-        <p class="empty">Loading…</p>
-      {:else if part.error}
-        <p class="error">{part.error}</p>
-      {:else if part.value}
-        {@const totals = part.value.totals}
-        {#if !totals || totals.all.games === 0}
-          <p class="empty">No games.</p>
-        {:else}
-          <table class="record">
-            <thead>
-              <tr>
-                <th scope="col">Opponent</th>
-                <th scope="col" class="num">Games</th>
-                <th scope="col" class="num">Won–lost</th>
-                <th scope="col" class="num">Score</th>
-                <th scope="col" class="num side"><span class="dot gold"></span> As gold</th>
-                <th scope="col" class="num side"><span class="dot silver"></span> As silver</th>
-                <th scope="col"><span class="sr-only">Games against</span></th>
+      <div class="choices" role="group" aria-label="Opponents">
+        {#each botChoices as [v, label] (label)}
+          <button
+            class="link"
+            class:on={page.recordFilter.bots === v}
+            aria-pressed={page.recordFilter.bots === v}
+            onclick={() => setFilter({ bots: v })}>{label}</button
+          >
+        {/each}
+      </div>
+      <span class="spacer"></span>
+      <input bind:value={recordWords} placeholder="Filter by name" aria-label="Filter opponents" autocomplete="off" />
+    </div>
+    {@const part = page.record}
+    {#if part.loading}
+      <p class="empty">Loading…</p>
+    {:else if part.error}
+      <p class="error">{part.error}</p>
+    {:else if part.value}
+      {@const totals = part.value.totals}
+      {#if !totals || totals.all.games === 0}
+        <p class="empty">No games.</p>
+      {:else}
+        <table class="record">
+          <thead>
+            <tr>
+              <th scope="col">Opponent</th>
+              <th scope="col" class="num">Games</th>
+              <th scope="col" class="num">Won–lost</th>
+              <th scope="col" class="num">Score</th>
+              <th scope="col" class="num side"><span class="dot gold"></span> As gold</th>
+              <th scope="col" class="num side"><span class="dot silver"></span> As silver</th>
+              <th scope="col"><span class="sr-only">Games against</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="totals">
+              <th scope="row">{plural(part.value.opponents.length, 'opponent')}</th>
+              <td class="num">{totals.all.games}</td>
+              <td class="num">{wl(totals.all)}</td>
+              <td class="num">{pct(totals.all)}</td>
+              <td class="num side">{wl(totals.gold)}</td>
+              <td class="num side">{wl(totals.silver)}</td>
+              <td></td>
+            </tr>
+            {#each recordShown as r (r.opponentId)}
+              {@const open = page.againstId === r.opponentId}
+              <tr class:open>
+                <th scope="row">
+                  <button
+                    class="link"
+                    onclick={() => r.opponentId && showPlayerPage({ id: r.opponentId, username: r.opponent ?? '' })}
+                    title="{r.opponent}'s page">{r.opponent}</button
+                  >
+                </th>
+                <td class="num">{r.all.games}</td>
+                <td class="num">{wl(r.all)}</td>
+                <td class="num">{pct(r.all)}</td>
+                <td class="num side">{wl(r.gold)}</td>
+                <td class="num side">{wl(r.silver)}</td>
+                <td>
+                  <button
+                    class="subtle"
+                    aria-expanded={open}
+                    onclick={() => r.opponentId && page.toggleAgainst(r.opponentId)}
+                    title="{username}'s games against {r.opponent}">{open ? 'Hide' : 'Games'}</button
+                  >
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              <tr class="totals">
-                <th scope="row">{plural(part.value.opponents.length, 'opponent')}</th>
-                <td class="num">{totals.all.games}</td>
-                <td class="num">{wl(totals.all)}</td>
-                <td class="num">{pct(totals.all)}</td>
-                <td class="num side">{wl(totals.gold)}</td>
-                <td class="num side">{wl(totals.silver)}</td>
-                <td></td>
-              </tr>
-              {#each recordShown as r (r.opponentId)}
-                {@const open = playerPage.againstId === r.opponentId}
-                <tr class:open>
-                  <th scope="row">
-                    <button
-                      class="link"
-                      onclick={() => r.opponentId && playerPage.show({ id: r.opponentId, username: r.opponent ?? '' })}
-                      title="{r.opponent}'s page">{r.opponent}</button
-                    >
-                  </th>
-                  <td class="num">{r.all.games}</td>
-                  <td class="num">{wl(r.all)}</td>
-                  <td class="num">{pct(r.all)}</td>
-                  <td class="num side">{wl(r.gold)}</td>
-                  <td class="num side">{wl(r.silver)}</td>
-                  <td>
-                    <button
-                      class="subtle"
-                      aria-expanded={open}
-                      onclick={() => r.opponentId && playerPage.toggleAgainst(r.opponentId)}
-                      title="{username}'s games against {r.opponent}">{open ? 'Hide' : 'Games'}</button
-                    >
+              {#if open}
+                <tr class="against">
+                  <td colspan="7">
+                    {#if page.against.loading}
+                      <p class="empty">Loading…</p>
+                    {:else if page.against.error}
+                      <p class="error">{page.against.error}</p>
+                    {:else if page.against.value}
+                      <ul class="list" aria-label="Games against {r.opponent}">
+                        {#each page.against.value as g (g.gid)}
+                          <PastGameRow game={g} />
+                        {/each}
+                      </ul>
+                    {/if}
                   </td>
                 </tr>
-                {#if open}
-                  <tr class="against">
-                    <td colspan="7">
-                      {#if playerPage.against.loading}
-                        <p class="empty">Loading…</p>
-                      {:else if playerPage.against.error}
-                        <p class="error">{playerPage.against.error}</p>
-                      {:else if playerPage.against.value}
-                        <ul class="list" aria-label="Games against {r.opponent}">
-                          {#each playerPage.against.value as g (g.gid)}
-                            <PastGameRow game={g} />
-                          {/each}
-                        </ul>
-                      {/if}
-                    </td>
-                  </tr>
-                {/if}
-              {/each}
-            </tbody>
-          </table>
-          {#if recordShown.length < recordRows.length}
-            <button class="subtle more" onclick={() => (recordAll = true)}
-              >Show all {recordRows.length} opponents</button
-            >
-          {/if}
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+        {#if recordShown.length < recordRows.length}
+          <button class="subtle more" onclick={() => (recordAll = true)}>Show all {recordRows.length} opponents</button>
         {/if}
       {/if}
     {/if}
-  </section>
-{/if}
+  {/if}
+</section>
 
 <style>
   .card + .card {

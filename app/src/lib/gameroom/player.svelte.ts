@@ -1,13 +1,14 @@
-// The arimaa.com player page's state: the player shown, what their page
-// says, their rating history, games and record by opponent. One player at
-// a time, with the players shown before it to go back to.
+// The arimaa.com player pages' state: for each player whose page is open,
+// what their page says, their rating history, games and record by
+// opponent. Each page is its own panel (`player:<id>`) and stays that
+// player; opening a player whose page is open shows that panel.
 
 import { api, errorMessage } from '../api';
 import type { PastGameView } from '../bindings/PastGameView';
 import type { PlayerProfileView } from '../bindings/PlayerProfileView';
 import type { PlayerRecordView } from '../bindings/PlayerRecordView';
 import type { RatingPointView } from '../bindings/RatingPointView';
-import { gameroom } from './store.svelte';
+import { gameroom, pref, savePref } from './store.svelte';
 
 /** A player to show: the id their page is asked for by, and the username
  * their rating history is. */
@@ -31,14 +32,9 @@ interface Part<T> {
 
 const empty = <T>(): Part<T> => ({ value: null, loading: false, error: null });
 
-/** How many players Back remembers. */
-const BACK_LIMIT = 20;
-
-class PlayerPage {
-  /** The player shown. */
-  player = $state<PlayerRef | null>(null);
-  /** The players shown before, newest last, for Back. */
-  back = $state<PlayerRef[]>([]);
+export class PlayerPage {
+  /** The player shown, for good. */
+  readonly player: PlayerRef;
   profile = $state<Part<PlayerProfileView>>(empty());
   history = $state<Part<RatingPointView[]>>(empty());
   /** Their finished games, newest first, and the offset of the next page. */
@@ -52,33 +48,22 @@ class PlayerPage {
   /** The section shown under the graph. */
   tab = $state<'games' | 'record'>('games');
 
-  /** Counts the players shown, so replies for an earlier one are dropped. */
+  /** Counts the loads, so replies for an earlier one are dropped. */
   #shown = 0;
 
-  /** Shows `player`'s page in the player panel, fetching it afresh. */
-  show(player: PlayerRef) {
-    const current = this.player;
-    if (current && current.id !== player.id) this.back = [...this.back, current].slice(-BACK_LIMIT);
-    this.#load(player);
-    gameroom.show('player');
-  }
-
-  /** Goes back to the player shown before this one. */
-  goBack() {
-    const previous = this.back.at(-1);
-    if (!previous) return;
-    this.back = this.back.slice(0, -1);
-    this.#load(previous);
+  constructor(player: PlayerRef) {
+    this.player = player;
+    this.#load();
   }
 
   /** Fetches the page again. */
   reload() {
-    if (this.player) this.#load(this.player, this.tab);
+    this.#load(this.tab);
   }
 
-  #load(player: PlayerRef, tab: 'games' | 'record' = 'games') {
+  #load(tab: 'games' | 'record' = 'games') {
     const shown = ++this.#shown;
-    this.player = player;
+    const player = this.player;
     this.tab = tab;
     this.profile = empty();
     this.history = empty();
@@ -116,7 +101,7 @@ class PlayerPage {
   showGames() {
     this.tab = 'games';
     const player = this.player;
-    if (player && !this.games.value && !this.games.loading)
+    if (!this.games.value && !this.games.loading)
       void this.#fetch(this.#shown, 'games', () => api.gameroomPlayerGames(player.id, 0));
   }
 
@@ -124,7 +109,7 @@ class PlayerPage {
   async olderGames() {
     const player = this.player;
     const page = this.games.value;
-    if (!player || !page || page.next == null || this.games.loading) return;
+    if (!page || page.next == null || this.games.loading) return;
     const shown = this.#shown;
     this.games = { ...this.games, loading: true, error: null };
     try {
@@ -152,7 +137,6 @@ class PlayerPage {
 
   loadRecord() {
     const player = this.player;
-    if (!player) return Promise.resolve();
     const { rated, bots } = this.recordFilter;
     return this.#fetch(this.#shown, 'record', () => api.gameroomPlayerRecord(player.id, rated, bots));
   }
@@ -160,7 +144,6 @@ class PlayerPage {
   /** Shows the games against `opponentId` (again: hides them). */
   async toggleAgainst(opponentId: string) {
     const player = this.player;
-    if (!player) return;
     this.against = empty();
     if (this.againstId === opponentId) {
       this.againstId = null;
@@ -169,7 +152,7 @@ class PlayerPage {
     this.againstId = opponentId;
     const { rated, bots } = this.recordFilter;
     const shown = this.#shown;
-    // A reply for another player, or another opponent opened since, is dropped.
+    // A reply for an earlier load, or another opponent opened since, is dropped.
     const current = () => shown === this.#shown && this.againstId === opponentId;
     this.against = { value: null, loading: true, error: null };
     try {
@@ -181,9 +164,64 @@ class PlayerPage {
   }
 }
 
-export const playerPage = new PlayerPage();
+const NAMES_KEY = 'lobby.playerPanels';
 
-/** Shows a player's page in the arimaa.com player panel. */
+function readNames(): Record<string, string> {
+  try {
+    const v = JSON.parse(pref(NAMES_KEY) || '{}');
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The open player pages: each one's username (kept in localStorage, so
+ * the sidebar names them after a restart) and, once shown, its page. */
+class PlayerPages {
+  /** Usernames by player id, for every page open. */
+  names = $state<Record<string, string>>(readNames());
+  #pages = new Map<string, PlayerPage>();
+
+  /** The page of player `id`, fetched the first time it's asked for;
+   * null if no page of theirs is open. */
+  page(id: string): PlayerPage | null {
+    let page = this.#pages.get(id);
+    if (!page) {
+      const username = this.names[id];
+      if (username == null) return null;
+      page = new PlayerPage({ id, username });
+      this.#pages.set(id, page);
+    }
+    return page;
+  }
+
+  /** The username of player `id`, if their page is open. */
+  username(id: string): string | null {
+    return this.names[id] ?? null;
+  }
+
+  /** Notes `player`'s page as open. */
+  add(player: PlayerRef) {
+    if (this.names[player.id] === player.username) return;
+    this.names = { ...this.names, [player.id]: player.username };
+    savePref(NAMES_KEY, JSON.stringify(this.names));
+  }
+
+  /** Forgets player `id`'s page, when its panel closes. */
+  remove(id: string) {
+    this.#pages.delete(id);
+    if (!(id in this.names)) return;
+    const { [id]: _, ...rest } = this.names;
+    this.names = rest;
+    savePref(NAMES_KEY, JSON.stringify(rest));
+  }
+}
+
+export const playerPages = new PlayerPages();
+
+/** Shows a player's page in its own arimaa.com panel: the one already open
+ * for them, or a new one. */
 export function showPlayerPage(player: PlayerRef) {
-  playerPage.show(player);
+  playerPages.add(player);
+  gameroom.show(`player:${player.id}`);
 }
