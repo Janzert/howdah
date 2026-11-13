@@ -1304,9 +1304,16 @@ mod tests {
 
     /// The bundled test engine, built in the test binary's parent directory.
     fn test_engine(args: &[&str]) -> EngineSpec {
+        // Built in the target directory, an ancestor of the test binary's
+        // (`deps/` before Rust 1.100, a deeper build directory since).
         let exe = std::env::current_exe().unwrap();
-        let dir = exe.parent().and_then(|d| d.parent()).unwrap();
-        let program = dir.join(if cfg!(windows) { "aei-test-engine.exe" } else { "aei-test-engine" });
+        let name = if cfg!(windows) { "aei-test-engine.exe" } else { "aei-test-engine" };
+        let program = exe
+            .ancestors()
+            .skip(1)
+            .map(|d| d.join(name))
+            .find(|p| p.exists())
+            .unwrap_or_else(|| exe.parent().unwrap().join(name));
         assert!(
             program.exists(),
             "{} is missing: run `cargo build -p howdah-aei --bin aei-test-engine`",
