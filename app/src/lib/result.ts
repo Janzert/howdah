@@ -27,13 +27,16 @@ export function describeResult(r: GameResult): { title: string; reason: string }
 /**
  * Whether `next` shows a game ending as it was played: `prev` was at the
  * live end of the same game, without a result, and `next` adds at most the
- * final move. Going to the end of a finished game or loading a record isn't
- * an ending to announce.
+ * final move, or, in a match already under way, the moves that came with
+ * the result (a server's reply can carry the last two when a bot answers
+ * at once). Going to the end of a finished game or loading a record isn't
+ * an ending to announce, nor is opening a server game that has just ended.
  */
 export function justEnded(prev: SessionView | null, next: SessionView): boolean {
   if (!prev || prev.result || !next.result) return false;
   if (prev.ply !== prev.moves.length) return false;
   const added = next.moves.length - prev.moves.length;
-  if (added < 0 || added > 1) return false;
+  const inMatch = prev.livePly != null && next.livePly != null && prev.moves.length > 0;
+  if (added < 0 || (added > 1 && !inMatch)) return false;
   return prev.moves.every((m, i) => m.notation === next.moves[i].notation);
 }

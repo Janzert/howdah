@@ -8,7 +8,13 @@ function view(notations: string[], ply = notations.length, result: GameResult | 
     moves: notations.map((notation, i) => ({ ply: i + 1, label: `${i}`, notation })),
     ply,
     result,
+    livePly: null,
   } as SessionView;
+}
+
+/** A match's view, its live node at the end of its moves. */
+function live(notations: string[], result: GameResult | null = null): SessionView {
+  return { ...view(notations, notations.length, result), livePly: notations.length };
 }
 
 const goal: GameResult = { winner: 'gold', reason: 'goal' };
@@ -32,6 +38,15 @@ describe('justEnded', () => {
     expect(justEnded(view(['a', 'b']), view(['x', 'y', 'z'], 3, goal))).toBe(false);
     expect(justEnded(view(['a']), view(['a', 'b', 'c'], 3, goal))).toBe(false);
     expect(justEnded(null, view(['a'], 1, goal))).toBe(false);
+  });
+
+  it('announces the last moves of a match arriving together', () => {
+    expect(justEnded(live(['a', 'b']), live(['a', 'b', 'c', 'd'], goal))).toBe(true);
+    expect(justEnded(live(['a', 'b']), live(['a', 'x', 'c', 'd'], goal))).toBe(false);
+  });
+
+  it('ignores opening a server game that has just ended', () => {
+    expect(justEnded(live([]), live(['a', 'b', 'c'], goal))).toBe(false);
   });
 
   it('announces once', () => {

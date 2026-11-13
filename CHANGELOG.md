@@ -31,6 +31,9 @@ young).
 
 ### Fixed
 
+- A gameroom game whose last two moves reach Howdah together with the
+  result (a bot answering at once) now shows the game-end dialog and
+  plays its sound, as other endings do.
 - With analysis on, a position that ends the game (goal, elimination or
   immobilization) fills the eval bar for the winner, rather than showing
   it even. A loss on time or by resignation still shows the engine's
