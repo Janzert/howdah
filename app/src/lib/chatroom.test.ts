@@ -30,15 +30,22 @@ describe('chat room colors', () => {
 describe('chat room times', () => {
   it('leaves out the date for today', () => {
     const now = new Date(2026, 9, 18, 12, 0);
-    const today = chatTime(new Date(2026, 9, 18, 9, 5).getTime() / 1000, now);
-    const earlier = chatTime(new Date(2026, 9, 12, 9, 5).getTime() / 1000, now);
+    const today = chatTime(new Date(2026, 9, 18, 9, 5).getTime() / 1000, {}, now);
+    const earlier = chatTime(new Date(2026, 9, 12, 9, 5).getTime() / 1000, {}, now);
     expect(earlier.endsWith(today)).toBe(true);
     expect(earlier.length).toBeGreaterThan(today.length);
   });
 
   it('shows the seconds', () => {
     const now = new Date(2026, 9, 18, 12, 0);
-    expect(chatTime(new Date(2026, 9, 18, 9, 5, 37).getTime() / 1000, now)).toContain('05:37');
+    expect(chatTime(new Date(2026, 9, 18, 9, 5, 37).getTime() / 1000, {}, now)).toContain('05:37');
+  });
+
+  it('uses the clock asked for', () => {
+    const now = new Date(2026, 9, 18, 23, 0);
+    const at = new Date(2026, 9, 18, 21, 5, 37).getTime() / 1000;
+    expect(chatTime(at, { hourCycle: 'h23' }, now)).toContain('21:05:37');
+    expect(chatTime(at, { hourCycle: 'h12' }, now)).toContain('09:05:37');
   });
 });
 

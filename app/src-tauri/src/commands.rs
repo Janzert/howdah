@@ -11,7 +11,8 @@ use crate::dto::{
     GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView,
     PlayerMatchView, PlayerProfileView, PlayerRecordView, PositionCheck, PositionSpec, PositionView,
     PostalGameView, PuzzleGroupView, RatingPointView, ServerBotsView, SessionId, SessionView, SpsaStepView,
-    StartedBotView, StepTarget, TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
+    StartedBotView, StepTarget, SystemClock, TestDetailView, TestView, TourneyStatusView, UpdateView,
+    WatchView,
 };
 
 #[tauri::command]
@@ -436,6 +437,11 @@ pub fn gameroom_game_session(state: State<Backend>, gid: String) -> Option<Sessi
 #[tauri::command]
 pub fn app_version(state: State<Backend>) -> String {
     state.app_version()
+}
+
+#[tauri::command]
+pub fn system_clock(state: State<Backend>) -> SystemClock {
+    state.system_clock()
 }
 
 #[tauri::command]

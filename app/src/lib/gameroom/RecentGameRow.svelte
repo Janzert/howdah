@@ -1,5 +1,6 @@
 <script lang="ts">
   // A recently finished game, with Open.
+  import { clock } from '../clock.svelte';
   import type { RecentGameView } from '../bindings/RecentGameView';
   import { recentMeta } from './format';
   import Matchup from './Matchup.svelte';
@@ -14,7 +15,7 @@
       <span class="row-line">
         <Matchup gold={g.gold} silver={g.silver} goldRating={g.goldRating} silverRating={g.silverRating} />
       </span>
-      <span class="meta">{recentMeta(g)}</span>
+      <span class="meta">{recentMeta(g, clock.options)}</span>
     </span>
     <span class="action">Open</span>
   </button>

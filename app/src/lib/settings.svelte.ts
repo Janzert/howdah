@@ -11,6 +11,8 @@ export type { Coordinates, HoverInput };
 export type MoveTimes = 'off' | 'move' | 'game';
 /** Light or dark colors, or whichever the system prefers. */
 export type Appearance = 'system' | 'light' | 'dark';
+/** Times of day on a 12- or a 24-hour clock, or as the system has it. */
+export type TimeFormat = 'system' | '12' | '24';
 
 /** The slowest step animation the setting allows, in ms. */
 export const MAX_STEP_MS = 600;
@@ -49,6 +51,8 @@ export interface SettingsData {
   /** The size of the chat room's and its archive's text, in px; a game's
    * chat is a pixel smaller. */
   chatFontSize: number;
+  /** How times of day are written (chat, when games ended). */
+  timeFormat: TimeFormat;
   /** Ask GitHub whether a newer release of Howdah is out. */
   checkForUpdates: boolean;
 }
@@ -71,6 +75,7 @@ export const DEFAULTS: SettingsData = {
   moveTimes: 'off',
   leaveChatForGames: true,
   chatFontSize: 14,
+  timeFormat: 'system',
   checkForUpdates: true,
 };
 
@@ -117,6 +122,9 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
   if (typeof raw.leaveChatForGames === 'boolean') s.leaveChatForGames = raw.leaveChatForGames;
   if (typeof raw.chatFontSize === 'number' && Number.isFinite(raw.chatFontSize)) {
     s.chatFontSize = Math.round(Math.min(MAX_CHAT_FONT, Math.max(MIN_CHAT_FONT, raw.chatFontSize)));
+  }
+  if (raw.timeFormat === 'system' || raw.timeFormat === '12' || raw.timeFormat === '24') {
+    s.timeFormat = raw.timeFormat;
   }
   if (typeof raw.checkForUpdates === 'boolean') s.checkForUpdates = raw.checkForUpdates;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
@@ -213,6 +221,13 @@ class Settings {
   }
   set chatFontSize(v: number) {
     this.update({ chatFontSize: v });
+  }
+
+  get timeFormat() {
+    return this.#data.timeFormat;
+  }
+  set timeFormat(v: TimeFormat) {
+    this.update({ timeFormat: v });
   }
 
   get checkForUpdates() {

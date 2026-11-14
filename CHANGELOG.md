@@ -7,6 +7,15 @@ young).
 
 ## [Unreleased]
 
+### Added
+
+- Times of day (the chat room's and its archive's, when a game ended, a
+  player's local time) follow the system's 12- or 24-hour clock: the
+  desktop's clock setting on Cinnamon, GNOME, Unity and Budgie and
+  `LC_TIME` on Linux, the regional time format on Windows, the 24-hour
+  switch on macOS. Settings has a Time format option to choose one
+  instead.
+
 ## [0.7.1] - 2026-11-13
 
 ### Added

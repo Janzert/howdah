@@ -1422,6 +1422,19 @@ pub struct UpdateView {
     pub url: String,
 }
 
+/// How the system writes the time of day (see `clock_format.rs`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SystemClock {
+    /// A 24-hour clock (or a 12-hour one) where the system says which;
+    /// `None` leaves it to the locale.
+    pub hour24: Option<bool>,
+    /// The locale times are written in (`LC_TIME`, the region), as a
+    /// language tag, where it's known apart from the webview's own.
+    pub locale: Option<String>,
+}
+
 /// The gameroom's chat room, sent as `chatroom://changed` whenever it
 /// changes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]

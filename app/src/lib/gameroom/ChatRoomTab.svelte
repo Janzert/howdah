@@ -10,6 +10,7 @@
   import PieceGlyph from '@howdah/board/board/PieceGlyph.svelte';
   import { CHAT_PALETTE, chatTime, FACES, messageColor, parseHex, PIECE_SYMBOLS, SPOILER_COLOR } from '../chatroom';
   import { SQ } from '@howdah/board/geometry';
+  import { clock } from '../clock.svelte';
   import { settings } from '../settings.svelte';
   import { findTheme } from '@howdah/board/theme';
   import ChatLine from './ChatLine.svelte';
@@ -130,6 +131,7 @@
     else chatroom.scrollTop = log.scrollTop;
     if (up && log.scrollTop < LOAD_WITHIN) void chatroom.loadEarlier();
   }
+  const roomTime = (unix: number) => chatTime(unix, clock.options);
   const quietDate = (unix: number) =>
     new Date(unix * 1000).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 
@@ -286,12 +288,12 @@
           {#if chatroom.earlierError}<span class="error" role="alert">{chatroom.earlierError}</span>{/if}
         </div>
         {#each chatroom.older as e (e.id)}
-          <ChatLine event={e} time={chatTime} />
+          <ChatLine event={e} time={roomTime} />
         {/each}
         <!-- Apart, so only new lines are announced. -->
         <div role="log" aria-label="Chat room" aria-live="polite">
           {#each view?.events ?? [] as e (e.id)}
-            <ChatLine event={e} time={chatTime} />
+            <ChatLine event={e} time={roomTime} />
           {:else}
             <p class="empty">Nothing said lately.</p>
           {/each}
@@ -305,7 +307,7 @@
     </div>
     {#if preview}
       <div class="preview" aria-label="Preview of your message">
-        <ChatLine event={preview} time={chatTime} preview />
+        <ChatLine event={preview} time={roomTime} preview />
       </div>
     {/if}
     <form class="say" onsubmit={send}>

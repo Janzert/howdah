@@ -658,6 +658,11 @@ plans the engine test and tournament runner.
     `refresh` fetches the newest manifest from its `update_url` (or the
     URL it came from) without installing. The dev bridge keeps both in
     its config dir (`installed-engines/`).
+  - `clock_format.rs`: whether the system writes times on a 12- or a
+    24-hour clock (`system_clock`, `SystemClock`), which the webview's
+    own formatting misses: the desktop's GSettings clock key on Cinnamon,
+    GNOME, Unity and Budgie and the `LC_TIME` locale on Linux, the time
+    picture on Windows, the global preferences on macOS.
   - `dto.rs` holds the view types sent to the UI, with ts-rs derives.
   - `backend.rs`: `Backend` holds the command logic, free of Tauri types.
     It holds several sessions keyed by `SessionId`, each with its own
@@ -1221,7 +1226,12 @@ plans the engine test and tournament runner.
     hover input, `humanAtBottom`, which turns the board when a match
     with one human side starts, `boardsInWindows`, where the lobby
     opens new boards, and `chatFontSize`, which `appearance.ts`'s
-    `setChatFontSize` passes to the chat panels as `--chat-font`) as one reactive `settings` object,
+    `setChatFontSize` passes to the chat panels as `--chat-font`, and
+    `timeFormat`: system, 12- or 24-hour; `lib/clock.svelte.ts`'s
+    `clock.options` are the `toLocaleTimeString` options for it, with
+    the system's clock asked from `system_clock` at first use and on
+    window focus, and `lib/timeFormat.ts` the pure part; every time of
+    day shown goes through it) as one reactive `settings` object,
     saved to localStorage as JSON (`parse` validates and reads the older
     `theme`/`muted` keys).
     `HelpDialog.svelte`'s panel also has About: `app_version` and links.

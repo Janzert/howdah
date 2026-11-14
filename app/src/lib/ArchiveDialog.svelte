@@ -3,6 +3,7 @@
   // can be restored to the queue as it was, or deleted for good.
   import { onMount } from 'svelte';
   import { api, errorMessage } from './api';
+  import { clock } from './clock.svelte';
   import type { ArchivedTestView } from './bindings/ArchivedTestView';
   import type { TestView } from './bindings/TestView';
   import { on } from './events';
@@ -72,7 +73,11 @@
   }
 
   function when(secs: number): string {
-    return new Date(secs * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    return new Date(secs * 1000).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      ...clock.options,
+    });
   }
 
   function size(bytes: number): string {

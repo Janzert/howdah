@@ -10,16 +10,24 @@
     type Appearance,
     type Coordinates,
     type HoverInput,
+    type TimeFormat,
   } from './settings.svelte';
   import { play } from '@howdah/board/sound';
   import { findTheme, themes } from '@howdah/board/theme';
   import { update } from './update.svelte';
+  import { clock } from './clock.svelte';
 
   const appearanceChoices: { value: Appearance; label: string }[] = [
     { value: 'system', label: 'System' },
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
   ];
+
+  const timeFormatChoices: { value: TimeFormat; label: string }[] = $derived([
+    { value: 'system', label: `System (${clock.systemHour24 ? '24' : '12'}-hour)` },
+    { value: '12', label: '12-hour' },
+    { value: '24', label: '24-hour' },
+  ]);
 
   const coordinateChoices: { value: Coordinates; label: string }[] = [
     { value: 'none', label: 'None' },
@@ -61,6 +69,18 @@
           {/each}
         </div>
       </fieldset>
+      <fieldset class="row">
+        <legend>Time format</legend>
+        <div class="choices">
+          {#each timeFormatChoices as c (c.value)}
+            <label>
+              <input type="radio" name="time-format" value={c.value} bind:group={settings.timeFormat} />
+              {c.label}
+            </label>
+          {/each}
+        </div>
+      </fieldset>
+      <p class="hint">For times of day, such as the chat room's and its archive's.</p>
     </section>
 
     <section>

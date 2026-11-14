@@ -38,7 +38,7 @@ use crate::dto::{
     PlayerMatchView, PlayerProfileView, PlayerRecordView, PlayerSpec, PositionCheck, PositionProblemView,
     PositionSpec, PositionView, PostalGameView, PuzzleGroupView, RatingPointView, ServerBotsView, SessionId,
     SessionUpdate, SessionView, SessionsChanged, ShowBoard, SpsaStepView, StartedBotView, StepTarget,
-    TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
+    SystemClock, TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -778,6 +778,11 @@ impl Backend {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
+    /// Whether the system uses a 12- or a 24-hour clock, as far as it says.
+    pub fn system_clock(&self) -> SystemClock {
+        crate::clock_format::system_clock()
+    }
+
     /// Whether this build checks for new releases (see `update.rs`).
     pub fn update_checks(&self) -> bool {
         crate::update::BUILT_IN
@@ -1393,6 +1398,7 @@ impl Backend {
             "gameroom_games" => ok(self.gameroom_games().await?),
             "gameroom_last_games" => ok(self.gameroom_last_games()),
             "app_version" => ok(self.app_version()),
+            "system_clock" => ok(self.system_clock()),
             "update_checks" => ok(self.update_checks()),
             "check_for_update" => ok(self.check_for_update().await?),
             "open_url" => ok(self.open_url(&arg::<String>(args, "url")?)?),

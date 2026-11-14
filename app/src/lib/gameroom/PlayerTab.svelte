@@ -3,6 +3,7 @@
   // their player page), their rating over time, and their games or their
   // record by opponent, with the games against each. Opened from the
   // online players; an opponent in the record opens their own panel.
+  import { clock } from '../clock.svelte';
   import type { RecordLineView } from '../bindings/RecordLineView';
   import type { TallyView } from '../bindings/TallyView';
   import PastGameRow from './PastGameRow.svelte';
@@ -27,7 +28,12 @@
   const localTime = $derived.by(() => {
     if (p?.utcOffset == null) return null;
     const d = new Date(now + p.utcOffset * 1000);
-    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
+    const time = d.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'UTC',
+      ...clock.options,
+    });
     const h = p.utcOffset / 3600;
     const zone = h === 0 ? 'UTC' : `UTC${h > 0 ? '+' : '−'}${Math.abs(h)}`;
     return `${time} (${zone})`;

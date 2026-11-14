@@ -7,6 +7,7 @@
 pub mod backend;
 mod chat_archive;
 mod chatroom;
+mod clock_format;
 mod commands;
 mod controller;
 pub mod dto;
@@ -172,6 +173,7 @@ pub fn run() {
             commands::gameroom_games,
             commands::gameroom_last_games,
             commands::app_version,
+            commands::system_clock,
             commands::update_checks,
             commands::check_for_update,
             commands::open_url,

@@ -27,6 +27,7 @@ describe('settings parse', () => {
         moveTimes: 'game',
         leaveChatForGames: false,
         chatFontSize: 18,
+        timeFormat: '24',
         checkForUpdates: false,
       }),
       none,
@@ -47,6 +48,7 @@ describe('settings parse', () => {
       moveTimes: 'game',
       leaveChatForGames: false,
       chatFontSize: 18,
+      timeFormat: '24',
       checkForUpdates: false,
     });
     const bad = parse(
@@ -58,6 +60,7 @@ describe('settings parse', () => {
         analysisEngine: 3,
         volume: 'loud',
         moveTimes: 'all',
+        timeFormat: '24h',
         checkForUpdates: 'no',
       }),
       none,

@@ -47,7 +47,7 @@ export function pastMeta(g: PastGameView): string {
 }
 
 /** "Gold won by goal · 33 moves · Oct 4, 10:23 · 2m/2m · rated" */
-export function recentMeta(g: RecentGameView): string {
+export function recentMeta(g: RecentGameView, clock: Intl.DateTimeFormatOptions = {}): string {
   const ended =
     g.endedMs != null &&
     new Date(g.endedMs).toLocaleString(undefined, {
@@ -55,6 +55,7 @@ export function recentMeta(g: RecentGameView): string {
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
+      ...clock,
     });
   return join([resultText(g.result), g.moves != null && `${g.moves} moves`, ended, g.timeControl, g.rated && 'rated']);
 }

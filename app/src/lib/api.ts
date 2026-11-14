@@ -40,6 +40,7 @@ import type { Square } from './bindings/Square';
 import type { StartedBotView } from './bindings/StartedBotView';
 import type { StepTarget } from './bindings/StepTarget';
 import type { SpsaStepView } from './bindings/SpsaStepView';
+import type { SystemClock } from './bindings/SystemClock';
 import type { TestDetailView } from './bindings/TestDetailView';
 import type { TestView } from './bindings/TestView';
 import type { TourneyStatusView } from './bindings/TourneyStatusView';
@@ -211,6 +212,8 @@ function makeApi(sid: () => SessionId | null) {
     gameroomLastGames: () => invoke<GameroomGames | null>('gameroom_last_games'),
     /** Opens an http(s) URL in the system's browser. */
     appVersion: () => invoke<string>('app_version'),
+    /** Whether the system uses a 12- or a 24-hour clock, as far as it says. */
+    systemClock: () => invoke<SystemClock>('system_clock'),
     /** False in a build without the update check (a package that brings
      * its own updates). */
     updateChecks: () => invoke<boolean>('update_checks'),

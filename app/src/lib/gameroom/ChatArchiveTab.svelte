@@ -5,6 +5,7 @@
   // Opening a day asks arimaa.com only for what isn't kept yet; no login
   // is needed. What the user sees in the room is kept too.
   import { untrack } from 'svelte';
+  import { clock } from '../clock.svelte';
   import Icon from '../Icon.svelte';
   import type { ChatDaySummary } from '../bindings/ChatDaySummary';
   import ChatLine from './ChatLine.svelte';
@@ -33,10 +34,15 @@
     new Date(2026, 1, 1 + i).toLocaleDateString(undefined, { weekday: 'narrow' }),
   );
 
-  const clock = (unix: number) =>
-    new Date(unix * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const clockTime = (unix: number) =>
+    new Date(unix * 1000).toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      ...clock.options,
+    });
   const shortClock = (unix: number) =>
-    new Date(unix * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    new Date(unix * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', ...clock.options });
 
   /** The stretches kept, `6:54 PM–midnight`. */
   function spans(d: ChatDaySummary): string {
@@ -156,7 +162,7 @@
         aria-label="Chat on {longDate}"
       >
         {#each day?.events ?? [] as e (e.id)}
-          <ChatLine event={e} time={clock} />
+          <ChatLine event={e} time={clockTime} />
         {:else}
           {#if !chatArchive.fetching}<p class="empty">Nothing kept for this day.</p>{/if}
         {/each}
