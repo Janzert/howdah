@@ -7,8 +7,14 @@ young).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-13
+
 ### Added
 
+- A player page for arimaa.com players, opened from the online players:
+  their profile, rating over time, games, and record by opponent with
+  the games against each. Each player gets a panel of their own, and an
+  opponent in the record opens theirs.
 - A game with a game time limit or a turn limit shows the time and turns
   left under the turn bar, counting down as the game goes.
 - The Linux packages carry AppStream metadata, so software centres such
@@ -31,6 +37,9 @@ young).
 
 ### Fixed
 
+- A gameroom game whose result arimaa.com reports before its last move
+  or two (seen in bot games) no longer loses those moves: Howdah fetches
+  the finished game and plays them before ending it.
 - A gameroom game whose last two moves reach Howdah together with the
   result (a bot answering at once) now shows the game-end dialog and
   plays its sound, as other endings do.
@@ -38,6 +47,8 @@ young).
   immobilization) fills the eval bar for the winner, rather than showing
   it even. A loss on time or by resignation still shows the engine's
   eval of the position.
+- A message being written in the arimaa.com chat room is kept when you
+  go to another panel and come back.
 
 ## [0.7.0] - 2026-11-10
 
@@ -544,7 +555,8 @@ Gatekeeper.
 - Keeps playing through network drops and sleep, and resumes games in
   progress.
 
-[Unreleased]: https://github.com/Janzert/howdah/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Janzert/howdah/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Janzert/howdah/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Janzert/howdah/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Janzert/howdah/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Janzert/howdah/compare/v0.5.0...v0.6.0
