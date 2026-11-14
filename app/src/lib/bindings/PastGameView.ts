@@ -20,4 +20,8 @@ moves: number | null,
 /**
  * When it finished, as the server writes it.
  */
-finished: string | null, };
+finished: string | null, 
+/**
+ * How many comments it has on arimaa.com.
+ */
+comments: number, };

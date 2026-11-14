@@ -65,7 +65,7 @@ export const NO_LOGIN_PANELS: GameroomTab[] = ['archive'];
  * has `game` already. Resolves to an error message, or null. */
 export type Opener = (
   start: (a: Api) => Promise<void>,
-  game?: { gid: string; play: boolean },
+  game?: { gid: string; play: boolean; comments?: number },
   loading?: string,
 ) => Promise<string | null>;
 
@@ -299,16 +299,21 @@ class GameroomStore {
     });
   }
 
-  async enter(start: (a: Api) => Promise<void>, game?: { gid: string; play: boolean }, loading?: string) {
+  async enter(
+    start: (a: Api) => Promise<void>,
+    game?: { gid: string; play: boolean; comments?: number },
+    loading?: string,
+  ) {
     this.busy = true;
     this.error = await this.#opener(start, game, loading);
     this.busy = false;
   }
 
-  /** Watches a live game, or loads a finished one, by id. */
-  open(gid: string) {
+  /** Watches a live game, or loads a finished one, by id. `comments` is
+   * how many comments a finished one has, when its list says. */
+  open(gid: string, comments?: number) {
     const id = gid.trim();
-    return this.enter((a) => a.openGameroomGame(id), { gid: id, play: false });
+    return this.enter((a) => a.openGameroomGame(id), { gid: id, play: false, comments });
   }
 
   play(gid: string, side: Color, unrated = false) {

@@ -61,10 +61,10 @@ use crate::chatroom::ChatRoom;
 use crate::controller::{Controller, SharedSession};
 use crate::dto::{
     AnimStep, AnnouncementBlock, AnnouncementSpan, AnnouncementView, ApiError, BotInfoView, ChatLineView,
-    ChatRoomView, ErrorKind, GameroomGames, GameroomStatus, InvitationAnswer, InvitationOutcome,
-    InvitationView, LiveGameView, OnlinePlayerView, PastGameView, PlayerGamesView, PlayerMatchView,
-    PlayerProfileView, PlayerRecordView, PostalGameView, RatingPointView, RecentGameView, RecordLineView,
-    ServerBotView, ServerBotsView, StartedBotView, TallyView, WatchState, WatchView,
+    ChatRoomView, ErrorKind, GameCommentView, GameroomGames, GameroomStatus, InvitationAnswer,
+    InvitationOutcome, InvitationView, LiveGameView, OnlinePlayerView, PastGameView, PlayerGamesView,
+    PlayerMatchView, PlayerProfileView, PlayerRecordView, PostalGameView, RatingPointView, RecentGameView,
+    RecordLineView, ServerBotView, ServerBotsView, StartedBotView, TallyView, WatchState, WatchView,
 };
 use crate::session::{OutgoingMove, Player, RemoteClock, Session, TakebackAction, TakebackEnd};
 
@@ -809,6 +809,18 @@ impl Gameroom {
         let games = lobby.recent_games().await.map_err(net_error)?;
         Ok(games.into_iter().map(past_view).collect())
     }
+
+    /// The comments on finished game `gid` (its permanent id), oldest
+    /// first. It needs no login; with one the times are local.
+    pub async fn game_comments(&self, gid: &str) -> Result<Vec<GameCommentView>, ApiError> {
+        // On a copy, so a slow reply holds up no other lobby request.
+        let lobby = self.lobby.lock().await.clone().unwrap_or_else(|| new_lobby(&self.http));
+        let comments = lobby.game_comments(gid).await.map_err(net_error)?;
+        Ok(comments
+            .into_iter()
+            .map(|c| GameCommentView { author: c.author, written: c.written, text: c.text })
+            .collect())
+    }
 }
 
 /// The open games with bot `name` at `bot_side`.
@@ -908,6 +920,7 @@ fn past_view(g: PastGame) -> PastGameView {
         result,
         moves: g.moves,
         finished: g.finished,
+        comments: g.comments,
     }
 }
 

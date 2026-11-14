@@ -34,11 +34,12 @@ use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
     ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
-    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView,
-    PlayerMatchView, PlayerProfileView, PlayerRecordView, PlayerSpec, PositionCheck, PositionProblemView,
-    PositionSpec, PositionView, PostalGameView, PuzzleGroupView, RatingPointView, ServerBotsView, SessionId,
-    SessionUpdate, SessionView, SessionsChanged, ShowBoard, SpsaStepView, StartedBotView, StepTarget,
-    SystemClock, TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
+    GameCommentView, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView,
+    PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView, PlayerSpec, PositionCheck,
+    PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView, RatingPointView,
+    ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, SpsaStepView,
+    StartedBotView, StepTarget, SystemClock, TestDetailView, TestView, TourneyStatusView, UpdateView,
+    WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -976,6 +977,11 @@ impl Backend {
         self.gameroom.recent_games().await
     }
 
+    /// The comments on a finished arimaa.com game, oldest first.
+    pub async fn gameroom_game_comments(&self, gid: &str) -> Result<Vec<GameCommentView>, ApiError> {
+        self.gameroom.game_comments(gid).await
+    }
+
     /// The engine test daemon's state; the first call starts passing on
     /// its events (`tourney://changed`).
     pub async fn tourney_status(&self) -> TourneyStatusView {
@@ -1462,6 +1468,7 @@ impl Backend {
                 .gameroom_player_games(&arg::<String>(args, "playerId")?, arg(args, "offset")?)
                 .await?),
             "gameroom_recent_games" => ok(self.gameroom_recent_games().await?),
+            "gameroom_game_comments" => ok(self.gameroom_game_comments(&arg::<String>(args, "gid")?).await?),
             "gameroom_player_profile" => {
                 ok(self.gameroom_player_profile(&arg::<String>(args, "playerId")?).await?)
             }

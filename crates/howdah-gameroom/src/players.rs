@@ -90,6 +90,9 @@ pub struct PastGame {
     /// label ("Jan 4, 2014 10:38 am"; "Sun 4:23 pm" in the past week): in
     /// the login's time zone, or UTC without a session.
     pub finished: Option<String>,
+    /// How many comments it has (the row's link to them reads "2
+    /// <last writer>", or "add" with none).
+    pub comments: u32,
 }
 
 /// A postal game being played, from the gameroom's postal games page.
@@ -193,6 +196,11 @@ fn past_game(before: &str, row: &str) -> Option<PastGame> {
         (false, true) => Some(Color::Silver),
         _ => None,
     };
+    let comments = row.find("comments.cgi?gid=").map_or(0, |i| {
+        let link = &row[i..];
+        let text = link.find('>').map_or("", |open| &link[open + 1..]);
+        text.trim_start().chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0)
+    });
     (!id.is_empty()).then_some(PastGame {
         id,
         players: [gold_name, silver_name],
@@ -203,6 +211,7 @@ fn past_game(before: &str, row: &str) -> Option<PastGame> {
         reason,
         moves,
         finished,
+        comments,
     })
 }
 
@@ -378,6 +387,8 @@ mod tests {
 
     /// `pastgames.cgi?id=397`, trimmed to the header's end, two rows and
     /// the footer (2026-10-06). The first row is indented, the others not.
+    /// The second row's comments link is as a commented game's reads
+    /// (2026-11-14).
     const PAST: &str = r#"    <td align=left>
       <a href="?id=397&s=ct">Comments</a>
     </td>
@@ -467,7 +478,7 @@ mod tests {
     Oct 8, 2009 3:56 am YLT
   </td>
   <td align=left>
-    <a href="comments.cgi?gid=120092" target=_blank>add</a>
+    <a href="comments.cgi?gid=120092" target=_blank>2 Janzert</a>
   </td>
 </tr>
 
@@ -558,6 +569,7 @@ mod tests {
                 reason: Some("g".into()),
                 moves: Some(31),
                 finished: Some("Sat 4:31 pm".into()),
+                comments: 0,
             }]
         );
     }
@@ -579,6 +591,7 @@ mod tests {
                     reason: Some("t".into()),
                     moves: Some(4),
                     finished: Some("Jan 4, 2014 10:38 am".into()),
+                    comments: 0,
                 },
                 PastGame {
                     id: "120092".into(),
@@ -590,6 +603,7 @@ mod tests {
                     reason: Some("e".into()),
                     moves: Some(10),
                     finished: Some("Oct 8, 2009 3:56 am".into()),
+                    comments: 2,
                 },
             ]
         );

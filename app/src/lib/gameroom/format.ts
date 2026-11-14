@@ -35,7 +35,10 @@ export function invitationMeta(i: InvitationView): string {
   return join([`as ${i.side === 'gold' ? 'Gold' : 'Silver'}`, i.timeControl, i.rated ? 'rated' : 'unrated']);
 }
 
-/** "Gold won by goal · 33 moves · Jan 4, 2014 10:38 am · 2m/2m · rated" */
+/** "2 comments" */
+export const commentCount = (n: number) => `${n} ${n === 1 ? 'comment' : 'comments'}`;
+
+/** "Gold won by goal · 33 moves · Jan 4, 2014 10:38 am · 2m/2m · rated · 2 comments" */
 export function pastMeta(g: PastGameView): string {
   return join([
     resultText(g.result),
@@ -43,6 +46,7 @@ export function pastMeta(g: PastGameView): string {
     g.finished,
     g.timeControl,
     g.rated && 'rated',
+    g.comments > 0 && commentCount(g.comments),
   ]);
 }
 

@@ -86,6 +86,13 @@ architecture. Decided and checked against the live server in October 2026.
 - A finished game opens by its permanent id, whole, at the start of play,
   with each move's time kept as `%emt`. A watched game's record gets its
   permanent id as `GameId` once it ends.
+- A finished game shows the comments left on it at arimaa.com below the
+  board, read only, from the frame of the comments page that lists them
+  (one request, no login). They're asked for when the game is opened
+  from arimaa.com, unless the list it was opened from said it has none;
+  a record from elsewhere with a `GameId` asks only on Show. The lists
+  of past games give each game's comment count. A game's chat isn't
+  among its comments.
 - Spectators don't get a game's chat, and players aren't told about
   spectators: the server has no viewer count or list.
 

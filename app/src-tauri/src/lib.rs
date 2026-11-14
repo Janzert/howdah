@@ -200,6 +200,7 @@ pub fn run() {
             commands::gameroom_player_record,
             commands::gameroom_games_against,
             commands::gameroom_recent_games,
+            commands::gameroom_game_comments,
             commands::open_gameroom_game,
             commands::tourney_status,
             commands::tourney_tests,

@@ -65,7 +65,7 @@
   import { tourney } from './lib/tourney.svelte';
   import { update } from './lib/update.svelte';
   import { matchGoesOn } from './lib/windowList';
-  import { focusGameWindow, inTauri, openBoard, openWindowFor, showBoard } from './lib/windows';
+  import { focusGameWindow, inTauri, openBoard, openWindowFor, showBoard, type HandOff } from './lib/windows';
   import './lobby.css';
 
   /** The panel shown: `home`, `puzzles`, `gameroom`, `gameroom:<panel>`, `tests`,
@@ -279,9 +279,10 @@
     prepare?: (a: Api) => Promise<void>,
     spec: MatchSpec | null = null,
     loading?: string,
+    gameroom?: HandOff['gameroom'],
   ): Promise<string | null> {
     try {
-      await openBoard(prepare, { spec }, loading);
+      await openBoard(prepare, { spec, gameroom }, loading);
       return null;
     } catch (e) {
       return errorMessage(e);
@@ -312,7 +313,7 @@
    * they asked to play and it only watches. */
   async function openGameroom(
     start: (a: Api) => Promise<void>,
-    game?: { gid: string; play: boolean },
+    game?: { gid: string; play: boolean; comments?: number },
     what?: string,
   ): Promise<string | null> {
     const id = game ? await api.gameroomGameSession(game.gid).catch(() => null) : null;
@@ -325,7 +326,7 @@
           : game
             ? `Opening game ${game.gid} from arimaa.com…`
             : 'Setting up the game on arimaa.com…');
-      return openNew(start, null, loading);
+      return openNew(start, null, loading, game && { gid: game.gid, comments: game.comments });
     }
     try {
       if (game?.play && games.watches[id]?.side == null) await start(apiFor(id));

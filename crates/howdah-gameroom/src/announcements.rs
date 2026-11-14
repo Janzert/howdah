@@ -232,7 +232,7 @@ fn attribute(attrs: &str, name: &str) -> Option<String> {
 
 /// HTML's character references: the common named ones and numeric ones.
 /// Others are left as they are.
-fn decode_entities(text: &str) -> String {
+pub(crate) fn decode_entities(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(i) = rest.find('&') {

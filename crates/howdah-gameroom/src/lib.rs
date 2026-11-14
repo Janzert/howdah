@@ -41,6 +41,7 @@ pub mod bots;
 pub mod chat;
 pub mod client;
 pub mod clock_sync;
+pub mod comments;
 pub mod finished;
 pub mod invitations;
 pub mod players;
@@ -60,6 +61,7 @@ pub use client::{
     ONLINE_IDLE, Opened, Seat, ViewerSeat,
 };
 pub use clock_sync::ClockSync;
+pub use comments::{GameComment, parse_comments};
 pub use finished::{FinishedGame, RecentGame};
 pub use invitations::{Invitation, InviteOutcome};
 pub use players::{OnlinePlayer, PastGame, PastGames, PlayerMatch, PostalGame};

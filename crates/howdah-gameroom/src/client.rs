@@ -17,6 +17,7 @@ use crate::bots::{
     BotInfo, BotLadder, ServerBot, parse_bot_ladder, parse_bot_list, parse_bot_page, start_reply_text,
 };
 use crate::clock_sync::ClockSync;
+use crate::comments::{GameComment, parse_comments};
 use crate::finished::{FinishedGame, RecentGame};
 use crate::invitations::{Invitation, InviteOutcome, parse_wait};
 use crate::players::{
@@ -1201,6 +1202,19 @@ impl Lobby {
         // The session's cookie makes the times local, as in `player_games`.
         let page = self.http.get_slow_page(&url, self.cookies.as_deref(), RECENT_GAMES_TIMEOUT).await?;
         Ok(parse_past_games(&page, 0).games)
+    }
+
+    /// The comments on finished game `id` (its permanent id), oldest
+    /// first: the frame of `comments.cgi` that lists them, which needs no
+    /// session.
+    pub async fn game_comments(&self, id: &str) -> Result<Vec<GameComment>, Error> {
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
+            return Err(Error::Server(format!("not a game id: {id:?}")));
+        }
+        let url = format!("{}comments.cgi?gid={id}&view=comm", self.base);
+        // The session's cookie makes the times local, as in `player_games`.
+        let page = self.http.get_page(&url, self.cookies.as_deref()).await?;
+        Ok(parse_comments(&page))
     }
 
     /// Makes a game server URL absolute. ASIP 2.0 can return one relative

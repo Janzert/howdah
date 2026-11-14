@@ -9,6 +9,9 @@ young).
 
 ### Added
 
+- A finished arimaa.com game shows the comments people left on it,
+  below the board. The lists of a player's games and of recent games
+  say how many comments a game has.
 - Times of day (the chat room's and its archive's, when a game ended, a
   player's local time) follow the system's 12- or 24-hour clock: the
   desktop's clock setting on Cinnamon, GNOME, Unity and Budgie and

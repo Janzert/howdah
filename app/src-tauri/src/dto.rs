@@ -1041,6 +1041,20 @@ pub struct PastGameView {
     pub moves: Option<u32>,
     /// When it finished, as the server writes it.
     pub finished: Option<String>,
+    /// How many comments it has on arimaa.com.
+    pub comments: u32,
+}
+
+/// A comment on a finished arimaa.com game.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GameCommentView {
+    /// The writer's username.
+    pub author: String,
+    /// When it was written, as the server writes it.
+    pub written: Option<String>,
+    pub text: String,
 }
 
 /// A page of a player's past games, newest first.

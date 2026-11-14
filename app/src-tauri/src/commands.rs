@@ -8,11 +8,11 @@ use crate::backend::{self, Backend};
 use crate::dto::{
     ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
     ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
-    GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView, PlayerGamesView,
-    PlayerMatchView, PlayerProfileView, PlayerRecordView, PositionCheck, PositionSpec, PositionView,
-    PostalGameView, PuzzleGroupView, RatingPointView, ServerBotsView, SessionId, SessionView, SpsaStepView,
-    StartedBotView, StepTarget, SystemClock, TestDetailView, TestView, TourneyStatusView, UpdateView,
-    WatchView,
+    GameCommentView, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView,
+    PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView, PositionCheck, PositionSpec,
+    PositionView, PostalGameView, PuzzleGroupView, RatingPointView, ServerBotsView, SessionId, SessionView,
+    SpsaStepView, StartedBotView, StepTarget, SystemClock, TestDetailView, TestView, TourneyStatusView,
+    UpdateView, WatchView,
 };
 
 #[tauri::command]
@@ -629,6 +629,14 @@ pub async fn gameroom_games_against(
 #[tauri::command]
 pub async fn gameroom_recent_games(state: State<'_, Backend>) -> Result<Vec<PastGameView>, ApiError> {
     state.gameroom_recent_games().await
+}
+
+#[tauri::command]
+pub async fn gameroom_game_comments(
+    state: State<'_, Backend>,
+    gid: String,
+) -> Result<Vec<GameCommentView>, ApiError> {
+    state.gameroom_game_comments(&gid).await
 }
 
 #[tauri::command]

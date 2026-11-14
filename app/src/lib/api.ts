@@ -22,6 +22,7 @@ import type { MatchSpec } from './bindings/MatchSpec';
 import type { MoveReplay } from './bindings/MoveReplay';
 import type { NewTestSpec } from './bindings/NewTestSpec';
 import type { NodeId } from './bindings/NodeId';
+import type { GameCommentView } from './bindings/GameCommentView';
 import type { PastGameView } from './bindings/PastGameView';
 import type { PlayerGamesView } from './bindings/PlayerGamesView';
 import type { PlayerMatchView } from './bindings/PlayerMatchView';
@@ -280,6 +281,9 @@ function makeApi(sid: () => SessionId | null) {
       invoke<PastGameView[]>('gameroom_games_against', { playerId, opponentId, rated, bots }),
     /** The last 100 games finished on arimaa.com, newest first. */
     gameroomRecentGames: () => invoke<PastGameView[]>('gameroom_recent_games'),
+    /** The comments on a finished arimaa.com game (its permanent id),
+     * oldest first. Needs no login. */
+    gameroomGameComments: (gid: string) => invoke<GameCommentView[]>('gameroom_game_comments', { gid }),
     /** Opens an arimaa.com game in this session. A live game (its gameroom
      * id) is followed as a viewer, with changes arriving as `game://changed`
      * and `gameroom://watch` events; a finished game (its permanent id) is

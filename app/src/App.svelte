@@ -35,6 +35,7 @@
   import { markSolved, nextPuzzle } from './lib/puzzles';
   import type { PositionSpec } from './lib/bindings/PositionSpec';
   import ChatPanel from './lib/ChatPanel.svelte';
+  import GameComments from './lib/GameComments.svelte';
   import CloseWindowDialog from './lib/CloseWindowDialog.svelte';
   import PlayerBar from '@howdah/board/PlayerBar.svelte';
   import GameLimits from './lib/GameLimits.svelte';
@@ -953,6 +954,12 @@
       <!-- The game's chat, below the board as in the arimaa.com web client. -->
       {#if view && watch && (watch.side != null || watch.chat.length > 0)}
         <ChatPanel {watch} {view} />
+      {/if}
+      <!-- A finished arimaa.com game's comments, where its chat would be. -->
+      {#if view?.gameInfo.gameId && !view.puzzle && (!watch || watch.finishedId)}
+        {#key view.gameInfo.gameId}
+          <GameComments gid={view.gameInfo.gameId} {view} opened={handOff?.gameroom} />
+        {/key}
       {/if}
       {#if message}<div class="message" role="status">{message}</div>{/if}
       {#if loading}

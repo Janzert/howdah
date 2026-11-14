@@ -37,6 +37,9 @@ export interface HandOff {
   follow?: boolean;
   /** The board's own sound setting. */
   sound?: BoardSound;
+  /** The arimaa.com game it opens on, by the id it was asked for, with
+   * how many comments it has if the list it came from said. */
+  gameroom?: { gid: string; comments?: number };
 }
 
 /** A board's own sound setting, under the app's: every sound, all but the

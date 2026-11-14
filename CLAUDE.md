@@ -234,6 +234,11 @@ plans the engine test and tournament runner.
     `puzzle_link` the ids in links to a finished game or a puzzle. `archive` asks `archsrv.cgi` (no login) for the 24
     hours from a moment; `ChatEvent::to_line` writes an event back as a
     log line.
+  - `comments`: a finished game's comments (`comments.cgi?gid=<id>&view=comm`,
+    the frame that lists them; no login): `GameComment` (writer, when,
+    text), `parse_comments`, `Lobby::game_comments`. `PastGame.comments`
+    is the count the past games pages give. A game's chat isn't among
+    them.
   - `puzzles`: the puzzle pages (`/arimaa/puzzles/`, no login, the
     same Referer gate as the gameroom): `parse_puzzle_list` (`list.cgi`,
     groups by heading), `parse_puzzle_page` (`show.cgi?p=`: question,
@@ -1044,6 +1049,14 @@ plans the engine test and tournament runner.
     until the user leaves or the server stops answering for it, which
     closes the chat and puts a note in place of the box); App shows it at a player's seat, or when a
     watched game has chat.
+  - `GameComments.svelte`, in the same place for a finished arimaa.com
+    game (a `GameId` tag and no live game), shows its comments, read
+    only (`gameroom_game_comments`, which works logged out). It asks for
+    them at once when the board opened the game from arimaa.com
+    (`HandOff.gameroom`, with the comment count when the list gave one:
+    `PastGameView.comments`, also in the row's text; a count of 0 skips
+    the request), and otherwise, as for a record from a file, only on
+    Show.
   - `RecordDialog.svelte` exports the full record or, with "Main line
     only", a plain record (`export_game(mainLineOnly)`); without
     `onExport` it only opens one (the lobby's Open record).
