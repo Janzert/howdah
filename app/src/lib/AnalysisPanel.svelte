@@ -192,6 +192,32 @@
     </div>
   {/if}
   <p class="status" class:failed={phase === 'failed'} role="status">{status}</p>
+  <EvalGraph tree={view.tree} cursor={view.cursor} onGoto={gotoFromGraph} />
+  {#if sharesCpu}<p class="note">Shares the CPU with the match engines.</p>{/if}
+  {#if pvLine && pvLine.pv.length && phase !== 'failed'}
+    <div
+      class="pv"
+      role="group"
+      aria-label="Principal variation"
+      onmouseenter={() => (held = line)}
+      onmouseleave={() => (held = null)}
+    >
+      {#each pvLine.pv as turn, i (i)}
+        <button
+          class="chip"
+          title="Add the line up to here"
+          onclick={() => onAdd(pvLine, i)}
+          onmouseenter={(e) => hover(i, e.currentTarget)}
+          onmouseleave={() => (hovered = null)}
+          onfocus={(e) => hover(i, e.currentTarget)}
+          onblur={() => (hovered = null)}
+        >
+          <span class="label">{turn.label}</span>
+          {turn.notation}
+        </button>
+      {/each}
+    </div>
+  {/if}
   <div class="sweep">
     {#if view.sweep}
       {#if view.sweep.phase === 'quick'}
@@ -222,32 +248,6 @@
       {/if}
     {/if}
   </div>
-  <EvalGraph tree={view.tree} cursor={view.cursor} onGoto={gotoFromGraph} />
-  {#if sharesCpu}<p class="note">Shares the CPU with the match engines.</p>{/if}
-  {#if pvLine && pvLine.pv.length && phase !== 'failed'}
-    <div
-      class="pv"
-      role="group"
-      aria-label="Principal variation"
-      onmouseenter={() => (held = line)}
-      onmouseleave={() => (held = null)}
-    >
-      {#each pvLine.pv as turn, i (i)}
-        <button
-          class="chip"
-          title="Add the line up to here"
-          onclick={() => onAdd(pvLine, i)}
-          onmouseenter={(e) => hover(i, e.currentTarget)}
-          onmouseleave={() => (hovered = null)}
-          onfocus={(e) => hover(i, e.currentTarget)}
-          onblur={() => (hovered = null)}
-        >
-          <span class="label">{turn.label}</span>
-          {turn.notation}
-        </button>
-      {/each}
-    </div>
-  {/if}
   {#if hovered?.position}
     <div class="preview" style:top="{hovered.top}px" aria-hidden="true">
       <MiniBoard position={hovered.position} {theme} {flipped} />
