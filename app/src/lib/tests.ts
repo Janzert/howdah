@@ -2,6 +2,7 @@
 // state and results.
 import type { PoolEngineView } from './bindings/PoolEngineView';
 import type { PoolView } from './bindings/PoolView';
+import type { TestGameView } from './bindings/TestGameView';
 import type { TestView } from './bindings/TestView';
 
 /** A test's state in a word: active, paused, or how it ended. */
@@ -373,6 +374,55 @@ export function endingText(reason: string): string {
     resourceLimit: 'a memory-limit forfeit',
   };
   return words[reason] ?? reason;
+}
+
+/** One way games ended: how many, and how many of them each engine won
+ * (by name). */
+export type EndingRow = { reason: string; games: number; wins: Record<string, number> };
+
+/** How a test's finished games ended, the most common way first, with
+ * each engine's wins for each and in all (`total`, reason ''). */
+export function endingRows(games: readonly TestGameView[]): { rows: EndingRow[]; total: EndingRow } {
+  const by = new Map<string, EndingRow>();
+  const total: EndingRow = { reason: '', games: 0, wins: {} };
+  for (const g of games) {
+    let row = by.get(g.reason);
+    if (!row) by.set(g.reason, (row = { reason: g.reason, games: 0, wins: {} }));
+    const winner = g.winner === 'gold' ? g.gold : g.silver;
+    for (const r of [row, total]) {
+      r.games++;
+      r.wins[winner] = (r.wins[winner] ?? 0) + 1;
+    }
+  }
+  const rows = [...by.values()].sort((a, b) => b.games - a.games || a.reason.localeCompare(b.reason));
+  return { rows, total };
+}
+
+/** An engine's wins and losses with each color. */
+export type ColorRecord = { engine: string; gold: [number, number]; silver: [number, number] };
+
+/** Each engine's wins and losses as gold and as silver, in the order
+ * `engines` gives (then any other engine that played, by name). */
+export function colorRecords(games: readonly TestGameView[], engines: readonly string[] = []): ColorRecord[] {
+  const by = new Map<string, ColorRecord>();
+  const get = (engine: string) => {
+    let r = by.get(engine);
+    if (!r) by.set(engine, (r = { engine, gold: [0, 0], silver: [0, 0] }));
+    return r;
+  };
+  for (const e of engines) get(e);
+  for (const g of games) {
+    const goldWon = g.winner === 'gold';
+    get(g.gold).gold[goldWon ? 0 : 1]++;
+    get(g.silver).silver[goldWon ? 1 : 0]++;
+  }
+  const order = (e: string) => {
+    const i = engines.indexOf(e);
+    return i < 0 ? engines.length : i;
+  };
+  return [...by.values()]
+    .filter((r) => r.gold[0] + r.gold[1] + r.silver[0] + r.silver[1] > 0)
+    .sort((a, b) => order(a.engine) - order(b.engine) || a.engine.localeCompare(b.engine));
 }
 
 /** A test's game by number: its pair, and 1 or 2 within it. */

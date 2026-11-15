@@ -755,7 +755,9 @@ plans the engine test and tournament runner.
     watch or open, and Follow: a board with `HandOff.follow`, whose
     game-end dialog counts down 15 s to the test's next game; Pause and
     Stop beside the engines, the settings in brief with Settings…, which
-    opens `TestSettingsDialog.svelte`; an SPRT test has
+    opens `TestSettingsDialog.svelte`; Endings and colors, every kind of
+    test's finished games by ending and winning engine, and each engine's record as
+    gold and as silver (`endingRows`, `colorRecords` in `lib/tests.ts`); an SPRT test has
     `SprtFunnel.svelte` beside its results, small, and full size in a
     dialog on a click: the Elo at which it fails and passes after each
     game (down from the first), the observed Elo's path between them

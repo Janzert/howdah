@@ -16,8 +16,10 @@
   import SprtFunnel from './SprtFunnel.svelte';
   import TestSettingsDialog from './TestSettingsDialog.svelte';
   import {
+    colorRecords,
     cutoffPercent,
     decideText,
+    endingRows,
     endingText,
     endsRows,
     endsText,
@@ -133,6 +135,15 @@
     parts.push(`${test.concurrency} at once`, `priority ${test.priority}`);
     return parts.join(' · ');
   });
+  const endings = $derived(endingRows(games));
+  const records = $derived(
+    colorRecords(games, test?.pool ? test.pool.engines.map((e) => e.name) : (test?.engines ?? [])),
+  );
+  /** Games gold won: each game has one gold engine. */
+  const goldWins = $derived(records.reduce((n, r) => n + r.gold[0], 0));
+  const pct = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : '');
+  /** Wins–losses, and the share won. */
+  const recordText = ([w, l]: [number, number]) => (w + l > 0 ? `${w}–${l} (${pct(w, w + l)})` : '–');
   const won = (g: TestGameView) => (g.winner === 'gold' ? g.gold : g.silver);
 </script>
 
@@ -262,6 +273,51 @@
         >
       </div>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
+
+      {#if games.length > 0}
+        <h3>Endings and colors</h3>
+        <table class="breakdown" aria-label="How games ended, and wins by color">
+          <thead>
+            <tr>
+              <th>Engine</th>
+              <th title="Games won, and the share of all games">Wins</th>
+              {#each endings.rows as row (row.reason)}<th title="Games won by {endingText(row.reason)}"
+                  >{endingText(row.reason).replace(/^a /, '')}</th
+                >{/each}
+              <th class="side" title="Wins–losses as gold, and the share won">As gold</th>
+              <th title="Wins–losses as silver, and the share won">As silver</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each records as r (r.engine)}
+              {@const n = endings.total.wins[r.engine] ?? 0}
+              <tr>
+                <td class="engine" title={r.engine}>{r.engine}</td>
+                <td>{n} <span class="pct">{pct(n, endings.total.games)}</span></td>
+                {#each endings.rows as row (row.reason)}<td>{row.wins[r.engine] ?? 0}</td>{/each}
+                <td class="side">{recordText(r.gold)}</td>
+                <td>{recordText(r.silver)}</td>
+              </tr>
+            {/each}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>All games</td>
+              <td>{endings.total.games}</td>
+              {#each endings.rows as row (row.reason)}
+                <td>{row.games} <span class="pct">{pct(row.games, endings.total.games)}</span></td>
+              {/each}
+              <td class="side" title="Games gold won"
+                >{goldWins} <span class="pct">{pct(goldWins, endings.total.games)}</span></td
+              >
+              <td title="Games silver won"
+                >{endings.total.games - goldWins}
+                <span class="pct">{pct(endings.total.games - goldWins, endings.total.games)}</span></td
+              >
+            </tr>
+          </tfoot>
+        </table>
+      {/if}
 
       {#if test.running.length > 0}
         <div class="heading">
@@ -523,6 +579,43 @@
   }
   .result {
     color: var(--muted);
+  }
+  .breakdown {
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .breakdown th {
+    font-weight: 400;
+    color: var(--muted);
+    text-align: right;
+    padding: 1px 0 1px 14px;
+    white-space: nowrap;
+  }
+  .breakdown td {
+    text-align: right;
+    padding: 1px 0 1px 14px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .breakdown th:first-child,
+  .breakdown td:first-child {
+    text-align: left;
+    padding-left: 0;
+  }
+  .breakdown .side {
+    padding-left: 28px;
+  }
+  .breakdown tfoot td {
+    border-top: 1px solid var(--border);
+  }
+  .breakdown .engine {
+    max-width: 12em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pct {
+    color: var(--muted);
+    font-size: 12px;
   }
   .error {
     color: var(--warn);

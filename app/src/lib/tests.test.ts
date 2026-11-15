@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { PoolView } from './bindings/PoolView';
 import type { ProjectionView } from './bindings/ProjectionView';
 import type { TestView } from './bindings/TestView';
+import type { TestGameView } from './bindings/TestGameView';
 import {
   briefText,
+  colorRecords,
   cutoffPercent,
   decideText,
   detailsText,
   eloText,
+  endingRows,
   endingText,
   endsRows,
   endsText,
@@ -135,6 +138,35 @@ describe('endingText', () => {
     expect(endingText('goal')).toBe('goal');
     expect(endingText('illegalMove')).toBe('illegal move');
     expect(endingText('resourceLimit')).toBe('a memory-limit forfeit');
+  });
+});
+
+function game(gold: string, silver: string, winner: 'gold' | 'silver', reason: string): TestGameView {
+  return { test: 't', pair: 1, game: 1, gold, silver, winner, reason, plies: 60, detail: null, finished: 0 };
+}
+
+describe('endingRows', () => {
+  const games = [
+    game('a', 'b', 'gold', 'goal'),
+    game('b', 'a', 'silver', 'goal'),
+    game('a', 'b', 'silver', 'elimination'),
+    game('b', 'a', 'gold', 'immobilization'),
+    game('a', 'b', 'gold', 'goal'),
+  ];
+  it('counts each ending and its wins by engine, most common first', () => {
+    const { rows, total } = endingRows(games);
+    expect(rows).toEqual([
+      { reason: 'goal', games: 3, wins: { a: 3 } },
+      { reason: 'elimination', games: 1, wins: { b: 1 } },
+      { reason: 'immobilization', games: 1, wins: { b: 1 } },
+    ]);
+    expect(total).toEqual({ reason: '', games: 5, wins: { a: 3, b: 2 } });
+  });
+  it('gives each engine its record as gold and as silver', () => {
+    expect(colorRecords(games, ['b', 'a', 'unplayed'])).toEqual([
+      { engine: 'b', gold: [1, 1], silver: [1, 2] },
+      { engine: 'a', gold: [2, 1], silver: [1, 1] },
+    ]);
   });
 });
 
