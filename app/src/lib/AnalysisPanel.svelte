@@ -3,14 +3,13 @@
   // speed, the principal variation as one chip per turn (hover previews the
   // position after it, click adds the PV up to it), and the engine's output.
   import { onMount } from 'svelte';
-  import { evalTitle, formatEval, formatRabbits, nodesPerSecond, pvMoves, sweepText } from './analysis';
+  import { evalTitle, formatEval, formatRabbits, nodesPerSecond, pvMoves, shortEval, sweepText } from './analysis';
   import { api, errorMessage } from './api';
-  import EvalGraph from './EvalGraph.svelte';
+  import Icon from './Icon.svelte';
   import type { AnalysisLine } from './bindings/AnalysisLine';
   import type { AnalysisView } from './bindings/AnalysisView';
   import type { EngineOption } from './bindings/EngineOption';
   import type { EngineSpec } from './bindings/EngineSpec';
-  import type { NodeId } from './bindings/NodeId';
   import type { PositionView } from './bindings/PositionView';
   import type { SessionView } from './bindings/SessionView';
   import MiniBoard from '@howdah/board/board/MiniBoard.svelte';
@@ -34,25 +33,11 @@
     /** Adds the PV up to turn `index` as a line. */
     onAdd: (line: AnalysisLine, index: number) => void;
     preview: (line: AnalysisLine, index: number) => Promise<PositionView>;
-    onGotoNode: (id: NodeId) => void;
     /** Runs a command, showing its error if it fails. */
     run: (p: Promise<unknown>) => Promise<boolean>;
   }
-  let {
-    view,
-    analysis,
-    line,
-    stored,
-    engines,
-    theme,
-    flipped,
-    sharesCpu,
-    onEngine,
-    onAdd,
-    preview,
-    onGotoNode,
-    run,
-  }: Props = $props();
+  let { view, analysis, line, stored, engines, theme, flipped, sharesCpu, onEngine, onAdd, preview, run }: Props =
+    $props();
 
   /** Times in all to choose from for a run over the game, in minutes; 0,
    * the default, runs until stopped. */
@@ -61,12 +46,6 @@
   const marked = $derived(view.tree.filter((m) => m.depth === 0 && m.mark));
   const marks = $derived(marked.length);
   const provisional = $derived(marked.filter((m) => m.mark?.provisional).length);
-
-  /** A click on the graph shows that move, and a run refines it next. */
-  function gotoFromGraph(id: NodeId) {
-    onGotoNode(id);
-    if (view.sweep) void run(api.focusSweep(id));
-  }
 
   const engine = $derived(engines.find((e) => e.id === view.analysisEngine));
   let showOptions = $state(false);
@@ -126,27 +105,27 @@
     if (!line) held = null;
   });
 
-  // The hover preview: the position after a PV turn.
-  let hovered = $state<{ index: number; top: number; position: PositionView | null } | null>(null);
+  // The hover preview: the position after a turn of a line (the PV, or
+  // the line from before the shown move).
+  let hovered = $state<{ line: AnalysisLine; index: number; top: number; position: PositionView | null } | null>(null);
   const cache = new Map<string, PositionView>();
   /** The preview's height in pixels: a 220px board, padding and caption. */
   const PREVIEW_HEIGHT = 250;
   let panel: HTMLElement;
 
-  async function hover(index: number, chip: HTMLElement) {
-    if (!pvLine) return;
-    const l = pvLine;
+  async function hover(l: AnalysisLine | null, index: number, chip: HTMLElement) {
+    if (!l) return;
     // Beside the chip, but kept inside the window.
     const top =
       Math.max(8, Math.min(chip.getBoundingClientRect().top, window.innerHeight - PREVIEW_HEIGHT - 8)) -
       panel.getBoundingClientRect().top;
     const key = `${l.node}|${pvMoves(l, index).join(',')}`;
-    hovered = { index, top, position: cache.get(key) ?? null };
+    hovered = { line: l, index, top, position: cache.get(key) ?? null };
     if (hovered.position) return;
     try {
       const position = await preview(l, index);
       cache.set(key, position);
-      if (hovered?.index === index && pvLine === l) hovered = { index, top, position };
+      if (hovered?.index === index && hovered.line === l) hovered = { line: l, index, top, position };
     } catch {
       /* the line changed under the pointer; no preview */
     }
@@ -161,8 +140,8 @@
 
 <section class="analysis" bind:this={panel} aria-label="Analysis">
   <header>
-    <strong>Analysis</strong>
     <select
+      class="engine"
       aria-label="Analysis engine"
       value={view.analysisEngine ?? ''}
       onchange={(e) => onEngine((e.target as HTMLSelectElement).value)}
@@ -172,16 +151,39 @@
         <option value={e.id}>{e.name}</option>
       {/each}
     </select>
-    <span class="spacer"></span>
+    {#if view.sweep}
+      <button class="small" onclick={() => run(api.stopSweep())} title="Stop analysing the game">Stop</button>
+    {:else}
+      <button
+        class="small"
+        title="Analyse game: a quick look at every position of the main line, then more search where the evals or marks are unsettled, in the time chosen"
+        disabled={phase === 'failed'}
+        onclick={() => run(api.startSweep(sweepMinutes ? sweepMinutes * 60 : null))}>Analyse game</button
+      >
+      <select class="minutes" aria-label="Time for the game" bind:value={sweepMinutes}>
+        {#each SWEEP_MINUTES as m (m)}
+          <option value={m}>{m ? `${m} min` : 'no limit'}</option>
+        {/each}
+      </select>
+    {/if}
     {#if engine}
       {@const n = view.analysisOptions.length}
       <button
-        class="options"
+        class="small options"
+        aria-label="Engine options"
         title="Change the analysis engine's options, or use its buttons"
-        onclick={() => (showOptions = true)}>Options{n ? ` (${n})` : ''}</button
+        onclick={() => (showOptions = true)}><Icon name="gear" size={14} />{n ? ` ${n}` : ''}</button
       >
     {/if}
   </header>
+  {#if view.sweep}
+    <div class="sweep">
+      {#if view.sweep.phase === 'quick'}
+        <progress max={view.sweep.total} value={view.sweep.done} aria-label="Game analysis"></progress>
+      {/if}
+      <span class="sweep-text" title="Click the graph to have a move searched next">{sweepText(view.sweep)}</span>
+    </div>
+  {/if}
   {#if line && phase !== 'failed'}
     <div class="stats">
       {#if line.eval}<span class="eval" title={evalTitle(line.eval)}>{formatEval(line.eval)}</span>{/if}
@@ -191,8 +193,51 @@
       {#if nps}<span>{nps} n/s</span>{/if}
     </div>
   {/if}
-  <p class="status" class:failed={phase === 'failed'} role="status">{status}</p>
-  <EvalGraph tree={view.tree} cursor={view.cursor} onGoto={gotoFromGraph} />
+  <div class="status-row">
+    <p class="status" class:failed={phase === 'failed'} role="status">{status}</p>
+    {#if marks}
+      <button
+        class="small"
+        title={provisional
+          ? `Add the marks to the game, with the engine's better lines as variations. ${provisional} of them may change with more search.`
+          : "Add the marks to the game, with the engine's better lines as variations"}
+        onclick={() => run(api.annotateGame())}
+        >Add {marks}
+        {marks === 1 ? 'mark' : 'marks'}</button
+      >
+    {/if}
+  </div>
+  {#if view.priorAnalysis}
+    {@const prior = view.priorAnalysis}
+    <!-- What the engine would have played instead of the shown move. -->
+    <div class="prior" role="group" aria-label="The engine's line before {prior.label}">
+      <span class="prior-label">For {prior.label}</span>
+      {#if !prior.line}
+        <span class="prior-none">not searched</span>
+      {:else}
+        {@const before = prior.line}
+        {#if before.eval}<span class="prior-eval" title={evalTitle(before.eval)}>{shortEval(before.eval)}</span>{/if}
+        {#if prior.agrees}
+          <span class="prior-none">the engine's choice too</span>
+        {:else}
+          {#each before.pv as turn, i (i)}
+            <button
+              class="chip"
+              title="The engine's choice instead: add the line up to here"
+              onclick={() => onAdd(before, i)}
+              onmouseenter={(e) => hover(before, i, e.currentTarget)}
+              onmouseleave={() => (hovered = null)}
+              onfocus={(e) => hover(before, i, e.currentTarget)}
+              onblur={() => (hovered = null)}
+            >
+              <span class="label">{turn.label}</span>
+              {turn.notation}
+            </button>
+          {/each}
+        {/if}
+      {/if}
+    </div>
+  {/if}
   {#if sharesCpu}<p class="note">Shares the CPU with the match engines.</p>{/if}
   {#if pvLine && pvLine.pv.length && phase !== 'failed'}
     <div
@@ -207,9 +252,9 @@
           class="chip"
           title="Add the line up to here"
           onclick={() => onAdd(pvLine, i)}
-          onmouseenter={(e) => hover(i, e.currentTarget)}
+          onmouseenter={(e) => hover(pvLine, i, e.currentTarget)}
           onmouseleave={() => (hovered = null)}
-          onfocus={(e) => hover(i, e.currentTarget)}
+          onfocus={(e) => hover(pvLine, i, e.currentTarget)}
           onblur={() => (hovered = null)}
         >
           <span class="label">{turn.label}</span>
@@ -218,40 +263,10 @@
       {/each}
     </div>
   {/if}
-  <div class="sweep">
-    {#if view.sweep}
-      {#if view.sweep.phase === 'quick'}
-        <progress max={view.sweep.total} value={view.sweep.done} aria-label="Game analysis"></progress>
-      {/if}
-      <span class="sweep-text" title="Click the graph to have a move searched next">{sweepText(view.sweep)}</span>
-      <button onclick={() => run(api.stopSweep())}>Stop</button>
-    {:else}
-      <button
-        title="A quick look at every position of the main line, then more search where the evals or marks are unsettled, in the time chosen"
-        disabled={phase === 'failed'}
-        onclick={() => run(api.startSweep(sweepMinutes ? sweepMinutes * 60 : null))}>Analyse game</button
-      >
-      <select aria-label="Time for the game" bind:value={sweepMinutes}>
-        {#each SWEEP_MINUTES as m (m)}
-          <option value={m}>{m ? `${m} min` : 'Until stopped'}</option>
-        {/each}
-      </select>
-      {#if marks}
-        <button
-          title={provisional
-            ? `Add the marks to the game, with the engine's better lines as variations. ${provisional} of them may change with more search.`
-            : "Add the marks to the game, with the engine's better lines as variations"}
-          onclick={() => run(api.annotateGame())}
-          >Add {marks}
-          {marks === 1 ? 'mark' : 'marks'}{#if provisional}&nbsp;({provisional} provisional){/if}</button
-        >
-      {/if}
-    {/if}
-  </div>
   {#if hovered?.position}
     <div class="preview" style:top="{hovered.top}px" aria-hidden="true">
       <MiniBoard position={hovered.position} {theme} {flipped} />
-      <div class="caption">after {pvLine?.pv[hovered.index]?.label}</div>
+      <div class="caption">after {hovered.line.pv[hovered.index]?.label}</div>
     </div>
   {/if}
   {#if log.length}
@@ -303,12 +318,20 @@
     background: var(--bg);
     color: var(--text);
   }
-  .spacer {
+  .engine {
     flex: 1;
+    min-width: 0;
   }
-  .options {
+  .small {
     font-size: 12px;
     padding: 1px 8px;
+    white-space: nowrap;
+  }
+  .options {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    padding: 1px 5px;
   }
   .sweep {
     display: flex;
@@ -316,10 +339,6 @@
     gap: 6px;
     font-size: 12px;
     color: var(--muted);
-  }
-  .sweep button {
-    font-size: 12px;
-    padding: 1px 8px;
   }
   .sweep progress {
     flex: 1;
@@ -353,6 +372,41 @@
   }
   .status.failed {
     color: var(--warn);
+  }
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-row .status {
+    flex: 1;
+    min-width: 0;
+  }
+  /* The engine's line before the shown move: one line, cut off at the
+     edge (hover a move for its position). */
+  .prior {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .prior .chip {
+    flex: none;
+  }
+  .prior-label {
+    margin-right: 3px;
+  }
+  .prior-eval {
+    margin-right: 3px;
+    font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+  }
+  .prior-none {
+    font-style: italic;
   }
   .pv {
     display: flex;

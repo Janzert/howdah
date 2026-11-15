@@ -836,7 +836,9 @@ plans the engine test and tournament runner.
     `saveHandOff`; also the board's sound setting, `BoardSound`). Boards
     have no New game or New board (both are in the lobby's Home); they
     have Pop out (docked) or Lobby and
-    Dock (in a window), with what waits in the lobby on the Lobby button
+    Dock (in a window) in the tools row's ⋯ menu (with Record, Position
+    editor, and Pass or reopening the move when they apply), with what
+    waits in the lobby on the menu's button and its Lobby item
     (invitations and postal moves due, from
     `gameroom_last_games` and `gameroom://lobby`), and Next game (`n`;
     `lib/nextGame.ts`): the next other board waiting on the user's
@@ -912,9 +914,10 @@ plans the engine test and tournament runner.
     it from each engine side's "Options…" button, `EnginePanel.svelte`
     from each engine's header during a game (`set_engine_options`), and
     `AnalysisPanel.svelte` from its header (`set_analysis_options`).
-  - `AnalysisPanel.svelte` (engine picker, eval/depth/speed, PV chips with
-    a `MiniBoard` hover preview, engine log), `EvalBar.svelte` beside the
-    board, and the PV's first turn drawn by `LastMoveLayer` with `pv`.
+  - `AnalysisPanel.svelte` (engine picker with Analyse game beside it,
+    eval/depth/speed, the line from before the shown move
+    (`priorAnalysis`), PV chips with a `MiniBoard` hover preview, engine
+    log), `EvalBar.svelte` beside the board, `EvalGraph.svelte` under it, and the PV's first turn drawn by `LastMoveLayer` with `pv`.
     `lib/analysis.ts` formats evals and picks the engine.
   - `CommentBox.svelte`, under the move list (folded away until opened),
     edits the shown move's comment (the game comment at the start; saved on blur or Ctrl+Enter,
@@ -1031,7 +1034,7 @@ plans the engine test and tournament runner.
     `gameroom_last_games`): the lobby counts invitations to the user and
     their postal games waiting on their move (`lib/gameroom.ts`'s
     `myTurn`) and announces new ones, and game windows show the count on
-    their Lobby button. The screen takes the poll's lists too, refreshes
+    their ⋯ menu. The screen takes the poll's lists too, refreshes
     them every 20 s while it's shown, and after an error checks
     the login, showing the login form if it has expired. `WatchPanel.svelte` under the comment box
     shows the followed game's state (spectators don't get the chat),
@@ -1045,10 +1048,12 @@ plans the engine test and tournament runner.
     at a player's seat, "Ask for takeback" or Accept/Decline for the
     opponent's request, Resign (a second click confirms), "Sending your
     move…" while `SessionView.sent` is set, and a refusal as a warning.
-    TurnBar shows the player to
-    move and "Stop watching" (`end_match`; "Leave game" when the user
+    TurnBar (above the move list) shows the match's state and notes and
+    "Stop watching" (`end_match`; "Leave game" when the user
     plays, since the game goes on at arimaa.com), and, when watching,
-    its turn buttons only once the user starts planning a move. Following the live game is the
+    the turn buttons (`TurnActions.svelte`, beside the bottom player bar)
+    only once the user starts planning a move. They show only while a
+    turn or setup is being entered; the player bars show who's to move. Following the live game is the
     match's usual behaviour (the board follows at the live node, otherwise
     the missed-move alert).
   - `ChatPanel.svelte`, below the bottom player bar as in the

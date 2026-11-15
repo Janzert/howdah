@@ -121,8 +121,10 @@ describe('shortEval', () => {
 
 describe('markTitle', () => {
   it('names the mark and the better move', () => {
-    expect(markTitle({ glyph: '??', best: 'Ee2n', provisional: false })).toBe('Blunder, by the engine. Best was Ee2n');
-    expect(markTitle({ glyph: '?!', best: null, provisional: true })).toBe(
+    expect(markTitle({ glyph: '??', best: 'Ee2n', provisional: false, eval: null, line: [] })).toBe(
+      'Blunder, by the engine. Best was Ee2n',
+    );
+    expect(markTitle({ glyph: '?!', best: null, provisional: true, eval: null, line: [] })).toBe(
       'Dubious, by the engine (provisional: more search may change it)',
     );
   });

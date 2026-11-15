@@ -76,7 +76,7 @@ Before phase 1 (as built, see below the Phases):
 
 - **The main window is the lobby**, with no board of its own: a home
   page and the arimaa.com lobby (below). Closing it hides it while game
-  windows are open, and each game window's Lobby button shows it again;
+  windows are open, and each game window's Lobby menu item shows it again;
   with no game windows open, closing it quits Howdah. Hidden, it keeps
   running, so the lobby poll and its notifications go on. Whether
   closing it should quit instead is for later, after some use (Brian,
@@ -167,7 +167,7 @@ the client has to trust the user and community norms (Brian,
   first; in the browser preview, `pagehide` calls `close_session`.
 - **Hiding the lobby:** the backend catches the main window's close
   request (Tauri's `CloseRequested`), hides it while a `game-*` window
-  exists, and lets it close otherwise; a game window's Lobby button shows
+  exists, and lets it close otherwise; a game window's Lobby menu item shows
   and focuses it. The browser preview has no hiding: its lobby is just a
   tab.
 - **Finding a game's window:** the backend keeps which session follows
@@ -229,7 +229,7 @@ the client has to trust the user and community norms (Brian,
   every session's `game://changed` and `gameroom://watch` (`onEvery`).
 - Game windows' toolbar: New game (in that window), New window,
   Analysis, Record, Flip and Lobby. Help stays on `?`, and the Engines
-  dialog on the New game dialog's Engines button. The Lobby button shows
+  dialog on the New game dialog's Engines button. The Lobby menu item shows
   how many invitations and postal moves due wait there; a window opened
   between lobby polls gets them from the backend's last lists
   (`gameroom_last_games`, no server request).
@@ -245,7 +245,7 @@ the client has to trust the user and community norms (Brian,
 - `cancel_gameroom_game` no longer takes a session: a session playing
   the cancelled game starts a new one, whichever it is.
 - In the browser preview the lobby is the tab at `/`, and tabs are
-  named, so the Lobby button and the windows list find the tab instead of
+  named, so the Lobby menu item and the windows list find the tab instead of
   opening another (a browser may not switch to it).
 - Not done: the "shares the CPU" note in a game window still counts only
   its own session's engines (Shared state, above).

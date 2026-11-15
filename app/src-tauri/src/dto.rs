@@ -120,6 +120,20 @@ pub struct MoveNodeView {
     pub mark: Option<MoveMark>,
 }
 
+/// The line the analysis engine keeps for the position before the shown
+/// move, beside that move.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PriorAnalysis {
+    /// The shown move's label, e.g. `12g`.
+    pub label: String,
+    /// The engine's line from the position before it, if it has looked.
+    pub line: Option<AnalysisLine>,
+    /// Whether the move played is the line's first move.
+    pub agrees: bool,
+}
+
 /// A move analysis found lost ground, from the evals before and after it.
 /// It isn't part of the game until it's added (`annotate_game`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
@@ -132,6 +146,12 @@ pub struct MoveMark {
     pub best: Option<String>,
     /// Whether more search could well change it.
     pub provisional: bool,
+    /// The engine's eval of the position before the move.
+    pub eval: Option<Eval>,
+    /// The start of the engine's line from the position before the move,
+    /// to show as a preview under it. Empty when the game already has its
+    /// first move there.
+    pub line: Vec<PvTurn>,
 }
 
 /// A piece on a square.
@@ -327,6 +347,10 @@ pub struct SessionView {
     /// What analysis found at the shown node earlier, if anything, so the
     /// eval shows at once while the new search starts.
     pub stored_analysis: Option<AnalysisLine>,
+    /// What analysis found at the position before the shown move: what the
+    /// engine would have played there instead. None at the start and for
+    /// setups.
+    pub prior_analysis: Option<PriorAnalysis>,
     /// How far a run of analysis over the whole game has got.
     pub sweep: Option<SweepView>,
     /// The engine test game shown, when the session shows one.

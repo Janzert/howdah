@@ -54,6 +54,8 @@
   } from '@howdah/board/sound';
   import { findTheme } from '@howdah/board/theme';
   import TurnBar from './lib/TurnBar.svelte';
+  import TurnActions from './lib/TurnActions.svelte';
+  import EvalGraph from './lib/EvalGraph.svelte';
   import type { GameroomGames } from './lib/bindings/GameroomGames';
   import type { WatchView } from './lib/bindings/WatchView';
   import WatchPanel from './lib/WatchPanel.svelte';
@@ -64,6 +66,7 @@
   import { type GameNumber, nextGameAfter } from './lib/tests';
   import { askLobby, lobbyKey } from './lib/frames';
   import Icon, { type IconName } from './lib/Icon.svelte';
+  import type { NodeId } from './lib/bindings/NodeId';
   import { type BoardLoading, followBoardLoading, readBoardLoading } from './lib/boardLoading';
   import {
     closeThisBoard,
@@ -663,6 +666,21 @@
 
   /** The analysis panel is showing: analysis is on, or it failed. */
   const analysisShown = $derived(analysing || analysis?.state === 'failed');
+  /** A turn or a setup is being entered: its buttons show by the board. */
+  const turnActive = $derived(
+    view != null &&
+      view.canInput &&
+      (view.phase === 'setup'
+        ? view.movesAfterCursor === 0
+        : view.turn != null && (view.turn.steps.length > 0 || view.turn.pushPending != null)),
+  );
+  let showMore = $state(false);
+
+  /** A click on the graph shows that move, and a run over the game refines it next. */
+  function gotoFromGraph(id: NodeId) {
+    run(api.gotoNode(id));
+    if (view?.sweep) void run(api.focusSweep(id));
+  }
 
   /** Turns analysis off (or puts away the panel saying it failed), or on. */
   function toggleAnalysis() {
@@ -874,7 +892,7 @@
   }
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} onclick={() => (showMore = false)} />
 
 {#if editing}
   <PositionEditor
@@ -947,13 +965,28 @@
         </div>
       </div>
       {#if view}
-        <PlayerBar
-          {...barProps(view, flipped ? 'silver' : 'gold')}
-          {receivedAt}
-          {now}
-          {theme}
-          away={watch?.away[flipped ? 1 : 0] ?? false}
-        />
+        <div class="bottom-bar">
+          <div class="bar-box">
+            <PlayerBar
+              {...barProps(view, flipped ? 'silver' : 'gold')}
+              {receivedAt}
+              {now}
+              {theme}
+              away={watch?.away[flipped ? 1 : 0] ?? false}
+            />
+          </div>
+          {#if turnActive}
+            <TurnActions
+              {view}
+              onCommit={commit}
+              onUndo={() => run(api.undoStep())}
+              onCancel={() => run(api.cancelTurn())}
+            />
+          {/if}
+        </div>
+        {#if analysisShown}
+          <EvalGraph tree={view.tree} cursor={view.cursor} onGoto={gotoFromGraph} />
+        {/if}
       {/if}
       <!-- The game's chat, below the board as in the arimaa.com web client. -->
       {#if view && watch && (watch.side != null || watch.chat.length > 0)}
@@ -987,11 +1020,8 @@
         <TurnBar
           {view}
           onCommit={commit}
-          onUndo={() => run(api.undoStep())}
-          onPass={() => run(api.passTurn())}
           onTakeBack={() => run(api.takeBack())}
           onGotoLive={gotoEnd}
-          onCancel={() => run(api.cancelTurn())}
           onMoveNow={() => run(api.engineMoveNow())}
           onEndMatch={() => run(api.endMatch())}
         />
@@ -1023,7 +1053,6 @@
             onEngine={useAnalysisEngine}
             onAdd={addPv}
             preview={(line, i) => api.previewLine(line.node, pvMoves(line, i))}
-            onGotoNode={(id) => run(api.gotoNode(id))}
             {run}
           />
         {/if}
@@ -1066,64 +1095,93 @@
         >
           Analysis
         </button>
-        <button onclick={() => (flipped = !flipped)} title="Flip the board (f)">Flip</button>
-        <button onclick={openRecord} title="The game record, to copy, save or load">Record</button>
-        <button onclick={editPosition} title="Set up a position from the shown one, in a new window (e)"
-          >Position editor</button
-        >
         <button
-          class="sound"
+          class="icon"
+          aria-label="Flip the board"
+          onclick={() => (flipped = !flipped)}
+          title="Flip the board (f)"
+        >
+          <Icon name="flip" size={16} />
+        </button>
+        <button
+          class="icon"
+          aria-label={boardSoundLabel[boardSound]}
           onclick={() => (boardSound = nextBoardSound[boardSound])}
           title="{boardSoundText[boardSound]} on this board; click for {boardSoundText[
             nextBoardSound[boardSound]
           ].toLowerCase()}{settings.sound ? '' : ' (sound is off in Settings)'}"
         >
           <Icon name={boardSoundIcon[boardSound]} size={16} />
-          {boardSoundLabel[boardSound]}
         </button>
-      </div>
-      <div
-        class="windows"
-        style:grid-template-columns="repeat({(isDocked ? 1 : 2) + (spectating && !view?.testGame ? 0 : 1)}, 1fr)"
-      >
-        {#if isDocked}
+        <div class="more">
           <button
-            onclick={() => popOut({ spec: lastSpec, follow: following, sound: boardSound })}
-            title="Move this board to a window of its own">Pop out</button
-          >
-        {:else}
-          <button
-            onclick={() => showLobby()}
-            title="The lobby: new games, the boards, arimaa.com, engine tests, engines and settings{lobbyWaiting > 0
-              ? ` (${lobbyWaiting} waiting on you)`
+            class="icon"
+            aria-label="More"
+            aria-haspopup="menu"
+            aria-expanded={showMore}
+            title="More: the record, the position editor, {isDocked ? 'Pop out' : 'the lobby, Dock'}{lobbyWaiting > 0
+              ? ` (${lobbyWaiting} waiting on you in the lobby)`
               : ''}"
+            onclick={(e) => {
+              e.stopPropagation();
+              showMore = !showMore;
+            }}
           >
-            Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}
+            <Icon name="more" size={16} />{#if lobbyWaiting > 0 && !isDocked}<span class="badge">{lobbyWaiting}</span
+              >{/if}
           </button>
+          {#if showMore}
+            <div class="menu" role="menu">
+              {#if view?.canPass}
+                <button
+                  role="menuitem"
+                  onclick={() => run(api.passTurn())}
+                  title="Leave the pieces and give the other side the move, to see what it could do"
+                  >Pass <kbd>P</kbd></button
+                >
+              {/if}
+              {#if view?.canUndo && !view.turn}
+                <button role="menuitem" onclick={() => run(api.undoStep())} title="Take the shown move back into steps"
+                  >Reopen the move <kbd>⌫</kbd></button
+                >
+              {/if}
+              {#if view?.canPass || (view?.canUndo && !view.turn)}<hr />{/if}
+              <button role="menuitem" onclick={openRecord}>Record…</button>
+              <button
+                role="menuitem"
+                onclick={editPosition}
+                title="Set up a position from the shown one, in a new window">Position editor <kbd>E</kbd></button
+              >
+              <hr />
+              {#if isDocked}
+                <button role="menuitem" onclick={() => popOut({ spec: lastSpec, follow: following, sound: boardSound })}
+                  >Pop out to a window</button
+                >
+              {:else}
+                <button role="menuitem" onclick={() => showLobby()}
+                  >Lobby{#if lobbyWaiting > 0}<span class="badge">{lobbyWaiting}</span>{/if}</button
+                >
+                <button
+                  role="menuitem"
+                  title="Move this board into the lobby window, as a panel there, and close this window"
+                  onclick={() =>
+                    dockWindow({ spec: lastSpec, follow: following, sound: boardSound }).catch((e) =>
+                      flash(errorMessage(e)),
+                    )}>Dock in the lobby</button
+                >
+              {/if}
+            </div>
+          {/if}
+        </div>
+        {#if view?.testGame ? testNext : !spectating && nextCount > 0}
           <button
-            onclick={() =>
-              dockWindow({ spec: lastSpec, follow: following, sound: boardSound }).catch((e) => flash(errorMessage(e)))}
-            title="Move this board into the lobby window, as a panel there, and close this window">Dock</button
-          >
-        {/if}
-        {#if view?.testGame}
-          <button
-            onclick={nextTestGame}
-            disabled={!testNext}
-            title={testNext
+            class="next primary"
+            onclick={view?.testGame ? nextTestGame : nextGame}
+            title={view?.testGame && testNext
               ? `Game ${testNext.pair}.${testNext.game}, the next one this test started (n)`
-              : 'No later game in this test yet (n)'}
+              : 'The next game waiting on your move (n)'}
           >
-            Next game
-          </button>
-        {:else if !spectating}
-          <button
-            class:primary={nextCount > 0}
-            onclick={nextGame}
-            disabled={nextCount === 0}
-            title={nextCount > 0 ? 'The next game waiting on your move (n)' : 'No other game waits on your move (n)'}
-          >
-            Next game{#if nextCount > 0}<span class="badge">{nextCount}</span>{/if}
+            Next game{#if !view?.testGame}<span class="badge">{nextCount}</span>{/if}
           </button>
         {/if}
       </div>
@@ -1266,33 +1324,80 @@
     color: var(--accent-text);
   }
   .tools {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 4px;
-  }
-  .tools .sound {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-  }
-  .tools button,
-  .windows button {
-    padding: 4px 6px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .windows {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
     gap: 4px;
     padding-top: 8px;
     border-top: 1px solid var(--border);
   }
-  .windows .primary .badge {
+  .tools button {
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+  .tools .icon {
+    display: flex;
+    align-items: center;
+    padding: 4px 7px;
+  }
+  .tools .next {
+    margin-left: auto;
+  }
+  .tools .primary .badge {
     background: var(--accent-text);
     color: var(--accent);
+  }
+  .more {
+    position: relative;
+  }
+  .more .menu {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    right: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    min-width: 190px;
+    padding: 4px;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+    font-size: 13px;
+  }
+  .more .menu button {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 10px;
+    text-align: left;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .more .menu button:hover {
+    background: var(--hover);
+  }
+  .more .menu hr {
+    width: 100%;
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+  .more .menu kbd {
+    font-size: 10px;
+    opacity: 0.7;
+  }
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bar-box {
+    flex: 1;
+    min-width: 0;
   }
   .live-alert {
     position: absolute;

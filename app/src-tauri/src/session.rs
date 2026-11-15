@@ -46,8 +46,8 @@ use crate::dto::{
     AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EVAL_BAR_SCALE, EngineOption,
     EngineOutput, Eval, GameInfoView, LastMoveView, LastStepView, MoveMark, MoveNodeView, MoveReplay,
     MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView, PlayersView, PositionView,
-    PuzzleStatus, PuzzleView, SessionView, SideClockView, StartSetupView, StepTarget, SweepPhase, SweepView,
-    TakebackView, TestGameTag, TurnStepView, TurnView,
+    PriorAnalysis, PuzzleStatus, PuzzleView, PvTurn, SessionView, SideClockView, StartSetupView, StepTarget,
+    SweepPhase, SweepView, TakebackView, TestGameTag, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2175,6 +2175,32 @@ impl Session {
         self.evals.get(self.evals_engine.as_ref()?)?.get(&node)
     }
 
+    /// Whether `node` already has `turn` as one of its moves.
+    fn has_child_move(&self, node: NodeId, turn: Option<&PvTurn>) -> bool {
+        let Some(turn) = turn else { return false };
+        self.tree[node]
+            .children()
+            .iter()
+            .any(|&c| self.tree[c].mv().is_some_and(|m| same_turn(&m.notation(), &turn.notation)))
+    }
+
+    /// The shown engine's line for the position before the shown move.
+    fn prior_analysis(&self) -> Option<PriorAnalysis> {
+        let id = self.cursor_node();
+        let node = &self.tree[id];
+        let parent = node.parent()?;
+        if self.tree.setup_due(parent) {
+            return None;
+        }
+        let line = self.shown_eval(parent);
+        let played = node.mv()?.notation();
+        Some(PriorAnalysis {
+            label: self.tree.label_of(id)?,
+            agrees: line.and_then(|l| l.pv.first()).is_some_and(|t| same_turn(&t.notation, &played)),
+            line: line.cloned(),
+        })
+    }
+
     /// How analysis judges `id`'s move, from the shown engine's evals
     /// before and after it: the glyph, and the line it preferred. Nothing
     /// if the move already has a glyph, or is the engine's own choice (its
@@ -2968,6 +2994,7 @@ impl Session {
             analysis_allowed: self.analysis_allowed(),
             stuck: self.stuck(),
             stored_analysis: self.shown_eval(self.cursor_node()).cloned(),
+            prior_analysis: self.prior_analysis(),
             sweep: self.sweep_view(),
             test_game: self.test_game.clone(),
         }
@@ -3050,6 +3077,12 @@ impl Session {
                 glyph: glyph.to_string(),
                 best: line.pv.first().map(|t| t.notation.clone()),
                 provisional: self.mark_provisional(id),
+                eval: line.eval,
+                line: if self.has_child_move(line.node, line.pv.first()) {
+                    Vec::new()
+                } else {
+                    line.pv.iter().take(ANNOTATED_TURNS).cloned().collect()
+                },
             }),
         }
     }
@@ -5323,6 +5356,32 @@ mod tests {
         assert_eq!(glyph(-400), Some("??".into()));
         assert_eq!(glyph(400), None, "a gain");
         assert_eq!(mark_of(&judged(0, -400, "Md2n")).unwrap().best.as_deref(), Some("Md2n"));
+    }
+
+    #[test]
+    fn a_mark_previews_the_engines_line_until_the_game_has_it() {
+        let mut s = judged(0, -400, "Md2n");
+        let mark = mark_of(&s).unwrap();
+        assert_eq!(mark.eval, Some(Eval::CentiRabbits { value: 0, chance: None }));
+        assert_eq!(mark.line.iter().map(|t| t.notation.as_str()).collect::<Vec<_>>(), ["Md2n"]);
+        let before = s.tree.main_line()[2];
+        s.add_line(before, &["Md2n".to_string()]).unwrap();
+        assert!(mark_of(&s).unwrap().line.is_empty(), "the variation is in the game now");
+    }
+
+    #[test]
+    fn the_shown_move_has_the_line_from_before_it() {
+        let mut s = judged(0, -400, "Md2n");
+        let line = s.tree.main_line();
+        s.goto_node(line[3]).unwrap();
+        let prior = s.view().prior_analysis.unwrap();
+        assert_eq!(prior.line.unwrap().node, line[2]);
+        assert_eq!(prior.label, s.tree.label_of(line[3]).unwrap());
+        assert!(!prior.agrees);
+        s.goto_node(line[5]).unwrap();
+        assert!(s.view().prior_analysis.unwrap().line.is_none(), "not searched before this one");
+        s.goto_node(line[2]).unwrap();
+        assert!(s.view().prior_analysis.is_none(), "a setup");
     }
 
     #[test]

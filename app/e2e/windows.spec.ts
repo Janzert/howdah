@@ -2,7 +2,7 @@
 // lobby is the page without `?session=`, and each game window a tab opened
 // with `window.open`, on its own session.
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { boardsInWindows, bridge, closeAllSessions } from './helpers';
+import { boardsInWindows, bridge, closeAllSessions, toMove } from './helpers';
 
 /** Opens the lobby with no boards. */
 async function lobby(page: Page) {
@@ -52,7 +52,7 @@ test('the lobby opens game windows, lists them, and closing one ends its session
     await a.api.commitSetup();
     await a.idle();
   });
-  await expect(second.getByText('Gold to move')).toBeVisible();
+  await toMove(second, 'gold');
   expect(await first.evaluate(() => window.__arimaa!.state()!.ply)).toBe(0);
   // The lobby follows the game: gold's setup confirmed, the engine replies.
   await first.evaluate(async () => {
@@ -127,14 +127,16 @@ test('a board opens as a panel, pops out to a window, docks back, and closes', a
   expect(await bridge<number[]>(page, 'docked_sessions')).toEqual([id]);
 
   // Pop out: the board moves to a window, on the same session.
-  const win = await opens(context, () => docked.getByRole('button', { name: 'Pop out' }).click());
+  await docked.getByRole('button', { name: 'More' }).click();
+  const win = await opens(context, () => docked.getByRole('menuitem', { name: /^Pop out/ }).click());
   expect(sessionOf(win)).toBe(id);
   await expect(page.locator('iframe.docked')).toHaveCount(0);
   await expect(listed).toHaveCount(1);
   expect(await bridge<number[]>(page, 'docked_sessions')).toEqual([]);
 
   // Dock: the window closes and the board is a panel again.
-  await Promise.all([win.waitForEvent('close'), win.getByRole('button', { name: 'Dock' }).click()]);
+  await win.getByRole('button', { name: 'More' }).click();
+  await Promise.all([win.waitForEvent('close'), win.getByRole('menuitem', { name: /^Dock/ }).click()]);
   await expect(docked.getByRole('application', { name: 'Arimaa board' })).toBeVisible();
   expect(await bridge<number[]>(page, 'list_sessions')).toEqual([id]);
 
@@ -162,11 +164,12 @@ test('Alt+arrows and Alt+digits go through the sidebar, from a docked board too'
   expect(await current()).toBe('Engine tests');
 });
 
-test("a game window's Lobby button goes back to the lobby tab", async ({ page, context }) => {
+test("a game window's Lobby menu item goes back to the lobby tab", async ({ page, context }) => {
   await boardsInWindows(page);
   await lobby(page);
   const game = await opens(context, () => page.getByRole('button', { name: 'Analysis board' }).click());
-  await game.getByRole('button', { name: /^Lobby/ }).click();
+  await game.getByRole('button', { name: 'More' }).click();
+  await game.getByRole('menuitem', { name: /^Lobby/ }).click();
   // The lobby's tab is found by name, not opened again.
   await game.waitForTimeout(300);
   expect(context.pages()).toHaveLength(2);

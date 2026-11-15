@@ -13,6 +13,7 @@ import type { NodeId } from "./NodeId";
 import type { Phase } from "./Phase";
 import type { PlayersView } from "./PlayersView";
 import type { PositionView } from "./PositionView";
+import type { PriorAnalysis } from "./PriorAnalysis";
 import type { PuzzleView } from "./PuzzleView";
 import type { StartSetupView } from "./StartSetupView";
 import type { SweepView } from "./SweepView";
@@ -187,6 +188,12 @@ stuck: Color | null,
  * eval shows at once while the new search starts.
  */
 storedAnalysis: AnalysisLine | null, 
+/**
+ * What analysis found at the position before the shown move: what the
+ * engine would have played there instead. None at the start and for
+ * setups.
+ */
+priorAnalysis: PriorAnalysis | null, 
 /**
  * How far a run of analysis over the whole game has got.
  */

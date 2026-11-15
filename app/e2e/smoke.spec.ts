@@ -1,7 +1,7 @@
 // Smoke tests through the UI, using the board's accessible names and the dev
 // hook (`window.__arimaa`, see src/lib/devHooks.ts), in a game window.
 import { expect, test, type Page } from '@playwright/test';
-import { openGamePage } from './helpers';
+import { openGamePage, toMove } from './helpers';
 
 /** Opens a game window on a fresh free-play game. */
 async function freshGame(page: Page) {
@@ -32,7 +32,7 @@ test('setup swap with the real mouse, then a dragged route', async ({ page }) =>
 
   await page.getByRole('button', { name: 'Confirm setup' }).click();
   await page.getByRole('button', { name: 'Confirm setup' }).click();
-  await expect(page.getByText('Gold to move')).toBeVisible();
+  await toMove(page, 'gold');
 
   // Drag the camel three squares up; the route fills in the steps.
   await page.evaluate(() => window.__arimaa!.drag('d2', 'd5', ['d3', 'd4']));
@@ -41,7 +41,7 @@ test('setup swap with the real mouse, then a dragged route', async ({ page }) =>
   expect(steps).toEqual(['Md2n', 'Md3n', 'Md4n']);
 
   await page.getByRole('button', { name: 'Play', exact: false }).click();
-  await expect(page.getByText('Silver to move')).toBeVisible();
+  await toMove(page, 'silver');
 });
 
 test('an unreachable drop shows an error and puts the piece back', async ({ page }) => {

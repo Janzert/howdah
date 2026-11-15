@@ -253,7 +253,7 @@ architecture. Decided and checked against the live server in October 2026.
   untimed). The New game form offers the gameroom's postal time controls,
   clocks of a day or more read `Nd h:mm`, and the user's games show which
   wait on the user's move. While logged in, the lobby check every 50 s
-  counts those in the lobby and on the game windows' Lobby button, and the
+  counts those in the lobby and on the game windows' ⋯ menu, and the
   lobby announces new ones (games open in a window aside). The lobby's list has no turn before the first
   move, which is taken as gold's setup.
 - **After a game** players often stay at the table to chat, so the

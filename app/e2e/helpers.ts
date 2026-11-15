@@ -24,6 +24,15 @@ export async function closeAllSessions(page: Page) {
   }
 }
 
+/** Waits until `side` is to move in a game (the player bars show it, by
+ * their highlight). */
+export async function toMove(page: Page, side: 'gold' | 'silver') {
+  await page.waitForFunction((side) => {
+    const v = window.__arimaa?.state();
+    return v != null && v.phase === 'play' && v.position.sideToMove === side;
+  }, side);
+}
+
 /** Opens a game window (a tab, in the browser) on a new session, as the
  * only one, and waits for its game. */
 export async function openGamePage(page: Page): Promise<number> {

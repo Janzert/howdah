@@ -1,7 +1,7 @@
 // The position editor (docs/UI-SURVEY.md, section 6), opened from the lobby
 // and from a game window, each in a window of its own.
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { boardsInWindows, bridge, closeAllSessions } from './helpers';
+import { boardsInWindows, bridge, closeAllSessions, toMove } from './helpers';
 
 async function opens(context: BrowserContext, click: () => Promise<void>): Promise<Page> {
   const [win] = await Promise.all([context.waitForEvent('page'), click()]);
@@ -77,7 +77,7 @@ test('the lobby opens the editor; pieces go on and off, and Analyse starts from 
 
   await win.getByRole('button', { name: 'Analyse' }).click();
   await expect(win.getByRole('main', { name: 'Position editor' })).toBeHidden();
-  await expect(win.getByText('Silver to move')).toBeVisible();
+  await toMove(win, 'silver');
   await win.evaluate(async () => {
     const a = window.__arimaa!;
     await a.drag('e5', 'e6');

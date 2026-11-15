@@ -175,6 +175,34 @@
         {#if m.eval}<span class="eval" title={evalTitle(m.eval)}>{shortEval(m.eval)}</span>{/if}
       </button>
       {#if m.comment}<div class="comment">{m.comment}</div>{/if}
+      {#if m.mark && m.mark.line.length}
+        {@const mark = m.mark}
+        <!-- The engine's better line, from the analysis: not in the game
+             until one of its moves is clicked. -->
+        <div
+          class="engine-line"
+          role="group"
+          aria-label="The engine's line instead of {m.label}"
+          title="The engine's line instead, {mark.line
+            .map((t) => `${t.label} ${t.notation}`)
+            .join(', ')}. Click a move to add the line up to it."
+        >
+          {#if mark.eval}<span class="engine-eval">{shortEval(mark.eval)}</span>{/if}
+          {#each mark.line as t, i (i)}
+            <button
+              class="engine-turn"
+              tabindex="-1"
+              onclick={() =>
+                run(
+                  api.addLine(
+                    m.parent,
+                    mark.line.slice(0, i + 1).map((x) => x.notation),
+                  ),
+                )}><span class="engine-label">{t.label}</span> {t.notation}</button
+            >
+          {/each}
+        </div>
+      {/if}
       {#if m.id === view.cursor && view.turn && view.turn.steps.length > 0}
         <div class="pending">
           {#if settings.moveTimes !== 'off'}<span class="time"></span>{/if}
@@ -370,6 +398,43 @@
     padding-top: 2px;
     padding-left: 8px;
     font-style: italic;
+  }
+  /* The engine's line under a marked move, dimmed and on one line, as
+     a variation would be. */
+  .engine-line {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    margin: 0 0 2px calc(var(--time-col) + 14px);
+    padding: 0 8px 0 6px;
+    border-left: 2px dashed var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .engine-eval {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .engine-turn {
+    flex: none;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 3px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-style: italic;
+    cursor: pointer;
+  }
+  .engine-turn:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+  .engine-label {
+    opacity: 0.7;
   }
   .pending {
     font-style: italic;

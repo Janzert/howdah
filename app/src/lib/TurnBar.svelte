@@ -6,15 +6,12 @@
   interface Props {
     view: SessionView;
     onCommit: () => void;
-    onUndo: () => void;
-    onPass: () => void;
     onTakeBack: () => void;
     onGotoLive: () => void;
-    onCancel: () => void;
     onMoveNow: () => void;
     onEndMatch: () => void;
   }
-  let { view, onCommit, onUndo, onPass, onTakeBack, onGotoLive, onCancel, onMoveNow, onEndMatch }: Props = $props();
+  let { view, onCommit, onTakeBack, onGotoLive, onMoveNow, onEndMatch }: Props = $props();
   const inMatch = $derived(view.players != null);
   /** Both sides play elsewhere: a game watched on arimaa.com. */
   const watching = $derived(view.players?.gold.kind === 'remote' && view.players.silver.kind === 'remote');
@@ -76,18 +73,12 @@
       {#if hasDraft}<strong>{side} setup</strong>{:else}{side} setup{/if}
     </div>
     {#if hasDraft}
-      <div class="note">Drag pieces to swap them.</div>
-      <div class="buttons">
-        <button class="primary" onclick={onCommit}>Confirm setup <kbd>⏎</kbd></button>
-      </div>
+      <div class="note">Drag pieces to swap them, then confirm the setup below the board.</div>
     {/if}
   {:else}
-    <div class="status">
-      <span class="dot {view.position.sideToMove}"></span>
-      <strong>{watching && !view.result ? view.players![view.position.sideToMove].name : side} to move</strong
-      >{#if view.result}&nbsp;(analysis){/if}
-      {#if turn}· step {turn.steps.length}/4{/if}
-    </div>
+    <!-- The player bars show who's to move, and the turn's buttons are
+         beside the bottom one: only what needs saying while a turn is
+         entered. -->
     {#if turn?.pushPending != null}
       <div class="note warn">Finish the push: step a stronger piece into {squareName(turn.pushPending)}</div>
     {:else if turn?.commitBlocker}
@@ -99,26 +90,6 @@
       <div class="note">Planning: this turn is added as a variation, not played.</div>
     {:else if turn && view.movesAfterCursor > 0}
       <div class="note">Playing this adds a variation.</div>
-    {/if}
-    <!-- Watching, the buttons wait until the user starts planning a move. -->
-    {#if !watching || turn}
-      <div class="buttons">
-        <button onclick={onUndo} disabled={!view.canUndo}>Undo step <kbd>⌫</kbd></button>
-        {#if view.canPass}
-          <button onclick={onPass} title="Leave the pieces and give the other side the move, to see what it could do">
-            Pass <kbd>P</kbd>
-          </button>
-        {/if}
-        <button onclick={onCancel} disabled={!turn}>Reset <kbd>Esc</kbd></button>
-        <button
-          class="primary"
-          onclick={onCommit}
-          disabled={!turn || turn.commitBlocker != null}
-          title={planning ? 'End this turn; the other side moves next in the plan' : 'Play this move'}
-        >
-          {planning ? 'End turn' : 'Play'} <kbd>⏎</kbd>
-        </button>
-      </div>
     {/if}
     {#if browsing}
       <div class="buttons">

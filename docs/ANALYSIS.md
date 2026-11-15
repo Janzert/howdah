@@ -378,6 +378,20 @@ blunders; KaTrain marks moves and adds a line only when asked. Here:
   with an intro naming the engine and its eval. The main line doesn't
   change. A move with a move glyph already is left as it is, so a user's
   own judgment wins.
+- **Previewed before they're added** (2026-11-15). Each marked move shows
+  the engine's line (`MoveMark.line`, up to 8 turns, with the eval before
+  the move) dimmed on one line under it, as soon as the mark exists, not
+  only after a run. Clicking one of its moves adds the line up to there
+  (`add_line`), and a move whose line the game already has shows none.
+- **The line from before the shown move** (`SessionView.priorAnalysis`,
+  2026-11-15): the analysis panel shows, on one line, what the engine
+  would have played instead of the shown move, from the stored line of
+  the position before it, or that it was the engine's choice too, or
+  that the position wasn't searched. It needs no second search: the
+  board's own search goes on as before. Arimaa engines rarely agree with
+  the move played (Sharp in a 3-minute run over game 671901 between two
+  strong humans: 10 of 74 moves), so this is wanted for most moves, not
+  only marked ones.
 - **Thresholds** are drops in the eval bar's share (`MARK_DROPS`): 0.10,
   0.15 and 0.25, against the mover. The bar's curve means the same drop in
   rabbits counts for less when far ahead. They're first guesses, to tune
@@ -545,7 +559,7 @@ is refused while the user plays) follows it:
 - The shown position gets no priority; the board shows its stored line as
   before. A click on the eval graph moves that move to the front instead.
 - Provisional marks show lighter, with "provisional" in their tooltip;
-  **Add N marks** still works and says how many are provisional.
+  **Add N marks** still works and its tooltip says how many are provisional.
 - Left for later: the "unsettled search" signal (it needs each search's
   iterations kept, and an output line from Clew), the policy-surprise
   signal, a second engine process, and the measuring harness.
