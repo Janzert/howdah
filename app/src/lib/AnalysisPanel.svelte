@@ -139,43 +139,6 @@
 </script>
 
 <section class="analysis" bind:this={panel} aria-label="Analysis">
-  <header>
-    <select
-      class="engine"
-      aria-label="Analysis engine"
-      value={view.analysisEngine ?? ''}
-      onchange={(e) => onEngine((e.target as HTMLSelectElement).value)}
-    >
-      {#if !view.analysisEngine}<option value="" disabled>engine…</option>{/if}
-      {#each engines as e (e.id)}
-        <option value={e.id}>{e.name}</option>
-      {/each}
-    </select>
-    {#if view.sweep}
-      <button class="small" onclick={() => run(api.stopSweep())} title="Stop analysing the game">Stop</button>
-    {:else}
-      <button
-        class="small"
-        title="Analyse game: a quick look at every position of the main line, then more search where the evals or marks are unsettled, in the time chosen"
-        disabled={phase === 'failed'}
-        onclick={() => run(api.startSweep(sweepMinutes ? sweepMinutes * 60 : null))}>Analyse game</button
-      >
-      <select class="minutes" aria-label="Time for the game" bind:value={sweepMinutes}>
-        {#each SWEEP_MINUTES as m (m)}
-          <option value={m}>{m ? `${m} min` : 'no limit'}</option>
-        {/each}
-      </select>
-    {/if}
-    {#if engine}
-      {@const n = view.analysisOptions.length}
-      <button
-        class="small options"
-        aria-label="Engine options"
-        title="Change the analysis engine's options, or use its buttons"
-        onclick={() => (showOptions = true)}><Icon name="gear" size={14} />{n ? ` ${n}` : ''}</button
-      >
-    {/if}
-  </header>
   {#if view.sweep}
     <div class="sweep">
       {#if view.sweep.phase === 'quick'}
@@ -279,6 +242,45 @@
       </div>
     </details>
   {/if}
+  <!-- At the bottom: the panel grows upward as the PV changes length, so
+       the controls stay put. -->
+  <header>
+    <select
+      class="engine"
+      aria-label="Analysis engine"
+      value={view.analysisEngine ?? ''}
+      onchange={(e) => onEngine((e.target as HTMLSelectElement).value)}
+    >
+      {#if !view.analysisEngine}<option value="" disabled>engine…</option>{/if}
+      {#each engines as e (e.id)}
+        <option value={e.id}>{e.name}</option>
+      {/each}
+    </select>
+    {#if view.sweep}
+      <button class="small" onclick={() => run(api.stopSweep())} title="Stop analysing the game">Stop</button>
+    {:else}
+      <button
+        class="small"
+        title="Analyse game: a quick look at every position of the main line, then more search where the evals or marks are unsettled, in the time chosen"
+        disabled={phase === 'failed'}
+        onclick={() => run(api.startSweep(sweepMinutes ? sweepMinutes * 60 : null))}>Analyse game</button
+      >
+      <select class="minutes" aria-label="Time for the game" bind:value={sweepMinutes}>
+        {#each SWEEP_MINUTES as m (m)}
+          <option value={m}>{m ? `${m} min` : 'no limit'}</option>
+        {/each}
+      </select>
+    {/if}
+    {#if engine}
+      {@const n = view.analysisOptions.length}
+      <button
+        class="small options"
+        aria-label="Engine options"
+        title="Change the analysis engine's options, or use its buttons"
+        onclick={() => (showOptions = true)}><Icon name="gear" size={14} />{n ? ` ${n}` : ''}</button
+      >
+    {/if}
+  </header>
 </section>
 {#if showOptions && engine}
   <GameOptionsDialog
@@ -307,6 +309,9 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    margin-top: 2px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
   }
   select {
     font: inherit;
