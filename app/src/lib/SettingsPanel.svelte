@@ -189,6 +189,11 @@
       <p class="hint">
         Tick for both clocks in a game with no human player here: one watched on arimaa.com, or engine against engine.
       </p>
+      <label class="check gap">
+        <input type="checkbox" bind:checked={settings.chatRoomSound} />
+        Chat room messages
+      </label>
+      <p class="hint">A sound for others' messages in the arimaa.com chat room (also its panel's sound button).</p>
     </section>
 
     <section>

@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { browserCanOpen, chatTime, FACE_EMOJI, luminance, messageColor, parseHex, PIECE_SYMBOLS } from './chatroom';
+import type { ChatEventKind } from './bindings/ChatEventKind';
+import type { ChatRoomView } from './bindings/ChatRoomView';
+import {
+  browserCanOpen,
+  chatTime,
+  FACE_EMOJI,
+  luminance,
+  messageColor,
+  newRoomMessages,
+  parseHex,
+  PIECE_SYMBOLS,
+} from './chatroom';
 
 describe('chat room colors', () => {
   it('hides white, the spoiler tag, and only white', () => {
@@ -76,5 +87,50 @@ describe('browserCanOpen', () => {
     expect(browserCanOpen('http://www.arimaa.com/arimaa/gameroom/playerpage.cgi?id=1')).toBe(false);
     expect(browserCanOpen('http://arimaa.com/arimaa/games/jsShowGame.cgi?gid=1')).toBe(true);
     expect(browserCanOpen('https://example.com/arimaa/gameroom/')).toBe(true);
+  });
+});
+
+describe('chat room sound', () => {
+  const ev = (id: number, user: string, kind: ChatEventKind = 'message') => ({
+    id,
+    time: 1000 + id,
+    user,
+    kind,
+    color: null,
+    emote: false,
+    parts: [],
+  });
+  const room = (events: ReturnType<typeof ev>[], state: ChatRoomView['state'] = 'in'): ChatRoomView => ({
+    state,
+    user: 'me',
+    users: ['me', 'ann'],
+    count: 2,
+    events,
+    note: null,
+    autoLeave: true,
+  });
+
+  it("counts others' new messages", () => {
+    const before = room([ev(1, 'ann')]);
+    expect(newRoomMessages(before, room([ev(1, 'ann'), ev(2, 'ann'), ev(3, 'bob')]))).toBe(2);
+  });
+
+  it('leaves out the user, comings and goings, and nothing new', () => {
+    const before = room([ev(1, 'ann')]);
+    expect(newRoomMessages(before, room([ev(1, 'ann'), ev(2, 'me')]))).toBe(0);
+    expect(newRoomMessages(before, room([ev(1, 'ann'), ev(2, 'bob', 'in'), ev(3, 'ann', 'out')]))).toBe(0);
+    expect(newRoomMessages(before, before)).toBe(0);
+  });
+
+  it('is quiet on entering and outside the room', () => {
+    const backlog = room([ev(1, 'ann'), ev(2, 'bob')]);
+    expect(newRoomMessages(null, backlog)).toBe(0);
+    expect(newRoomMessages(room([], 'entering'), backlog)).toBe(0);
+    expect(newRoomMessages(room([], 'out'), backlog)).toBe(0);
+    expect(newRoomMessages(backlog, room([ev(1, 'ann'), ev(2, 'bob'), ev(3, 'ann')], 'out'))).toBe(0);
+  });
+
+  it('counts from an empty log', () => {
+    expect(newRoomMessages(room([]), room([ev(0, 'ann')]))).toBe(1);
   });
 });

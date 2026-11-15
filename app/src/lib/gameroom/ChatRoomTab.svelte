@@ -13,6 +13,7 @@
   import { clock } from '../clock.svelte';
   import { settings } from '../settings.svelte';
   import { findTheme } from '@howdah/board/theme';
+  import Icon from '../Icon.svelte';
   import ChatLine from './ChatLine.svelte';
   import { chatroom } from './chatroom.svelte';
   import { darkMode } from './darkMode.svelte';
@@ -266,6 +267,16 @@
         {/each}
       </ul>
       <span class="spacer"></span>
+      <button
+        class="icon"
+        aria-pressed={!settings.chatRoomSound}
+        aria-label={settings.chatRoomSound ? 'Mute the chat room' : 'Unmute the chat room'}
+        title={settings.chatRoomSound
+          ? "Mute the chat room (no sound for others' messages)"
+          : "Unmute the chat room (a sound for others' messages)"}
+        onclick={() => (settings.chatRoomSound = !settings.chatRoomSound)}
+        ><Icon name={settings.chatRoomSound ? 'sound' : 'soundOff'} size={16} /></button
+      >
       <button onclick={() => gameroom.show('archive')} title="Earlier days of the room, kept here">Archive</button>
       <button
         onclick={() => chatroom.leave()}

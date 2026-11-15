@@ -1177,7 +1177,10 @@ plans the engine test and tournament runner.
       (spectators keep lastStep). setupDone for other committed setups; illegal
       when a drop is refused. At an arimaa.com seat `watchSounds`
       (`lib/gameroom.ts`) gives join, leave, chat and illegal (a move the
-      server refused); notification plays for an opponent's takeback
+      server refused); chat also plays for others' messages in the
+      chat room (`newRoomMessages` in `lib/chatroom.ts`, from the
+      `chatroom` store, unless the `chatRoomSound` setting is off: the
+      room's sound button or Settings); notification plays for an opponent's takeback
       request, invitations and their answers, and postal moves due. The
       low-time tick (`Metal2_3.wav`) plays while a human's clock runs, on
       4steps' schedule (`lib/clock.ts`).

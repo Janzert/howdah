@@ -1,4 +1,5 @@
 // The gameroom chat room's look: message colors, spoilers and times.
+import type { ChatRoomView } from './bindings/ChatRoomView';
 import type { Color } from './bindings/Color';
 import type { PieceKind } from './bindings/PieceKind';
 
@@ -134,4 +135,13 @@ export const PIECE_SYMBOLS: { symbol: string; color: Color; piece: PieceKind }[]
  * its gameroom only to a visitor coming from the gameroom. */
 export function browserCanOpen(url: string): boolean {
   return !/^https?:\/\/(www\.)?arimaa\.com\/arimaa\/gameroom\//i.test(url);
+}
+
+/** How many messages from others `next` adds to `prev`, while the user
+ * stays in the room. Entering brings the room's recent past, which isn't
+ * news, and the user's own messages make no sound. */
+export function newRoomMessages(prev: ChatRoomView | null, next: ChatRoomView): number {
+  if (prev?.state !== 'in' || next.state !== 'in') return 0;
+  const last = prev.events.at(-1)?.id ?? -1;
+  return next.events.filter((e) => e.id > last && e.kind === 'message' && e.user !== next.user).length;
 }

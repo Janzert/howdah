@@ -31,6 +31,8 @@ export interface SettingsData {
   volume: number;
   /** Play the low-time ticks for both clocks when watching a game. */
   spectatorTicks: boolean;
+  /** Play the chat sound for others' messages in the gameroom's chat room. */
+  chatRoomSound: boolean;
   /** How long a piece takes to slide one step, in ms; 0 shows moves at once. */
   stepMs: number;
   hoverInput: HoverInput;
@@ -66,6 +68,7 @@ export const DEFAULTS: SettingsData = {
   sound: true,
   volume: 100,
   spectatorTicks: false,
+  chatRoomSound: true,
   stepMs: STEP_MS,
   hoverInput: 'off',
   continueTurns: true,
@@ -111,6 +114,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
     s.volume = Math.round(Math.min(100, Math.max(0, raw.volume)));
   }
   if (typeof raw.spectatorTicks === 'boolean') s.spectatorTicks = raw.spectatorTicks;
+  if (typeof raw.chatRoomSound === 'boolean') s.chatRoomSound = raw.chatRoomSound;
   if (typeof raw.stepMs === 'number' && Number.isFinite(raw.stepMs)) {
     s.stepMs = Math.round(Math.min(MAX_STEP_MS, Math.max(0, raw.stepMs)));
   }
@@ -173,6 +177,12 @@ class Settings {
   }
   set spectatorTicks(v: boolean) {
     this.update({ spectatorTicks: v });
+  }
+  get chatRoomSound() {
+    return this.#data.chatRoomSound;
+  }
+  set chatRoomSound(v: boolean) {
+    this.update({ chatRoomSound: v });
   }
   get stepMs() {
     return this.#data.stepMs;

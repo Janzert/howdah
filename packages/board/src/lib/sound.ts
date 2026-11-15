@@ -40,7 +40,7 @@ export type SoundName =
   | 'tick' // the low-time clock
   | 'join' // the opponent sits down at the table, or comes back
   | 'leave' // the opponent leaves the table
-  | 'chat' // an opponent's chat line
+  | 'chat' // an opponent's chat line, or someone else's in the chat room
   | 'notification'; // a takeback request, an invitation, a postal move due
 
 /** The sounds a theme can replace. */

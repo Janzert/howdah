@@ -2,7 +2,8 @@
 // (`chatroom://changed`), what the user has read, and their color. One
 // instance, `chatroom`, in the lobby window.
 import { api, errorMessage } from '../api';
-import { CHAT_PALETTE, SPOILER_COLOR } from '../chatroom';
+import { play } from '@howdah/board/sound';
+import { CHAT_PALETTE, newRoomMessages, SPOILER_COLOR } from '../chatroom';
 import type { ChatEventView } from '../bindings/ChatEventView';
 import type { ChatRoomView } from '../bindings/ChatRoomView';
 import { on } from '../events';
@@ -72,6 +73,7 @@ class ChatRoomStore {
     const unlisten = on('chatroom://changed', (v) => {
       // What the room sends on entering is its recent past, not news.
       if (v.state === 'in' && this.view?.state !== 'in') this.#seen = v.events.at(-1)?.id ?? -1;
+      if (settings.chatRoomSound && newRoomMessages(this.view, v) > 0) play('chat');
       if (v.state === 'out') this.#resetEarlier();
       else this.#keepDropped(v);
       this.view = v;
