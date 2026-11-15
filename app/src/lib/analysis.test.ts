@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analysisEngine,
   barEval,
+  earlierEval,
   evalGraph,
   evalTitle,
   formatChance,
@@ -156,5 +157,27 @@ describe('barEval', () => {
     }
     expect(barEval(null, searched)).toBe(searched);
     expect(barEval(null, null)).toBeNull();
+  });
+});
+
+describe('earlierEval', () => {
+  const node = (id: number, parent: number, value: number | null) =>
+    ({
+      id,
+      parent,
+      eval: value == null ? null : { kind: 'centiRabbits', value, chance: null },
+    }) as unknown as MoveNodeView;
+  // 1 (+50) - 2 (none) - 3 (none); a variation 4 (+300) - 5 (none) from 2.
+  const tree = [node(1, 0, 50), node(2, 1, null), node(3, 2, null), node(4, 2, 300), node(5, 4, null)];
+
+  it('walks back along the line to a move with an eval', () => {
+    expect(earlierEval(tree, 3)).toEqual({ kind: 'centiRabbits', value: 50, chance: null });
+    expect(earlierEval(tree, 5)).toEqual({ kind: 'centiRabbits', value: 300, chance: null });
+  });
+
+  it("leaves out the node's own eval, and finds none before the first", () => {
+    expect(earlierEval(tree, 4)).toMatchObject({ value: 50 });
+    expect(earlierEval(tree, 1)).toBeNull();
+    expect(earlierEval(tree, 0)).toBeNull();
   });
 });

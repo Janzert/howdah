@@ -54,10 +54,10 @@
     run,
   }: Props = $props();
 
-  /** Times in all to choose from for a run over the game, in minutes; 0
-   * runs until stopped. */
-  const SWEEP_MINUTES = [1, 2, 5, 10, 30, 0];
-  let sweepMinutes = $state(5);
+  /** Times in all to choose from for a run over the game, in minutes; 0,
+   * the default, runs until stopped. */
+  const SWEEP_MINUTES = [0, 1, 2, 5, 10, 30];
+  let sweepMinutes = $state(0);
   const marked = $derived(view.tree.filter((m) => m.depth === 0 && m.mark));
   const marks = $derived(marked.length);
   const provisional = $derived(marked.filter((m) => m.mark?.provisional).length);

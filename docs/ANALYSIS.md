@@ -261,7 +261,12 @@ pub enum Score {
   gold's share fills from gold's end, so it follows the board when it's
   flipped. Centi-rabbits map through a logistic, `1 / (1 + e^(-cr/k))`,
   with `k` to be tuned (300 puts a rabbit up at about 58%). A win fills it
-  and shows `W`/`L` in place of the number.
+  and shows `W`/`L` in place of the number. Until the shown position has
+  an eval (no stored line, and the search hasn't reported yet, as when a
+  live move comes in while a long sweep search finishes), the bar shows
+  no fill, hatched, rather than an even game; the hidden fill waits at
+  the nearest earlier move's eval (`earlierEval`), so the first eval
+  grows from there.
 - **PV arrows.** The first PV turn's steps are drawn the way last-move
   trails are (`lastMoveTrails`, dashed for pushes and pulls), in an
   engine color, over the last-move layer. They show while the board is at
@@ -546,7 +551,8 @@ is refused while the user plays) follows it:
   signal, a second engine process, and the measuring harness.
 
 **Until stopped** (added 2026-11-14, decided with Brian). The panel's
-time menu ends with "Until stopped" (`start_sweep(None)`):
+time menu starts with "Until stopped" (`start_sweep(None)`), the default;
+the budgets follow it:
 
 - The quick pass gets a fixed 0.5 s a position (`UNTIL_STOPPED_QUICK`),
   since there's no budget to take a tenth of.

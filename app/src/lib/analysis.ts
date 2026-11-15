@@ -23,6 +23,19 @@ export function goldShare(e: Eval | null): number {
   return 1 / (1 + Math.exp(-e.value / EVAL_BAR_SCALE));
 }
 
+/** The eval of the nearest move before `node` on its line that analysis
+ * looked at, or null: where the eval bar fills from when the shown
+ * position's first eval arrives. */
+export function earlierEval(tree: MoveNodeView[], node: NodeId): Eval | null {
+  const byId = new Map(tree.map((n) => [n.id, n]));
+  let at = byId.get(node);
+  while (at) {
+    at = byId.get(at.parent);
+    if (at?.eval) return at.eval;
+  }
+  return null;
+}
+
 /** The eval the bar shows at a node: a win for the winner when the
  * position itself ends the game (goal, elimination, immobilization),
  * since engines don't search a finished position; otherwise the search's
