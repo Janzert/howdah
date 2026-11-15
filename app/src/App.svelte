@@ -1038,7 +1038,7 @@
           <WatchPanel {watch} {view} {run} {receivedAt} {now} onNewGame={newOnlineGame} />
         {/if}
         {#if (hasEngine || view.testGame) && view.players}
-          <EnginePanel players={view.players} resetKey={matchKey} {engines} daemon={view.testGame != null} />
+          <EnginePanel players={view.players} resetKey={matchKey} {engines} daemon={view.testGame != null} {flipped} />
         {/if}
         {#if analysisShown}
           <AnalysisPanel

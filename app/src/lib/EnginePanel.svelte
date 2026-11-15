@@ -17,8 +17,10 @@
     engines: EngineSpec[];
     /** An engine test's game: both sides are engines the daemon runs. */
     daemon?: boolean;
+    /** Whether the board shows gold at the top, so gold is listed first. */
+    flipped?: boolean;
   }
-  let { players, resetKey, engines, daemon = false }: Props = $props();
+  let { players, resetKey, engines, daemon = false, flipped = false }: Props = $props();
 
   /** The side whose engine options are being changed. */
   let optionsFor = $state<Color | null>(null);
@@ -105,7 +107,12 @@
     }
   }
 
-  const sides = $derived((['gold', 'silver'] as Color[]).filter((c) => daemon || players[c].kind === 'engine'));
+  /** Listed in the board's order, top side first. */
+  const sides = $derived(
+    ((flipped ? ['gold', 'silver'] : ['silver', 'gold']) as Color[]).filter(
+      (c) => daemon || players[c].kind === 'engine',
+    ),
+  );
 
   function scrollToEnd(node: HTMLElement, _lines: unknown) {
     const go = () => (node.scrollTop = node.scrollHeight);

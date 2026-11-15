@@ -21,6 +21,9 @@ young).
 
 ### Changed
 
+- In an engine game, the side panel lists the engines in the board's
+  order, the side at the top first, instead of always gold first.
+
 - Analyse game takes a time for the whole game instead of a time a
   position. It gives every position a quick look, then spends the rest
   where the evals or the marks are least settled, so the marks most
