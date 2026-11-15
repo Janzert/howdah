@@ -312,7 +312,8 @@ These aren't in the first version, but the design above leaves room:
   holding one, `AnalysisView` carries the slot, and each slot gets a panel
   section and an arrow color. AEI has no multi-PV, so this is how lines are
   compared.
-- **Whole-game analysis, next steps:** a depth instead of a time, and a run that uses a
+- **Whole-game analysis, next steps:** an adaptive run (see "Adaptive
+  runs" under "Whole-game analysis"), and a run that uses a
   second engine so the shown position stays analysed. Caching by position
   hash (across transpositions and games) belongs with the game database.
 - **`%eval` in records**, from `evals`, as an export option.
@@ -377,6 +378,146 @@ blunders; KaTrain marks moves and adds a line only when asked. Here:
   any order.
 - **Limits.** Evals from short visits count like a run's, a mark needs the
   evals on both sides of the move, and setups aren't judged.
+
+### Adaptive runs (proposed)
+
+Status: a proposal (2026-11-14), not built. It would replace the fixed
+time a position with a quick pass over the game and then more search
+where it's most likely to change the graph or the marks.
+
+**What other clients do** (checked 2026-11-14). Most give every position
+the same budget: lichess and chess.com a fixed one, so neighbouring
+evals compare; Fritz's Blunder Check and Full Analysis a time a move
+(its help calls it a "minimum time") and a mistake threshold, skipping
+positions it already knows; En Croissant and Scid a depth or time a
+move. Go clients split the run in two. KaTrain uses a small budget
+(`fast_visits` 25) for quick looks and `max_visits` 500 otherwise, and
+leaves going deeper to the user: one position, "equalize visits" over the
+candidates, or a deeper run over the whole game (F2). LizzieYzy's Flash
+Analyze runs every position at once through KataGo's analysis engine
+for a quick graph. GNU Backgammon is the one that adapts by itself: its
+move filters search more deeply only the moves close to the best, and
+(by a 2003 list post, not confirmed as current) it forces full depth
+when the move played is doubtful, so every error is judged at the same
+level. That last point matters here too: a mark compares two evals.
+
+**Two phases.**
+
+1. **A quick pass** over the main line, forward, at a short time or a
+   small depth: a rough graph and provisional marks within seconds.
+2. **Refinement** from a priority queue. Each visit to a position doubles
+   its time over its last one. The run ends when a total budget is spent
+   or nothing is left worth searching.
+
+The user picks the total ("about 5 minutes"), not seconds a position.
+A longer budget on a game already analysed just goes on refining.
+
+**Priority.** Each position gets a score from these signals, roughly in
+order of value; the weights are first guesses, to tune as below.
+
+- **Self-consistency.** If the move played was the engine's own first PV
+  turn, the next position's eval should be about this one's. A gap means
+  one of the two searches was shallow. It costs nothing: the data is in
+  `evals`.
+- **Spikes.** A position whose eval is far from both neighbours', on the
+  same side, usually hides a tactic one search missed.
+- **A mark that could change.** A move whose drop is near one of
+  `MARK_DROPS`' thresholds could gain or lose a mark with more search. A
+  move far from every threshold, or one matching the PV's first turn
+  (which is never marked), is settled as far as marks go.
+- **Unsettled search.** The best turn changed in the last iteration or
+  two, or the score moved a lot between depths. OpFor's `info` lines at
+  each depth and Sharp's `log ID` lines give this, so the stored line
+  needs a little of the search's history (the last two iterations' score
+  and first turn), not only the deepest result.
+- **How close the game is.** Weighted by the eval bar's share: an even
+  position counts most, +8 little, and a proven result needs no more
+  search. The marks already work on the share, so this fits them.
+
+**Moves are refined in pairs.** When a move is in question, the
+positions before and after it are both searched to about the same time,
+so a mark never compares a deep eval with a shallow one. When a visit
+moves an eval a lot, both its neighbours go back in the queue.
+
+**Order, and the engines' tables.** Both engines start cold after
+`newgame`: OpFor marks its tables stale and clears them at the next `go`
+(`new_game`, `clear_stale_tables`), and Sharp makes a new `AsyncBot`.
+The actor sends `newgame` whenever a position's moves don't extend the
+last ones, so a run that goes backward or jumps around starts every
+search cold. Going forward only sends `makemove`s and keeps the tables.
+So the quick pass goes forward, and refinement takes its positions in
+batches, the best few at a time, each batch in game order.
+
+**UI.**
+
+- The graph and the move list update as positions are refined.
+- Marks show as provisional until the positions on both sides of the
+  move are settled.
+- Clicking a move or a point of the graph moves that position to the
+  front of the queue.
+- Progress reads as the phase and what's left ("quick pass 40/88",
+  "refining, 3:10 left"), not one count.
+
+**Measuring.** Take a set of games and analyse each deeply as the
+reference. Run the adaptive run and the current sweep at the same total
+time and compare them with it: marks right and wrong, and how far the
+evals are. The weights and the quick pass's time are tuned the same way.
+
+**MCTS engines.** The plan carries over to network engines that search
+by MCTS (Clew, and others like it), with two signals read differently.
+
+- **What fits as is.** Clew's `info score` is its win chance put through
+  the eval bar's own curve (300 ln(p / (1 − p))), so the bar's share is
+  its win rate, and the marks' thresholds and the closeness weighting mean
+  the same for it. Its `info proven win` is a decided result.
+- **Order matters more.** Clew keeps its tree across `makemove`
+  (nodes are found by position) and drops it on `newgame`, as the
+  others drop their tables. But what carries over is the search itself:
+  after the turn the engine expected, the next position already has
+  most of the visits under it. So the forward quick pass and the batches
+  in game order count for more here.
+- **Doubling suits it.** Strength grows smoothly with visits, where
+  alpha-beta gains a ply at a time.
+- **Unsettled search, read another way.** MCTS has no iterations (Clew's
+  `info depth` is the PV's length in steps), so a score change between
+  depths means nothing. Its signs are the best turn's share of the root's
+  visits and its lead in value over the second, the value drifting across
+  reports, and the most visited turn not being the best valued. Over AEI
+  only the drift shows now; Clew could add a line with its top two root
+  turns' visits and values, and reading it goes in `Profile`, like the
+  rest of an engine family's quirks.
+- **Errors look different.** Its evals are smoother than alpha-beta's,
+  with fewer horizon effects; its misses are the value head's blind spots,
+  often slow tactics and goal threats. Self-consistency still catches
+  them, and stays the best single signal.
+- **A cheaper quick pass.** A single visit is the value head's eval, and
+  a few dozen are a fraction of a second, so the quick pass can be much
+  smaller than an alpha-beta engine's.
+- **Surprise.** A move played that the policy gave little weight to is
+  worth a look even when the evals agree. AEI can't carry the policy's
+  prior for a given move; the engine could log the root's priors, or
+  Howdah could use the move's share of the visits at the position before.
+- **Batching.** Flash Analyze is fast because KataGo's analysis engine
+  evaluates many positions in one GPU batch. AEI is one position at a
+  time per process, so the most here is two processes splitting the
+  quick pass. Batching across positions would need an AEI extension, not
+  worth it yet.
+
+The budget stays a time, which every engine understands. A count per
+engine family (visits for MCTS, a depth for the others) could come later,
+for comparison runs that need to be repeatable.
+
+**Later.** A second engine process (within the 8-thread limit) could do
+the quick pass while the first refines, like Flash Analyze.
+
+**Open questions.**
+
+- The quick pass's budget: a time, or a depth per engine (Sharp's and
+  OpFor's depths don't mean the same).
+- Whether the shown position gets priority while a run goes on, or the
+  board just shows the stored line as now.
+- How provisional marks look, and whether **Add N marks** waits for them
+  to settle or warns.
 
 ## Build order
 
