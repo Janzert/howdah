@@ -3,6 +3,8 @@ import {
   analysisEngine,
   barEval,
   evalGraph,
+  evalTitle,
+  formatChance,
   formatEval,
   formatRabbits,
   goldShare,
@@ -19,7 +21,7 @@ import type { MoveNodeView } from './bindings/MoveNodeView';
 const line = (over: Partial<AnalysisLine> = {}): AnalysisLine => ({
   node: 3,
   depth: '12',
-  eval: { kind: 'centiRabbits', value: 35 },
+  eval: { kind: 'centiRabbits', value: 35, chance: null },
   pv: [
     { label: '3g', notation: 'Ee2n Ee3n', steps: null },
     { label: '3s', notation: 'ee7s', steps: null },
@@ -31,19 +33,32 @@ const line = (over: Partial<AnalysisLine> = {}): AnalysisLine => ({
 
 describe('analysis display', () => {
   it('reads evals from gold’s side', () => {
-    expect(formatEval({ kind: 'centiRabbits', value: 35 })).toBe('+0.35');
-    expect(formatEval({ kind: 'centiRabbits', value: -120 })).toBe('−1.20');
-    expect(formatEval({ kind: 'centiRabbits', value: 0 })).toBe('0.00');
+    expect(formatEval({ kind: 'centiRabbits', value: 35, chance: null })).toBe('+0.35');
+    expect(formatEval({ kind: 'centiRabbits', value: -120, chance: null })).toBe('−1.20');
+    expect(formatEval({ kind: 'centiRabbits', value: 0, chance: null })).toBe('0.00');
     expect(formatEval({ kind: 'decided', winner: 'silver' })).toBe('Silver wins');
     expect(formatEval(null)).toBe('');
     expect(formatRabbits(-5)).toBe('−0.05');
   });
 
+  it('reads a win chance as gold’s', () => {
+    const e: Eval = { kind: 'centiRabbits', value: 166, chance: 637 };
+    expect(formatEval(e)).toBe('Gold 64%');
+    expect(shortEval(e)).toBe('64%');
+    expect(goldShare(e)).toBe(0.637);
+    expect(evalTitle(e)).toBe("Gold's chance of winning 64%; +1.66 in rabbits");
+    expect(evalTitle({ kind: 'centiRabbits', value: -35, chance: null })).toBe("−0.35 rabbits, from gold's side");
+    expect(formatChance(996)).toBe('99.6%');
+    expect(formatChance(4)).toBe('0.4%');
+    expect(formatChance(10)).toBe('1%');
+    expect(formatChance(1000)).toBe('100.0%');
+  });
+
   it('fills the eval bar from gold’s end', () => {
     expect(goldShare(null)).toBe(0.5);
-    expect(goldShare({ kind: 'centiRabbits', value: 0 })).toBe(0.5);
-    expect(goldShare({ kind: 'centiRabbits', value: 100 })).toBeCloseTo(0.58, 2);
-    expect(goldShare({ kind: 'centiRabbits', value: -100 })).toBeCloseTo(0.42, 2);
+    expect(goldShare({ kind: 'centiRabbits', value: 0, chance: null })).toBe(0.5);
+    expect(goldShare({ kind: 'centiRabbits', value: 100, chance: null })).toBeCloseTo(0.58, 2);
+    expect(goldShare({ kind: 'centiRabbits', value: -100, chance: null })).toBeCloseTo(0.42, 2);
     expect(goldShare({ kind: 'decided', winner: 'gold' })).toBe(1);
     expect(goldShare({ kind: 'decided', winner: 'silver' })).toBe(0);
   });
@@ -75,7 +90,7 @@ describe('evalGraph', () => {
       ply,
       depth,
       label: `${ply}g`,
-      eval: value == null ? null : { kind: 'centiRabbits', value },
+      eval: value == null ? null : { kind: 'centiRabbits', value, chance: null },
     }) as unknown as MoveNodeView;
 
   it('is empty without evals', () => {
@@ -98,7 +113,7 @@ describe('evalGraph', () => {
 describe('shortEval', () => {
   it('shows a win as on the eval bar', () => {
     expect(shortEval({ kind: 'decided', winner: 'silver' } as Eval)).toBe('L');
-    expect(shortEval({ kind: 'centiRabbits', value: 35 })).toBe('+0.35');
+    expect(shortEval({ kind: 'centiRabbits', value: 35, chance: null })).toBe('+0.35');
   });
 });
 
@@ -110,7 +125,7 @@ describe('markTitle', () => {
 });
 
 describe('barEval', () => {
-  const searched: Eval = { kind: 'centiRabbits', value: 0 };
+  const searched: Eval = { kind: 'centiRabbits', value: 0, chance: null };
   it('gives the winner the bar when the position ends the game', () => {
     for (const reason of ['goal', 'elimination', 'immobilization'] as const) {
       expect(barEval({ winner: 'silver', reason }, searched)).toEqual({ kind: 'decided', winner: 'silver' });

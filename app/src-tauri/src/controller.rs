@@ -23,8 +23,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::backend::{Events, emit, emit_session};
 use crate::dto::{
-    AnalysisLine, AnalysisState, AnalysisView, EngineOption, EngineOutput, EngineOutputKind, EngineSpec,
-    Eval, PvTurn,
+    AnalysisLine, AnalysisState, AnalysisView, EVAL_BAR_SCALE, EngineOption, EngineOutput, EngineOutputKind,
+    EngineSpec, Eval, PvTurn,
 };
 use crate::engines::{EngineRegistry, engine_config};
 use crate::session::{AnalysisEngine, AnalysisTarget, Session, depth_key, steps_view};
@@ -179,6 +179,9 @@ struct Analysis {
     log: Vec<String>,
     /// A PV was cut short at an illegal move in this search (logged once).
     pv_cut: bool,
+    /// The engine said this search's result is proven (`info proven`), so
+    /// its scores no longer change the eval.
+    proven: bool,
     /// Something changed since the last update.
     dirty: bool,
     sent_at: Option<Instant>,
@@ -401,6 +404,7 @@ impl Coordinator {
                     }
                     a.line = None;
                     a.pv_cut = false;
+                    a.proven = false;
                 }
             }
             changed = true;
@@ -443,6 +447,7 @@ impl Coordinator {
             line: None,
             log: Vec::new(),
             pv_cut: false,
+            proven: false,
             dirty: true,
             sent_at: None,
         })
@@ -697,6 +702,7 @@ impl Analysis {
         self.target = Some(target);
         self.line = None;
         self.pv_cut = false;
+        self.proven = false;
         self.set_stop_time();
     }
 
@@ -714,21 +720,18 @@ impl Analysis {
         let search = Search {
             kind: EngineOutputKind::Info,
             text: format!("bestmove {text}"),
-            depth: None,
-            score: None,
             pv: (no_pv && playable).then(|| vec![text]),
-            nodes: None,
-            time: None,
+            ..Search::default()
         };
         self.read(search);
     }
 
     /// Takes in one line of the current search's output.
-    fn read(&mut self, search: Search) {
+    fn read(&mut self, mut search: Search) {
         let Some(t) = &self.target else { return };
         let progress = search.progress();
         if !search.text.is_empty() {
-            self.log.push(search.text);
+            self.log.push(std::mem::take(&mut search.text));
         }
         if !progress {
             return;
@@ -742,11 +745,9 @@ impl Analysis {
             nodes: None,
             time_ms: None,
         });
+        line.eval = update_eval(line.eval, &mut self.proven, &search, mover);
         if let Some(d) = search.depth {
             line.depth = Some(d);
-        }
-        if let Some(score) = search.score {
-            line.eval = Some(eval_for_gold(score, mover));
         }
         if let Some(n) = search.nodes {
             line.nodes = Some(n);
@@ -787,7 +788,7 @@ impl AnalysisView {
 fn eval_for_gold(score: Score, mover: Color) -> Eval {
     let score = if mover == Color::Silver { score.flipped() } else { score };
     match score {
-        Score::CentiRabbits(value) => Eval::CentiRabbits { value },
+        Score::CentiRabbits(value) => Eval::CentiRabbits { value, chance: None },
         Score::Win => Eval::Decided { winner: Color::Gold },
         Score::Loss => Eval::Decided { winner: Color::Silver },
     }
@@ -1137,8 +1138,50 @@ fn log_depth(depth: &str) -> String {
     }
 }
 
+/// A line's eval after one engine message: a new score keeps the win
+/// chance the engine gave with the last one, a chance (`info winrate`)
+/// joins the last score (or makes one), and once the engine says the
+/// result is proven (`info proven`, which sets `proven`), only another
+/// such message changes it.
+fn update_eval(eval: Option<Eval>, proven: &mut bool, search: &Search, mover: Color) -> Option<Eval> {
+    if search.proven {
+        *proven = true;
+    } else if *proven {
+        return eval;
+    }
+    let mut eval = eval;
+    if let Some(score) = search.score {
+        let chance = match eval {
+            Some(Eval::CentiRabbits { chance, .. }) => chance,
+            _ => None,
+        };
+        eval = Some(match eval_for_gold(score, mover) {
+            Eval::CentiRabbits { value, .. } => Eval::CentiRabbits { value, chance },
+            decided => decided,
+        });
+    }
+    if let Some(p) = search.win_rate {
+        let gold = if mover == Color::Gold { p } else { 1.0 - p };
+        let chance = Some((gold * 1000.0).round() as u16);
+        eval = Some(match eval {
+            Some(Eval::CentiRabbits { value, .. }) => Eval::CentiRabbits { value, chance },
+            // No score yet: one from the chance, on the eval bar's scale.
+            _ => Eval::CentiRabbits { value: centi_rabbits_for_chance(gold), chance },
+        });
+    }
+    eval
+}
+
+/// Centi-rabbits for gold's chance of winning, on the eval bar's scale
+/// (`gold_share` in `session.rs`), the chance kept within 0.1% to 99.9%.
+fn centi_rabbits_for_chance(gold: f64) -> i32 {
+    let p = gold.clamp(0.001, 0.999);
+    (EVAL_BAR_SCALE * (p / (1.0 - p)).ln()).round() as i32
+}
+
 /// One engine message, read for display and for what it says about the
 /// search (each field present only if the message carries it).
+#[derive(Default)]
 struct Search {
     kind: EngineOutputKind,
     /// Display text, e.g. `depth 12+` or the log line.
@@ -1150,6 +1193,10 @@ struct Search {
     nodes: Option<u64>,
     /// Seconds.
     time: Option<f64>,
+    /// The mover's chance of winning, 0 to 1.
+    win_rate: Option<f64>,
+    /// `score` is a proven result from `info proven`.
+    proven: bool,
 }
 
 impl Search {
@@ -1160,21 +1207,15 @@ impl Search {
             || self.pv.is_some()
             || self.nodes.is_some()
             || self.time.is_some()
+            || self.win_rate.is_some()
+            || self.proven
     }
 }
 
 /// Reads an engine message as the engine's profile says. `None` for
 /// messages that aren't worth showing.
 fn read_search(profile: Profile, msg: EngineMessage) -> Option<Search> {
-    let mut out = Search {
-        kind: EngineOutputKind::Info,
-        text: String::new(),
-        depth: None,
-        score: None,
-        pv: None,
-        nodes: None,
-        time: None,
-    };
+    let mut out = Search::default();
     match msg {
         EngineMessage::Info(info) => {
             out.text = match info {
@@ -1199,6 +1240,16 @@ fn read_search(profile: Profile, msg: EngineMessage) -> Option<Search> {
                 Info::Time(t) => {
                     out.time = Some(t);
                     format!("time {t}")
+                }
+                Info::WinRate(p) => {
+                    out.win_rate = Some(p);
+                    format!("winrate {p}")
+                }
+                Info::Proven { win, turns } => {
+                    out.score = Some(if win { Score::Win } else { Score::Loss });
+                    out.proven = true;
+                    let n = turns.map_or_else(String::new, |n| format!(" {n}"));
+                    format!("proven {}{n}", if win { "win" } else { "loss" })
                 }
                 Info::CurrMoveNumber(n) => format!("currmovenumber {n}"),
                 Info::Other { key, value } => format!("{key} {value}"),
@@ -1284,9 +1335,58 @@ mod tests {
 
     #[test]
     fn evals_are_from_golds_side() {
-        assert_eq!(eval_for_gold(Score::CentiRabbits(40), Color::Silver), Eval::CentiRabbits { value: -40 });
+        assert_eq!(
+            eval_for_gold(Score::CentiRabbits(40), Color::Silver),
+            Eval::CentiRabbits { value: -40, chance: None }
+        );
         assert_eq!(eval_for_gold(Score::Win, Color::Silver), Eval::Decided { winner: Color::Silver });
         assert_eq!(eval_for_gold(Score::Win, Color::Gold), Eval::Decided { winner: Color::Gold });
+    }
+
+    #[test]
+    fn win_chances_join_scores_and_proofs_stay() {
+        let info =
+            |text: &str| read_search(Profile::Generic, EngineMessage::Info(Info::parse(text))).unwrap();
+        let mut proven = false;
+        let mut eval = None;
+        let mut feed = |eval: &mut Option<Eval>, text: &str, mover| {
+            *eval = update_eval(*eval, &mut proven, &info(text), mover);
+            *eval
+        };
+        // A chance alone gets a score on the eval bar's scale; silver's
+        // chance is gold's complement.
+        assert_eq!(
+            feed(&mut eval, "winrate 0.25", Color::Silver),
+            Some(Eval::CentiRabbits { value: 330, chance: Some(750) })
+        );
+        // A score keeps the chance, and the next chance keeps the score.
+        assert_eq!(
+            feed(&mut eval, "score -120", Color::Silver),
+            Some(Eval::CentiRabbits { value: 120, chance: Some(750) })
+        );
+        assert_eq!(
+            feed(&mut eval, "winrate 0.3", Color::Silver),
+            Some(Eval::CentiRabbits { value: 120, chance: Some(700) })
+        );
+        // A proof holds against later scores and chances.
+        assert_eq!(
+            feed(&mut eval, "proven win 2", Color::Silver),
+            Some(Eval::Decided { winner: Color::Silver })
+        );
+        assert_eq!(
+            feed(&mut eval, "score 1000", Color::Silver),
+            Some(Eval::Decided { winner: Color::Silver })
+        );
+        assert_eq!(
+            feed(&mut eval, "winrate 0.9", Color::Silver),
+            Some(Eval::Decided { winner: Color::Silver })
+        );
+        assert_eq!(
+            feed(&mut eval, "proven loss", Color::Gold),
+            Some(Eval::Decided { winner: Color::Silver })
+        );
+        assert_eq!(centi_rabbits_for_chance(0.5), 0);
+        assert_eq!(centi_rabbits_for_chance(1.0), 2072);
     }
 
     #[test]

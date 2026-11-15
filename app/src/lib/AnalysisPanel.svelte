@@ -3,7 +3,7 @@
   // speed, the principal variation as one chip per turn (hover previews the
   // position after it, click adds the PV up to it), and the engine's output.
   import { onMount } from 'svelte';
-  import { formatEval, nodesPerSecond, pvMoves } from './analysis';
+  import { evalTitle, formatEval, formatRabbits, nodesPerSecond, pvMoves } from './analysis';
   import { api, errorMessage } from './api';
   import EvalGraph from './EvalGraph.svelte';
   import type { AnalysisLine } from './bindings/AnalysisLine';
@@ -175,7 +175,9 @@
   </header>
   {#if line && phase !== 'failed'}
     <div class="stats">
-      {#if line.eval}<span class="eval" title="from gold's side, in rabbits">{formatEval(line.eval)}</span>{/if}
+      {#if line.eval}<span class="eval" title={evalTitle(line.eval)}>{formatEval(line.eval)}</span>{/if}
+      {#if line.eval?.kind === 'centiRabbits' && line.eval.chance != null}<span>{formatRabbits(line.eval.value)}</span
+        >{/if}
       {#if line.depth}<span>depth {line.depth}</span>{/if}
       {#if nps}<span>{nps} n/s</span>{/if}
     </div>

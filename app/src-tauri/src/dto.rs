@@ -344,13 +344,21 @@ pub struct SweepView {
     pub seconds: u32,
 }
 
+/// Centi-rabbits giving gold about 73% of the eval bar: its share is
+/// 1 / (1 + e^(−value / scale)), a logistic (`goldShare` in `analysis.ts`).
+/// A win chance from an engine goes on the bar as it is, so a chance and a
+/// score correspond on this scale.
+pub const EVAL_BAR_SCALE: f64 = 300.0;
+
 /// An evaluation from gold's side.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[ts(export)]
 pub enum Eval {
-    /// Centi-rabbits: a rabbit up in the opening is about +100.
-    CentiRabbits { value: i32 },
+    /// Centi-rabbits: a rabbit up in the opening is about +100. `chance` is
+    /// gold's chance of winning in tenths of a percent, when the engine
+    /// gave one (`info winrate`).
+    CentiRabbits { value: i32, chance: Option<u16> },
     /// A proven win.
     Decided { winner: Color },
 }
@@ -808,11 +816,12 @@ pub struct EngineIdentity {
     pub protocol_version: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum EngineOutputKind {
     /// Parsed `info` line.
+    #[default]
     Info,
     Log,
     /// Something the engine shouldn't have sent.

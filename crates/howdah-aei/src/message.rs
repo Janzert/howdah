@@ -37,6 +37,16 @@ pub enum Info {
     CurrMoveNumber(u32),
     /// The principal variation, split into turns (see [`split_pv`]).
     Pv(Vec<String>),
+    /// `winrate <p>`: the mover's chance of winning, 0 to 1.
+    WinRate(f64),
+    /// `proven win <n>` or `proven loss <n>`: the game's result is proven,
+    /// for or against the mover, ending in the mover's `n`th turn from
+    /// this one (1 is this turn) for a win, the opponent's for a loss.
+    /// The count is optional.
+    Proven {
+        win: bool,
+        turns: Option<u32>,
+    },
     /// Any other info type, or a known one with an unparsable value.
     Other {
         key: String,
@@ -81,6 +91,23 @@ impl Info {
             "time" => value.parse().map(Info::Time).unwrap_or_else(|_| other()),
             "currmovenumber" => value.parse().map(Info::CurrMoveNumber).unwrap_or_else(|_| other()),
             "pv" => Info::Pv(split_pv(value)),
+            "winrate" => match value.parse::<f64>() {
+                Ok(p) if (0.0..=1.0).contains(&p) => Info::WinRate(p),
+                _ => other(),
+            },
+            "proven" => {
+                let mut words = value.split_whitespace();
+                let win = match words.next() {
+                    Some("win") => true,
+                    Some("loss") => false,
+                    _ => return other(),
+                };
+                match (words.next().map(str::parse::<u32>), words.next()) {
+                    (None, None) => Info::Proven { win, turns: None },
+                    (Some(Ok(n)), None) if n > 0 => Info::Proven { win, turns: Some(n) },
+                    _ => other(),
+                }
+            }
             _ => other(),
         }
     }
@@ -235,6 +262,14 @@ mod tests {
         assert_eq!(Info::parse("time 5.3"), Info::Time(5.3));
         assert_eq!(Info::parse("currmovenumber 7"), Info::CurrMoveNumber(7));
         assert_eq!(Info::parse("score big"), Info::Other { key: "score".into(), value: "big".into() });
+        assert_eq!(Info::parse("winrate 0.637"), Info::WinRate(0.637));
+        assert_eq!(Info::parse("winrate 1"), Info::WinRate(1.0));
+        assert_eq!(Info::parse("winrate 63.7"), Info::Other { key: "winrate".into(), value: "63.7".into() });
+        assert_eq!(Info::parse("winrate NaN"), Info::Other { key: "winrate".into(), value: "NaN".into() });
+        assert_eq!(Info::parse("proven win 2"), Info::Proven { win: true, turns: Some(2) });
+        assert_eq!(Info::parse("proven loss"), Info::Proven { win: false, turns: None });
+        assert_eq!(Info::parse("proven win 0"), Info::Other { key: "proven".into(), value: "win 0".into() });
+        assert_eq!(Info::parse("proven draw"), Info::Other { key: "proven".into(), value: "draw".into() });
         assert_eq!(Info::parse("hashfull 50"), Info::Other { key: "hashfull".into(), value: "50".into() });
     }
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { formatEval, markTitle, shortEval } from './analysis';
+  import { evalTitle, markTitle, shortEval } from './analysis';
   import { api } from './api';
   import { formatClock, formatShort } from '@howdah/board/clock';
   import { settings } from './settings.svelte';
@@ -171,7 +171,7 @@
               title={markTitle(m.mark)}>{m.mark.glyph}</span
             >{/if}{#if m.folded}<span class="folded">+{m.folded}</span>{/if}</span
         >
-        {#if m.eval}<span class="eval" title="{formatEval(m.eval)}, from gold's side">{shortEval(m.eval)}</span>{/if}
+        {#if m.eval}<span class="eval" title={evalTitle(m.eval)}>{shortEval(m.eval)}</span>{/if}
       </button>
       {#if m.comment}<div class="comment">{m.comment}</div>{/if}
       {#if m.id === view.cursor && view.turn && view.turn.steps.length > 0}

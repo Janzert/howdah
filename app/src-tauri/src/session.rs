@@ -41,11 +41,11 @@ use howdah_arimaa::{
 use howdah_arimaa::notation;
 
 use crate::dto::{
-    AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EngineOption, EngineOutput, Eval,
-    GameInfoView, LastMoveView, LastStepView, MoveMark, MoveNodeView, MoveReplay, MoveView, Phase, PieceAt,
-    PieceId, PieceView, PlayerKind, PlayerView, PlayersView, PositionView, PuzzleStatus, PuzzleView,
-    SessionView, SideClockView, StartSetupView, StepTarget, SweepView, TakebackView, TestGameTag,
-    TurnStepView, TurnView,
+    AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EVAL_BAR_SCALE, EngineOption,
+    EngineOutput, Eval, GameInfoView, LastMoveView, LastStepView, MoveMark, MoveNodeView, MoveReplay,
+    MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView, PlayersView, PositionView,
+    PuzzleStatus, PuzzleView, SessionView, SideClockView, StartSetupView, StepTarget, SweepView,
+    TakebackView, TestGameTag, TurnStepView, TurnView,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -330,20 +330,38 @@ const MARK_DROPS: [(f64, Glyph); 3] =
 /// How many turns of an engine's line `annotate_game` adds.
 const ANNOTATED_TURNS: usize = 8;
 
-/// Gold's share of the eval bar, 0..1 (`goldShare` in `analysis.ts`).
+/// Gold's share of the eval bar, 0..1 (`goldShare` in `analysis.ts`): its
+/// chance of winning when the engine gave one.
 fn gold_share(eval: Eval) -> f64 {
     match eval {
         Eval::Decided { winner } => (winner == Color::Gold).into(),
-        Eval::CentiRabbits { value } => 1.0 / (1.0 + (-f64::from(value) / 300.0).exp()),
+        Eval::CentiRabbits { chance: Some(c), .. } => f64::from(c) / 1000.0,
+        Eval::CentiRabbits { value, chance: None } => {
+            1.0 / (1.0 + (-f64::from(value) / EVAL_BAR_SCALE).exp())
+        }
     }
 }
 
-/// An eval in rabbits from gold's side (`+0.35`), or who has a proven win.
+/// An eval from gold's side (`formatEval` in `analysis.ts`): its chance of
+/// winning when the engine gave one (`Gold 63%`), otherwise rabbits
+/// (`+0.35`), or who has a proven win.
 fn format_eval(eval: Eval) -> String {
     match eval {
         Eval::Decided { winner: Color::Gold } => "Gold wins".into(),
         Eval::Decided { winner: Color::Silver } => "Silver wins".into(),
-        Eval::CentiRabbits { value } => format!("{:+.2}", f64::from(value) / 100.0),
+        Eval::CentiRabbits { chance: Some(c), .. } => format!("Gold {}", format_chance(c)),
+        Eval::CentiRabbits { value, chance: None } => format!("{:+.2}", f64::from(value) / 100.0),
+    }
+}
+
+/// A chance in tenths of a percent as a percentage: whole percents, with a
+/// tenth near the ends (`63%`, `99.6%`, `0.4%`), where whole ones would
+/// round to certainty.
+pub(crate) fn format_chance(tenths: u16) -> String {
+    if (10..=990).contains(&tenths) {
+        format!("{}%", (f64::from(tenths) / 10.0).round())
+    } else {
+        format!("{:.1}%", f64::from(tenths) / 10.0)
     }
 }
 
@@ -3152,6 +3170,18 @@ mod tests {
     use crate::dto::PvTurn;
 
     #[test]
+    fn a_win_chance_is_the_share_and_the_comment() {
+        let chance = Eval::CentiRabbits { value: 166, chance: Some(637) };
+        assert_eq!(gold_share(chance), 0.637);
+        assert_eq!(format_eval(chance), "Gold 64%");
+        assert_eq!(format_eval(Eval::CentiRabbits { value: -35, chance: None }), "-0.35");
+        assert_eq!(
+            (format_chance(996), format_chance(4), format_chance(10)),
+            ("99.6%".into(), "0.4%".into(), "1%".into())
+        );
+    }
+
+    #[test]
     fn a_set_position_lists_its_setups() {
         let mut s = Session::new();
         assert!(s.view().start_setups.is_empty());
@@ -5028,7 +5058,7 @@ mod tests {
         let searched = |ms| AnalysisLine {
             node: line[2],
             depth: Some("9".into()),
-            eval: Some(Eval::CentiRabbits { value: 20 }),
+            eval: Some(Eval::CentiRabbits { value: 20, chance: None }),
             pv: vec![],
             nodes: None,
             time_ms: Some(ms),
@@ -5040,7 +5070,7 @@ mod tests {
         s.start_sweep(1).unwrap();
         assert_eq!(s.analysis_target().unwrap().node, line[3]);
         let node = s.view().tree.into_iter().find(|m| m.id == line[2]).unwrap();
-        assert_eq!(node.eval, Some(Eval::CentiRabbits { value: 20 }));
+        assert_eq!(node.eval, Some(Eval::CentiRabbits { value: 20, chance: None }));
     }
 
     #[test]
@@ -5067,7 +5097,7 @@ mod tests {
         let eval = |node, value, pv: &[&str]| AnalysisLine {
             node,
             depth: Some("9".into()),
-            eval: Some(Eval::CentiRabbits { value }),
+            eval: Some(Eval::CentiRabbits { value, chance: None }),
             pv: pv
                 .iter()
                 .map(|t| PvTurn { label: "".into(), notation: t.to_string(), steps: None })

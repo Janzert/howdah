@@ -63,6 +63,19 @@ working Python controller. Engine quirks live in one place in the code,
 - **Scores** are read from the mover's side and shown on one scale,
   centi-rabbits (a rabbit up in the opening is about +100), with proven
   wins kept apart.
+- **Win chances and proven results** (proposed AEI additions, not in the
+  spec yet): `info winrate <p>` is the mover's chance of winning, 0 to 1,
+  sent beside `info score`; `info proven win <n>` / `proven loss <n>`
+  says the result is proven, ending in the mover's `n`th turn from this
+  one (1 is this turn; the opponent's for a loss; `n` optional).
+  Each is its own `info` line, so older controllers skip them. Howdah
+  keeps a chance with the score (`Eval::CentiRabbits.chance`, gold's, in
+  tenths of a percent) and shows it in its place (`Gold 64%`, rabbits
+  beside it); the eval bar, the graph and the move marks use it as
+  gold's share. A chance with no score gets one on the eval bar's scale,
+  300 ln(p / (1 − p)) (`EVAL_BAR_SCALE`), which an engine that thinks in
+  chances should use for its `score` too. After `proven`, later scores
+  in the same search don't change the eval.
 
 ## bot_Sharp
 

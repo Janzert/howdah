@@ -9,13 +9,16 @@ import type { MoveNodeView } from './bindings/MoveNodeView';
 import type { NodeId } from './bindings/NodeId';
 
 /** Centi-rabbits giving gold about 73% of the eval bar (a logistic: a
- * rabbit up in the opening, about +100, is about 58%). */
+ * rabbit up in the opening, about +100, is about 58%). An engine's win
+ * chance goes on the bar as it is (`EVAL_BAR_SCALE` in `dto.rs`). */
 export const EVAL_BAR_SCALE = 300;
 
-/** Gold's share of the eval bar, 0..1. */
+/** Gold's share of the eval bar, 0..1: its chance of winning when the
+ * engine gave one. */
 export function goldShare(e: Eval | null): number {
   if (!e) return 0.5;
   if (e.kind === 'decided') return e.winner === 'gold' ? 1 : 0;
+  if (e.chance != null) return e.chance / 1000;
   return 1 / (1 + Math.exp(-e.value / EVAL_BAR_SCALE));
 }
 
@@ -31,18 +34,37 @@ export function barEval(result: GameResult | null, searched: Eval | null): Eval 
   return searched;
 }
 
-/** An eval in rabbits from gold's side (`+0.35`), or who has a proven win. */
+/** An eval from gold's side: its chance of winning when the engine gave
+ * one (`Gold 63%`), otherwise rabbits (`+0.35`), or who has a proven win. */
 export function formatEval(e: Eval | null): string {
   if (!e) return '';
   if (e.kind === 'decided') return e.winner === 'gold' ? 'Gold wins' : 'Silver wins';
+  if (e.chance != null) return `Gold ${formatChance(e.chance)}`;
   return formatRabbits(e.value);
 }
 
-/** An eval short enough for a move list row: `W`/`L` for a win or loss for
- * gold, as on the eval bar. */
+/** An eval short enough for a move list row: gold's chance (`63%`), its
+ * rabbits, or `W`/`L` for a win or loss for gold, as on the eval bar. */
 export function shortEval(e: Eval): string {
   if (e.kind === 'decided') return e.winner === 'gold' ? 'W' : 'L';
+  if (e.chance != null) return formatChance(e.chance);
   return formatRabbits(e.value);
+}
+
+/** An eval in full, for a tooltip. */
+export function evalTitle(e: Eval): string {
+  if (e.kind === 'decided') return `${formatEval(e)}, proven by the engine`;
+  if (e.chance != null)
+    return `Gold's chance of winning ${formatChance(e.chance)}; ${formatRabbits(e.value)} in rabbits`;
+  return `${formatRabbits(e.value)} rabbits, from gold's side`;
+}
+
+/** A chance in tenths of a percent: whole percents, with a tenth near the
+ * ends (`63%`, `99.6%`, `0.4%`), where whole ones would round to certainty
+ * (`format_chance` in `session.rs`). */
+export function formatChance(tenths: number): string {
+  if (tenths >= 10 && tenths <= 990) return `${Math.round(tenths / 10)}%`;
+  return `${(tenths / 10).toFixed(1)}%`;
 }
 
 /** What a mark's glyph says, with the engine's choice if there is one. */
