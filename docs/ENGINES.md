@@ -63,8 +63,8 @@ working Python controller. Engine quirks live in one place in the code,
 - **Scores** are read from the mover's side and shown on one scale,
   centi-rabbits (a rabbit up in the opening is about +100), with proven
   wins kept apart.
-- **Win chances and proven results** (proposed AEI additions, not in the
-  spec yet): `info winrate <p>` is the mover's chance of winning, 0 to 1,
+- **Win chances and proven results** (added to AEI's spec in
+  2026-11, `AEI_PROTOCOL.md`): `info winrate <p>` is the mover's chance of winning, 0 to 1,
   sent beside `info score`; `info proven win <n>` / `proven loss <n>`
   says the result is proven, ending in the mover's `n`th turn from this
   one (1 is this turn; the opponent's for a loss; `n` optional).
