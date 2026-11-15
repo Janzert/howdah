@@ -170,8 +170,12 @@ function makeApi(sid: () => SessionId | null) {
     /** Turns analysis on with an engine, or off with null. Updates arrive as
      * `analysis://update` events. */
     setAnalysis: (engineId: string | null) => invoke<void>('set_analysis', { session: sid(), engineId }),
-    /** Runs analysis over the main line, `seconds` a position. */
-    startSweep: (seconds: number) => invoke<void>('start_sweep', { session: sid(), seconds }),
+    /** Runs analysis over the main line, `budget` seconds in all (null:
+     * until stopped): a quick pass, then more search where the evals or
+     * marks are unsettled. */
+    startSweep: (budget: number | null) => invoke<void>('start_sweep', { session: sid(), budget }),
+    /** Has the run over the main line refine a node's move next. */
+    focusSweep: (node: NodeId) => invoke<void>('focus_sweep', { session: sid(), node }),
     /** Ends the run over the main line. */
     stopSweep: () => invoke<void>('stop_sweep', { session: sid() }),
     /** Adds analysis's marks to the game, with the engine's lines. */

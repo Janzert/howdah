@@ -130,6 +130,8 @@ pub struct MoveMark {
     pub glyph: String,
     /// The engine's choice instead, in notation.
     pub best: Option<String>,
+    /// Whether more search could well change it.
+    pub provisional: bool,
 }
 
 /// A piece on a square.
@@ -331,17 +333,42 @@ pub struct SessionView {
     pub test_game: Option<TestGameTag>,
 }
 
-/// A run of analysis over the main line, under way.
+/// A run of analysis over the main line, under way (`sweep.rs`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SweepView {
-    /// Positions finished.
+    pub phase: SweepPhase,
+    /// Positions the quick pass has looked at.
     pub done: usize,
     /// Positions in the run.
     pub total: usize,
-    /// The search time for each.
-    pub seconds: u32,
+    /// Positions queued for more search.
+    pub queued: usize,
+    /// Time left in the budget; `None` in a run until stopped.
+    #[ts(type = "number | null")]
+    pub remaining_ms: Option<u64>,
+    /// Time searched so far.
+    #[ts(type = "number")]
+    pub spent_ms: u64,
+    /// Every move is settled: more time now changes little (a run until
+    /// stopped goes on deepening them all).
+    pub settled: bool,
+    /// Whether it follows a game in progress.
+    pub live: bool,
+}
+
+/// Where a run over the game is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SweepPhase {
+    /// A short search of every position.
+    Quick,
+    /// More search where the evals or marks are unsettled.
+    Refining,
+    /// A game in progress with nothing queued: the live position.
+    Following,
 }
 
 /// Centi-rabbits giving gold about 73% of the eval bar: its share is

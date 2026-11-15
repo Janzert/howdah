@@ -7,6 +7,7 @@ import type { GameResult } from './bindings/GameResult';
 import type { MoveMark } from './bindings/MoveMark';
 import type { MoveNodeView } from './bindings/MoveNodeView';
 import type { NodeId } from './bindings/NodeId';
+import type { SweepView } from './bindings/SweepView';
 
 /** Centi-rabbits giving gold about 73% of the eval bar (a logistic: a
  * rabbit up in the opening, about +100, is about 58%). An engine's win
@@ -70,7 +71,28 @@ export function formatChance(tenths: number): string {
 /** What a mark's glyph says, with the engine's choice if there is one. */
 export function markTitle(mark: MoveMark): string {
   const name = mark.glyph === '??' ? 'Blunder' : mark.glyph === '?' ? 'Mistake' : 'Dubious';
-  return mark.best ? `${name}, by the engine. Best was ${mark.best}` : `${name}, by the engine`;
+  const text = mark.best ? `${name}, by the engine. Best was ${mark.best}` : `${name}, by the engine`;
+  return mark.provisional ? `${text} (provisional: more search may change it)` : text;
+}
+
+/** Minutes and seconds, `3:05`. */
+function minutes(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** A run over the game's progress, in words: time left, or in a run
+ * until stopped the time so far. */
+export function sweepText(v: SweepView): string {
+  const time = v.remainingMs === null ? `${minutes(v.spentMs)} so far` : `${minutes(v.remainingMs)} left`;
+  switch (v.phase) {
+    case 'quick':
+      return `Quick pass ${v.done}/${v.total}`;
+    case 'refining':
+      return v.settled && v.remainingMs === null ? `Settled, deepening, ${time}` : `Refining, ${time}`;
+    case 'following':
+      return `Following the game, ${time}`;
+  }
 }
 
 /** One move on the eval graph. */

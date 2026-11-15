@@ -16,6 +16,7 @@ pub mod engines;
 pub mod gameroom;
 mod puzzles;
 pub mod session;
+mod sweep;
 pub mod tourney;
 mod update;
 
@@ -155,6 +156,7 @@ pub fn run() {
             commands::set_analysis,
             commands::start_sweep,
             commands::stop_sweep,
+            commands::focus_sweep,
             commands::annotate_game,
             commands::add_line,
             commands::preview_line,

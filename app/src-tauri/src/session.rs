@@ -40,11 +40,13 @@ use howdah_arimaa::{
 
 use howdah_arimaa::notation;
 
+use crate::sweep;
+
 use crate::dto::{
     AnalysisLine, AnimPiece, AnimStep, ApiError, CapturedView, ClockView, EVAL_BAR_SCALE, EngineOption,
     EngineOutput, Eval, GameInfoView, LastMoveView, LastStepView, MoveMark, MoveNodeView, MoveReplay,
     MoveView, Phase, PieceAt, PieceId, PieceView, PlayerKind, PlayerView, PlayersView, PositionView,
-    PuzzleStatus, PuzzleView, SessionView, SideClockView, StartSetupView, StepTarget, SweepView,
+    PuzzleStatus, PuzzleView, SessionView, SideClockView, StartSetupView, StepTarget, SweepPhase, SweepView,
     TakebackView, TestGameTag, TurnStepView, TurnView,
 };
 
@@ -285,15 +287,6 @@ pub struct AnalysisEngine {
     pub options: Vec<EngineOption>,
 }
 
-/// A run of analysis over the main line: each position gets `seconds`,
-/// and what's found goes in `Session::evals` like any other analysis.
-struct Sweep {
-    /// The positions left, the one being searched first.
-    pending: VecDeque<NodeId>,
-    total: usize,
-    seconds: u32,
-}
-
 /// What analysis should search now: the shown node, or the next one of a
 /// run over the whole game.
 #[derive(Clone, Debug)]
@@ -373,6 +366,17 @@ fn same_turn(a: &str, b: &str) -> bool {
         s
     };
     steps(a) == steps(b)
+}
+
+/// Whether `a` came from more search than `b`: a longer time when both
+/// give one (an MCTS engine's depth is an average that can fall, and an
+/// alpha-beta engine's revisit may reach the same depth with a new eval),
+/// otherwise a greater depth.
+pub fn more_search(a: &AnalysisLine, b: &AnalysisLine) -> bool {
+    match (a.time_ms, b.time_ms) {
+        (Some(x), Some(y)) if x != y => x > y,
+        _ => depth_key(a.depth.as_deref()) > depth_key(b.depth.as_deref()),
+    }
 }
 
 /// Orders analysis depths as engines write them (`12`, `12+`, `12.4+`):
@@ -498,7 +502,9 @@ pub struct Session {
     /// one after analysis is turned off.
     evals_engine: Option<String>,
     /// The run of analysis over the whole game, while there is one.
-    sweep: Option<Sweep>,
+    /// A run of analysis over the whole game (`sweep.rs`); what it finds
+    /// goes in `evals` like any other analysis.
+    sweep: Option<sweep::Run>,
     /// Whether a step after a full turn finishes it and starts the next
     /// side's (see [`Session::try_step`]). A preference, kept across games.
     continue_turns: bool,
@@ -1934,25 +1940,25 @@ impl Session {
         Ok(())
     }
 
-    /// Starts a run of analysis over the main line, `seconds` a position.
-    /// Setups are left out (their evals say little), and so are positions
-    /// already searched for about that long, so a run stopped early can be
-    /// taken up again.
-    pub fn start_sweep(&mut self, seconds: u32) -> Result<(), ApiError> {
+    /// Starts a run of analysis over the main line with `budget` in all,
+    /// or until stopped (`None`) (`sweep.rs`): a quick pass, then more search where it's most likely
+    /// to change the evals or the marks. Setups are left out (their evals
+    /// say little), and time already spent on a position counts, so a run
+    /// started again goes on refining. In a game in progress it follows
+    /// the new moves, each adding its own allowance.
+    pub fn start_sweep(&mut self, budget: Option<Duration>) -> Result<(), ApiError> {
         if self.analysis.is_none() {
             return Err(ApiError::state("analysis is off"));
         }
-        let searched = |n: NodeId| {
-            let time = self.shown_eval(n).and_then(|l| l.time_ms);
-            time.is_some_and(|ms| ms * 2 >= u64::from(seconds) * 1000)
-        };
-        let pending: VecDeque<NodeId> = (self.tree.main_line().into_iter())
-            .filter(|&n| !self.tree[n].is_terminal() && !self.tree.setup_due(n) && !searched(n))
-            .collect();
-        if pending.is_empty() {
-            return Err(ApiError::state("no positions to analyse at that time"));
+        let entries = self.sweep_entries();
+        if !entries.iter().any(|e| e.searchable) {
+            return Err(ApiError::state("no positions to analyse"));
         }
-        self.sweep = Some(Sweep { total: pending.len(), pending, seconds });
+        let mut run = sweep::Run::new(&entries, budget);
+        if !run.refresh(&entries, self.sweep_live()) {
+            return Err(ApiError::state("the evals are settled; nothing to analyse in that time"));
+        }
+        self.sweep = Some(run);
         Ok(())
     }
 
@@ -1961,30 +1967,135 @@ impl Session {
         self.sweep = None;
     }
 
-    /// The run's search of `node` is over: on to the next position.
-    pub fn sweep_done(&mut self, generation: u64, node: NodeId) {
+    /// The run's search of `node` is over after `elapsed` (`ended`: the
+    /// engine ended it by itself): on to the next position.
+    pub fn sweep_done(&mut self, generation: u64, node: NodeId, elapsed: Duration, ended: bool) {
         if generation != self.generation {
             return;
         }
-        let Some(sweep) = &mut self.sweep else { return };
-        sweep.pending.retain(|&n| n != node && self.tree.contains(n));
-        if sweep.pending.is_empty() {
-            self.sweep = None;
+        let Some(run) = &mut self.sweep else { return };
+        run.done(node, elapsed, ended);
+        self.refresh_sweep();
+    }
+
+    /// Has the run refine `node` and the position before it next.
+    pub fn focus_sweep(&mut self, node: NodeId) -> Result<(), ApiError> {
+        if !self.tree.contains(node) {
+            return Err(ApiError::state("no such move"));
+        }
+        let Some(run) = &mut self.sweep else {
+            return Err(ApiError::state("no game analysis running"));
+        };
+        run.focus(node);
+        self.refresh_sweep();
+        Ok(())
+    }
+
+    /// Brings the run up to date with the game (new moves in a game in
+    /// progress, the next batch), ending it when nothing is left. True if
+    /// it ended.
+    pub fn refresh_sweep(&mut self) -> bool {
+        let entries = self.sweep_entries();
+        let live = self.sweep_live();
+        let Some(run) = &mut self.sweep else { return false };
+        if run.refresh(&entries, live) {
+            return false;
+        }
+        self.sweep = None;
+        true
+    }
+
+    /// Whether a run follows a game in progress: a match without a result.
+    fn sweep_live(&self) -> bool {
+        self.matchup.is_some() && self.live_result().is_none()
+    }
+
+    /// The main line as a run sees it, up to the live node in a match
+    /// (plans after it aren't the game).
+    fn sweep_entries(&self) -> Vec<sweep::Entry> {
+        let mut line = self.tree.main_line();
+        if self.matchup.is_some()
+            && let Some(i) = line.iter().position(|&n| n == self.live())
+        {
+            line.truncate(i + 1);
+        }
+        (0..line.len())
+            .map(|i| {
+                let n = line[i];
+                let node = &self.tree[n];
+                let setup = self.tree.setup_due(n);
+                let stored = self.shown_eval(n);
+                let share = match node.result() {
+                    Some(r) if node.is_terminal() => Some(f64::from(u8::from(r.winner == Color::Gold))),
+                    _ if setup => None,
+                    _ => stored.and_then(|l| l.eval).map(gold_share),
+                };
+                let played = line.get(i + 1).and_then(|&c| self.tree[c].mv()).map(Move::notation);
+                let first = stored.and_then(|l| l.pv.first());
+                sweep::Entry {
+                    node: n,
+                    searchable: !node.is_terminal() && !setup,
+                    share,
+                    gold_to_move: node.position().side_to_move() == Color::Gold,
+                    next_is_choice: played.zip(first).is_some_and(|(p, t)| same_turn(&t.notation, &p)),
+                    searched: Duration::from_millis(stored.and_then(|l| l.time_ms).unwrap_or(0)),
+                }
+            })
+            .collect()
+    }
+
+    /// What the run searches now, and for how long (`None`: until the
+    /// game moves on). While a match engine thinks, only the live position,
+    /// so the run doesn't take its time.
+    fn sweep_node(&self) -> Option<(NodeId, Option<Duration>)> {
+        let run = self.sweep.as_ref()?;
+        let entries = self.sweep_entries();
+        let live = self.sweep_live();
+        if live && self.engine_turn().is_some() {
+            let last = entries.last().filter(|e| e.searchable)?;
+            return Some((last.node, None));
+        }
+        match run.next(&entries, live) {
+            sweep::Next::Search(n, t) => Some((n, Some(t))),
+            sweep::Next::Follow(n) => Some((n, None)),
+            sweep::Next::Done => None,
         }
     }
 
-    /// The position the run is on: moves may have been deleted since it
-    /// started.
-    fn sweep_node(&self) -> Option<(NodeId, Duration)> {
-        let sweep = self.sweep.as_ref()?;
-        let node = *sweep.pending.iter().find(|&&n| self.tree.contains(n))?;
-        Some((node, Duration::from_secs(sweep.seconds.into())))
+    fn sweep_view(&self) -> Option<SweepView> {
+        let run = self.sweep.as_ref()?;
+        let entries = self.sweep_entries();
+        let live = self.sweep_live();
+        let (done, total) = run.quick_progress(&entries);
+        let phase = match run.phase(&entries, live) {
+            sweep::Phase::Quick => SweepPhase::Quick,
+            sweep::Phase::Refining => SweepPhase::Refining,
+            sweep::Phase::Following => SweepPhase::Following,
+        };
+        Some(SweepView {
+            phase,
+            done,
+            total,
+            queued: run.queued(),
+            remaining_ms: run.remaining().map(|d| d.as_millis() as u64),
+            spent_ms: run.spent().as_millis() as u64,
+            settled: run.settled_all(),
+            live,
+        })
     }
 
-    fn sweep_view(&self) -> Option<SweepView> {
-        let sweep = self.sweep.as_ref()?;
-        let left = sweep.pending.iter().filter(|&&n| self.tree.contains(n)).count();
-        (left > 0).then(|| SweepView { done: sweep.total - left, total: sweep.total, seconds: sweep.seconds })
+    /// Whether the mark on `id`'s move may still change with more search.
+    fn mark_provisional(&self, id: NodeId) -> bool {
+        let Some(parent) = self.tree[id].parent() else { return false };
+        let entries = self.sweep_entries();
+        let Some(i) = entries.iter().position(|e| e.node == parent) else { return false };
+        if entries.get(i + 1).is_none_or(|e| e.node != id) {
+            return false;
+        }
+        match &self.sweep {
+            Some(run) => run.unsettled(&entries, i),
+            None => sweep::unsettled(&entries, i, |e| e.searched, sweep::DEFAULT_QUICK, |_| false),
+        }
     }
 
     /// Replaces the analysis engine's options for this session. The search
@@ -2037,7 +2148,7 @@ impl Session {
             start,
             moves,
             game,
-            time: sweep.map(|(_, time)| time),
+            time: sweep.and_then(|(_, time)| time),
         })
     }
 
@@ -2048,9 +2159,8 @@ impl Session {
             return;
         }
         self.evals_engine.get_or_insert_with(|| engine.to_string());
-        let deeper = |old: &AnalysisLine| depth_key(old.depth.as_deref()) > depth_key(line.depth.as_deref());
         let evals = self.evals.entry(engine.to_string()).or_default();
-        if !evals.get(&line.node).is_some_and(deeper) {
+        if !evals.get(&line.node).is_some_and(|old| more_search(old, line)) {
             evals.insert(line.node, line.clone());
         }
     }
@@ -2939,6 +3049,7 @@ impl Session {
             mark: self.judge_move(id).map(|(glyph, line)| MoveMark {
                 glyph: glyph.to_string(),
                 best: line.pv.first().map(|t| t.notation.clone()),
+                provisional: self.mark_provisional(id),
             }),
         }
     }
@@ -5034,21 +5145,35 @@ mod tests {
         let mut s = sample_to_sweep();
         let line: Vec<NodeId> = s.tree.main_line();
         assert!(line.len() >= 4, "the game has moves after the setups");
-        assert!(s.start_sweep(1).is_ok());
+        assert!(s.start_sweep(Some(Duration::from_secs(600))).is_ok());
         let v = s.view().sweep.unwrap();
-        assert_eq!((v.done, v.total, v.seconds), (0, line.len() - 2, 1));
+        assert_eq!((v.phase, v.done, v.total, v.live), (SweepPhase::Quick, 0, line.len() - 2, false));
+        assert_eq!(v.remaining_ms, Some(600_000));
         // It doesn't follow the board.
         s.goto(1).unwrap();
         let t = s.analysis_target().unwrap();
-        assert_eq!((t.node, t.time), (line[2], Some(Duration::from_secs(1))));
-        s.sweep_done(s.generation() + 1, line[2]);
+        let quick = t.time.expect("a timed search");
+        assert_eq!(t.node, line[2]);
+        s.sweep_done(s.generation() + 1, line[2], quick, false);
         assert_eq!(s.view().sweep.unwrap().done, 0, "an old game's");
-        s.sweep_done(s.generation(), line[2]);
+        s.sweep_done(s.generation(), line[2], quick, false);
         assert_eq!(s.view().sweep.unwrap().done, 1);
         assert_eq!(s.analysis_target().unwrap().node, line[3]);
         s.stop_sweep();
         let t = s.analysis_target().unwrap();
         assert_eq!((t.node, t.time), (line[1], None), "back to the shown node");
+    }
+
+    #[test]
+    fn a_sweep_until_stopped_has_no_budget_and_a_half_second_quick_pass() {
+        let mut s = sample_to_sweep();
+        s.start_sweep(None).unwrap();
+        let v = s.view().sweep.unwrap();
+        assert_eq!((v.remaining_ms, v.spent_ms, v.settled), (None, 0, false));
+        let t = s.analysis_target().unwrap();
+        assert_eq!(t.time, Some(Duration::from_millis(500)));
+        s.sweep_done(s.generation(), t.node, Duration::from_millis(500), false);
+        assert_eq!(s.view().sweep.unwrap().spent_ms, 500);
     }
 
     #[test]
@@ -5063,11 +5188,15 @@ mod tests {
             nodes: None,
             time_ms: Some(ms),
         };
+        // A budget giving the quick pass a second a position.
+        s.start_sweep(Some(Duration::from_secs(1))).unwrap();
+        let budget = Duration::from_secs(10 * s.view().sweep.unwrap().total as u64);
         s.store_analysis(s.generation(), "e", &searched(400));
-        s.start_sweep(1).unwrap();
+        s.start_sweep(Some(budget)).unwrap();
+        assert_eq!(s.analysis_target().unwrap().time, Some(Duration::from_secs(1)));
         assert_eq!(s.analysis_target().unwrap().node, line[2], "too short");
         s.store_analysis(s.generation(), "e", &searched(600));
-        s.start_sweep(1).unwrap();
+        s.start_sweep(Some(budget)).unwrap();
         assert_eq!(s.analysis_target().unwrap().node, line[3]);
         let node = s.view().tree.into_iter().find(|m| m.id == line[2]).unwrap();
         assert_eq!(node.eval, Some(Eval::CentiRabbits { value: 20, chance: None }));
@@ -5076,18 +5205,20 @@ mod tests {
     #[test]
     fn a_sweep_ends_with_its_last_position_and_with_its_engine() {
         let mut s = sample_to_sweep();
-        s.start_sweep(1).unwrap();
+        let minute = Duration::from_secs(60);
+        s.start_sweep(Some(minute)).unwrap();
+        // Without evals there's nothing to refine after the quick pass.
         while let Some(t) = s.analysis_target().filter(|t| t.time.is_some()) {
-            s.sweep_done(s.generation(), t.node);
+            s.sweep_done(s.generation(), t.node, t.time.unwrap(), false);
         }
         assert!(s.view().sweep.is_none());
-        s.start_sweep(2).unwrap();
+        s.start_sweep(Some(minute)).unwrap();
         s.set_analysis(Some(AnalysisEngine { id: "e".into(), name: "E".into(), options: vec![] })).unwrap();
         assert!(s.view().sweep.is_some(), "the same engine carries on");
         s.set_analysis(Some(AnalysisEngine { id: "f".into(), name: "F".into(), options: vec![] })).unwrap();
         assert!(s.view().sweep.is_none());
         s.set_analysis(None).unwrap();
-        assert!(s.start_sweep(1).is_err(), "analysis is off");
+        assert!(s.start_sweep(Some(minute)).is_err(), "analysis is off");
     }
 
     /// `SAMPLE` with evals before and after 2g, with `best` preferred there.
@@ -5112,6 +5243,75 @@ mod tests {
 
     fn mark_of(s: &Session) -> Option<MoveMark> {
         s.view().tree[2].mark.clone()
+    }
+
+    #[test]
+    fn a_sweep_of_a_game_in_progress_follows_its_new_moves() {
+        let mut s = Session::new();
+        s.start_match([remote("a"), remote("b")], [None, None], false);
+        let g = s.generation();
+        s.sync_remote(g, &sample_moves(4), None).unwrap();
+        analysing(&mut s);
+        s.start_sweep(Some(Duration::from_secs(60))).unwrap();
+        assert!(s.view().sweep.unwrap().live);
+        while let Some(t) = s.analysis_target().filter(|t| t.time.is_some()) {
+            s.sweep_done(g, t.node, t.time.unwrap(), false);
+        }
+        // Nothing queued: the live position, until the next move.
+        let live = s.tree.main_line()[4];
+        let t = s.analysis_target().unwrap();
+        assert_eq!((t.node, t.time), (live, None));
+        let v = s.view().sweep.unwrap();
+        assert_eq!((v.phase, v.done, v.total), (SweepPhase::Following, 3, 3));
+        let before = v.remaining_ms;
+        s.goto(1).unwrap();
+        assert_eq!(s.analysis_target().unwrap().node, live, "not the shown node");
+        // A move arrives: its position gets a quick look, with its allowance.
+        s.sync_remote(g, &sample_moves(5), None).unwrap();
+        s.refresh_sweep();
+        let t = s.analysis_target().unwrap();
+        assert_eq!(t.node, s.tree.main_line()[5]);
+        assert!(t.time.is_some());
+        assert!(s.view().sweep.unwrap().remaining_ms > before);
+    }
+
+    #[test]
+    fn a_mark_near_its_threshold_is_provisional_until_searched_longer() {
+        // A drop of about 0.15 of the bar: right at `?`'s threshold.
+        let mut s = judged(0, -186, "Md2n");
+        let mark = mark_of(&s).unwrap();
+        assert!(mark.provisional, "{mark:?}");
+        assert!(!mark_of(&judged(0, -400, "Md2n")).unwrap().provisional, "a clear blunder");
+        let line = s.tree.main_line();
+        for node in [line[2], line[3]] {
+            let mut long = s.stored_analysis(s.generation(), "e", node).unwrap().clone();
+            long.time_ms = Some(64_000);
+            s.store_analysis(s.generation(), "e", &long);
+        }
+        assert!(!mark_of(&s).unwrap().provisional, "settled by a long search");
+    }
+
+    #[test]
+    fn the_line_from_more_search_is_kept() {
+        let mut s = sample_to_sweep();
+        let node = s.tree.main_line()[2];
+        let line = |depth: &str, ms| AnalysisLine {
+            node,
+            depth: Some(depth.into()),
+            eval: Some(Eval::CentiRabbits { value: 0, chance: None }),
+            pv: vec![],
+            nodes: None,
+            time_ms: ms,
+        };
+        s.store_analysis(s.generation(), "e", &line("12", Some(4000)));
+        s.store_analysis(s.generation(), "e", &line("14", Some(1000)));
+        assert_eq!(s.stored_analysis(s.generation(), "e", node).unwrap().time_ms, Some(4000), "less time");
+        // An MCTS engine's average depth can fall as its search goes on.
+        s.store_analysis(s.generation(), "e", &line("9.5", Some(8000)));
+        assert_eq!(s.stored_analysis(s.generation(), "e", node).unwrap().depth.as_deref(), Some("9.5"));
+        // Without times, depth decides.
+        s.store_analysis(s.generation(), "e", &line("20", None));
+        assert_eq!(s.stored_analysis(s.generation(), "e", node).unwrap().depth.as_deref(), Some("20"));
     }
 
     #[test]

@@ -470,12 +470,22 @@ plans the engine test and tournament runner.
       `Think` runs. PVs are checked with `Game::play_notation` into
       `PvTurn`s, scores turned to gold's side, and snapshots sent as
       `analysis://update` (`AnalysisView`) at most every 100 ms. The
-      session keeps each engine's deepest line per node (`store_analysis`), shown as
+      session keeps each engine's line per node (`store_analysis`), shown as
       `SessionView.storedAnalysis` on return. `add_line` adds a PV as a
       variation (a plan in a match); `preview_line` is the hover preview.
-      Analyse game (`start_sweep`, `Session`'s `sweep`) gives each main
-      line position a set time, as `AnalysisTarget.time`; the coordinator
-      moves on when it's up (`sweep_step_done`). `judge_move` marks moves
+      Analyse game (`start_sweep`, a budget in all or `None` until
+      stopped, which deepens everything once settled; `Session`'s `sweep`,
+      a `sweep::Run`) gives each main line position a quick look, then
+      refines from priorities (self-consistency, spikes, marks near a
+      threshold, closeness) in batches in game order, each visit at
+      double the last; in a match it follows new moves (`sweep_live`),
+      and `focus_sweep` (an eval graph click) refines a move next. Each
+      search's time is `AnalysisTarget.time`; the coordinator moves on
+      when it's up (`sweep_step_done`, which charges the time taken).
+      `sweep_entries` is the main line as the run sees it, and
+      `MoveMark.provisional` says whether more search may change a mark.
+      A node keeps the line from the most search (`more_search`: time,
+      then depth). `judge_move` marks moves
       from the evals around them; `annotate_game` adds the marks to the game.
       No analysis while the user plays an online game
       (`Session::plays_online`): `set_analysis` refuses an engine,

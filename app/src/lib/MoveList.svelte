@@ -168,6 +168,7 @@
               class="mark"
               class:blunder={m.mark.glyph === '??'}
               class:mistake={m.mark.glyph === '?'}
+              class:provisional={m.mark.provisional}
               title={markTitle(m.mark)}>{m.mark.glyph}</span
             >{/if}{#if m.folded}<span class="folded">+{m.folded}</span>{/if}</span
         >
@@ -329,6 +330,11 @@
   }
   .current .mark {
     color: inherit;
+  }
+  /* More search may change it. */
+  .mark.provisional {
+    opacity: 0.55;
+    font-weight: 400;
   }
   .eval {
     margin-left: auto;

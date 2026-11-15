@@ -12,6 +12,7 @@ import {
   nodesPerSecond,
   pvMoves,
   shortEval,
+  sweepText,
 } from './analysis';
 import type { AnalysisLine } from './bindings/AnalysisLine';
 import type { EngineSpec } from './bindings/EngineSpec';
@@ -119,8 +120,25 @@ describe('shortEval', () => {
 
 describe('markTitle', () => {
   it('names the mark and the better move', () => {
-    expect(markTitle({ glyph: '??', best: 'Ee2n' })).toBe('Blunder, by the engine. Best was Ee2n');
-    expect(markTitle({ glyph: '?!', best: null })).toBe('Dubious, by the engine');
+    expect(markTitle({ glyph: '??', best: 'Ee2n', provisional: false })).toBe('Blunder, by the engine. Best was Ee2n');
+    expect(markTitle({ glyph: '?!', best: null, provisional: true })).toBe(
+      'Dubious, by the engine (provisional: more search may change it)',
+    );
+  });
+});
+
+describe('sweepText', () => {
+  const view = { done: 40, total: 88, queued: 0, remainingMs: 190_400, spentMs: 750_000, settled: false, live: false };
+  it('words each phase', () => {
+    expect(sweepText({ ...view, phase: 'quick' })).toBe('Quick pass 40/88');
+    expect(sweepText({ ...view, phase: 'refining' })).toBe('Refining, 3:10 left');
+    expect(sweepText({ ...view, phase: 'following', live: true })).toBe('Following the game, 3:10 left');
+  });
+  it('counts up in a run until stopped', () => {
+    const open = { ...view, remainingMs: null };
+    expect(sweepText({ ...open, phase: 'refining' })).toBe('Refining, 12:30 so far');
+    expect(sweepText({ ...open, phase: 'refining', settled: true })).toBe('Settled, deepening, 12:30 so far');
+    expect(sweepText({ ...open, phase: 'following', live: true })).toBe('Following the game, 12:30 so far');
   });
 });
 

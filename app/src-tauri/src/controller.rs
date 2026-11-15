@@ -27,7 +27,7 @@ use crate::dto::{
     EngineSpec, Eval, PvTurn,
 };
 use crate::engines::{EngineRegistry, engine_config};
-use crate::session::{AnalysisEngine, AnalysisTarget, Session, depth_key, steps_view};
+use crate::session::{AnalysisEngine, AnalysisTarget, Session, more_search, steps_view};
 
 /// Event carrying an [`EngineOutput`].
 pub const ENGINE_OUTPUT: &str = "engine://output";
@@ -173,6 +173,8 @@ struct Analysis {
     state: AnalysisState,
     /// When this search's time is up, in a run over the whole game.
     stop_at: Option<Instant>,
+    /// When that timed search started; taken when it's over, so it ends once.
+    timed_from: Option<Instant>,
     /// What this search has found so far.
     line: Option<AnalysisLine>,
     /// Engine output not sent yet.
@@ -362,7 +364,10 @@ impl Coordinator {
     /// one before starting them.
     fn sync_analysis(&mut self) {
         let (wanted, target) = {
-            let s = lock(&self.session);
+            let mut s = lock(&self.session);
+            if s.refresh_sweep() {
+                emit_session(&self.events, &s, Vec::new(), None);
+            }
             (s.analysis_engine().cloned(), s.analysis_target())
         };
         let mut changed = false;
@@ -399,6 +404,7 @@ impl Coordinator {
                     let _ = a.cmd.send(ActorCmd::Stop);
                     a.target = None;
                     a.stop_at = None;
+                    a.timed_from = None;
                     if a.started {
                         a.state = AnalysisState::Idle;
                     }
@@ -444,6 +450,7 @@ impl Coordinator {
             request: 0,
             state: AnalysisState::Starting,
             stop_at: None,
+            timed_from: None,
             line: None,
             log: Vec::new(),
             pv_cut: false,
@@ -494,9 +501,7 @@ impl Coordinator {
                     s.store_analysis(t.generation, &a.engine_id, l);
                 }
                 match (&a.line, kept) {
-                    (Some(l), Some(k)) if depth_key(k.depth.as_deref()) > depth_key(l.depth.as_deref()) => {
-                        (Some(k), true)
-                    }
+                    (Some(l), Some(k)) if more_search(&k, l) => (Some(k), true),
                     (Some(l), _) => (Some(l.clone()), false),
                     (None, k) => (k.clone(), k.is_some()),
                 }
@@ -533,20 +538,22 @@ impl Coordinator {
     /// The search of a position in a run over the whole game is over: keeps
     /// what it found and moves the run on. The next `Think` stops the
     /// engine; one that won't stop fails as usual.
-    fn sweep_step_done(&mut self) {
+    /// `ended`: the engine ended the search by itself (a proven result).
+    fn sweep_step_done(&mut self, ended: bool) {
         self.flush_analysis(true);
         let Some(a) = &mut self.analysis else { return };
         a.stop_at = None;
+        let Some(from) = a.timed_from.take() else { return };
         let Some(t) = a.target.as_ref().filter(|t| t.time.is_some()) else { return };
         let mut s = lock(&self.session);
-        s.sweep_done(t.generation, t.node);
+        s.sweep_done(t.generation, t.node, from.elapsed(), ended);
         emit_session(&self.events, &s, Vec::new(), None);
     }
 
     fn on_timer(&mut self) {
         self.flush_analysis(false);
         if self.analysis.as_ref().and_then(|a| a.stop_at).is_some_and(|t| Instant::now() >= t) {
-            self.sweep_step_done();
+            self.sweep_step_done(false);
         }
         let now = Instant::now();
         if let Some(p) = &mut self.pending
@@ -671,7 +678,7 @@ impl Coordinator {
                 }
                 a.state = AnalysisState::Finished;
                 a.read_best_move(text);
-                self.sweep_step_done();
+                self.sweep_step_done(true);
             }
             ActorEvent::Failed(detail) => {
                 let engine = AnalysisEngine {
@@ -710,6 +717,7 @@ impl Analysis {
     fn set_stop_time(&mut self) {
         let time = self.target.as_ref().and_then(|t| t.time).filter(|_| self.started);
         self.stop_at = time.map(|t| Instant::now() + t);
+        self.timed_from = time.map(|_| Instant::now());
     }
 
     /// Takes in the engine's answer. Without a PV (Sharp sends none for a
@@ -1718,7 +1726,8 @@ mod tests {
             let engine = AnalysisEngine { id: spec.id.clone(), name: spec.name.clone(), options: vec![] };
             s.set_analysis(Some(engine)).unwrap();
             s.goto(1).unwrap();
-            s.start_sweep(1).unwrap();
+            // The quick pass gets its least time; refinement the rest.
+            s.start_sweep(Some(Duration::from_secs(2))).unwrap();
             s.view().tree.iter().map(|m| m.id).collect::<Vec<_>>()
         };
         controller.poke();

@@ -545,9 +545,19 @@ impl Backend {
     }
 
     /// Starts a run of analysis over the main line.
-    pub fn start_sweep(&self, id: SessionId, seconds: u32) -> Result<(), ApiError> {
+    /// Starts a run of analysis over the main line, `budget` seconds in
+    /// all, or until stopped (`None`).
+    pub fn start_sweep(&self, id: SessionId, budget: Option<u32>) -> Result<(), ApiError> {
         self.mutate(id, |s| {
-            s.start_sweep(seconds)?;
+            s.start_sweep(budget.map(|b| Duration::from_secs(b.into())))?;
+            Ok(Vec::new())
+        })
+    }
+
+    /// Has the run refine `node`'s move next.
+    pub fn focus_sweep(&self, id: SessionId, node: NodeId) -> Result<(), ApiError> {
+        self.mutate(id, |s| {
+            s.focus_sweep(node)?;
             Ok(Vec::new())
         })
     }
@@ -1367,7 +1377,8 @@ impl Backend {
             "set_analysis" => {
                 ok(self.set_analysis(sid()?, arg::<Option<String>>(args, "engineId")?.as_deref())?)
             }
-            "start_sweep" => ok(self.start_sweep(sid()?, arg(args, "seconds")?)?),
+            "start_sweep" => ok(self.start_sweep(sid()?, arg::<Option<u32>>(args, "budget")?)?),
+            "focus_sweep" => ok(self.focus_sweep(sid()?, arg(args, "node")?)?),
             "stop_sweep" => ok(self.stop_sweep(sid()?)?),
             "annotate_game" => ok(self.annotate_game(sid()?)?),
             "add_line" => {

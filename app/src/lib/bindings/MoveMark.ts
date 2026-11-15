@@ -12,4 +12,8 @@ glyph: string,
 /**
  * The engine's choice instead, in notation.
  */
-best: string | null, };
+best: string | null, 
+/**
+ * Whether more search could well change it.
+ */
+provisional: boolean, };

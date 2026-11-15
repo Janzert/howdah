@@ -216,7 +216,9 @@ pub enum Score {
   with the node on delete and cleared with a new game). Coming back to a
   node shows its stored line immediately, marked as stored, until the new
   search passes its depth. This is also what whole-game analysis will
-  fill. It's in memory only for now.
+  fill. It's in memory only for now. (Since adaptive runs, "deepest" is
+  "from the most search": the longer time when both lines give one, else
+  the greater depth; `more_search`.)
 
 ## Boundary
 
@@ -323,8 +325,9 @@ These aren't in the first version, but the design above leaves room:
 ## Whole-game analysis
 
 The start of it, built 2026-10-31. **Analyse game** in the panel runs over
-the main line, a set time a position (`start_sweep(seconds)`), and
-`stop_sweep` ends it.
+the main line, and `stop_sweep` ends it. It first gave each position a
+set time; since 2026-11-14 it takes a time for the whole game
+(`start_sweep(budget)`) and spends it adaptively (see "Adaptive runs").
 
 - **One engine.** The run uses the analysis engine, so while it runs
   `analysis_target()` is the run's position (with its `time`), not the
@@ -332,9 +335,10 @@ the main line, a set time a position (`start_sweep(seconds)`), and
   line still shows that line. After the run, analysis goes back to the
   shown node.
 - **Which positions.** `Session::start_sweep` takes the main line as it
-  stands, without setups (their evals say little), terminal positions and
-  those already searched for at least half the time, so a stopped run can
-  be started again. Moves added later aren't in the run; moves deleted
+  stands (up to the live node in a match), without setups (their evals
+  say little) and terminal positions. Time already spent on a position
+  counts, so a run started again goes on from there. Moves added later
+  aren't in the run, except a game in progress's new moves; moves deleted
   drop out of it.
 - **A position's time** starts when the engine is up. When it's over the
   coordinator stores the line and moves on, without waiting for a
@@ -379,11 +383,11 @@ blunders; KaTrain marks moves and adds a line only when asked. Here:
 - **Limits.** Evals from short visits count like a run's, a mark needs the
   evals on both sides of the move, and setups aren't judged.
 
-### Adaptive runs (proposed)
+### Adaptive runs
 
-Status: a proposal (2026-11-14), not built. It would replace the fixed
-time a position with a quick pass over the game and then more search
-where it's most likely to change the graph or the marks.
+Status: the first version is built (2026-11-14; "As built" below). It
+replaced the fixed time a position with a quick pass over the game and
+then more search where it's most likely to change the graph or the marks.
 
 **What other clients do** (checked 2026-11-14). Most give every position
 the same budget: lichess and chess.com a fixed one, so neighbouring
@@ -511,14 +515,119 @@ for comparison runs that need to be repeatable.
 **Later.** A second engine process (within the 8-thread limit) could do
 the quick pass while the first refines, like Flash Analyze.
 
-**Open questions.**
+**A game in progress** (decided 2026-11-14). A run started on a match
+without a result (a watched arimaa.com game or a local match; analysis
+is refused while the user plays) follows it:
 
-- The quick pass's budget: a time, or a depth per engine (Sharp's and
-  OpFor's depths don't mean the same).
-- Whether the shown position gets priority while a run goes on, or the
-  board just shows the stored line as now.
-- How provisional marks look, and whether **Add N marks** waits for them
-  to settle or warns.
+- It covers the main line up to the live node, and grows with it: each
+  new position gets its quick look first, and is in the pairs and
+  priorities after that. Plans after the live node aren't the game.
+- The budget picked covers the positions there at the start; each new
+  one adds an allowance of four quick passes' time, derived rather than
+  a setting, which pays for its quick look and the refinement it sets off.
+- When nothing is queued it searches the live position until the next
+  move (stored like any search), and it doesn't end while the game goes
+  on. Once the game has a result it spends what's left and ends.
+- While a match engine thinks, it searches only the live position, so it
+  takes as little as it can from a player on a clock; refinement waits
+  for the gaps between moves. In fast engine matches it falls behind.
+- A takeback on the server drops the positions no longer on the line.
+
+**Decided** (2026-11-14):
+
+- The budget is a time, the same for every engine; the quick pass gets a
+  tenth of it spread over the positions, between 0.25 s and 5 s each.
+- The shown position gets no priority; the board shows its stored line as
+  before. A click on the eval graph moves that move to the front instead.
+- Provisional marks show lighter, with "provisional" in their tooltip;
+  **Add N marks** still works and says how many are provisional.
+- Left for later: the "unsettled search" signal (it needs each search's
+  iterations kept, and an output line from Clew), the policy-surprise
+  signal, a second engine process, and the measuring harness.
+
+**Until stopped** (added 2026-11-14, decided with Brian). The panel's
+time menu ends with "Until stopped" (`start_sweep(None)`):
+
+- The quick pass gets a fixed 0.5 s a position (`UNTIL_STOPPED_QUICK`),
+  since there's no budget to take a tenth of.
+- Refinement goes on as usual. When every move is settled it doesn't end:
+  it deepens every position a level at a time, the least searched first,
+  and among those the ones nearest to mattering. The progress line says
+  "Settled, deepening" then, so the user can tell more time now changes
+  little. It ends only if no position is left to search (all proven).
+- Progress counts up ("Refining, 12:30 so far") instead of down. Visits
+  keep doubling, so a single search can run for minutes; Stop is
+  immediate.
+- In a game in progress it follows the moves as a budgeted run does,
+  without allowances, and doesn't end when the game does.
+
+**How good half a second is** (measured 2026-11-14): 25 positions of a
+53-move rated game between two 2200+ players, every fourth ply, each
+searched for 12 s from a fresh `newgame`, with the eval and first PV turn
+recorded at each report. Against the end of that search, in the eval
+bar's share. Each cell is mean / p90 error, positions off by more than
+0.10, and how many of the 25 had the same best turn as at 12 s:
+
+| Time | Sharp (2 threads) | OpFor (1 thread) | Clew (8 threads) |
+|---|---|---|---|
+| 0.25 s | 0.031 / 0.054, 2, 6 | 0.043 / 0.094, 1, 6 | 0.025 / 0.048, 0, 8 |
+| 0.5 s | 0.019 / 0.032, 0, 11 | 0.047 / 0.100, 4, 6 | 0.025 / 0.048, 0, 8 |
+| 1 s | 0.009 / 0.020, 0, 13 | 0.055 / 0.109, 6, 8 | 0.021 / 0.054, 0, 9 |
+| 2 s | 0.007 / 0.017, 0, 18 | 0.031 / 0.072, 1, 12 | 0.014 / 0.024, 0, 13 |
+| 4 s | 0.005 / 0.011, 0, 19 | 0.013 / 0.036, 0, 15 | 0.006 / 0.008, 0, 19 |
+
+Sharp is close to its 12 s eval from half a second on. OpFor isn't
+settled until about 4 s, and its error doesn't fall steadily (iterations
+swing by depth parity), so at 0.5 s an OpFor quick pass marks more moves
+that refinement then has to clear. Clew reports at 0.1 s and then every
+half second, so its 0.25 s and 0.5 s rows are its 0.1 s eval: already as
+good as Sharp's at a quarter second, never off by 0.10, and falling
+steadily; its choice of turn settles later than its eval. The reference is
+the same search, which flatters the long times; a real quick pass has
+warm tables (or, for Clew, its tree) from the position before, so it does
+a little better than these fresh searches. A per-profile quick time
+(OpFor longer) is the obvious refinement if OpFor's quick passes prove
+wasteful.
+
+On the same game, an until-stopped run with Clew settled every move after
+149 s of search (a 58 s quick pass and about 90 s of refinement), with
+five marks, none provisional. A two-minute run with Sharp still had ten
+of its eleven marks provisional.
+
+**As built** (`sweep.rs` holds the scheduling, pure and unit-tested; the
+session gives it the main line as `Entry`s from `sweep_entries`):
+
+- **Priorities** come from the stored evals only: self-consistency (the
+  engine's own choice played), the drop's nearness to a threshold or how
+  far a move beat the engine's choice (otherwise), and spikes, each
+  weighted by closeness, 4p(1 − p) of the share, the higher of the two
+  positions'. A position's priority is divided by 1 + log2 of its search
+  time over the quick pass's, so long-searched positions count for less.
+  Below 0.02 a move is settled.
+- **Batches** are the best four the remaining budget pays for, each at
+  double its time so far (at least the quick pass's), in game order with
+  a focused pair first. A pair is refined less-searched side first. When
+  no doubling fits, the last of the budget goes to the best position if
+  it buys at least a quick pass more than it had.
+- **The search under way is kept** until its time is up (`Run.current`):
+  its own stored line grows as it goes, which must not count as its
+  quick look and move the run on early. A search the engine ends by
+  itself (a proven result) settles that position for the run.
+- **Time is charged** as taken (`sweep_done`'s `elapsed`), from when the
+  engine was given the position.
+- **Provisional** is `sweep::unsettled` on the move's pair: the run's own
+  view while one is going, otherwise the stored times against a one-second
+  quick pass.
+- **The panel** picks the time in minutes (1, 2, 5, 10, 30; 5 by
+  default) and shows "Quick pass 40/88" with a bar, then "Refining, 3:10
+  left" or "Following the game, 1:20 left" (`SweepView`, `sweepText`).
+- **Checked** in the browser pane with Sharp on a 53-move rated game
+  between two 2200+ players (104 positions, two minutes): a quick pass
+  of 26 s, then refinement to the end of the budget, ten of eleven marks
+  still provisional at that length; a graph click had its pair searched
+  right after the search under way. Live mode was checked with a human
+  against OpFor in the bridge: new positions joined with their allowance,
+  and the run searched the live position while OpFor thought.
 
 ## Build order
 

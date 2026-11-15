@@ -3,7 +3,7 @@
   // speed, the principal variation as one chip per turn (hover previews the
   // position after it, click adds the PV up to it), and the engine's output.
   import { onMount } from 'svelte';
-  import { evalTitle, formatEval, formatRabbits, nodesPerSecond, pvMoves } from './analysis';
+  import { evalTitle, formatEval, formatRabbits, nodesPerSecond, pvMoves, sweepText } from './analysis';
   import { api, errorMessage } from './api';
   import EvalGraph from './EvalGraph.svelte';
   import type { AnalysisLine } from './bindings/AnalysisLine';
@@ -54,10 +54,19 @@
     run,
   }: Props = $props();
 
-  /** Search times to choose from for a run over the game. */
-  const SWEEP_SECONDS = [1, 2, 5, 10, 30];
-  let sweepSeconds = $state(2);
-  const marks = $derived(view.tree.filter((m) => m.depth === 0 && m.mark).length);
+  /** Times in all to choose from for a run over the game, in minutes; 0
+   * runs until stopped. */
+  const SWEEP_MINUTES = [1, 2, 5, 10, 30, 0];
+  let sweepMinutes = $state(5);
+  const marked = $derived(view.tree.filter((m) => m.depth === 0 && m.mark));
+  const marks = $derived(marked.length);
+  const provisional = $derived(marked.filter((m) => m.mark?.provisional).length);
+
+  /** A click on the graph shows that move, and a run refines it next. */
+  function gotoFromGraph(id: NodeId) {
+    onGotoNode(id);
+    if (view.sweep) void run(api.focusSweep(id));
+  }
 
   const engine = $derived(engines.find((e) => e.id === view.analysisEngine));
   let showOptions = $state(false);
@@ -185,30 +194,35 @@
   <p class="status" class:failed={phase === 'failed'} role="status">{status}</p>
   <div class="sweep">
     {#if view.sweep}
-      {@const left = (view.sweep.total - view.sweep.done) * view.sweep.seconds}
-      <progress max={view.sweep.total} value={view.sweep.done} aria-label="Game analysis"></progress>
-      <span title="about {left}s left">{view.sweep.done}/{view.sweep.total}</span>
+      {#if view.sweep.phase === 'quick'}
+        <progress max={view.sweep.total} value={view.sweep.done} aria-label="Game analysis"></progress>
+      {/if}
+      <span class="sweep-text" title="Click the graph to have a move searched next">{sweepText(view.sweep)}</span>
       <button onclick={() => run(api.stopSweep())}>Stop</button>
     {:else}
       <button
-        title="Search each position of the main line for a set time"
+        title="A quick look at every position of the main line, then more search where the evals or marks are unsettled, in the time chosen"
         disabled={phase === 'failed'}
-        onclick={() => run(api.startSweep(sweepSeconds))}>Analyse game</button
+        onclick={() => run(api.startSweep(sweepMinutes ? sweepMinutes * 60 : null))}>Analyse game</button
       >
-      <select aria-label="Time a position" bind:value={sweepSeconds}>
-        {#each SWEEP_SECONDS as s (s)}
-          <option value={s}>{s}s a position</option>
+      <select aria-label="Time for the game" bind:value={sweepMinutes}>
+        {#each SWEEP_MINUTES as m (m)}
+          <option value={m}>{m ? `${m} min` : 'Until stopped'}</option>
         {/each}
       </select>
       {#if marks}
         <button
-          title="Add the marks to the game, with the engine's better lines as variations"
-          onclick={() => run(api.annotateGame())}>Add {marks} {marks === 1 ? 'mark' : 'marks'}</button
+          title={provisional
+            ? `Add the marks to the game, with the engine's better lines as variations. ${provisional} of them may change with more search.`
+            : "Add the marks to the game, with the engine's better lines as variations"}
+          onclick={() => run(api.annotateGame())}
+          >Add {marks}
+          {marks === 1 ? 'mark' : 'marks'}{#if provisional}&nbsp;({provisional} provisional){/if}</button
         >
       {/if}
     {/if}
   </div>
-  <EvalGraph tree={view.tree} cursor={view.cursor} onGoto={onGotoNode} />
+  <EvalGraph tree={view.tree} cursor={view.cursor} onGoto={gotoFromGraph} />
   {#if sharesCpu}<p class="note">Shares the CPU with the match engines.</p>{/if}
   {#if pvLine && pvLine.pv.length && phase !== 'failed'}
     <div
@@ -310,6 +324,13 @@
   .sweep progress {
     flex: 1;
     min-width: 0;
+  }
+  .sweep-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .stats {
     display: flex;

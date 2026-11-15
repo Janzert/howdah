@@ -19,6 +19,17 @@ young).
   switch on macOS. Settings has a Time format option to choose one
   instead.
 
+### Changed
+
+- Analyse game takes a time for the whole game instead of a time a
+  position. It gives every position a quick look, then spends the rest
+  where the evals or the marks are least settled, so the marks most
+  likely to change get the most search. On a game being played it
+  follows the new moves. Marks that more search may still change show
+  lighter, and clicking the eval graph has that move searched next.
+  "Until stopped" keeps going with no time limit, deepening the whole
+  game once every mark has settled.
+
 ## [0.7.1] - 2026-11-13
 
 ### Added
