@@ -478,9 +478,10 @@ by MCTS (Clew, and others like it), with two signals read differently.
   in game order count for more here.
 - **Doubling suits it.** Strength grows smoothly with visits, where
   alpha-beta gains a ply at a time.
-- **Unsettled search, read another way.** MCTS has no iterations (Clew's
-  `info depth` is the PV's length in steps), so a score change between
-  depths means nothing. Its signs are the best turn's share of the root's
+- **Unsettled search, read another way.** MCTS has no iterations: Clew's
+  `info depth` is its playouts' average depth in steps and `seldepth`
+  the deepest, as Lc0 reports them, and both creep up smoothly, so a
+  score change between depths says little. Its signs are the best turn's share of the root's
   visits and its lead in value over the second, the value drifting across
   reports, and the most visited turn not being the best valued. Over AEI
   only the drift shows now; Clew could add a line with its top two root
