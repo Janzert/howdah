@@ -28,8 +28,9 @@ young).
   (`win 63%`), with its eval in rabbits on hover, and a forced result as
   `win in 2` or `loss in 2`.
 - A proven win says how many of the winner's turns it takes, when the
-  engine gives the count: `Gold wins in 2` in the analysis panel and
-  comments, `W2` or `L2` in the move list.
+  engine gives the count (`info proven`, or Sharp's search log):
+  `Gold wins in 2` in the analysis panel and comments, `W2` or `L2` in
+  the move list.
 
 - Analyse game takes a time for the whole game instead of a time a
   position. It gives every position a quick look, then spends the rest

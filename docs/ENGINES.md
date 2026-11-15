@@ -99,8 +99,11 @@ Linux, macOS and Windows.
   its fourth step with `qpss`.
 - **Evals** are from the mover's side, about 1000 per rabbit (measured: a
   rabbit up in the opening is about +1000 with either side to move).
-  Proven results are near ±1,000,000, written `Win12`/`Loss5` in verbose
-  lines.
+  Proven results are ±1,000,000 less the steps to the end, written
+  `Win2`/`Loss1` in verbose lines (the summary gives the raw value).
+  The number is the winner's turns to it, its next one as 1, as in
+  `info proven` (`writeEval` in `program/arimaaio.cpp`; checked on goal
+  positions: Win1, Win2, Win3, Loss1 and Loss2 all matched).
 - **No `go infinite`.** `setoption name ignoretc value true` (allowed in
   release builds) makes `go` search until `stop`, which it answers at once.
 - **`depth`** stops the search at that many steps (raised to at least 4,

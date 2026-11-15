@@ -153,7 +153,9 @@ pub enum SearchEval {
     /// On the engine's own scale. Sharp's is about 1000 per rabbit
     /// (measured: a rabbit up in the opening is about +1000).
     Score(i32),
-    /// A proven win or loss, as the engine writes it (`Win12`, `Loss5`).
+    /// A proven win or loss, as the engine writes it (`Win2`, `Loss5`).
+    /// The number is the winner's turns to it, its next one as 1, as in
+    /// `info proven` (Sharp's `writeEval`; checked on known positions).
     Decided(String),
 }
 
@@ -161,15 +163,24 @@ pub enum SearchEval {
 const SHARP_DECIDED: i32 = 990_000;
 
 impl SearchEval {
+    /// A proven result's turns to it, the winner's next one as 1.
+    pub fn turns(&self) -> Option<u32> {
+        match self {
+            SearchEval::Decided(text) => text.trim_start_matches(char::is_alphabetic).parse().ok(),
+            SearchEval::Score(_) => None,
+        }
+    }
+
     fn parse(text: &str) -> Option<SearchEval> {
         if text.starts_with("Win") || text.starts_with("Loss") {
             return Some(SearchEval::Decided(text.to_string()));
         }
         let v: i32 = text.parse().ok()?;
         Some(if v.abs() >= SHARP_DECIDED {
-            // The summary writes the raw value; spell it as the other lines do.
-            let steps = (1_000_000 - v.abs() + if v > 0 { 11 } else { 7 }) / 8;
-            SearchEval::Decided(format!("{}{steps}", if v > 0 { "Win" } else { "Loss" }))
+            // The summary writes the raw value, the steps to the end;
+            // spell it in turns as the other lines do.
+            let turns = (1_000_000 - v.abs() + if v > 0 { 11 } else { 7 }) / 8;
+            SearchEval::Decided(format!("{}{turns}", if v > 0 { "Win" } else { "Loss" }))
         } else {
             SearchEval::Score(v)
         })
@@ -286,10 +297,17 @@ mod tests {
                 pv: vec![],
             }
         );
-        let won = SearchLog::parse("Depth 9 Eval 999901").unwrap();
-        assert_eq!((won.eval, won.time), (SearchEval::Decided("Win13".into()), None));
-        let lost = SearchLog::parse("Depth 9 Eval -999960").unwrap();
-        assert_eq!(lost.eval, SearchEval::Decided("Loss5".into()));
+        // Sharp's summaries and verbose lines for the same positions: a
+        // win in 12 steps is the winner's 2nd turn, a loss in 16 steps
+        // the opponent's 2nd, a loss in 8 its 1st.
+        let won = SearchLog::parse("Depth 4 Eval 999988 Time 0.013948 Seed 4303733890ec300f").unwrap();
+        assert_eq!(won.eval, SearchEval::Decided("Win2".into()));
+        assert_eq!(won.eval.turns(), Some(2));
+        let lost = SearchLog::parse("Depth 4 Eval -999984 Time 0.011724 Seed 31af722318e2503c").unwrap();
+        assert_eq!(lost.eval, SearchEval::Decided("Loss2".into()));
+        let lost = SearchLog::parse("Depth 4 Eval -999992 Time 0.0086 Seed 2ac1616d6b88e6b7").unwrap();
+        assert_eq!(lost.eval.turns(), Some(1));
+        assert_eq!(SearchEval::Score(90).turns(), None);
 
         let id = SearchLog::parse(
             "ID Depth:  12     Eval:     90 Time: 2.37/4.89  PV: Ee2n Ee3n Ee4n Ee5n  ed7s hh7s hh6w me7w  Dg2n qpss",

@@ -1288,6 +1288,7 @@ fn read_search(profile: Profile, msg: EngineMessage) -> Option<Search> {
             {
                 out.depth = Some(log_depth(&search.depth));
                 out.score = Some(profile.log_score(&search.eval));
+                out.turns = search.eval.turns();
                 out.pv = Some(search.pv).filter(|pv| !pv.is_empty());
                 out.time = search.time;
             }
@@ -1347,8 +1348,13 @@ mod tests {
             (EngineOutputKind::Log, Some("12.0+"), Some(-107))
         );
         assert_eq!(out.text, "Depth 12.0233+ Eval -1078 Time 2.8 Seed 47d0b298fc1972e4");
-        let won = log("Depth 7 Eval 999990 Time 0.1");
-        assert_eq!((won.depth.as_deref(), won.score, won.decided), (Some("7"), None, Some(true)));
+        let won = log("Depth 7 Eval 999988 Time 0.1");
+        assert_eq!(
+            (won.depth.as_deref(), won.score, won.decided, won.turns),
+            (Some("7"), None, Some(true), Some(2))
+        );
+        let lost = log("FS Depth: +3      Eval:  Loss1 Time: 0.01/0.00  PV: rd6s rd5s rd4s rd3s");
+        assert_eq!((lost.decided, lost.turns), (Some(false), Some(1)));
         let id = log("ID Depth:  12     Eval:     90 Time: 2.37/4.89  PV: Ee2n Ee3n Ee4n Ee5n  ed7s qpss");
         assert_eq!((id.depth.as_deref(), id.score), (Some("12"), Some(9)));
         assert_eq!(id.pv.unwrap(), ["Ee2n Ee3n Ee4n Ee5n", "ed7s"]);
