@@ -410,8 +410,9 @@ pub enum Eval {
     /// gold's chance of winning in tenths of a percent, when the engine
     /// gave one (`info winrate`).
     CentiRabbits { value: i32, chance: Option<u16> },
-    /// A proven win.
-    Decided { winner: Color },
+    /// A proven win. `turns` counts the winner's turns to it, its next
+    /// one as 1, when the engine gave it (`info proven win 2`).
+    Decided { winner: Color, turns: Option<u32> },
 }
 
 /// One turn of an engine's principal variation, checked to be legal.
@@ -895,7 +896,17 @@ pub struct EngineOutput {
     /// Display text, e.g. `depth 12+` or the log line.
     pub text: String,
     pub depth: Option<String>,
+    /// From the engine's side, in centi-rabbits.
     pub score: Option<i32>,
+    /// The engine's chance of winning (`info winrate`), in tenths of a
+    /// percent.
+    pub chance: Option<u16>,
+    /// The engine sees a forced result: `true` a win for itself, `false`
+    /// a loss (`info proven`, or a score its profile reads as one).
+    pub decided: Option<bool>,
+    /// With `decided`, the winner's turns to it, its next one as 1, when
+    /// the engine gave them.
+    pub turns: Option<u32>,
     pub pv: Option<Vec<String>>,
 }
 

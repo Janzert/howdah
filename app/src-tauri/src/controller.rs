@@ -254,7 +254,18 @@ impl Coordinator {
     }
 
     fn output(&self, side: Color, kind: EngineOutputKind, text: String) {
-        self.publish(EngineOutput { seq: 0, side, kind, text, depth: None, score: None, pv: None });
+        self.publish(EngineOutput {
+            seq: 0,
+            side,
+            kind,
+            text,
+            depth: None,
+            score: None,
+            chance: None,
+            decided: None,
+            turns: None,
+            pv: None,
+        });
     }
 
     /// Keeps a player's output in the session, for a panel opening later,
@@ -792,13 +803,14 @@ impl AnalysisView {
     }
 }
 
-/// A score from the mover's side as an eval from gold's.
-fn eval_for_gold(score: Score, mover: Color) -> Eval {
+/// A score from the mover's side as an eval from gold's, with the
+/// winner's turns to a proven result.
+fn eval_for_gold(score: Score, mover: Color, turns: Option<u32>) -> Eval {
     let score = if mover == Color::Silver { score.flipped() } else { score };
     match score {
         Score::CentiRabbits(value) => Eval::CentiRabbits { value, chance: None },
-        Score::Win => Eval::Decided { winner: Color::Gold },
-        Score::Loss => Eval::Decided { winner: Color::Silver },
+        Score::Win => Eval::Decided { winner: Color::Gold, turns },
+        Score::Loss => Eval::Decided { winner: Color::Silver, turns },
     }
 }
 
@@ -1163,7 +1175,7 @@ fn update_eval(eval: Option<Eval>, proven: &mut bool, search: &Search, mover: Co
             Some(Eval::CentiRabbits { chance, .. }) => chance,
             _ => None,
         };
-        eval = Some(match eval_for_gold(score, mover) {
+        eval = Some(match eval_for_gold(score, mover, search.turns) {
             Eval::CentiRabbits { value, .. } => Eval::CentiRabbits { value, chance },
             decided => decided,
         });
@@ -1205,6 +1217,8 @@ struct Search {
     win_rate: Option<f64>,
     /// `score` is a proven result from `info proven`.
     proven: bool,
+    /// The winner's turns to a proven result, its next one as 1.
+    turns: Option<u32>,
 }
 
 impl Search {
@@ -1256,6 +1270,7 @@ fn read_search(profile: Profile, msg: EngineMessage) -> Option<Search> {
                 Info::Proven { win, turns } => {
                     out.score = Some(if win { Score::Win } else { Score::Loss });
                     out.proven = true;
+                    out.turns = turns;
                     let n = turns.map_or_else(String::new, |n| format!(" {n}"));
                     format!("proven {}{n}", if win { "win" } else { "loss" })
                 }
@@ -1292,8 +1307,8 @@ fn read_search(profile: Profile, msg: EngineMessage) -> Option<Search> {
     Some(out)
 }
 
-/// A match engine's message for its panel. Scores are its own view, in
-/// centi-rabbits; a proven result has none (the line still shows it).
+/// A match engine's message for its panel, from its own side: a score in
+/// centi-rabbits, a win chance, or a forced win or loss.
 pub(crate) fn engine_output(side: Color, profile: Profile, msg: EngineMessage) -> Option<EngineOutput> {
     let s = read_search(profile, msg)?;
     Some(EngineOutput {
@@ -1303,6 +1318,13 @@ pub(crate) fn engine_output(side: Color, profile: Profile, msg: EngineMessage) -
         text: s.text,
         depth: s.depth,
         score: s.score.and_then(Score::centi_rabbits),
+        chance: s.win_rate.map(|p| (p * 1000.0).round() as u16),
+        decided: match s.score {
+            Some(Score::Win) => Some(true),
+            Some(Score::Loss) => Some(false),
+            _ => None,
+        },
+        turns: s.turns,
         pv: s.pv,
     })
 }
@@ -1326,7 +1348,7 @@ mod tests {
         );
         assert_eq!(out.text, "Depth 12.0233+ Eval -1078 Time 2.8 Seed 47d0b298fc1972e4");
         let won = log("Depth 7 Eval 999990 Time 0.1");
-        assert_eq!((won.depth.as_deref(), won.score), (Some("7"), None));
+        assert_eq!((won.depth.as_deref(), won.score, won.decided), (Some("7"), None, Some(true)));
         let id = log("ID Depth:  12     Eval:     90 Time: 2.37/4.89  PV: Ee2n Ee3n Ee4n Ee5n  ed7s qpss");
         assert_eq!((id.depth.as_deref(), id.score), (Some("12"), Some(9)));
         assert_eq!(id.pv.unwrap(), ["Ee2n Ee3n Ee4n Ee5n", "ed7s"]);
@@ -1342,13 +1364,31 @@ mod tests {
     }
 
     #[test]
+    fn win_chances_and_proofs_reach_the_panel() {
+        let info = |text: &str| {
+            engine_output(Color::Silver, Profile::Generic, EngineMessage::Info(Info::parse(text))).unwrap()
+        };
+        let chance = info("winrate 0.637");
+        assert_eq!((chance.score, chance.chance, chance.decided), (None, Some(637), None));
+        let lost = info("proven loss 3");
+        assert_eq!((lost.score, lost.chance, lost.decided, lost.turns), (None, None, Some(false), Some(3)));
+        assert_eq!(info("score 120").decided, None);
+    }
+
+    #[test]
     fn evals_are_from_golds_side() {
         assert_eq!(
-            eval_for_gold(Score::CentiRabbits(40), Color::Silver),
+            eval_for_gold(Score::CentiRabbits(40), Color::Silver, None),
             Eval::CentiRabbits { value: -40, chance: None }
         );
-        assert_eq!(eval_for_gold(Score::Win, Color::Silver), Eval::Decided { winner: Color::Silver });
-        assert_eq!(eval_for_gold(Score::Win, Color::Gold), Eval::Decided { winner: Color::Gold });
+        assert_eq!(
+            eval_for_gold(Score::Win, Color::Silver, Some(2)),
+            Eval::Decided { winner: Color::Silver, turns: Some(2) }
+        );
+        assert_eq!(
+            eval_for_gold(Score::Win, Color::Gold, None),
+            Eval::Decided { winner: Color::Gold, turns: None }
+        );
     }
 
     #[test]
@@ -1379,19 +1419,19 @@ mod tests {
         // A proof holds against later scores and chances.
         assert_eq!(
             feed(&mut eval, "proven win 2", Color::Silver),
-            Some(Eval::Decided { winner: Color::Silver })
+            Some(Eval::Decided { winner: Color::Silver, turns: Some(2) })
         );
         assert_eq!(
             feed(&mut eval, "score 1000", Color::Silver),
-            Some(Eval::Decided { winner: Color::Silver })
+            Some(Eval::Decided { winner: Color::Silver, turns: Some(2) })
         );
         assert_eq!(
             feed(&mut eval, "winrate 0.9", Color::Silver),
-            Some(Eval::Decided { winner: Color::Silver })
+            Some(Eval::Decided { winner: Color::Silver, turns: Some(2) })
         );
         assert_eq!(
             feed(&mut eval, "proven loss", Color::Gold),
-            Some(Eval::Decided { winner: Color::Silver })
+            Some(Eval::Decided { winner: Color::Silver, turns: None })
         );
         assert_eq!(centi_rabbits_for_chance(0.5), 0);
         assert_eq!(centi_rabbits_for_chance(1.0), 2072);

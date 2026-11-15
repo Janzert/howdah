@@ -24,6 +24,13 @@ young).
 - In an engine game, the side panel lists the engines in the board's
   order, the side at the top first, instead of always gold first.
 
+- The engine panel shows an engine's chance of winning when it gives one
+  (`win 63%`), with its eval in rabbits on hover, and a forced result as
+  `win in 2` or `loss in 2`.
+- A proven win says how many of the winner's turns it takes, when the
+  engine gives the count: `Gold wins in 2` in the analysis panel and
+  comments, `W2` or `L2` in the move list.
+
 - Analyse game takes a time for the whole game instead of a time a
   position. It gives every position a quick look, then spends the rest
   where the evals or the marks are least settled, so the marks most

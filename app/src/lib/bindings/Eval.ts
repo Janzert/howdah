@@ -4,4 +4,4 @@ import type { Color } from "./Color";
 /**
  * An evaluation from gold's side.
  */
-export type Eval = { "kind": "centiRabbits", value: number, chance: number | null, } | { "kind": "decided", winner: Color, };
+export type Eval = { "kind": "centiRabbits", value: number, chance: number | null, } | { "kind": "decided", winner: Color, turns: number | null, };

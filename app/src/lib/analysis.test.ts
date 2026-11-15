@@ -38,7 +38,11 @@ describe('analysis display', () => {
     expect(formatEval({ kind: 'centiRabbits', value: 35, chance: null })).toBe('+0.35');
     expect(formatEval({ kind: 'centiRabbits', value: -120, chance: null })).toBe('−1.20');
     expect(formatEval({ kind: 'centiRabbits', value: 0, chance: null })).toBe('0.00');
-    expect(formatEval({ kind: 'decided', winner: 'silver' })).toBe('Silver wins');
+    expect(formatEval({ kind: 'decided', winner: 'silver', turns: null })).toBe('Silver wins');
+    expect(formatEval({ kind: 'decided', winner: 'gold', turns: 2 })).toBe('Gold wins in 2');
+    expect(evalTitle({ kind: 'decided', winner: 'gold', turns: 2 })).toBe(
+      "Gold wins (in 2 of gold's turns), proven by the engine",
+    );
     expect(formatEval(null)).toBe('');
     expect(formatRabbits(-5)).toBe('−0.05');
   });
@@ -61,8 +65,8 @@ describe('analysis display', () => {
     expect(goldShare({ kind: 'centiRabbits', value: 0, chance: null })).toBe(0.5);
     expect(goldShare({ kind: 'centiRabbits', value: 100, chance: null })).toBeCloseTo(0.58, 2);
     expect(goldShare({ kind: 'centiRabbits', value: -100, chance: null })).toBeCloseTo(0.42, 2);
-    expect(goldShare({ kind: 'decided', winner: 'gold' })).toBe(1);
-    expect(goldShare({ kind: 'decided', winner: 'silver' })).toBe(0);
+    expect(goldShare({ kind: 'decided', winner: 'gold', turns: null })).toBe(1);
+    expect(goldShare({ kind: 'decided', winner: 'silver', turns: null })).toBe(0);
   });
 
   it('sends the PV up to the clicked turn', () => {
@@ -114,7 +118,8 @@ describe('evalGraph', () => {
 
 describe('shortEval', () => {
   it('shows a win as on the eval bar', () => {
-    expect(shortEval({ kind: 'decided', winner: 'silver' } as Eval)).toBe('L');
+    expect(shortEval({ kind: 'decided', winner: 'silver', turns: null } as Eval)).toBe('L');
+    expect(shortEval({ kind: 'decided', winner: 'gold', turns: 2 })).toBe('W2');
     expect(shortEval({ kind: 'centiRabbits', value: 35, chance: null })).toBe('+0.35');
   });
 });
@@ -149,9 +154,13 @@ describe('barEval', () => {
   const searched: Eval = { kind: 'centiRabbits', value: 0, chance: null };
   it('gives the winner the bar when the position ends the game', () => {
     for (const reason of ['goal', 'elimination', 'immobilization'] as const) {
-      expect(barEval({ winner: 'silver', reason }, searched)).toEqual({ kind: 'decided', winner: 'silver' });
+      expect(barEval({ winner: 'silver', reason }, searched)).toEqual({
+        kind: 'decided',
+        winner: 'silver',
+        turns: null,
+      });
     }
-    expect(barEval({ winner: 'gold', reason: 'goal' }, null)).toEqual({ kind: 'decided', winner: 'gold' });
+    expect(barEval({ winner: 'gold', reason: 'goal' }, null)).toEqual({ kind: 'decided', winner: 'gold', turns: null });
   });
   it("keeps the search's eval for a result decided off the board", () => {
     for (const reason of ['timeout', 'resignation', 'illegalMove', 'score', 'forfeit'] as const) {

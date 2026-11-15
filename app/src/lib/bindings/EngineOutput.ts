@@ -14,4 +14,23 @@ seq: number, side: Color, kind: EngineOutputKind,
 /**
  * Display text, e.g. `depth 12+` or the log line.
  */
-text: string, depth: string | null, score: number | null, pv: Array<string> | null, };
+text: string, depth: string | null, 
+/**
+ * From the engine's side, in centi-rabbits.
+ */
+score: number | null, 
+/**
+ * The engine's chance of winning (`info winrate`), in tenths of a
+ * percent.
+ */
+chance: number | null, 
+/**
+ * The engine sees a forced result: `true` a win for itself, `false`
+ * a loss (`info proven`, or a score its profile reads as one).
+ */
+decided: boolean | null, 
+/**
+ * With `decided`, the winner's turns to it, its next one as 1, when
+ * the engine gave them.
+ */
+turns: number | null, pv: Array<string> | null, };

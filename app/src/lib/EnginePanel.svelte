@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { formatRabbits } from './analysis';
+  import { formatChance, formatRabbits, inTurns } from './analysis';
   import { api, errorMessage } from './api';
   import type { Color } from './bindings/Color';
   import type { EngineOption } from './bindings/EngineOption';
@@ -37,11 +37,15 @@
 
   interface SideState {
     depth: string | null;
+    /** From the engine's side: centi-rabbits, a win chance in tenths of a
+     * percent, a forced win (true) or loss and its winner's turns. */
     score: number | null;
+    chance: number | null;
+    decided: { win: boolean; turns: number | null } | null;
     pv: string[];
     lines: { kind: string; text: string }[];
   }
-  const empty = (): SideState => ({ depth: null, score: null, pv: [], lines: [] });
+  const empty = (): SideState => ({ depth: null, score: null, chance: null, decided: null, pv: [], lines: [] });
   let output = $state<Record<Color, SideState>>({ gold: empty(), silver: empty() });
   /** Whether each side's log is shown. */
   let logOpen = $state<Record<Color, boolean>>({ gold: false, silver: false });
@@ -58,7 +62,12 @@
     shownSeq = o.seq;
     const s = output[o.side];
     if (o.depth != null) s.depth = o.depth;
+    // A new score or chance replaces a forced result; an engine that has
+    // one sends it again with each report.
+    if (o.score != null || o.chance != null) s.decided = null;
     if (o.score != null) s.score = o.score;
+    if (o.chance != null) s.chance = o.chance;
+    if (o.decided != null) s.decided = { win: o.decided, turns: o.turns };
     if (o.pv != null) s.pv = o.pv;
     s.lines.push({ kind: o.kind, text: o.text });
     if (s.lines.length > MAX_LINES) s.lines.splice(0, s.lines.length - MAX_LINES);
@@ -133,9 +142,19 @@
         <span class="dot {side}"></span>
         <strong class="name" title={players[side].name}>{players[side].name}</strong>
         {#if s.depth}<span class="stat">depth {s.depth}</span>{/if}
-        {#if s.score != null}<span class="stat" title="in rabbits, from this engine's side"
-            >eval {formatRabbits(s.score)}</span
-          >{/if}
+        {#if s.decided}
+          <span class="stat" title="A forced {s.decided.win ? 'win' : 'loss'} for this engine"
+            >{s.decided.win ? 'win' : 'loss'}{inTurns(s.decided.turns)}</span
+          >
+        {:else if s.chance != null}
+          <span
+            class="stat"
+            title="This engine's chance of winning{s.score != null ? `; ${formatRabbits(s.score)} in rabbits` : ''}"
+            >win {formatChance(s.chance)}</span
+          >
+        {:else if s.score != null}
+          <span class="stat" title="in rabbits, from this engine's side">eval {formatRabbits(s.score)}</span>
+        {/if}
         <span class="spacer"></span>
         <button
           class="options"

@@ -327,7 +327,7 @@ const ANNOTATED_TURNS: usize = 8;
 /// chance of winning when the engine gave one.
 fn gold_share(eval: Eval) -> f64 {
     match eval {
-        Eval::Decided { winner } => (winner == Color::Gold).into(),
+        Eval::Decided { winner, .. } => (winner == Color::Gold).into(),
         Eval::CentiRabbits { chance: Some(c), .. } => f64::from(c) / 1000.0,
         Eval::CentiRabbits { value, chance: None } => {
             1.0 / (1.0 + (-f64::from(value) / EVAL_BAR_SCALE).exp())
@@ -337,11 +337,17 @@ fn gold_share(eval: Eval) -> f64 {
 
 /// An eval from gold's side (`formatEval` in `analysis.ts`): its chance of
 /// winning when the engine gave one (`Gold 63%`), otherwise rabbits
-/// (`+0.35`), or who has a proven win.
+/// (`+0.35`), or who has a proven win and in how many of its turns
+/// (`Gold wins in 2`).
 fn format_eval(eval: Eval) -> String {
     match eval {
-        Eval::Decided { winner: Color::Gold } => "Gold wins".into(),
-        Eval::Decided { winner: Color::Silver } => "Silver wins".into(),
+        Eval::Decided { winner, turns } => {
+            let side = if winner == Color::Gold { "Gold" } else { "Silver" };
+            match turns {
+                Some(n) => format!("{side} wins in {n}"),
+                None => format!("{side} wins"),
+            }
+        }
         Eval::CentiRabbits { chance: Some(c), .. } => format!("Gold {}", format_chance(c)),
         Eval::CentiRabbits { value, chance: None } => format!("{:+.2}", f64::from(value) / 100.0),
     }
@@ -3319,6 +3325,8 @@ mod tests {
         assert_eq!(gold_share(chance), 0.637);
         assert_eq!(format_eval(chance), "Gold 64%");
         assert_eq!(format_eval(Eval::CentiRabbits { value: -35, chance: None }), "-0.35");
+        assert_eq!(format_eval(Eval::Decided { winner: Color::Silver, turns: Some(2) }), "Silver wins in 2");
+        assert_eq!(format_eval(Eval::Decided { winner: Color::Gold, turns: None }), "Gold wins");
         assert_eq!(
             (format_chance(996), format_chance(4), format_chance(10)),
             ("99.6%".into(), "0.4%".into(), "1%".into())
@@ -5444,6 +5452,9 @@ mod tests {
             text: text.into(),
             depth: None,
             score: None,
+            chance: None,
+            decided: None,
+            turns: None,
             pv: None,
         };
         let mut s = Session::new();

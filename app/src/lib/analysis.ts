@@ -43,34 +43,44 @@ export function earlierEval(tree: MoveNodeView[], node: NodeId): Eval | null {
  * the search's eval of the position. */
 export function barEval(result: GameResult | null, searched: Eval | null): Eval | null {
   if (result && (result.reason === 'goal' || result.reason === 'elimination' || result.reason === 'immobilization')) {
-    return { kind: 'decided', winner: result.winner };
+    return { kind: 'decided', winner: result.winner, turns: null };
   }
   return searched;
 }
 
 /** An eval from gold's side: its chance of winning when the engine gave
- * one (`Gold 63%`), otherwise rabbits (`+0.35`), or who has a proven win. */
+ * one (`Gold 63%`), otherwise rabbits (`+0.35`), or who has a proven win
+ * and in how many of its turns (`Gold wins in 2`). */
 export function formatEval(e: Eval | null): string {
   if (!e) return '';
-  if (e.kind === 'decided') return e.winner === 'gold' ? 'Gold wins' : 'Silver wins';
+  if (e.kind === 'decided') return `${e.winner === 'gold' ? 'Gold' : 'Silver'} wins${inTurns(e.turns)}`;
   if (e.chance != null) return `Gold ${formatChance(e.chance)}`;
   return formatRabbits(e.value);
 }
 
 /** An eval short enough for a move list row: gold's chance (`63%`), its
- * rabbits, or `W`/`L` for a win or loss for gold, as on the eval bar. */
+ * rabbits, or `W`/`L` for a win or loss for gold, as on the eval bar,
+ * with the winner's turns to it when known (`W2`). */
 export function shortEval(e: Eval): string {
-  if (e.kind === 'decided') return e.winner === 'gold' ? 'W' : 'L';
+  if (e.kind === 'decided') return `${e.winner === 'gold' ? 'W' : 'L'}${e.turns ?? ''}`;
   if (e.chance != null) return formatChance(e.chance);
   return formatRabbits(e.value);
 }
 
 /** An eval in full, for a tooltip. */
 export function evalTitle(e: Eval): string {
-  if (e.kind === 'decided') return `${formatEval(e)}, proven by the engine`;
+  if (e.kind === 'decided') {
+    const turns = e.turns == null ? '' : ` (in ${e.turns} of ${e.winner}'s turns)`;
+    return `${e.winner === 'gold' ? 'Gold' : 'Silver'} wins${turns}, proven by the engine`;
+  }
   if (e.chance != null)
     return `Gold's chance of winning ${formatChance(e.chance)}; ${formatRabbits(e.value)} in rabbits`;
   return `${formatRabbits(e.value)} rabbits, from gold's side`;
+}
+
+/** ` in 2` for a proven result's turns, or nothing when not known. */
+export function inTurns(turns: number | null): string {
+  return turns == null ? '' : ` in ${turns}`;
 }
 
 /** A chance in tenths of a percent: whole percents, with a tenth near the
