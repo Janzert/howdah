@@ -82,9 +82,11 @@ export const TICK_TIMES_MS: readonly number[] = [
 ];
 
 /** The next tick to play once time left falls to it: the largest tick time
- * below both `left` and the last tick played. */
-export function nextTick(left: number, lastTick = Infinity): number | null {
-  return TICK_TIMES_MS.find((t) => t < left && t < lastTick) ?? null;
+ * below both `left` and the last tick played, and no more than half of
+ * `turnMs`, the turn's whole time (move time plus usable reserve), so a
+ * short turn stays quiet until half of it is gone. */
+export function nextTick(left: number, turnMs: number, lastTick = Infinity): number | null {
+  return TICK_TIMES_MS.find((t) => t < left && t < lastTick && t <= turnMs / 2) ?? null;
 }
 
 /** A time in its two largest units, to keep it short: `m:ss` under an

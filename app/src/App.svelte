@@ -282,7 +282,8 @@
   });
 
   // Low-time ticks while a human's clock runs (or, by the setting, either
-  // clock in a game without a human here), at the times in TICK_TIMES_MS.
+  // clock in a game without a human here), at the times in TICK_TIMES_MS
+  // once half the turn is gone.
   $effect(() => {
     const clock = view?.clock;
     const side = clock?.running;
@@ -292,7 +293,7 @@
     let timer: ReturnType<typeof setTimeout> | undefined;
     const schedule = (lastTick?: number) => {
       const left = turnTimeLeft(clock, performance.now() - arrived);
-      const tick = nextTick(left, lastTick);
+      const tick = nextTick(left, clock.turnAllowanceMs, lastTick);
       if (tick == null) return;
       timer = setTimeout(() => {
         play('tick');

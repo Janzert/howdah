@@ -127,28 +127,38 @@ describe('sideTimes', () => {
 });
 
 describe('nextTick', () => {
+  const long = 120_000;
+
   it('waits for 30 s, then speeds up', () => {
-    expect(nextTick(60_000)).toBe(30_000);
-    expect(nextTick(30_000)).toBe(20_000);
-    expect(nextTick(9500)).toBe(9000);
-    expect(nextTick(4800)).toBe(4500);
-    expect(nextTick(2400)).toBe(2250);
+    expect(nextTick(60_000, long)).toBe(30_000);
+    expect(nextTick(30_000, long)).toBe(20_000);
+    expect(nextTick(9500, long)).toBe(9000);
+    expect(nextTick(4800, long)).toBe(4500);
+    expect(nextTick(2400, long)).toBe(2250);
+  });
+
+  it('waits for half of a short turn', () => {
+    expect(nextTick(30_000, 30_000)).toBe(10_000);
+    expect(nextTick(15_000, 15_000)).toBe(7000);
+    expect(nextTick(7000, 7000)).toBe(3500);
+    expect(nextTick(5000, 5000)).toBe(2500);
+    expect(nextTick(400, 400)).toBeNull();
   });
 
   it('never repeats a tick when the timer fires early', () => {
-    expect(nextTick(9001, 9000)).toBe(8000);
+    expect(nextTick(9001, long, 9000)).toBe(8000);
   });
 
   it('ends after the last tick', () => {
-    expect(nextTick(250)).toBeNull();
-    expect(nextTick(5000, 250)).toBeNull();
+    expect(nextTick(250, long)).toBeNull();
+    expect(nextTick(5000, long, 250)).toBeNull();
   });
 
   it('plays every tick in order, largest first', () => {
     const played: number[] = [];
     let left = 40_000;
     let last: number | undefined;
-    for (let tick = nextTick(left); tick != null; tick = nextTick(left, last)) {
+    for (let tick = nextTick(left, long); tick != null; tick = nextTick(left, long, last)) {
       played.push(tick);
       last = tick;
       left = tick - 3; // the timer fires a little late

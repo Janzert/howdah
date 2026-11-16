@@ -30,6 +30,10 @@ young).
 
 ### Changed
 
+- The low-time ticks wait until half of the turn is gone, so a short
+  turn (under a minute) no longer ticks from its start: a 7-second turn
+  starts ticking at 3.5 seconds left. Turns of a minute or more tick as
+  before.
 - In an engine game, the side panel lists the engines in the board's
   order, the side at the top first, instead of always gold first.
 
