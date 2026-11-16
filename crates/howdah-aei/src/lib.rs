@@ -2,7 +2,8 @@
 //!
 //! - [`Engine`]: launch an engine, complete the handshake, send commands and
 //!   read parsed [`EngineMessage`]s with timeouts.
-//! - [`play_match`]: play a full engine-vs-engine game with clocks.
+//! - [`play_match`]: play a full engine-vs-engine game with clocks
+//!   ([`play_match_from`]: on from moves already played).
 //! - [`Profile`]: what's known about particular engines (analysis options,
 //!   score scales).
 //! - [`Manifest`]: an engine release described in JSON (AEI's
@@ -24,6 +25,6 @@ mod profile;
 pub use engine::{Direction, Engine, EngineConfig, EngineId};
 pub use error::AeiError;
 pub use manifest::{Manifest, ManifestError};
-pub use matchplay::{MatchConfig, MatchEvent, MatchOutcome, play_match};
+pub use matchplay::{MatchConfig, MatchEvent, MatchOutcome, play_match, play_match_from};
 pub use message::{EngineMessage, Info, SearchEval, SearchLog, SearchLogKind, split_pv};
 pub use profile::{Profile, Score};

@@ -89,8 +89,25 @@ pub async fn play_match(
     gold: &mut Engine,
     silver: &mut Engine,
     config: &MatchConfig,
+    on_event: impl FnMut(MatchEvent),
+) -> Result<MatchOutcome, AeiError> {
+    play_match_from(gold, silver, config, &Game::new(), on_event).await
+}
+
+/// [`play_match`] on from `opening`, the moves of a game from the start
+/// (not a set position) that hasn't ended. Each engine gets them as
+/// `makemove`s after `newgame`, so it knows the history (repetitions
+/// included), and play goes on from there with full clocks: the game
+/// time limit counts from now, the turn limit from the game's start.
+/// The outcome's game includes the opening, which has no events.
+pub async fn play_match_from(
+    gold: &mut Engine,
+    silver: &mut Engine,
+    config: &MatchConfig,
+    opening: &Game,
     mut on_event: impl FnMut(MatchEvent),
 ) -> Result<MatchOutcome, AeiError> {
+    debug_assert!(opening.start_position().is_none() && opening.result().is_none());
     let mut engines = [gold, silver];
     let tc = config.time_control;
     for engine in engines.iter_mut() {
@@ -98,11 +115,14 @@ pub async fn play_match(
             engine.set_time_control(&tc).await?;
         }
         engine.new_game().await?;
+        for m in opening.moves() {
+            engine.make_move(&m.notation()).await?;
+        }
         engine.is_ready(config.ready_timeout).await?;
     }
     on_event(MatchEvent::Started { gold: engines[0].id().clone(), silver: engines[1].id().clone() });
 
-    let mut game = Game::new();
+    let mut game = opening.clone();
     let mut reserves = tc.map(|t| [t.starting_reserve(); 2]);
     let game_start = Instant::now();
     let game_deadline = tc.filter(|t| t.time_limit_ms > 0).map(|t| game_start + t.time_limit());
