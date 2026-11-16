@@ -9,6 +9,12 @@ young).
 
 ### Added
 
+- Engine tests can start their games from positions reached by play
+  (`[positions]` in a test's spec: a file with each position's moves
+  from the start, sent to the engines as moves). Each position is
+  played from both sides, or with `sides = "to_move"` with the engine
+  under test always the side to move. A game's record says where play
+  started (a `StartMove` tag and a comment in the move list).
 - An engine test's panel shows how its games ended (goal, elimination,
   immobilization, time and the rest), with each engine's wins for each,
   and each engine's wins and losses as gold and as silver.

@@ -12,6 +12,8 @@
 //!   engines, added or retired as it goes, rated together from all their
 //!   games ([`PoolInfo`]), with each pair's matchup chosen by what it
 //!   would tell.
+//! - [`PositionsSpec`]: games from start positions (`[positions]`),
+//!   positions reached by play, sent to the engines as their moves.
 //! - [`SpsaSpec`]: a tuning run instead of a test (`[spsa]` in the spec):
 //!   one engine against itself with its parameters nudged apart, stepped
 //!   by each iteration's games.
@@ -31,6 +33,7 @@ mod daemon;
 mod error;
 mod memory;
 mod pool;
+mod positions;
 mod results;
 mod runner;
 mod spec;
@@ -50,8 +53,11 @@ pub use daemon::{
 pub use error::TourneyError;
 pub use memory::default_budget as default_memory_budget;
 pub use pool::{Matchup, OUTLIER_MIN_GAMES, PoolEngine, PoolInfo, PoolSpec, pool_info};
+pub use positions::{PositionSides, Positions, PositionsSpec, StartPosition};
 pub use results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash, read_results};
-pub use runner::{EngineLine, LiveGame, RunEnd, RunEvent, RunOptions, StopHandle, run};
+pub use runner::{
+    EngineLine, LiveGame, RunEnd, RunEvent, RunOptions, START_MOVE_TAG, START_POSITION_TAG, StopHandle, run,
+};
 pub use spec::{EngineSpec, MemorySpec, OptionValue, SprtSpec, TestSpec};
 pub use spsa::{
     HISTORY_FILE as SPSA_HISTORY_FILE, POINTS_FILE as SPSA_POINTS_FILE, SpsaInfo, SpsaParam, SpsaPoint,

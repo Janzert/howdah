@@ -301,6 +301,18 @@ plans the engine test and tournament runner.
     parameter's `c` for the next iteration); `Daemon::spsa_history`
     (`GET /tests/{id}/spsa-history?skip=N`) reads the steps after the
     first `N`.
+  - Start positions (`positions.rs`, design in `docs/TOURNAMENTS.md`):
+    `[positions]` (`file`, `sides`: `both` or `to_move`) names a file of
+    positions, one a line as the moves from the start; `TestDir::create`
+    checks it and copies it in as `positions.txt`. `Positions::for_game`
+    picks a game's start (with `to_move`, game 1 a gold-to-move position
+    and game 2 a silver-to-move one, so `GameEntry::gold_of` still holds),
+    and `play_match_from` (howdah-aei) sends its moves as `makemove`s
+    before play goes on. `GameEntry.position` and `start_ply` log it,
+    and the record's `StartMove`/`StartPosition` tags
+    (`START_MOVE_TAG`, `START_POSITION_TAG`) and a comment on the start's
+    last move name it; the start's moves have no times in the record or
+    `LiveGame.used_ms`.
   - Pools (`pool.rs`, design in `docs/TOURNAMENTS.md`): a spec with
     `[pool]` (`min_pairs`, `outlier_z`, `anchor`, `seed`) and two or more
     engines (`EngineSpec.retired`: no new pairs), playing until stopped

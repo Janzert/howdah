@@ -709,6 +709,43 @@ optional, and without one it plays until stopped.
   standard deviation, the numbers always shown and the tooltip giving
   the prediction), and the outliers.
 
+### Start positions
+
+A test can start its games from positions reached by play instead of
+from the setups (`[positions]` in the spec, Brian 2026-11-16): first to
+measure how an engine finishes positions it has won, by playing out a
+sample from its own games against another engine. It isn't the setup
+book "Decided" leaves out: the positions come from real games, and the
+setups are part of them.
+
+- **The file** has one position per line, written as the game's moves
+  from the start (`1g Ra1 … 1s ra8 … 2g Ee2n …`, each move led by its
+  number); blank lines and `#` comments are skipped. Each line is
+  checked as a game when the test is made (legal moves, not ended), and
+  the file is copied into the test's directory (`positions.txt`), as
+  the engines are, so the test doesn't change if the file does.
+- **Engines get the moves**, `makemove` after `newgame`, never
+  `setposition`: they know the history, repetitions included, as in a
+  game played from the start. Clocks start full at the position; the
+  turn limit still counts from the game's start.
+- **Sides.** By default (`sides = "both"`) pair `p` plays the `p`-th
+  position from both sides, cycling through the file, so each position
+  is played once by each engine. With `sides = "to_move"` engine 1 is
+  always the side to move: game 1 of pair `p` takes the `p`-th position
+  with gold to move and game 2 the `p`-th with silver to move, each list
+  cycling on its own. Engine 1 is then still gold in game 1, so
+  everything that follows the colours (stats by colour, the app) is
+  unchanged, but the file needs positions with each side to move. Its
+  pairs aren't colour-balanced in the usual sense, so its Elo says how
+  the engines do from those positions, not overall.
+- **Results.** The record holds the whole game, the start's moves
+  without times. Its `StartMove` tag is the first move the engines
+  played (`17g`) and `StartPosition` the position's line in the file,
+  and the start's last move has a comment saying play starts there, so
+  the move list shows it. `GameEntry.position` is the line and
+  `start_ply` the plies it had, so `plies - start_ply` is what was
+  played.
+
 ## Decided
 
 Brian, 2026-10-11:

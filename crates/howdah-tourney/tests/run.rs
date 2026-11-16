@@ -100,6 +100,55 @@ async fn plays_every_pair_and_records_the_games() {
     assert!(events.is_empty());
 }
 
+const SETUPS: &str = "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2 \
+                      1s ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8 ha7 db7 cc7 ed7 me7 cf7 dg7 hh7";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn plays_from_start_positions_with_engine_one_to_move() {
+    let tmp = tempfile::tempdir().unwrap();
+    // Line 2 has gold to move, lines 3 and 4 silver.
+    let file = tmp.path().join("won.txt");
+    let lines = format!(
+        "# start positions\n{SETUPS} 2g Ee2n Ee3n 2s ed7s ed6s\n{SETUPS} 2g Ee2n\n{SETUPS} 2g Md2n 2s ed7s 3g Ee2n\n"
+    );
+    std::fs::write(&file, lines).unwrap();
+    let positions = format!(
+        "max_pairs = 2\n[positions]\nfile = \"{}\"\nsides = \"to_move\"",
+        file.display().to_string().replace('\\', "/")
+    );
+    let test = make_test(tmp.path(), &positions, &[], "");
+    assert!(test.path.join("positions.txt").exists(), "the file is copied into the test");
+    std::fs::remove_file(&file).unwrap();
+    let (end, _) = play(&test, StopHandle::default(), None).await;
+    assert_eq!(end, RunEnd::MaxPairs);
+
+    let mut entries = test.results().unwrap();
+    entries.sort_by_key(|e| (e.pair, e.game));
+    let starts: Vec<(Option<u32>, Option<u32>)> = entries.iter().map(|e| (e.position, e.start_ply)).collect();
+    assert_eq!(starts, [(Some(2), Some(4)), (Some(3), Some(3)), (Some(2), Some(4)), (Some(4), Some(5))]);
+    for e in &entries {
+        let text = std::fs::read_to_string(test.path.join(&e.record)).unwrap();
+        let record = GameRecord::parse(&text).unwrap();
+        let start = e.start_ply.unwrap() as usize;
+        let line = record.tree.main_line();
+        assert_eq!(line.len() as u32, e.plies + 1);
+        assert!(e.plies as usize > start, "{e:?}");
+        // The record names where play started, and says so at the start.
+        let first = howdah_arimaa::notation::move_label(start);
+        assert_eq!(record.tag("StartMove"), Some(first.as_str()));
+        assert_eq!(record.tag("StartPosition"), Some(e.position.unwrap().to_string().as_str()));
+        let comment = record.tree[line[start]].annotation().comment_text().unwrap_or_default();
+        assert!(comment.contains(&format!("play starts at {first}")), "{comment:?}");
+        // Engine 1 ("one") plays the side to move at the start position.
+        let one = if start % 2 == 0 { "Gold" } else { "Silver" };
+        assert_eq!(record.tag(one), Some("one"), "{e:?}");
+        // The start's moves have no times; every move played has one.
+        let timed: Vec<bool> =
+            line[1..].iter().map(|n| record.tree[*n].annotation().elapsed().is_some()).collect();
+        assert!(timed[..start].iter().all(|t| !t) && timed[start..].iter().all(|t| *t), "{e:?}: {text}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stopped_test_resumes_where_it_left_off() {
     let tmp = tempfile::tempdir().unwrap();

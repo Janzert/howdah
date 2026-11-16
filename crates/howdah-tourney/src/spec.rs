@@ -29,6 +29,18 @@
 //! Engine 1 is the one being tested: scores, Elo and the SPRT are from its
 //! side.
 //!
+//! Games can start from positions reached by play instead of from the
+//! setups (see `positions`): one a line in a file, as the game's moves so
+//! far, which the engines are sent as moves. Each is played from both
+//! sides, or with `sides = "to_move"` with engine 1 always the side to
+//! move:
+//!
+//! ```toml
+//! [positions]
+//! file = "won.txt"      # copied into the test's directory
+//! # sides = "to_move"
+//! ```
+//!
 //! An SPSA tuning run (see `spsa`) has `[spsa]` and one engine, which
 //! plays both sides: engine 1 at θ + cΔ, engine 2 at θ − cΔ. It has no
 //! SPRT or `max_pairs` (it plays `iterations × pairs_per_iteration`
@@ -95,6 +107,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::TourneyError;
 use crate::pool::PoolSpec;
+use crate::positions::PositionsSpec;
 use crate::spsa::SpsaSpec;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -123,6 +136,9 @@ pub struct TestSpec {
     /// A pool of engines playing each other instead of a test.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool: Option<PoolSpec>,
+    /// Start positions instead of the setups.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub positions: Option<PositionsSpec>,
     /// Keep each game's engine transcripts in `logs/`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub engine_logs: bool,

@@ -48,6 +48,13 @@ pub struct GameEntry {
     /// engines.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engines: Option<[usize; 2]>,
+    /// From a start position: its line in the positions file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<u32>,
+    /// From a start position: the plies it had, so the game played is
+    /// `plies - start_ply`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_ply: Option<u32>,
 }
 
 /// [`GameEntry::reason`] for a game an engine forfeited by going over a
@@ -189,6 +196,8 @@ pub(crate) fn entry(pair: u32, game: u8, winner: usize) -> GameEntry {
         memory_mb: None,
         restarts: Vec::new(),
         engines: None,
+        position: None,
+        start_ply: None,
     }
 }
 

@@ -3,6 +3,7 @@
 //! - `test.toml`: the spec, with each engine's program pointing at its
 //!   snapshot.
 //! - `engines/<name>/`: the snapshots.
+//! - `positions.txt`: the start positions, if the spec has them.
 //! - `results.jsonl`: the results log.
 //! - `games/`: a record per game.
 //! - `logs/`: engine transcripts per game, if the spec asks for them.
@@ -17,6 +18,7 @@ use howdah_aei::EngineConfig;
 use sha2::{Digest, Sha256};
 
 use crate::error::TourneyError;
+use crate::positions::Positions;
 use crate::results::{GameEntry, read_results};
 use crate::spec::{EngineSpec, TestSpec};
 
@@ -51,6 +53,15 @@ impl TestDir {
         let path = absolute(dir)?;
         for engine in &mut spec.engines {
             snapshot(&path, engine, base)?;
+        }
+        if let Some(p) = &mut spec.positions {
+            // Read first, so a bad file refuses the test.
+            let source = base.join(&p.file);
+            let text = std::fs::read_to_string(&source).map_err(TourneyError::io(&source))?;
+            Positions::parse(&text, p.sides).map_err(TourneyError::Spec)?;
+            let to = path.join(Positions::FILE);
+            std::fs::write(&to, text).map_err(TourneyError::io(&to))?;
+            p.file = PathBuf::from(Positions::FILE);
         }
         if let Some(spsa) = &mut spec.spsa {
             spsa.seed.get_or_insert_with(new_seed);
@@ -100,6 +111,13 @@ impl TestDir {
         let spec =
             TestSpec::parse(&text).map_err(|message| TourneyError::Parse { path: spec_path, message })?;
         Ok(TestDir { path, spec })
+    }
+
+    /// The start positions, if the spec has them.
+    pub fn positions(&self) -> Result<Option<Positions>, TourneyError> {
+        let Some(p) = &self.spec.positions else { return Ok(None) };
+        let path = self.path.join(&p.file);
+        Positions::load(&path, p.sides).map(Some).map_err(|message| TourneyError::Parse { path, message })
     }
 
     pub fn results_path(&self) -> PathBuf {

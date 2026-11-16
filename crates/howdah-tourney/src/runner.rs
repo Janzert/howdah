@@ -28,7 +28,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use howdah_aei::{Direction, Engine, Info, MatchConfig, MatchEvent, MatchOutcome, play_match};
+use howdah_aei::{Direction, Engine, Info, MatchConfig, MatchEvent, MatchOutcome, play_match_from};
+use howdah_arimaa::notation::move_label;
 use howdah_arimaa::{
     Color, DEFAULT_SETUP_MINIMUM, Game, GameRecord, GameResult, GameTree, SETUP_MINIMUM_TAG, TimeControl,
     WinReason,
@@ -40,6 +41,7 @@ use tokio::task::JoinSet;
 use crate::error::TourneyError;
 use crate::memory::{self, Engines, Limits, size};
 use crate::pool::{PoolInfo, PoolRun, Prepared};
+use crate::positions::{Positions, StartPosition};
 use crate::results::{GameEntry, RESOURCE_LIMIT, Restart, ResultsLog, moves_hash};
 use crate::spec::{EngineSpec, OptionValue, TestSpec};
 use crate::spsa::{SpsaInfo, SpsaRun};
@@ -241,6 +243,8 @@ pub(crate) struct TestRun {
     pub(crate) dir: TestDir,
     config: MatchConfig,
     limits: Limits,
+    /// The spec's start positions.
+    positions: Option<Positions>,
     /// Games at once at most.
     concurrency: AtomicU32,
     state: Mutex<State>,
@@ -268,9 +272,11 @@ impl TestRun {
             None => None,
         };
         let pool = dir.spec.is_pool().then(|| PoolRun::open(&dir, &entries));
+        let positions = dir.positions()?;
         Ok(TestRun {
             config: MatchConfig { time_control: dir.spec.time_control(), ..MatchConfig::default() },
             limits: Limits::new(&dir.spec.memory),
+            positions,
             concurrency: AtomicU32::new(concurrency.max(1)),
             state: Mutex::new(State {
                 done: entries.iter().map(|e| (e.pair, e.game)).collect(),
@@ -413,6 +419,12 @@ impl TestRun {
             None => self.dir.spec.engine(i).clone(),
         };
         (sides, sides.map(spec))
+    }
+
+    /// The start position game `game` of pair `pair` plays from, if the
+    /// test has them.
+    fn start_of(&self, (pair, game): (u32, u8)) -> Option<&StartPosition> {
+        self.positions.as_ref().map(|p| p.for_game(pair, game))
     }
 
     /// The names of pair `pair`'s engines 1 and 2.
@@ -587,9 +599,14 @@ impl TestRun {
 
     fn start_live(&self, game: (u32, u8), ids: [Option<String>; 2]) {
         let reserves = self.config.time_control.map(|tc| [tc.starting_reserve(); 2]);
+        // A start position's moves come first, with no time taken.
+        let opening: Vec<String> = self
+            .start_of(game)
+            .map(|s| s.game.moves().iter().map(|m| m.notation()).collect())
+            .unwrap_or_default();
         let live = Live {
-            moves: Vec::new(),
-            used: Vec::new(),
+            used: vec![Duration::ZERO; opening.len()],
+            moves: opening,
             reserves,
             turn_started: Instant::now(),
             ids,
@@ -994,7 +1011,8 @@ async fn play_game(
         let [a, b] = &mut *engines;
         let (a, b) = (&mut a.as_mut().expect("started").engine, &mut b.as_mut().expect("started").engine);
         let (g, s) = if gold == 0 { (a, b) } else { (b, a) };
-        let game_played = play_match(g, s, &ctx.config, |event| match event {
+        let opening = ctx.start_of((pair, game)).map_or_else(Game::new, |s| s.game.clone());
+        let game_played = play_match_from(g, s, &ctx.config, &opening, |event| match event {
             MatchEvent::MovePlayed { ply, side, notation, used: u, reserve } => {
                 used.push(u);
                 let reserves = ctx.live_move((pair, game), side.index(), &notation, u, reserve);
@@ -1179,6 +1197,11 @@ fn setup_minimum_tag(spec: &TestSpec) -> Option<String> {
     (tc.setup_minimum() != DEFAULT_SETUP_MINIMUM).then(|| TimeControl::format_time(tc.setup_minimum()))
 }
 
+/// The record tag naming the first move played from a start position
+/// (`17g`), and the one naming that position's line in the positions file.
+pub const START_MOVE_TAG: &str = "StartMove";
+pub const START_POSITION_TAG: &str = "StartPosition";
+
 /// Writes a game's record and makes its log entry.
 fn write_game(
     ctx: &TestRun,
@@ -1208,10 +1231,26 @@ fn write_game(
     // A time control with fractions of a second gets move times to the
     // millisecond.
     let precise = spec.time_control().is_some_and(|tc| !tc.is_whole_seconds());
+    // `used` starts after a start position's moves, which have no times.
+    let start = ctx.start_of((pair, game));
+    let start_ply = start.map_or(0, |s| s.game.ply_count());
     let line = record.tree.main_line();
-    for (node, time) in line.iter().skip(1).zip(used) {
+    for (node, time) in line.iter().skip(1 + start_ply).zip(used) {
         if let Ok(a) = record.tree.annotation_mut(*node) {
             if precise { a.set_elapsed_ms(*time) } else { a.set_elapsed(*time) }
+        }
+    }
+    // Where the engines took over from a start position: tags for
+    // scripts, and a comment on the start's last move for the move list.
+    if let Some(start) = start {
+        let first = move_label(start_ply);
+        record.set_tag(START_MOVE_TAG, first.as_str());
+        record.set_tag(START_POSITION_TAG, start.line.to_string());
+        if let Some(node) = line.get(start_ply)
+            && start_ply > 0
+            && let Ok(a) = record.tree.annotation_mut(*node)
+        {
+            a.set_comment_text(&format!("Start position {} of the test: play starts at {first}", start.line));
         }
     }
     let name = TestDir::record_name(pair, game);
@@ -1219,8 +1258,8 @@ fn write_game(
     std::fs::write(&path, record.to_record()).map_err(TourneyError::io(&path))?;
 
     let mut by_engine = [0.0; 2];
-    for (ply, t) in used.iter().enumerate() {
-        let side_engine = if ply % 2 == 0 { gold } else { 1 - gold };
+    for (i, t) in used.iter().enumerate() {
+        let side_engine = if (start_ply + i) % 2 == 0 { gold } else { 1 - gold };
         by_engine[side_engine] += t.as_secs_f64();
     }
     let notations: Vec<String> = outcome.game.moves().iter().map(|m| m.notation()).collect();
@@ -1239,6 +1278,8 @@ fn write_game(
         memory_mb: None,
         restarts: Vec::new(),
         engines: ctx.logged_engines(pair),
+        position: start.map(|s| s.line),
+        start_ply: start.map(|_| start_ply as u32),
     })
 }
 
