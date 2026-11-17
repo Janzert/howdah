@@ -966,8 +966,9 @@ plans the engine test and tournament runner.
     profile, `RatingChart` (the rating as steps, a point per rated game
     and the rating now, range buttons, a click opens the game), then
     Games (paged, with how the games fetched so far ended, won and lost,
-    and filters by result, ending and rated, all in `lib/playerGames.ts`
-    with nothing more asked of the server) or Record by opponent (fetched when first shown, filters,
+    with rated/unrated/all rows; a row's name or count shows those
+    games, the only filter, `lib/playerGames.ts`, with nothing more
+    asked of the server) or Record by opponent (fetched when first shown, filters,
     each opponent's page and the games against them).
     `ChatArchiveTab` is the chat archive, which needs no login
     (`NO_LOGIN_PANELS`, `GameroomFrame`'s `noLogin`; logged out, the login

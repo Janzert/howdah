@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PastGameView } from './bindings/PastGameView';
 import type { WinReason } from './bindings/WinReason';
-import { endingStats, filterGames, NO_FILTER, outcome } from './playerGames';
+import { endingStats, filterGames, NO_FILTER, outcome, tally } from './playerGames';
 
 const game = (
   gid: string,
@@ -58,5 +58,11 @@ describe('filterGames', () => {
     expect(ids({ outcome: 'loss', reason: 'goal' })).toEqual(['4']);
     expect(ids({ rated: false })).toEqual(['3']);
     expect(ids({ rated: true, outcome: 'win' })).toEqual(['1']);
+  });
+});
+
+describe('tally', () => {
+  it('counts wins and losses, skipping games without a result', () => {
+    expect(tally(games, 'Fritzlein')).toEqual({ wins: 2, losses: 2 });
   });
 });

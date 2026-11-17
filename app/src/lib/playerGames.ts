@@ -48,6 +48,18 @@ export function endingStats(games: PastGameView[], username: string): EndingLine
   return REASONS.flatMap((r) => by.get(r) ?? []);
 }
 
+/** The player's wins and losses in `games`. */
+export function tally(games: PastGameView[], username: string): { wins: number; losses: number } {
+  let wins = 0;
+  let losses = 0;
+  for (const g of games) {
+    const o = outcome(g, username);
+    if (o === 'win') wins++;
+    else if (o === 'loss') losses++;
+  }
+  return { wins, losses };
+}
+
 /** Which games to show: `null` for any. */
 export interface GamesFilter {
   outcome: Outcome | null;
@@ -56,6 +68,9 @@ export interface GamesFilter {
 }
 
 export const NO_FILTER: GamesFilter = { outcome: null, reason: null, rated: null };
+
+export const sameFilter = (a: GamesFilter, b: GamesFilter) =>
+  a.outcome === b.outcome && a.reason === b.reason && a.rated === b.rated;
 
 export const isFiltered = (f: GamesFilter) => f.outcome != null || f.reason != null || f.rated != null;
 

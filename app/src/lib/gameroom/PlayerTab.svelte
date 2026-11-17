@@ -10,15 +10,7 @@
   import type { RecordLineView } from '../bindings/RecordLineView';
   import type { TallyView } from '../bindings/TallyView';
   import type { WinReason } from '../bindings/WinReason';
-  import {
-    endingStats,
-    filterGames,
-    type GamesFilter,
-    isFiltered,
-    NO_FILTER,
-    type Outcome,
-    REASONS,
-  } from '../playerGames';
+  import { endingStats, filterGames, type GamesFilter, isFiltered, NO_FILTER, sameFilter, tally } from '../playerGames';
   import { reasonText } from './format';
 
   /** "Goal", "Illegal move" */
@@ -94,29 +86,52 @@
     [true, 'Bots'],
   ];
   const loadedGames = $derived(page.games.value?.games ?? []);
-  /** The games the rated filter leaves, which the endings count. */
-  const ratedGames = $derived(filterGames(loadedGames, username, { ...NO_FILTER, rated: page.gamesFilter.rated }));
-  const endings = $derived(endingStats(ratedGames, username));
-  const endingTotals = $derived(
-    endings.reduce((t, e) => ({ wins: t.wins + e.wins, losses: t.losses + e.losses }), { wins: 0, losses: 0 }),
-  );
+  const scope = $derived(page.gamesFilter.rated);
+  /** The games in the rated scope chosen, which the endings count. */
+  const scopedGames = $derived(filterGames(loadedGames, username, { ...NO_FILTER, rated: scope }));
   const shownGames = $derived(filterGames(loadedGames, username, page.gamesFilter));
-  /** The endings to choose from: those among the games, and the one chosen. */
-  const reasonChoices = $derived(
-    REASONS.filter((r) => r === page.gamesFilter.reason || endings.some((e) => e.reason === r)),
-  );
-  const outcomeChoices: [Outcome | null, string][] = [
-    [null, 'All results'],
-    ['win', 'Wins'],
-    ['loss', 'Losses'],
-  ];
-  function setGamesFilter(change: Partial<GamesFilter>) {
-    page.gamesFilter = { ...page.gamesFilter, ...change };
+
+  /** A row of the endings table: clicking its name shows its games,
+   * clicking a count those won or lost. */
+  interface EndingRow {
+    label: string;
+    filter: GamesFilter;
+    wins: number;
+    losses: number;
   }
-  /** Shows the games won or lost (`outcome`) by `reason`; null for all. */
-  const pickEnding = (outcome: Outcome | null, reason: WinReason | null) => setGamesFilter({ outcome, reason });
-  const pickedEnding = (outcome: Outcome | null, reason: WinReason | null) =>
-    page.gamesFilter.outcome === outcome && page.gamesFilter.reason === reason;
+  const endingRows = $derived(
+    endingStats(scopedGames, username).map((e): EndingRow => ({
+      label: endingName(e.reason),
+      filter: { outcome: null, reason: e.reason, rated: scope },
+      wins: e.wins,
+      losses: e.losses,
+    })),
+  );
+  const scopeRows = $derived(
+    (
+      [
+        [true, 'Rated'],
+        [false, 'Unrated'],
+        [null, 'All games'],
+      ] as const
+    ).map(([rated, label]): EndingRow => ({
+      label,
+      filter: { outcome: null, reason: null, rated },
+      ...tally(filterGames(loadedGames, username, { ...NO_FILTER, rated }), username),
+    })),
+  );
+  const scopeName = $derived(scope === true ? 'rated games' : scope === false ? 'unrated games' : null);
+  const isShown = (f: GamesFilter) => sameFilter(f, page.gamesFilter);
+  const show = (f: GamesFilter) => (page.gamesFilter = f);
+  /** What the list shows, in words. */
+  const shownText = $derived.by(() => {
+    const f = page.gamesFilter;
+    if (!isFiltered(f)) return null;
+    const what = f.outcome === 'win' ? 'Wins' : f.outcome === 'loss' ? 'Losses' : 'Games';
+    const how = f.reason ? ` by ${reasonText(f.reason)}` : '';
+    const rated = f.rated === true ? ', rated' : f.rated === false ? ', unrated' : '';
+    return `${what}${how}${rated}`;
+  });
 
   function setFilter(change: Partial<RecordFilter>) {
     page.setRecordFilter({ ...page.recordFilter, ...change });
@@ -227,78 +242,56 @@
       {#if part.value.games.length === 0}
         <p class="empty">No finished games.</p>
       {:else}
-        <div class="filters">
-          <div class="choices" role="group" aria-label="Won or lost">
-            {#each outcomeChoices as [v, label] (label)}
-              <button
-                class="link"
-                class:on={page.gamesFilter.outcome === v}
-                aria-pressed={page.gamesFilter.outcome === v}
-                onclick={() => setGamesFilter({ outcome: v })}>{label}</button
+        <table class="record endings" aria-label="How {username}'s games ended">
+          <thead>
+            <tr>
+              <th scope="col"
+                >Ending{#if scopeName}<span class="meta">{`, ${scopeName}`}</span>{/if}</th
               >
-            {/each}
-          </div>
-          <div class="choices" role="group" aria-label="Rated or unrated games">
-            {#each ratedChoices as [v, label] (label)}
-              <button
-                class="link"
-                class:on={page.gamesFilter.rated === v}
-                aria-pressed={page.gamesFilter.rated === v}
-                onclick={() => setGamesFilter({ rated: v })}>{label}</button
-              >
-            {/each}
-          </div>
-          <select
-            aria-label="Ending"
-            value={page.gamesFilter.reason ?? ''}
-            onchange={(e) => setGamesFilter({ reason: (e.currentTarget.value || null) as WinReason | null })}
-          >
-            <option value="">Any ending</option>
-            {#each reasonChoices as r (r)}<option value={r}>{endingName(r)}</option>{/each}
-          </select>
-          {#if isFiltered(page.gamesFilter)}
-            <button class="link" onclick={() => (page.gamesFilter = NO_FILTER)}>Clear</button>
-          {/if}
-        </div>
-        {#if endings.length > 0}
-          <table class="record endings" aria-label="How {username}'s games ended">
-            <thead>
-              <tr>
-                <th scope="col">Ending</th>
-                <th scope="col" class="num">Won</th>
-                <th scope="col" class="num">Lost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each endings as e (e.reason)}
+              <th scope="col" class="num">Won</th>
+              <th scope="col" class="num">Lost</th>
+            </tr>
+          </thead>
+          {#each [endingRows, scopeRows] as group, i (i)}
+            <tbody class:scopes={i === 1}>
+              {#each group as row (row.label)}
                 <tr>
-                  <th scope="row">{endingName(e.reason)}</th>
-                  {#each [['win', e.wins], ['loss', e.losses]] as const as [o, n] (o)}
+                  <th scope="row">
+                    {#if row.wins + row.losses}
+                      <button
+                        class="link"
+                        class:on={isShown(row.filter)}
+                        aria-pressed={isShown(row.filter)}
+                        onclick={() => show(row.filter)}
+                        title="Show {row.label.toLowerCase()}{i === 0 ? ' games' : ''}">{row.label}</button
+                      >
+                    {:else}{row.label}{/if}
+                  </th>
+                  {#each [['win', row.wins], ['loss', row.losses]] as const as [o, n] (o)}
+                    {@const f = { ...row.filter, outcome: o }}
                     <td class="num">
                       {#if n}
                         <button
                           class="link"
-                          class:on={pickedEnding(o, e.reason)}
-                          aria-pressed={pickedEnding(o, e.reason)}
-                          onclick={() => pickEnding(o, e.reason)}
-                          title="Games {o === 'win' ? 'won' : 'lost'} by {reasonText(e.reason)}">{n}</button
+                          class:on={isShown(f)}
+                          aria-pressed={isShown(f)}
+                          onclick={() => show(f)}
+                          title="Show {row.label.toLowerCase()} {o === 'win' ? 'won' : 'lost'}">{n}</button
                         >
                       {:else}–{/if}
                     </td>
                   {/each}
                 </tr>
               {/each}
-              <tr class="totals">
-                <th scope="row">All</th>
-                <td class="num">{endingTotals.wins}</td>
-                <td class="num">{endingTotals.losses}</td>
-              </tr>
             </tbody>
-          </table>
-        {/if}
+          {/each}
+        </table>
         <p class="hint">
           From the {plural(loadedGames.length, 'game')} loaded{#if p?.games != null && p.games > loadedGames.length}
             {` (${p.games.toLocaleString()} in all)`}{/if}{#if part.value.next != null}; Older games loads more{/if}.
+          {#if shownText}
+            Showing: {shownText}. <button class="link" onclick={() => show(NO_FILTER)}>Show all</button>
+          {/if}
         </p>
         {#if shownGames.length === 0}
           <p class="empty">No games loaded match.</p>
@@ -563,6 +556,12 @@
   .endings .on {
     font-weight: 600;
     text-decoration: underline;
+  }
+  .endings tbody th .link {
+    font-size: inherit;
+  }
+  .endings .scopes tr:first-child > * {
+    border-top: 2px solid var(--border);
   }
   .hint {
     margin: 4px 0 8px;
