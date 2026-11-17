@@ -115,6 +115,10 @@ class GameroomStore {
   playerQuery = $state('');
   /** The players the last search found. */
   players = $state<PlayerMatchView[] | null>(null);
+  /** The text typed into the Players tab's search for a player's page. */
+  pageQuery = $state('');
+  /** The players that search found. */
+  pageMatches = $state<PlayerMatchView[] | null>(null);
   /** The player whose games are shown, with the pages loaded so far. */
   picked = $state<{ player: PlayerMatchView; games: PastGameView[]; next: number | null } | null>(null);
 
@@ -425,6 +429,20 @@ class GameroomStore {
       const exact = found.filter((p) => p.username.toLowerCase() === query.toLowerCase());
       if (exact.length === 1) await this.#pick(exact[0]);
     });
+  }
+
+  /** Searches for players whose pages to offer, returning the one whose
+   * username is `text` exactly, if any. */
+  async findPlayerPages(text: string): Promise<PlayerMatchView | null> {
+    const query = text.trim();
+    let exact: PlayerMatchView | null = null;
+    await this.attempt(async () => {
+      const found = await api.searchGameroomPlayers(query);
+      this.pageMatches = found;
+      const same = found.filter((p) => p.username.toLowerCase() === query.toLowerCase());
+      if (same.length === 1) exact = same[0];
+    });
+    return exact;
   }
 
   pick(player: PlayerMatchView) {

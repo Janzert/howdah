@@ -2,9 +2,10 @@
   // Finished games: the gameroom's recently finished games (the lobby's
   // few at once, then the page of the last 100, shown a batch at a time), a player's
   // past games (search; an exact username goes straight to their games,
-  // with "Older games" paging), and any game by id.
+  // with "Older games" paging) and their page, and any game by id.
   import { finishedRows } from '../gameroom';
   import PastGameRow from './PastGameRow.svelte';
+  import { showPlayerPage } from './player.svelte';
   import RecentGameRow from './RecentGameRow.svelte';
   import { gameroom } from './store.svelte';
 
@@ -50,8 +51,10 @@
         <button type="submit" disabled={gameroom.busy || !gameroom.playerQuery.trim()}>Search</button>
       </form>
       {#if picked}
+        {@const who = picked.player}
         <div class="picked">
           Games of <strong>{picked.player.username}</strong>
+          <button class="link" onclick={() => showPlayerPage(who)} title="{who.username}'s page">Player page</button>
           <span class="spacer"></span>
           {#if players && players.length > 1}
             <button class="link" onclick={() => (gameroom.picked = null)}>Back to the players found</button>
@@ -81,6 +84,9 @@
                 <span class="row-line"><span class="name">{p.username}</span></span>
                 {#if p.name}<span class="meta">{p.name}</span>{/if}
               </span>
+              <button onclick={() => showPlayerPage(p)} aria-label="{p.username}'s page" title="{p.username}'s page"
+                >Page</button
+              >
               <button onclick={() => gameroom.pick(p)} disabled={gameroom.busy} aria-label="Games of {p.username}"
                 >Games</button
               >
