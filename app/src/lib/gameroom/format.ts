@@ -21,6 +21,9 @@ const reasons: Record<WinReason, string> = {
   forfeit: 'forfeit',
 };
 
+/** "goal", "time", "illegal move" */
+export const reasonText = (r: WinReason) => reasons[r];
+
 export function resultText(result: GameResult | null): string | null {
   return result ? `${result.winner === 'gold' ? 'Gold' : 'Silver'} won by ${reasons[result.reason]}` : null;
 }

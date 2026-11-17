@@ -8,6 +8,7 @@ import type { PastGameView } from '../bindings/PastGameView';
 import type { PlayerProfileView } from '../bindings/PlayerProfileView';
 import type { PlayerRecordView } from '../bindings/PlayerRecordView';
 import type { RatingPointView } from '../bindings/RatingPointView';
+import { type GamesFilter, NO_FILTER } from '../playerGames';
 import { gameroom, pref, savePref } from './store.svelte';
 
 /** A player to show: the id their page is asked for by, and the username
@@ -45,6 +46,8 @@ export class PlayerPage {
    * and those games. */
   againstId = $state<string | null>(null);
   against = $state<Part<PastGameView[]>>(empty());
+  /** Which of the games fetched so far the Games list shows. */
+  gamesFilter = $state<GamesFilter>(NO_FILTER);
   /** The section shown under the graph. */
   tab = $state<'games' | 'record'>('games');
 

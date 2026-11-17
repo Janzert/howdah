@@ -18,6 +18,11 @@ young).
 - An engine test's panel shows how its games ended (goal, elimination,
   immobilization, time and the rest), with each engine's wins for each,
   and each engine's wins and losses as gold and as silver.
+- A player's page counts how the games loaded so far ended (goal,
+  elimination, time and the rest), won and lost, and filters its games
+  list by wins or losses, ending, and rated or unrated. A count in the
+  endings table shows those games. It asks arimaa.com for nothing more;
+  Older games adds to what it counts.
 - The Players tab can find any arimaa.com player, not just those
   online, and open their page (an exact username opens it at once).
   Finished games' player search offers each player's page too.

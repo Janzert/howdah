@@ -1,11 +1,31 @@
 <script lang="ts">
   // One arimaa.com player's page: who they are and their rating (from
   // their player page), their rating over time, and their games or their
-  // record by opponent, with the games against each. Opened from the
-  // online players; an opponent in the record opens their own panel.
+  // record by opponent, with the games against each. The games fetched
+  // so far give how their games ended, won and lost, and can be filtered
+  // by result, ending and rated, all without asking the server for more.
+  // Opened from the online players; an opponent in the record opens
+  // their own panel.
   import { clock } from '../clock.svelte';
   import type { RecordLineView } from '../bindings/RecordLineView';
   import type { TallyView } from '../bindings/TallyView';
+  import type { WinReason } from '../bindings/WinReason';
+  import {
+    endingStats,
+    filterGames,
+    type GamesFilter,
+    isFiltered,
+    NO_FILTER,
+    type Outcome,
+    REASONS,
+  } from '../playerGames';
+  import { reasonText } from './format';
+
+  /** "Goal", "Illegal move" */
+  const endingName = (r: WinReason) => {
+    const t = reasonText(r);
+    return t[0].toUpperCase() + t.slice(1);
+  };
   import PastGameRow from './PastGameRow.svelte';
   import { type PlayerPage, type RecordFilter, showPlayerPage } from './player.svelte';
   import RatingChart from './RatingChart.svelte';
@@ -73,6 +93,31 @@
     [false, 'Humans'],
     [true, 'Bots'],
   ];
+  const loadedGames = $derived(page.games.value?.games ?? []);
+  /** The games the rated filter leaves, which the endings count. */
+  const ratedGames = $derived(filterGames(loadedGames, username, { ...NO_FILTER, rated: page.gamesFilter.rated }));
+  const endings = $derived(endingStats(ratedGames, username));
+  const endingTotals = $derived(
+    endings.reduce((t, e) => ({ wins: t.wins + e.wins, losses: t.losses + e.losses }), { wins: 0, losses: 0 }),
+  );
+  const shownGames = $derived(filterGames(loadedGames, username, page.gamesFilter));
+  /** The endings to choose from: those among the games, and the one chosen. */
+  const reasonChoices = $derived(
+    REASONS.filter((r) => r === page.gamesFilter.reason || endings.some((e) => e.reason === r)),
+  );
+  const outcomeChoices: [Outcome | null, string][] = [
+    [null, 'All results'],
+    ['win', 'Wins'],
+    ['loss', 'Losses'],
+  ];
+  function setGamesFilter(change: Partial<GamesFilter>) {
+    page.gamesFilter = { ...page.gamesFilter, ...change };
+  }
+  /** Shows the games won or lost (`outcome`) by `reason`; null for all. */
+  const pickEnding = (outcome: Outcome | null, reason: WinReason | null) => setGamesFilter({ outcome, reason });
+  const pickedEnding = (outcome: Outcome | null, reason: WinReason | null) =>
+    page.gamesFilter.outcome === outcome && page.gamesFilter.reason === reason;
+
   function setFilter(change: Partial<RecordFilter>) {
     page.setRecordFilter({ ...page.recordFilter, ...change });
   }
@@ -182,11 +227,88 @@
       {#if part.value.games.length === 0}
         <p class="empty">No finished games.</p>
       {:else}
-        <ul class="list" aria-label="{username}'s games">
-          {#each part.value.games as g (g.gid)}
-            <PastGameRow game={g} />
-          {/each}
-        </ul>
+        <div class="filters">
+          <div class="choices" role="group" aria-label="Won or lost">
+            {#each outcomeChoices as [v, label] (label)}
+              <button
+                class="link"
+                class:on={page.gamesFilter.outcome === v}
+                aria-pressed={page.gamesFilter.outcome === v}
+                onclick={() => setGamesFilter({ outcome: v })}>{label}</button
+              >
+            {/each}
+          </div>
+          <div class="choices" role="group" aria-label="Rated or unrated games">
+            {#each ratedChoices as [v, label] (label)}
+              <button
+                class="link"
+                class:on={page.gamesFilter.rated === v}
+                aria-pressed={page.gamesFilter.rated === v}
+                onclick={() => setGamesFilter({ rated: v })}>{label}</button
+              >
+            {/each}
+          </div>
+          <select
+            aria-label="Ending"
+            value={page.gamesFilter.reason ?? ''}
+            onchange={(e) => setGamesFilter({ reason: (e.currentTarget.value || null) as WinReason | null })}
+          >
+            <option value="">Any ending</option>
+            {#each reasonChoices as r (r)}<option value={r}>{endingName(r)}</option>{/each}
+          </select>
+          {#if isFiltered(page.gamesFilter)}
+            <button class="link" onclick={() => (page.gamesFilter = NO_FILTER)}>Clear</button>
+          {/if}
+        </div>
+        {#if endings.length > 0}
+          <table class="record endings" aria-label="How {username}'s games ended">
+            <thead>
+              <tr>
+                <th scope="col">Ending</th>
+                <th scope="col" class="num">Won</th>
+                <th scope="col" class="num">Lost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each endings as e (e.reason)}
+                <tr>
+                  <th scope="row">{endingName(e.reason)}</th>
+                  {#each [['win', e.wins], ['loss', e.losses]] as const as [o, n] (o)}
+                    <td class="num">
+                      {#if n}
+                        <button
+                          class="link"
+                          class:on={pickedEnding(o, e.reason)}
+                          aria-pressed={pickedEnding(o, e.reason)}
+                          onclick={() => pickEnding(o, e.reason)}
+                          title="Games {o === 'win' ? 'won' : 'lost'} by {reasonText(e.reason)}">{n}</button
+                        >
+                      {:else}–{/if}
+                    </td>
+                  {/each}
+                </tr>
+              {/each}
+              <tr class="totals">
+                <th scope="row">All</th>
+                <td class="num">{endingTotals.wins}</td>
+                <td class="num">{endingTotals.losses}</td>
+              </tr>
+            </tbody>
+          </table>
+        {/if}
+        <p class="hint">
+          From the {plural(loadedGames.length, 'game')} loaded{#if p?.games != null && p.games > loadedGames.length}
+            {` (${p.games.toLocaleString()} in all)`}{/if}{#if part.value.next != null}; Older games loads more{/if}.
+        </p>
+        {#if shownGames.length === 0}
+          <p class="empty">No games loaded match.</p>
+        {:else}
+          <ul class="list" aria-label="{username}'s games">
+            {#each shownGames as g (g.gid)}
+              <PastGameRow game={g} />
+            {/each}
+          </ul>
+        {/if}
       {/if}
       {#if part.value.next != null}
         <button class="subtle more" onclick={() => page.olderGames()} disabled={part.loading}
@@ -432,6 +554,18 @@
   }
   .more {
     margin-top: 8px;
+  }
+  .endings {
+    width: auto;
+    min-width: 260px;
+    margin-bottom: 4px;
+  }
+  .endings .on {
+    font-weight: 600;
+    text-decoration: underline;
+  }
+  .hint {
+    margin: 4px 0 8px;
   }
   .sr-only {
     position: absolute;
