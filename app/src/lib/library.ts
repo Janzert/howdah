@@ -1,6 +1,8 @@
 // Words and dates for the lobby's Games panel (the game database's list).
 import type { LibraryFilter } from './bindings/LibraryFilter';
 import type { LibraryGameView } from './bindings/LibraryGameView';
+import type { Color } from './bindings/Color';
+import type { PieceKind } from './bindings/PieceKind';
 
 /** The endings by arimaa.com's letters (`docs/RESULT-CODES.md`), in the
  * order the filter offers them. */
@@ -77,6 +79,10 @@ export interface FilterForm {
   to: string;
   origin: '' | 'arimaa' | 'local';
   rated: '' | 'rated' | 'unrated';
+  /** Setups from the setup explorer (`setupPieces`' keys): gold's, and
+   * silver's reply to it (or with no gold setup, silver's alone). */
+  goldSetup: string;
+  silverSetup: string;
 }
 
 export const EMPTY_FORM: FilterForm = {
@@ -89,6 +95,8 @@ export const EMPTY_FORM: FilterForm = {
   to: '',
   origin: '',
   rated: '',
+  goldSetup: '',
+  silverSetup: '',
 };
 
 /** The backend's filter from the form. The side and outcome only count
@@ -106,5 +114,59 @@ export function toFilter(f: FilterForm): LibraryFilter {
     to: dayStart(f.to, true),
     origin: f.origin || null,
     rated: f.rated === '' ? null : f.rated === 'rated',
+    goldSetup: text(f.goldSetup ?? ''),
+    silverSetup: text(f.silverSetup ?? ''),
   };
+}
+
+const KINDS: Record<string, PieceKind> = {
+  R: 'rabbit',
+  C: 'cat',
+  D: 'dog',
+  H: 'horse',
+  M: 'camel',
+  E: 'elephant',
+};
+const FILES = 'abcdefgh';
+
+/** A setup key's pieces: 16 letters (`RCDHME`, `.` empty), a1 … h1 then
+ * a2 … h2, seen from gold's side. `rank` is the square's rank for
+ * `color` (silver's 1 and 2 are its 8 and 7), `back` whether it's the
+ * home row. */
+export function setupPieces(
+  key: string,
+  color: Color,
+): { file: number; back: boolean; rank: number; kind: PieceKind }[] {
+  const out = [];
+  for (let i = 0; i < 16 && i < key.length; i++) {
+    const kind = KINDS[key[i]];
+    if (!kind) continue;
+    const back = i < 8;
+    const rank = color === 'gold' ? (back ? 1 : 2) : back ? 8 : 7;
+    out.push({ file: i % 8, back, rank, kind });
+  }
+  return out;
+}
+
+/** "elephant e2, camel d2, horses b2 g2, dogs c2 f2, cats d1 e1": the
+ * pieces other than rabbits, strongest first. */
+export function setupWords(key: string, color: Color): string {
+  const order: PieceKind[] = ['elephant', 'camel', 'horse', 'dog', 'cat'];
+  const pieces = setupPieces(key, color);
+  return order
+    .map((kind) => {
+      const squares = pieces
+        .filter((p) => p.kind === kind)
+        .map((p) => `${FILES[p.file]}${p.rank}`)
+        .sort();
+      if (squares.length === 0) return null;
+      return `${squares.length > 1 ? `${kind}s` : kind} ${squares.join(' ')}`;
+    })
+    .filter((s) => s)
+    .join(', ');
+}
+
+/** "55%", or "–" with no games. */
+export function percent(n: number, of: number): string {
+  return of > 0 ? `${Math.round((100 * n) / of)}%` : '–';
 }

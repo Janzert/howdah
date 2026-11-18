@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_FORM, dayStart, resultWords, toFilter } from './library';
+import { EMPTY_FORM, dayStart, percent, resultWords, setupPieces, setupWords, toFilter } from './library';
 
 describe('library', () => {
   it('words results, old draws included', () => {
@@ -19,5 +19,20 @@ describe('library', () => {
     const f = toFilter({ ...EMPTY_FORM, side: 'gold', outcome: 'won', opponent: ' Bob ', rated: 'unrated' });
     expect(f).toMatchObject({ player: null, side: null, outcome: null, opponent: 'Bob', rated: false });
     expect(toFilter({ ...EMPTY_FORM, player: 'Ann', side: 'gold' }).side).toBe('gold');
+  });
+
+  it('reads setup keys for either side', () => {
+    const key = 'RRRCCRRRRHDMEDHR';
+    expect(setupWords(key, 'gold')).toBe('elephant e2, camel d2, horses b2 g2, dogs c2 f2, cats d1 e1');
+    expect(setupWords(key, 'silver')).toBe('elephant e7, camel d7, horses b7 g7, dogs c7 f7, cats d8 e8');
+    expect(setupPieces(key, 'gold')).toHaveLength(16);
+    expect(setupPieces(key, 'silver')[0]).toEqual({ file: 0, back: true, rank: 8, kind: 'rabbit' });
+    expect(percent(1, 3)).toBe('33%');
+    expect(percent(0, 0)).toBe('–');
+  });
+
+  it('passes the setups on', () => {
+    const f = toFilter({ ...EMPTY_FORM, goldSetup: 'RRRCCRRRRHDMEDHR' });
+    expect(f).toMatchObject({ goldSetup: 'RRRCCRRRRHDMEDHR', silverSetup: null });
   });
 });

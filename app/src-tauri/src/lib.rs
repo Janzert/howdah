@@ -208,6 +208,7 @@ pub fn run() {
             commands::gameroom_recent_games,
             commands::gameroom_game_comments,
             commands::library_games,
+            commands::library_setups,
             commands::open_library_game,
             commands::delete_library_game,
             commands::base_status,

@@ -5,6 +5,9 @@
 //! howdah-db stats DB                   counts and sizes
 //! howdah-db show DB ID                 a game's record (`ID`, or `arimaa:ID` for a permanent id)
 //! howdah-db list DB [PLAYER [OPPONENT]]   the newest 20 games, timed
+//! howdah-db setups DB [gold|silver|KEY] [PLAYER]
+//!                                       the 20 most played setups (gold's, silver's, or the
+//!                                       replies to gold setup KEY), timed
 //! howdah-db publish OUTDIR PATH... [--new-base] [--cap PCT] [-j N]
 //!                                       the base database and its deltas from archive files,
 //!                                       with OUTDIR/base.json and OUTDIR/seen.txt (keep both)
@@ -20,7 +23,7 @@ use howdah_db::{ARIMAA_COM, Database, archive, base};
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | publish OUTDIR PATH... [--new-base] [--cap PCT] | merge DB OTHER"
+        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | setups DB [gold|silver|KEY] [PLAYER] | publish OUTDIR PATH... [--new-base] [--cap PCT] | merge DB OTHER"
     );
     ExitCode::from(2)
 }
@@ -35,6 +38,7 @@ fn main() -> ExitCode {
         Some("publish") if args.len() >= 3 => publish(&args[1], &args[2..]),
         Some("merge") if args.len() == 3 => merge(&args[1], &args[2]),
         Some("list") if (2..=4).contains(&args.len()) => list(&args[1], args.get(2), args.get(3)),
+        Some("setups") if (2..=4).contains(&args.len()) => setups(&args[1], args.get(2), args.get(3)),
         _ => return usage(),
     };
     match result {
@@ -168,6 +172,38 @@ fn list(
         );
     }
     println!("{} games match; the page took {:.1} ms", page.total, took.as_secs_f64() * 1000.0);
+    Ok(())
+}
+
+fn setups(
+    db: &str,
+    level: Option<&String>,
+    player: Option<&String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use howdah_db::SetupLevel;
+    let db = Database::open(db)?;
+    let level = match level.map(String::as_str) {
+        None | Some("gold") => SetupLevel::Gold,
+        Some("silver") => SetupLevel::Silver,
+        Some(key) => SetupLevel::Replies(key.to_string()),
+    };
+    let filter = howdah_db::Filter { player: player.cloned(), ..Default::default() };
+    let start = Instant::now();
+    let stats = db.setup_stats(&filter, &level, 20)?;
+    let took = start.elapsed();
+    for r in &stats.rows {
+        let pct = |n: f64| 100.0 * n / r.rated_games.max(1) as f64;
+        println!(
+            "{} {:>7} games, gold {:>5.1}% (rated {:>5.1}%, expected {:>5.1}%), rating {:>4.0}",
+            r.setup,
+            r.games,
+            100.0 * r.gold_wins as f64 / r.games as f64,
+            pct(r.rated_gold_wins as f64),
+            pct(r.expected_gold_wins),
+            r.rating.unwrap_or(0.0),
+        );
+    }
+    println!("{} games, {} setups; took {:.1} ms", stats.games, stats.setups, took.as_secs_f64() * 1000.0);
     Ok(())
 }
 

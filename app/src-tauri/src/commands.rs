@@ -12,8 +12,8 @@ use crate::dto::{
     GameCommentView, GameroomGames, GameroomStatus, LibraryFilter, LibraryPageView, MatchSpec, MoveReplay,
     NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView,
     PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView, RatingPointView,
-    ServerBotsView, SessionId, SessionView, SpsaStepView, StartedBotView, StepTarget, SystemClock,
-    TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
+    ServerBotsView, SessionId, SessionView, SetupStatsView, SpsaStepView, StartedBotView, StepTarget,
+    SystemClock, TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
 };
 
 #[tauri::command]
@@ -975,13 +975,24 @@ pub async fn follow_tourney_test(
 }
 
 #[tauri::command]
-pub fn library_games(
+pub async fn library_games(
     state: State<'_, Backend>,
     filter: LibraryFilter,
     offset: Option<u32>,
     limit: Option<u32>,
 ) -> Result<LibraryPageView, ApiError> {
-    state.library_games(&filter, offset.unwrap_or(0), limit.unwrap_or(50))
+    state.library_games(filter, offset.unwrap_or(0), limit.unwrap_or(50)).await
+}
+
+#[tauri::command]
+pub async fn library_setups(
+    state: State<'_, Backend>,
+    filter: LibraryFilter,
+    level: String,
+    gold: Option<String>,
+    limit: Option<u32>,
+) -> Result<SetupStatsView, ApiError> {
+    state.library_setups(filter, level, gold, limit.unwrap_or(100)).await
 }
 
 #[tauri::command]

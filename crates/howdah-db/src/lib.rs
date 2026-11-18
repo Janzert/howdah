@@ -15,6 +15,7 @@ mod merge;
 mod positions;
 pub mod schema;
 mod search;
+mod setups;
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -25,6 +26,7 @@ pub use game::{ARIMAA_COM, GameData, PlayerInfo, SaveMode, SourceKey, StoredResu
 pub use merge::MergeReport;
 pub use positions::PositionDatum;
 pub use search::{Filter, GameSummary, Origin, Outcome, SearchPage};
+pub use setups::{Setup, SetupLevel, SetupStat, SetupStats};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -70,6 +72,7 @@ impl Database {
     /// this build's version or one it can read.
     pub fn open_read_only(path: impl AsRef<Path>) -> Result<Database> {
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        setups::register(&conn)?;
         match schema::check(&conn)? {
             schema::Compat::Older(_) => Err(Error::ReadOnly),
             _ => Ok(Database { conn, read_only: true }),
@@ -82,6 +85,7 @@ impl Database {
 
     fn setup(mut conn: Connection) -> Result<Database> {
         conn.pragma_update(None, "foreign_keys", true)?;
+        setups::register(&conn)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         let compat = schema::check(&conn)?;
         schema::migrate(&mut conn)?;

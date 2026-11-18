@@ -11,6 +11,8 @@
   import type { LibraryGameView } from './bindings/LibraryGameView';
   import Icon from './Icon.svelte';
   import Matchup from './gameroom/Matchup.svelte';
+  import SetupDiagram from './SetupDiagram.svelte';
+  import SetupExplorer from './SetupExplorer.svelte';
   import { EMPTY_FORM, ENDINGS, libraryMeta, toFilter, type FilterForm } from './library';
   import { pref, savePref } from './gameroom/store.svelte';
 
@@ -31,6 +33,16 @@
   }
 
   let form = $state<FilterForm>(readForm());
+  /** The list of games, or the setup explorer. */
+  let view = $state<'games' | 'setups'>(pref('lobby.gamesView') === 'setups' ? 'setups' : 'games');
+  $effect(() => savePref('lobby.gamesView', view));
+  /** The filter without the setups, for the explorer. */
+  const explorerFilter = $derived(toFilter({ ...form, goldSetup: '', silverSetup: '' }));
+
+  function showSetupGames(gold: string | null, silver: string | null) {
+    form = { ...form, goldSetup: gold ?? '', silverSetup: silver ?? '' };
+    view = 'games';
+  }
   let games = $state<LibraryGameView[]>([]);
   let total = $state<number | null>(null);
   let available = $state(true);
@@ -150,7 +162,18 @@
 <div class="screen">
   <header>
     <h1>Games</h1>
-    <span class="count" aria-live="polite">{countText}</span>
+    <div class="tabs views" role="tablist" aria-label="View">
+      <button role="tab" aria-selected={view === 'games'} class:on={view === 'games'} onclick={() => (view = 'games')}
+        >List</button
+      >
+      <button
+        role="tab"
+        aria-selected={view === 'setups'}
+        class:on={view === 'setups'}
+        onclick={() => (view = 'setups')}>Setups</button
+      >
+    </div>
+    {#if view === 'games'}<span class="count" aria-live="polite">{countText}</span>{/if}
     <span class="spacer"></span>
     <button
       class="icon"
@@ -252,50 +275,70 @@
     {#if filtered}<button type="button" onclick={() => (form = { ...EMPTY_FORM })}>Clear</button>{/if}
   </form>
 
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#if !available}
-    <p class="empty">There's no game database: it couldn't be opened.</p>
-  {:else if total === 0 && !loading}
-    <p class="empty">{filtered ? 'No game matches.' : 'No games yet.'}</p>
+  {#if view === 'games' && (form.goldSetup || form.silverSetup)}
+    <div class="setup-filter" aria-label="Setups the list is narrowed to" role="group">
+      {#if form.goldSetup}
+        <span class="chip">Gold <SetupDiagram setup={form.goldSetup} color="gold" size={14} /></span>
+      {/if}
+      {#if form.silverSetup}
+        <span class="chip"
+          >{form.goldSetup ? "Silver's reply" : 'Silver'}
+          <SetupDiagram setup={form.silverSetup} color="silver" size={14} /></span
+        >
+      {/if}
+      <button type="button" onclick={() => (view = 'setups')}>Setups…</button>
+      <button type="button" onclick={() => (form = { ...form, goldSetup: '', silverSetup: '' })}>Any setups</button>
+    </div>
+  {/if}
+
+  {#if view === 'setups'}
+    <SetupExplorer filter={explorerFilter} onGames={showSetupGames} />
   {:else}
-    <ul class="list games" aria-label="Games">
-      {#each games as g (g.id)}
-        <li class="pick">
-          <button
-            class="open"
-            onclick={() => open(g.id)}
-            disabled={opening != null}
-            aria-label="Open {g.gold ?? '?'} vs {g.silver ?? '?'}, {g.date}"
-          >
-            <span class="row-text">
-              <span class="row-line">
-                <Matchup gold={g.gold} silver={g.silver} goldRating={g.goldRating} silverRating={g.silverRating} />
-                {#if g.event && !/^casual game$/i.test(g.event)}<span class="event">{g.event}</span>{/if}
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if !available}
+      <p class="empty">There's no game database: it couldn't be opened.</p>
+    {:else if total === 0 && !loading}
+      <p class="empty">{filtered ? 'No game matches.' : 'No games yet.'}</p>
+    {:else}
+      <ul class="list games" aria-label="Games">
+        {#each games as g (g.id)}
+          <li class="pick">
+            <button
+              class="open"
+              onclick={() => open(g.id)}
+              disabled={opening != null}
+              aria-label="Open {g.gold ?? '?'} vs {g.silver ?? '?'}, {g.date}"
+            >
+              <span class="row-text">
+                <span class="row-line">
+                  <Matchup gold={g.gold} silver={g.silver} goldRating={g.goldRating} silverRating={g.silverRating} />
+                  {#if g.event && !/^casual game$/i.test(g.event)}<span class="event">{g.event}</span>{/if}
+                </span>
+                <span class="meta">{libraryMeta(g)}</span>
               </span>
-              <span class="meta">{libraryMeta(g)}</span>
-            </span>
-            <span class="action">{opening === g.id ? 'Opening…' : 'Open'}</span>
-          </button>
-          <button
-            class="delete bare"
-            class:confirm={confirming === g.id}
-            onclick={() => remove(g.id)}
-            onblur={() => confirming === g.id && (confirming = null)}
-            title={confirming === g.id ? 'Click again to delete it' : 'Delete this game'}
-            aria-label={confirming === g.id
-              ? 'Confirm deleting this game'
-              : `Delete ${g.gold ?? '?'} vs ${g.silver ?? '?'}, ${g.date}`}
-            >{#if confirming === g.id}Delete?{:else}<Icon name="close" size={14} />{/if}</button
-          >
-        </li>
-      {/each}
-    </ul>
-    {#if total != null && games.length < total}
-      <button class="more" onclick={() => load(true)} disabled={loading}>
-        {loading ? 'Loading…' : `Show more (${(total - games.length).toLocaleString()} left)`}
-      </button>
-    {:else if loading && games.length === 0}
-      <p class="empty">Loading…</p>
+              <span class="action">{opening === g.id ? 'Opening…' : 'Open'}</span>
+            </button>
+            <button
+              class="delete bare"
+              class:confirm={confirming === g.id}
+              onclick={() => remove(g.id)}
+              onblur={() => confirming === g.id && (confirming = null)}
+              title={confirming === g.id ? 'Click again to delete it' : 'Delete this game'}
+              aria-label={confirming === g.id
+                ? 'Confirm deleting this game'
+                : `Delete ${g.gold ?? '?'} vs ${g.silver ?? '?'}, ${g.date}`}
+              >{#if confirming === g.id}Delete?{:else}<Icon name="close" size={14} />{/if}</button
+            >
+          </li>
+        {/each}
+      </ul>
+      {#if total != null && games.length < total}
+        <button class="more" onclick={() => load(true)} disabled={loading}>
+          {loading ? 'Loading…' : `Show more (${(total - games.length).toLocaleString()} left)`}
+        </button>
+      {:else if loading && games.length === 0}
+        <p class="empty">Loading…</p>
+      {/if}
     {/if}
   {/if}
 </div>
@@ -317,6 +360,38 @@
     align-self: center;
   }
   .count {
+    color: var(--muted);
+  }
+  .views {
+    display: flex;
+    gap: 2px;
+    align-self: center;
+  }
+  .views button {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 2px 8px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .views button.on {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+  .setup-filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin: -6px 0 12px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
     color: var(--muted);
   }
   .intro {

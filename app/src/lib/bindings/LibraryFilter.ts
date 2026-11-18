@@ -33,4 +33,13 @@ outcome: string | null,
 /**
  * The ending's letter (`g`, `e`, `m`, `t`, `r`, ...).
  */
-termination: string | null, };
+termination: string | null, 
+/**
+ * Gold's setup (16 letters, a1 … h1 then a2 … h2, either way round).
+ */
+goldSetup: string | null, 
+/**
+ * Silver's reply to `gold_setup` as the setup explorer gives it, or
+ * with no `gold_setup`, silver's setup seen from gold's side.
+ */
+silverSetup: string | null, };

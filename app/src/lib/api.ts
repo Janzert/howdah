@@ -34,6 +34,7 @@ import type { PositionSpec } from './bindings/PositionSpec';
 import type { BaseStatus } from './bindings/BaseStatus';
 import type { LibraryFilter } from './bindings/LibraryFilter';
 import type { LibraryPageView } from './bindings/LibraryPageView';
+import type { SetupStatsView } from './bindings/SetupStatsView';
 import type { PuzzleGroupView } from './bindings/PuzzleGroupView';
 import type { PostalGameView } from './bindings/PostalGameView';
 import type { PositionView } from './bindings/PositionView';
@@ -104,6 +105,11 @@ function makeApi(sid: () => SessionId | null) {
     /** A page of the game list: games matching `filter`, newest first. */
     libraryGames: (filter: LibraryFilter, offset = 0, limit = 50) =>
       invoke<LibraryPageView>('library_games', { filter, offset, limit }),
+    /** The setup explorer: the `limit` most played setups among the games
+     * `filter` lets through, gold's or silver's, or silver's replies to
+     * gold setup `gold`. */
+    librarySetups: (filter: LibraryFilter, level: 'gold' | 'silver' | 'replies', gold: string | null, limit = 100) =>
+      invoke<SetupStatsView>('library_setups', { filter, level, gold, limit }),
     /** Opens a game from the game database (a game known only by its
      * header is fetched from arimaa.com). */
     openLibraryGame: (game: number) => invoke<void>('open_library_game', { session: sid(), game }),

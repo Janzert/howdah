@@ -44,6 +44,12 @@ pub struct Filter {
     pub outcome: Option<Outcome>,
     /// The ending's letter (`g`, `e`, `m`, `t`, `r`, ...).
     pub termination: Option<char>,
+    /// Gold's setup, as a [`crate::Setup::key`] (either way round).
+    pub gold_setup: Option<String>,
+    /// Silver's setup: its reply to `gold_setup` when that's set (as
+    /// [`crate::Database::setup_stats`] gives it), else silver's setup
+    /// alone (either way round).
+    pub silver_setup: Option<String>,
 }
 
 /// A game as the list shows it.
@@ -86,72 +92,97 @@ pub struct SearchPage {
 /// The players with a name, any case.
 const PLAYERS_NAMED: &str = "SELECT player FROM player_names WHERE name = ? COLLATE NOCASE";
 
+/// The SQL conditions for `filter` on `games`, and their parameters.
+pub(crate) fn conditions(filter: &Filter) -> (Vec<String>, Vec<Value>) {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut params: Vec<Value> = Vec::new();
+    let named = |name: &str, params: &mut Vec<Value>| {
+        params.push(Value::Text(name.trim().to_string()));
+        format!("({PLAYERS_NAMED})")
+    };
+    let player = filter.player.as_deref().filter(|p| !p.trim().is_empty());
+    let opponent = filter.opponent.as_deref().filter(|p| !p.trim().is_empty());
+    match player {
+        Some(p) => {
+            // The player's side and the opponent's are tied together.
+            let mut sides = Vec::new();
+            for (me, them, letter) in [("gold", "silver", 'g'), ("silver", "gold", 's')] {
+                if filter.side.is_some_and(|s| s != letter) {
+                    continue;
+                }
+                let mut parts = vec![format!("{me} IN {}", named(p, &mut params))];
+                if let Some(o) = opponent {
+                    parts.push(format!("{them} IN {}", named(o, &mut params)));
+                }
+                match filter.outcome {
+                    Some(Outcome::Won) => parts.push(format!("winner = '{letter}'")),
+                    Some(Outcome::Lost) => {
+                        parts.push(format!("winner = '{}'", if letter == 'g' { 's' } else { 'g' }))
+                    }
+                    None => {}
+                }
+                sides.push(format!("({})", parts.join(" AND ")));
+            }
+            clauses.push(if sides.is_empty() { "0".into() } else { format!("({})", sides.join(" OR ")) });
+        }
+        None => {
+            if let Some(o) = opponent {
+                let a = named(o, &mut params);
+                let b = named(o, &mut params);
+                clauses.push(format!("(gold IN {a} OR silver IN {b})"));
+            }
+        }
+    }
+    if let Some(from) = filter.from {
+        clauses.push("coalesce(start_ts, end_ts, added_at) >= ?".into());
+        params.push(Value::Integer(from));
+    }
+    if let Some(to) = filter.to {
+        clauses.push("coalesce(start_ts, end_ts, added_at) < ?".into());
+        params.push(Value::Integer(to));
+    }
+    match filter.origin {
+        Some(Origin::ArimaaCom) => {
+            clauses.push("source = ?".into());
+            params.push(Value::Text(ARIMAA_COM.into()));
+        }
+        Some(Origin::Local) => clauses.push("source IS NULL".into()),
+        None => {}
+    }
+    if let Some(rated) = filter.rated {
+        clauses.push(if rated { "rated = 1" } else { "coalesce(rated, 0) = 0" }.into());
+    }
+    if let Some(t) = filter.termination {
+        clauses.push("termination = ?".into());
+        params.push(Value::Text(t.to_string()));
+    }
+    let setup = |key: &str, canonical: bool| {
+        let s = crate::Setup::parse(key);
+        let s = if canonical { s.map(crate::Setup::canonical) } else { s };
+        Value::Text(s.map_or_else(String::new, crate::Setup::key))
+    };
+    let gold_setup = filter.gold_setup.as_deref().filter(|s| !s.trim().is_empty());
+    if let Some(g) = gold_setup {
+        clauses.push("howdah_setup(moves, start_ply, 'g') = ?".into());
+        params.push(setup(g, true));
+    }
+    if let Some(s) = filter.silver_setup.as_deref().filter(|s| !s.trim().is_empty()) {
+        if gold_setup.is_some() {
+            clauses.push("howdah_setup(moves, start_ply, 'r') = ?".into());
+            params.push(setup(s, false));
+        } else {
+            clauses.push("howdah_setup(moves, start_ply, 's') = ?".into());
+            params.push(setup(s, true));
+        }
+    }
+    (clauses, params)
+}
+
 impl Database {
     /// The games `filter` lets through, newest first, `limit` of them
     /// after skipping `offset`, and how many there are.
     pub fn search(&self, filter: &Filter, offset: i64, limit: i64) -> Result<SearchPage> {
-        let mut clauses: Vec<String> = Vec::new();
-        let mut params: Vec<Value> = Vec::new();
-        let named = |name: &str, params: &mut Vec<Value>| {
-            params.push(Value::Text(name.trim().to_string()));
-            format!("({PLAYERS_NAMED})")
-        };
-        let player = filter.player.as_deref().filter(|p| !p.trim().is_empty());
-        let opponent = filter.opponent.as_deref().filter(|p| !p.trim().is_empty());
-        match player {
-            Some(p) => {
-                // The player's side and the opponent's are tied together.
-                let mut sides = Vec::new();
-                for (me, them, letter) in [("gold", "silver", 'g'), ("silver", "gold", 's')] {
-                    if filter.side.is_some_and(|s| s != letter) {
-                        continue;
-                    }
-                    let mut parts = vec![format!("{me} IN {}", named(p, &mut params))];
-                    if let Some(o) = opponent {
-                        parts.push(format!("{them} IN {}", named(o, &mut params)));
-                    }
-                    match filter.outcome {
-                        Some(Outcome::Won) => parts.push(format!("winner = '{letter}'")),
-                        Some(Outcome::Lost) => {
-                            parts.push(format!("winner = '{}'", if letter == 'g' { 's' } else { 'g' }))
-                        }
-                        None => {}
-                    }
-                    sides.push(format!("({})", parts.join(" AND ")));
-                }
-                clauses.push(if sides.is_empty() { "0".into() } else { format!("({})", sides.join(" OR ")) });
-            }
-            None => {
-                if let Some(o) = opponent {
-                    let a = named(o, &mut params);
-                    let b = named(o, &mut params);
-                    clauses.push(format!("(gold IN {a} OR silver IN {b})"));
-                }
-            }
-        }
-        if let Some(from) = filter.from {
-            clauses.push("coalesce(start_ts, end_ts, added_at) >= ?".into());
-            params.push(Value::Integer(from));
-        }
-        if let Some(to) = filter.to {
-            clauses.push("coalesce(start_ts, end_ts, added_at) < ?".into());
-            params.push(Value::Integer(to));
-        }
-        match filter.origin {
-            Some(Origin::ArimaaCom) => {
-                clauses.push("source = ?".into());
-                params.push(Value::Text(ARIMAA_COM.into()));
-            }
-            Some(Origin::Local) => clauses.push("source IS NULL".into()),
-            None => {}
-        }
-        if let Some(rated) = filter.rated {
-            clauses.push(if rated { "rated = 1" } else { "coalesce(rated, 0) = 0" }.into());
-        }
-        if let Some(t) = filter.termination {
-            clauses.push("termination = ?".into());
-            params.push(Value::Text(t.to_string()));
-        }
+        let (clauses, mut params) = conditions(filter);
         let wheres =
             if clauses.is_empty() { String::new() } else { format!("WHERE {}", clauses.join(" AND ")) };
         let total: i64 = self.connection().query_row(

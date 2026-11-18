@@ -16,10 +16,15 @@ use std::time::Duration;
 use std::collections::HashMap;
 
 use howdah_arimaa::{Color, GameRecord, NodeId};
-use howdah_db::{ARIMAA_COM, Database, Filter, GameData, Origin, Outcome, PositionDatum, SaveMode};
+use howdah_db::{
+    ARIMAA_COM, Database, Filter, GameData, Origin, Outcome, PositionDatum, SaveMode, SetupLevel,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::dto::{AnalysisLine, ApiError, Eval, LibraryFilter, LibraryGameView, LibraryPageView, PvTurn};
+use crate::dto::{
+    AnalysisLine, ApiError, Eval, LibraryFilter, LibraryGameView, LibraryPageView, PvTurn, SetupStatView,
+    SetupStatsView,
+};
 use crate::session::Session;
 
 /// How often a session's game is checked for changes to save.
@@ -195,6 +200,49 @@ impl Library {
         })
     }
 
+    /// The setup explorer: the games `filter` lets through grouped by
+    /// gold's setup, silver's (`level` `silver`), or silver's replies to
+    /// gold setup `gold` (`replies`), the `limit` most played.
+    pub fn setups(
+        &self,
+        filter: &LibraryFilter,
+        level: &str,
+        gold: Option<&str>,
+        limit: usize,
+    ) -> Result<SetupStatsView, ApiError> {
+        if self.db().is_none() {
+            return Ok(SetupStatsView { rows: Vec::new(), games: 0, setups: 0, available: false });
+        }
+        let level = match (level, gold) {
+            ("gold", _) => SetupLevel::Gold,
+            ("silver", _) => SetupLevel::Silver,
+            ("replies", Some(g)) => SetupLevel::Replies(g.to_string()),
+            _ => return Err(ApiError::state(format!("no setup level {level:?}"))),
+        };
+        let filter = to_filter(filter);
+        let stats = self.try_with(|db| db.setup_stats(&filter, &level, limit))?;
+        Ok(SetupStatsView {
+            rows: stats
+                .rows
+                .into_iter()
+                .map(|r| SetupStatView {
+                    setup: r.setup,
+                    games: r.games,
+                    gold_wins: r.gold_wins,
+                    silver_wins: r.silver_wins,
+                    rated_games: r.rated_games,
+                    rated_gold_wins: r.rated_gold_wins,
+                    expected_gold_wins: r.expected_gold_wins,
+                    rating: r.rating,
+                    last_date: r.last_date,
+                })
+                .collect(),
+            games: stats.games,
+            setups: stats.setups,
+            available: true,
+        })
+    }
+
     /// Game `id` as a record, or its arimaa.com id when only its header
     /// is here.
     pub fn record(&self, id: i64) -> Result<Result<GameRecord, String>, ApiError> {
@@ -269,6 +317,8 @@ fn to_filter(f: &LibraryFilter) -> Filter {
             _ => None,
         },
         termination: f.termination.as_deref().and_then(|t| t.chars().next()),
+        gold_setup: text(&f.gold_setup),
+        silver_setup: text(&f.silver_setup),
     }
 }
 

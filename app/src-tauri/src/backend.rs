@@ -38,8 +38,8 @@ use crate::dto::{
     NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView,
     PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView,
     PuzzleGroupView, RatingPointView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
-    ShowBoard, SpsaStepView, StartedBotView, StepTarget, SystemClock, TestDetailView, TestView,
-    TourneyStatusView, UpdateView, WatchView,
+    SetupStatsView, ShowBoard, SpsaStepView, StartedBotView, StepTarget, SystemClock, TestDetailView,
+    TestView, TourneyStatusView, UpdateView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -1253,13 +1253,36 @@ impl Backend {
 
     /// A page of the game list: `limit` games matching `filter`, newest
     /// first, after skipping `offset`.
-    pub fn library_games(
+    /// Runs on a blocking thread, since a filter by setup reads every
+    /// game.
+    pub async fn library_games(
         &self,
-        filter: &LibraryFilter,
+        filter: LibraryFilter,
         offset: u32,
         limit: u32,
     ) -> Result<LibraryPageView, ApiError> {
-        self.library.page(filter, offset, limit.min(500))
+        let library = self.library.clone();
+        tauri::async_runtime::spawn_blocking(move || library.page(&filter, offset, limit.min(500)))
+            .await
+            .map_err(|e| ApiError::state(format!("the game list stopped: {e}")))?
+    }
+
+    /// The setup explorer (`Library::setups`): the `limit` most played
+    /// setups at `level` (`gold`, `silver`, or `replies` to gold setup
+    /// `gold`) among the games `filter` lets through.
+    pub async fn library_setups(
+        &self,
+        filter: LibraryFilter,
+        level: String,
+        gold: Option<String>,
+        limit: u32,
+    ) -> Result<SetupStatsView, ApiError> {
+        let library = self.library.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            library.setups(&filter, &level, gold.as_deref(), limit.min(1000) as usize)
+        })
+        .await
+        .map_err(|e| ApiError::state(format!("the setup explorer stopped: {e}")))?
     }
 
     /// Opens game `game` from the game database in session `id`. A game
@@ -1656,11 +1679,21 @@ impl Backend {
             "follow_tourney_test" => {
                 ok(self.follow_tourney_test(sid()?, &arg::<String>(args, "test")?).await?)
             }
-            "library_games" => ok(self.library_games(
-                &arg(args, "filter")?,
-                arg::<Option<u32>>(args, "offset")?.unwrap_or(0),
-                arg::<Option<u32>>(args, "limit")?.unwrap_or(50),
-            )?),
+            "library_games" => ok(self
+                .library_games(
+                    arg(args, "filter")?,
+                    arg::<Option<u32>>(args, "offset")?.unwrap_or(0),
+                    arg::<Option<u32>>(args, "limit")?.unwrap_or(50),
+                )
+                .await?),
+            "library_setups" => ok(self
+                .library_setups(
+                    arg(args, "filter")?,
+                    arg(args, "level")?,
+                    arg(args, "gold")?,
+                    arg::<Option<u32>>(args, "limit")?.unwrap_or(100),
+                )
+                .await?),
             "open_library_game" => ok(self.open_library_game(sid()?, arg(args, "game")?).await?),
             "delete_library_game" => ok(self.delete_library_game(arg(args, "game")?)?),
             "base_status" => ok(self.base_status(arg::<Option<bool>>(args, "check")?.unwrap_or(false)).await),

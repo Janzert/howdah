@@ -345,7 +345,7 @@ Two kinds, both open-ended:
    `position_data`, so analysis persists and carries across games.
 5. The base database: a build script, a release asset, the first-run
    download, and update by import.
-6. The setup explorer, then the move tree and position search.
+6. The setup explorer (built), then the move tree and position search.
 7. Export and import of selections, with provenance filters.
 
 ### Decided (Brian, 2026-11-17)
@@ -657,3 +657,58 @@ count matched the archive's 21,125, and nothing more was offered.
 
 Games merged from the base have no fingerprint; it's only needed to
 match a record file that carries no ids, so it can be filled in later.
+
+### Step 6, first part (2026-11-18): the setup explorer
+
+`howdah-db`'s `setups.rs`, and the Games panel's Setups view.
+
+- **Keys.** A `Setup` is one side's setup seen from gold's side: its
+  16 squares a1 … h1, a2 … h2, silver's ranks 8 and 7 read as 1 and 2,
+  so a setup has the same key for either color. Written as 16 letters
+  (`RCDHME`, `.` for an empty square), e.g. `RRRCCRRRRHDMEDHR`.
+- **Mirror images count as one,** written with the elephant on files
+  e–h. On the archive gold's elephant is on d2 and e2 about equally
+  (202k and 205k games) and silver's more often on e7 (224k to 174k),
+  so e–h shows the more common way for both. Silver's reply to a gold
+  setup is mirrored with gold's, so it keeps its place relative to
+  gold's pieces; silver's setup alone is mirrored on its own.
+- **No derived table.** `Database::setup_stats` reads the first 17
+  bytes of every game's move blob that the filter lets through (the two
+  setups are the first two moves, 8 bytes each) and groups in Rust: all
+  425k games in 160 ms (release build), the replies to the top gold
+  setup in 100 ms, one player's games in 6 ms. So there's nothing to
+  keep in step with saves, merges and the base download. A table can
+  come later if the move tree needs one.
+- **Statistics** per setup: games, gold's and silver's wins, and over
+  the games with both ratings gold's wins and the Elo-expected wins,
+  since setups follow strength (the strongest players' setups win
+  more); the average rating of the side playing it; the newest game.
+  The archive has 19,960 distinct gold setups and 23k silver ones, with
+  the top five gold setups in a third of the games.
+- **Filter by setup.** `Filter`'s `gold_setup` and `silver_setup` (the
+  reply when there's a gold setup, else silver's alone) use the SQL
+  function `howdah_setup(moves, start_ply, 'g'|'s'|'r')`, registered on
+  every connection `howdah-db` opens and never in the schema, so other
+  tools can still read and write the file. It's a scan, 0.7 s for a
+  page of the whole archive in a debug build, so `library_games` now
+  runs on a blocking thread, as `library_setups` does, not on Tauri's
+  main thread.
+- **The panel.** Games has List and Setups views over the same filter
+  (`lobby.gamesView`). Setups lists gold's setups, or silver's; a gold
+  setup opens silver's replies to it (`lobby.setupExplorer` keeps
+  where); Games on a row shows its games in the list with the setups
+  as chips (Setups… goes back, Any setups clears them).
+  `SetupDiagram.svelte` draws a setup's two rows with the theme's
+  pieces, labelled with its pieces in words for screen readers and
+  `read_page`. A row's score is green or red when the side playing the
+  setup did 3 points better or worse than its ratings predicted, over
+  20 or more rated games.
+- `howdah-db setups DB [gold|silver|KEY] [PLAYER]` prints the top 20,
+  timed.
+
+Checked in the browser preview on the published base (425,307 games):
+gold setups, the replies to the second most played (55,781 games, 6,037
+replies), and the top reply's games (5,932, matching its row).
+Not done yet: per-player pages of setups beyond the filter, partial
+setups (only some pieces, such as the elephant and camel), and the move
+tree and position search.

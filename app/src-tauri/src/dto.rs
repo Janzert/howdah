@@ -2088,6 +2088,11 @@ pub struct LibraryFilter {
     pub outcome: Option<String>,
     /// The ending's letter (`g`, `e`, `m`, `t`, `r`, ...).
     pub termination: Option<String>,
+    /// Gold's setup (16 letters, a1 … h1 then a2 … h2, either way round).
+    pub gold_setup: Option<String>,
+    /// Silver's reply to `gold_setup` as the setup explorer gives it, or
+    /// with no `gold_setup`, silver's setup seen from gold's side.
+    pub silver_setup: Option<String>,
 }
 
 /// A game in the game list.
@@ -2121,6 +2126,47 @@ pub struct LibraryGameView {
     pub header_only: bool,
     pub set_position: bool,
     pub variations: bool,
+}
+
+/// One setup in the setup explorer (`howdah_db::SetupStat`).
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SetupStatView {
+    /// 16 letters (`RCDHME`), a1 … h1 then a2 … h2, seen from gold's side,
+    /// with the elephant on files e–h.
+    pub setup: String,
+    #[ts(type = "number")]
+    pub games: i64,
+    #[ts(type = "number")]
+    pub gold_wins: i64,
+    #[ts(type = "number")]
+    pub silver_wins: i64,
+    /// Games with both ratings, gold's wins in them, and the wins the
+    /// ratings predicted.
+    #[ts(type = "number")]
+    pub rated_games: i64,
+    #[ts(type = "number")]
+    pub rated_gold_wins: i64,
+    pub expected_gold_wins: f64,
+    /// The average rating of the side playing the setup.
+    pub rating: Option<f64>,
+    /// The newest game's date, `YYYY.MM.DD`.
+    pub last_date: String,
+}
+
+/// The setup explorer's rows, most played first.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SetupStatsView {
+    pub rows: Vec<SetupStatView>,
+    /// Games counted (those with both setups) and distinct setups.
+    #[ts(type = "number")]
+    pub games: i64,
+    #[ts(type = "number")]
+    pub setups: i64,
+    pub available: bool,
 }
 
 /// A page of the game list.

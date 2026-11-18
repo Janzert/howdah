@@ -401,6 +401,15 @@ plans the engine test and tournament runner.
   there's none from the same author; the other file's uuid becomes an
   `origins` row; new games' ids are offset past the highest, so it's
   bulk SQL through an attached database, 8.5 s for the whole archive).
+  `setups.rs`: the setup explorer. A `Setup` key is 16 letters, a1 …
+  h2 seen from gold's side (silver's ranks 8/7 read as 1/2), mirror
+  images one key with the elephant on files e–h, a reply mirrored with
+  gold's; `Database::setup_stats` (`SetupLevel`: gold, silver, replies
+  to a gold setup) reads the setups from the move blobs and groups in
+  Rust, with no derived table. `Filter`'s `gold_setup`/`silver_setup`
+  use the SQL function `howdah_setup`, registered on each connection
+  (never in the schema); `search::conditions` is the WHERE both share.
+  `howdah-db setups DB [gold|silver|KEY] [PLAYER]`.
 - `crates/howdah-render`: draws positions as images with the app's image
   themes (`image` crate; depends only on `howdah-arimaa`). The classic
   themes' manifests and files are embedded from `packages/board/src/themes/classic/`
@@ -914,7 +923,12 @@ plans the engine test and tournament runner.
     list, filtered by `lib/library.ts`'s `FilterForm` (kept in
     localStorage as `lobby.gamesFilter`, reloaded 250 ms after a
     change), 50 games a page with Show more, each row opening a board
-    and with Delete (a second click confirms).
+    and with Delete (a second click confirms). Its Setups view
+    (`SetupExplorer.svelte`, `library_setups`, over the same filter) lists
+    gold's or silver's setups, or silver's replies to one gold setup,
+    drawn by `SetupDiagram.svelte`; a row's Games narrows the list to it
+    (the form's `goldSetup`/`silverSetup`). `library_games` and
+    `library_setups` run on a blocking thread.
     `HomeScreen.svelte`: Play and
     analyse (New game, Analysis board with the last analysis engine, Open
     record, Position editor, Puzzles, as cards), a note when arimaa.com
