@@ -1,6 +1,6 @@
 # Game database: survey and plan
 
-Status: plan agreed (2026-11-17). Build steps 1 to 3 are done; see
+Status: plan agreed (2026-11-17). Build steps 1 to 4 are done; see
 "Built so far" at the end.
 
 `VARIATIONS.md` already decided that a game database will be the primary
@@ -525,3 +525,42 @@ The order has its own index, added by the second migration (an index
 on an expression, which SQLite has had since 3.9). On the whole archive
 a page takes 1–2 ms unfiltered and 4–8 ms by player, counting
 included. Checked in the browser preview on the whole archive.
+
+### Step 4 (2026-11-17): evals by position
+
+What analysis finds is kept in `position_data` (kind `eval`) by the
+position's Zobrist hash, side to move included, and an author: the
+engine's own `id name` and `id version` (OpFor gives no version, so the
+version of the release it was installed from stands in), so each
+engine version's evals are its own. The payload is compact JSON with
+its fields in a fixed order (`v`, `depth`, `eval`, `nodes`, `pv`,
+`timeMs`; the score from gold's side as `{"cr": 58}` or
+`{"win": "g", "turns": 2}`), and the PV is the turns in notation,
+checked again when read.
+
+- The session's saver (every 2 s, and when a board closes) writes the
+  lines found since its last pass, and looks up the positions it hasn't
+  asked about yet. A stored line is taken unless the board has one from
+  more search, and it shows without analysis being on.
+- The engine's author is only known once it has started, so the app's
+  engine ids and their authors are kept in a local table
+  (`local_engines`, the third migration; this computer's alone, not for
+  sharing). Until an engine has run once, its stored evals can't be
+  found.
+- Evals by other authors (another engine version, or later someone
+  else's) are kept but not shown yet; choosing among them is for the
+  sharing step.
+- **Nothing stored shows in a game the user is playing online** (Brian,
+  2026-11-17): stored evals follow the rule for analysis
+  (`Session::analysis_allowed`), so while the user plays an arimaa.com
+  game, or after they left one mid-game, positions aren't looked up and
+  the move list shows no evals. They're looked up once the game is
+  over. Watching a game is fine, as for analysis. Local games against
+  engines allow analysis, so they show stored evals too.
+
+Checked in the browser preview: OpFor analysed game 620100 for 20 s;
+its lines were written under "OpFor 2026.10.6", and a second board
+opening the game showed them in the move list with analysis off. In
+those short runs OpFor left many quick-pass positions without a line
+(40 searched, 10 kept); that's the run's own behaviour, which the
+database only mirrors.

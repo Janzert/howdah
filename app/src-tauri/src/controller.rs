@@ -116,7 +116,13 @@ enum ControlMsg {
 
 enum ActorEvent {
     Line(EngineMessage),
-    Started { name: String, profile: Profile },
+    /// `author` is who the engine's evals are kept under in the game
+    /// database: its `id name` and `id version`.
+    Started {
+        name: String,
+        author: String,
+        profile: Profile,
+    },
     BestMove(String),
     Failed(String),
 }
@@ -632,7 +638,7 @@ impl Coordinator {
                     self.publish(out);
                 }
             }
-            ActorEvent::Started { name, profile } => {
+            ActorEvent::Started { name, profile, .. } => {
                 if let Some(actor) = &mut self.actors[side.index()] {
                     actor.profile = profile;
                 }
@@ -663,7 +669,8 @@ impl Coordinator {
     fn on_analysis_event(&mut self, run: u64, request: u64, event: ActorEvent) {
         let Some(a) = self.analysis.as_mut().filter(|a| a.run == run) else { return };
         match event {
-            ActorEvent::Started { name, profile } => {
+            ActorEvent::Started { name, author, profile } => {
+                lock(&self.session).set_engine_author(&a.engine_id, author);
                 a.profile = profile;
                 a.started = true;
                 a.set_stop_time();
@@ -816,7 +823,7 @@ fn eval_for_gold(score: Score, mover: Color, turns: Option<u32>) -> Eval {
 
 /// Checks a PV turn by turn from the end of `game`, keeping the legal turns
 /// up to the first that isn't (returned too) or that ends the game.
-fn validate_pv(game: &Game, turns: &[String]) -> (Vec<PvTurn>, Option<String>) {
+pub(crate) fn validate_pv(game: &Game, turns: &[String]) -> (Vec<PvTurn>, Option<String>) {
     let mut game = game.clone();
     let mut out = Vec::new();
     for turn in turns {
@@ -886,7 +893,11 @@ async fn run_actor(
             return;
         }
     }
-    report(0, ActorEvent::Started { name: engine.name().to_string(), profile });
+    // An engine that gives no version is told apart by the release it was
+    // installed from.
+    let version = engine.id().version.clone().or_else(|| spec.installed.as_ref().map(|i| i.version.clone()));
+    let author = crate::library::engine_author(engine.id().name.as_deref(), version.as_deref(), &spec.name);
+    report(0, ActorEvent::Started { name: engine.name().to_string(), author, profile });
     // What the engine has been told, or None before its first `newgame`.
     let mut told: Option<Told> = None;
     let mut thinking: Option<u64> = None;

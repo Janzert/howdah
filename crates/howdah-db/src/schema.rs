@@ -41,6 +41,11 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         step: Step::Sql(include_str!("../migrations/0002_list_order.sql")),
         readable_before: true,
     },
+    Migration {
+        name: "0003_local_engines",
+        step: Step::Sql(include_str!("../migrations/0003_local_engines.sql")),
+        readable_before: true,
+    },
 ];
 
 /// The schema version this build writes.

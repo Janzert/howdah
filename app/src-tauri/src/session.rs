@@ -49,6 +49,7 @@ use crate::dto::{
     PriorAnalysis, PuzzleStatus, PuzzleView, PvTurn, SessionView, SideClockView, StartSetupView, StepTarget,
     SweepPhase, SweepView, TakebackView, TestGameTag, TurnStepView, TurnView,
 };
+use crate::library::StoredEval;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Player {
@@ -525,6 +526,15 @@ pub struct Session {
     output_seq: u64,
     /// The game in the database this one is saved as, once it is.
     db_id: Option<i64>,
+    /// Lines in `evals` found since they were last written to the
+    /// database, by engine and node.
+    evals_unsaved: HashSet<(String, NodeId)>,
+    /// Nodes whose positions the database has been asked about.
+    evals_looked_up: HashSet<NodeId>,
+    /// The author each engine's evals are kept under in the database (its
+    /// `id name` and `id version`), learned as it starts; kept across
+    /// games.
+    engine_authors: HashMap<String, String>,
 }
 
 /// How many of each side's engine output lines a session keeps.
@@ -601,6 +611,9 @@ impl Session {
             engine_output: Default::default(),
             output_seq: 0,
             db_id: None,
+            evals_unsaved: HashSet::new(),
+            evals_looked_up: HashSet::new(),
+            engine_authors: HashMap::new(),
         };
         s.refresh();
         s
@@ -612,6 +625,7 @@ impl Session {
         let generation = self.generation + 1;
         let (analysis, continue_turns, output_seq) =
             (self.analysis.take(), self.continue_turns, self.output_seq);
+        let engine_authors = std::mem::take(&mut self.engine_authors);
         // In a server's game, the server's results are the game's.
         let mut tree = tree;
         tree.set_repetition_immobilization(!matchup.as_ref().is_some_and(Match::server_clock));
@@ -620,6 +634,7 @@ impl Session {
         self.analysis = analysis;
         self.continue_turns = continue_turns;
         self.output_seq = output_seq;
+        self.engine_authors = engine_authors;
         self.matchup = matchup;
         self.refresh();
     }
@@ -2195,7 +2210,77 @@ impl Session {
         let evals = self.evals.entry(engine.to_string()).or_default();
         if !evals.get(&line.node).is_some_and(|old| more_search(old, line)) {
             evals.insert(line.node, line.clone());
+            self.evals_unsaved.insert((engine.to_string(), line.node));
         }
+    }
+
+    /// Records the author engine `engine` (its id in the engine list)
+    /// keeps its evals under in the database.
+    pub fn set_engine_author(&mut self, engine: &str, author: String) {
+        self.engine_authors.insert(engine.to_string(), author);
+    }
+
+    pub fn engine_authors(&self) -> &HashMap<String, String> {
+        &self.engine_authors
+    }
+
+    /// The lines found since the last call, to write to the database: each
+    /// with its engine and its position's hash. Lines from engines whose
+    /// author isn't known yet wait.
+    pub fn take_unsaved_evals(&mut self) -> Vec<(String, u64, AnalysisLine)> {
+        let mut out = Vec::new();
+        let unsaved = std::mem::take(&mut self.evals_unsaved);
+        for (engine, node) in unsaved {
+            let Some(line) = self.evals.get(&engine).and_then(|e| e.get(&node)) else { continue };
+            if !self.engine_authors.contains_key(&engine) || !self.tree.contains(node) {
+                self.evals_unsaved.insert((engine, node));
+                continue;
+            }
+            out.push((engine, self.tree[node].position().hash(), line.clone()));
+        }
+        out
+    }
+
+    /// Nodes whose positions haven't been looked up in the database yet,
+    /// with their positions' hashes; they count as looked up from now on.
+    /// Setups are left out, as analysis leaves them out. None while
+    /// analysis isn't allowed (the user plays an online game): earlier
+    /// analysis of a position must not show in a game being played. They
+    /// are looked up once the game is over.
+    pub fn take_eval_lookups(&mut self) -> Vec<(NodeId, u64)> {
+        let mut out = Vec::new();
+        if !self.analysis_allowed() {
+            return out;
+        }
+        let mut stack = vec![GameTree::ROOT];
+        while let Some(n) = stack.pop() {
+            stack.extend(self.tree[n].children().iter().copied());
+            if self.tree.setup_due(n) || !self.evals_looked_up.insert(n) {
+                continue;
+            }
+            out.push((n, self.tree[n].position().hash()));
+        }
+        out
+    }
+
+    /// A line for `node` from the database: its PV checked from the node,
+    /// and kept unless the session has one from more search. Returns
+    /// whether it was kept.
+    pub fn merge_stored_eval(&mut self, engine: &str, node: NodeId, stored: &StoredEval) -> bool {
+        if !self.analysis_allowed() {
+            return false;
+        }
+        let Ok(game) = self.tree.to_game(node) else { return false };
+        let (pv, _) = crate::controller::validate_pv(&game, &stored.pv);
+        let line = stored.line(node, pv);
+        let evals = self.evals.entry(engine.to_string()).or_default();
+        if evals.get(&node).is_some_and(|old| !more_search(&line, old)) {
+            return false;
+        }
+        evals.insert(node, line);
+        // Stored evals show without turning analysis on.
+        self.evals_engine.get_or_insert_with(|| engine.to_string());
+        true
     }
 
     /// The line kept for `node` by [`Session::store_analysis`].
@@ -2203,8 +2288,12 @@ impl Session {
         (generation == self.generation).then(|| self.evals.get(engine)?.get(&node)).flatten()
     }
 
-    /// The line the shown engine has for `node`.
+    /// The line the shown engine has for `node`; none while analysis isn't
+    /// allowed (a game the user plays online shows no evals).
     fn shown_eval(&self, node: NodeId) -> Option<&AnalysisLine> {
+        if !self.analysis_allowed() {
+            return None;
+        }
         self.evals.get(self.evals_engine.as_ref()?)?.get(&node)
     }
 
@@ -5139,6 +5228,39 @@ mod tests {
         assert_eq!(s.view().analysis_options, hash, "the same engine keeps them");
         s.set_analysis(Some(AnalysisEngine { id: "f".into(), name: "F".into(), options: vec![] })).unwrap();
         assert!(s.view().analysis_options.is_empty(), "another engine starts without");
+    }
+
+    #[test]
+    fn no_stored_evals_while_playing_online() {
+        let stored = StoredEval {
+            v: 1,
+            depth: Some("10".into()),
+            eval: Some(crate::library::StoredScore::CentiRabbits { cr: 50, chance: None }),
+            nodes: None,
+            pv: Vec::new(),
+            time_ms: Some(1000),
+        };
+        let mut s = Session::new();
+        s.start_match([Player::Human, remote("opponent")], [None, None], false);
+        let g = s.generation();
+        let moves: Vec<String> = [
+            "Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Da2 Hb2 Cc2 Ed2 Me2 Hf2 Cg2 Dh2",
+            "ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8 da7 hb7 cc7 ed7 me7 hf7 cg7 dh7",
+            "Ed2n",
+        ]
+        .map(String::from)
+        .to_vec();
+        s.sync_remote(g, &moves, None).unwrap();
+        assert!(s.plays_online());
+        assert!(s.take_eval_lookups().is_empty(), "positions aren't looked up while playing");
+        let at = *s.tree.main_line().last().unwrap();
+        assert!(!s.merge_stored_eval("e", at, &stored));
+        assert!(s.shown_eval(at).is_none());
+        // Once the game is over, they're looked up after all.
+        s.finish_remote(g, GameResult { winner: Color::Gold, reason: WinReason::Resignation }, None).unwrap();
+        assert!(!s.take_eval_lookups().is_empty());
+        assert!(s.merge_stored_eval("e", at, &stored));
+        assert!(s.shown_eval(at).is_some());
     }
 
     #[test]

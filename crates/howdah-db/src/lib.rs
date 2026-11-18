@@ -10,6 +10,7 @@
 pub mod archive;
 pub mod codec;
 mod game;
+mod positions;
 pub mod schema;
 mod search;
 
@@ -19,6 +20,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 pub use game::{ARIMAA_COM, GameData, PlayerInfo, SaveMode, SourceKey, StoredResult, gid_for};
+pub use positions::PositionDatum;
 pub use search::{Filter, GameSummary, Origin, Outcome, SearchPage};
 
 #[derive(Debug, thiserror::Error)]

@@ -18,6 +18,10 @@ young).
   panel lists them, newest first, narrowed by player (by any name
   they've had), opponent, side, won or lost, ending, dates, where
   they're from and rated; each opens on a board, and can be deleted.
+- Analysis is kept: what an engine finds about a position is saved in
+  the game database by position, so it shows again in any game that
+  reaches that position, without the engine running. Each engine
+  version's analysis is kept apart.
 - Engine tests can start their games from positions reached by play
   (`[positions]` in a test's spec: a file with each position's moves
   from the start, sent to the engines as moves). Each position is

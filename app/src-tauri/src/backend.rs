@@ -103,7 +103,10 @@ fn spawn_saver(library: Arc<Library>, handle: std::sync::Weak<SessionHandle>) {
         loop {
             tokio::time::sleep(library::SAVE_EVERY).await;
             let Some(h) = handle.upgrade() else { break };
-            library::save_session(&library, &h.session, &h.saved);
+            if library::save_session(&library, &h.session, &h.saved) {
+                let s = h.lock();
+                emit_session(&h.events, &s, Vec::new(), None);
+            }
         }
     });
 }

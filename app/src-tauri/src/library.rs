@@ -13,10 +13,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-use howdah_arimaa::{Color, GameRecord};
-use howdah_db::{ARIMAA_COM, Database, Filter, GameData, Origin, Outcome, SaveMode};
+use std::collections::HashMap;
 
-use crate::dto::{ApiError, LibraryFilter, LibraryGameView, LibraryPageView};
+use howdah_arimaa::{Color, GameRecord, NodeId};
+use howdah_db::{ARIMAA_COM, Database, Filter, GameData, Origin, Outcome, PositionDatum, SaveMode};
+use serde::{Deserialize, Serialize};
+
+use crate::dto::{AnalysisLine, ApiError, Eval, LibraryFilter, LibraryGameView, LibraryPageView, PvTurn};
 use crate::session::Session;
 
 /// How often a session's game is checked for changes to save.
@@ -28,7 +31,13 @@ pub const FILE_NAME: &str = "games.db";
 pub struct Library {
     db: Mutex<Option<Database>>,
     path: Option<PathBuf>,
+    /// The app's engines (their ids in the engine list) and the authors
+    /// their evals are kept under.
+    authors: Mutex<HashMap<String, String>>,
 }
+
+/// The kind of position data engine lines are kept as.
+const EVAL: &str = "eval";
 
 impl Library {
     /// The database at `path` (`None`: none, as in tests).
@@ -40,16 +49,70 @@ impl Library {
                 None
             }
         });
-        Library { db: Mutex::new(db), path }
+        Library::with_db(db, path)
+    }
+
+    fn with_db(db: Option<Database>, path: Option<PathBuf>) -> Library {
+        let authors = db.as_ref().and_then(|db| db.local_engines().ok()).unwrap_or_default();
+        Library { db: Mutex::new(db), path, authors: Mutex::new(authors.into_iter().collect()) }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.db().is_some()
+    }
+
+    fn authors(&self) -> MutexGuard<'_, HashMap<String, String>> {
+        self.authors.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Records the authors engines write as, as sessions learn them.
+    pub fn learn_authors(&self, learned: &HashMap<String, String>) {
+        let new: Vec<(String, String)> = {
+            let known = self.authors();
+            learned
+                .iter()
+                .filter(|(e, a)| known.get(*e) != Some(a))
+                .map(|(e, a)| (e.clone(), a.clone()))
+                .collect()
+        };
+        for (engine, author) in new {
+            if self.with("recording an engine", |db| db.set_local_engine(&engine, &author)).is_some() {
+                self.authors().insert(engine, author);
+            }
+        }
+    }
+
+    /// Writes engine lines.
+    pub fn put_evals(&self, data: &[PositionDatum]) {
+        if !data.is_empty() {
+            self.with("writing evals", |db| db.put_position_data(EVAL, data));
+        }
+    }
+
+    /// The lines kept for positions `hashes`, by the app's engines: each
+    /// with the engine's id in the engine list.
+    pub fn get_evals(&self, hashes: &[u64]) -> Vec<(String, u64, StoredEval)> {
+        let authors = self.authors().clone();
+        let names: Vec<String> = authors.values().cloned().collect();
+        if names.is_empty() {
+            return Vec::new();
+        }
+        let found =
+            self.with("reading evals", |db| db.position_data(EVAL, hashes, &names)).unwrap_or_default();
+        let mut out = Vec::new();
+        for d in found {
+            let Some(stored) = StoredEval::decode(&d.payload) else { continue };
+            for (engine, _) in authors.iter().filter(|(_, a)| **a == d.author) {
+                out.push((engine.clone(), d.hash, stored.clone()));
+            }
+        }
+        out
     }
 
     /// A library in memory, for tests.
     #[cfg(test)]
     pub fn in_memory() -> Library {
-        Library {
-            db: Mutex::new(Some(Database::open_in_memory().expect("an in-memory database"))),
-            path: None,
-        }
+        Library::with_db(Some(Database::open_in_memory().expect("an in-memory database")), None)
     }
 
     pub fn path(&self) -> Option<&Path> {
@@ -208,12 +271,20 @@ fn howdah_now() -> i64 {
 /// What a session last saved: the session's generation and the record.
 pub type Saved = Option<(u64, GameRecord)>;
 
-/// Saves `session`'s game if it changed since `saved`, and links the
-/// session to the saved game.
-pub fn save_session(library: &Library, session: &Mutex<Session>, saved: &Mutex<Saved>) {
-    fn lock(m: &Mutex<Session>) -> MutexGuard<'_, Session> {
-        m.lock().unwrap_or_else(|e| e.into_inner())
-    }
+fn lock(m: &Mutex<Session>) -> MutexGuard<'_, Session> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Saves `session`'s game if it changed since `saved` and links the
+/// session to the saved game, writes the analysis found since last time,
+/// and brings in what the database has on positions not looked up yet.
+/// Returns whether that changed what the session shows.
+pub fn save_session(library: &Library, session: &Mutex<Session>, saved: &Mutex<Saved>) -> bool {
+    save_game(library, session, saved);
+    sync_evals(library, session)
+}
+
+fn save_game(library: &Library, session: &Mutex<Session>, saved: &Mutex<Saved>) {
     let (record, generation, id) = {
         let s = lock(session);
         match s.saveable() {
@@ -237,6 +308,123 @@ pub fn save_session(library: &Library, session: &Mutex<Session>, saved: &Mutex<S
         }
     }
     *saved = Some((generation, record));
+}
+
+/// Writes new analysis and reads stored analysis for new positions.
+fn sync_evals(library: &Library, session: &Mutex<Session>) -> bool {
+    if !library.is_open() {
+        return false;
+    }
+    let (authors, unsaved, lookups, generation) = {
+        let mut s = lock(session);
+        (s.engine_authors().clone(), s.take_unsaved_evals(), s.take_eval_lookups(), s.generation())
+    };
+    library.learn_authors(&authors);
+    let writes: Vec<PositionDatum> = unsaved
+        .into_iter()
+        .filter_map(|(engine, hash, line)| {
+            let author = authors.get(&engine)?.clone();
+            Some(PositionDatum { hash, author, payload: StoredEval::from_line(&line).encode() })
+        })
+        .collect();
+    library.put_evals(&writes);
+    if lookups.is_empty() {
+        return false;
+    }
+    let hashes: Vec<u64> = lookups.iter().map(|&(_, h)| h).collect();
+    let found = library.get_evals(&hashes);
+    if found.is_empty() {
+        return false;
+    }
+    let mut s = lock(session);
+    if s.generation() != generation {
+        return false;
+    }
+    let mut changed = false;
+    for (engine, hash, stored) in found {
+        for &(node, _) in lookups.iter().filter(|&&(_, h)| h == hash) {
+            changed |= s.merge_stored_eval(&engine, node, &stored);
+        }
+    }
+    changed
+}
+
+/// The author an engine's evals are kept under: its `id name` (else the
+/// name it has in the engine list) and its version (`id version`, else
+/// the release it was installed from), so each version's evals are its
+/// own.
+pub fn engine_author(id_name: Option<&str>, id_version: Option<&str>, listed: &str) -> String {
+    let name = id_name.map(str::trim).filter(|n| !n.is_empty()).unwrap_or(listed.trim());
+    match id_version.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(v) if !name.contains(v) => format!("{name} {v}"),
+        _ => name.to_string(),
+    }
+}
+
+/// An engine's line as kept in the database (kind `eval`), as compact JSON
+/// with its fields in a fixed order, so the same line is always the same
+/// bytes. The PV is the turns in notation, checked again when read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredEval {
+    /// The format's version.
+    pub v: u32,
+    pub depth: Option<String>,
+    pub eval: Option<StoredScore>,
+    pub nodes: Option<u64>,
+    pub pv: Vec<String>,
+    #[serde(rename = "timeMs")]
+    pub time_ms: Option<u64>,
+}
+
+/// A score from gold's side: centi-rabbits (`cr`, with gold's chance of
+/// winning in tenths of a percent when the engine gave one), or a proven
+/// win (`win`: `g` or `s`, with the winner's turns to it).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StoredScore {
+    CentiRabbits { cr: i32, chance: Option<u16> },
+    Decided { win: char, turns: Option<u32> },
+}
+
+impl StoredEval {
+    pub fn from_line(line: &AnalysisLine) -> StoredEval {
+        StoredEval {
+            v: 1,
+            depth: line.depth.clone(),
+            eval: line.eval.map(|e| match e {
+                Eval::CentiRabbits { value, chance } => StoredScore::CentiRabbits { cr: value, chance },
+                Eval::Decided { winner, turns } => StoredScore::Decided { win: winner.letter(), turns },
+            }),
+            nodes: line.nodes,
+            pv: line.pv.iter().map(|t| t.notation.clone()).collect(),
+            time_ms: line.time_ms,
+        }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        serde_json::to_vec(self).expect("plain data")
+    }
+
+    pub fn decode(bytes: &[u8]) -> Option<StoredEval> {
+        serde_json::from_slice::<StoredEval>(bytes).ok().filter(|e| e.v == 1)
+    }
+
+    /// The line at `node`, with `pv` as checked from there.
+    pub fn line(&self, node: NodeId, pv: Vec<PvTurn>) -> AnalysisLine {
+        AnalysisLine {
+            node,
+            depth: self.depth.clone(),
+            eval: self.eval.as_ref().and_then(|e| match *e {
+                StoredScore::CentiRabbits { cr, chance } => Some(Eval::CentiRabbits { value: cr, chance }),
+                StoredScore::Decided { win, turns } => {
+                    Color::from_letter(win).map(|winner| Eval::Decided { winner, turns })
+                }
+            }),
+            pv,
+            nodes: self.nodes,
+            time_ms: self.time_ms,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -271,6 +459,61 @@ mod tests {
         save_session(&library, &session, &saved);
         assert_ne!(session.lock().unwrap().db_id(), Some(id));
         assert_eq!(library.with("count", |db| db.game_count()), Some(2));
+    }
+
+    #[test]
+    fn authors_name_the_version() {
+        assert_eq!(engine_author(Some("OpFor"), Some("2026.10.6"), "OpFor (mine)"), "OpFor 2026.10.6");
+        assert_eq!(engine_author(Some("bot_Sharp 2026"), Some("2026"), "Sharp"), "bot_Sharp 2026");
+        assert_eq!(engine_author(None, None, "My engine"), "My engine");
+    }
+
+    #[test]
+    fn evals_are_kept_by_position_and_found_from_another_game() {
+        use crate::dto::Eval;
+        let library = Library::in_memory();
+        let game = |extra: &str| {
+            GameRecord::parse(&format!(
+                "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Da2 Hb2 Cc2 Ed2 Me2 Hf2 Cg2 Dh2\n\
+                 1s ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8 da7 hb7 cc7 ed7 me7 hf7 cg7 dh7\n2g Ed2n\n{extra}"
+            ))
+            .unwrap()
+        };
+        let session = Mutex::new(Session::new());
+        let saved = Mutex::new(None);
+        session.lock().unwrap().load_record(game(""));
+        let (node, generation) = {
+            let s = session.lock().unwrap();
+            (*s.saveable().unwrap().tree.main_line().last().unwrap(), s.generation())
+        };
+        let line = AnalysisLine {
+            node,
+            depth: Some("12+".into()),
+            eval: Some(Eval::CentiRabbits { value: -35, chance: None }),
+            pv: Vec::new(),
+            nodes: Some(1000),
+            time_ms: Some(5000),
+        };
+        {
+            let mut s = session.lock().unwrap();
+            s.store_analysis(generation, "sharp", &line);
+            // Nothing is written until the engine's author is known.
+            assert!(s.take_unsaved_evals().is_empty());
+            s.set_engine_author("sharp", "bot_Sharp 2026".into());
+        }
+        save_session(&library, &session, &saved);
+        assert_eq!(library.authors().get("sharp").map(String::as_str), Some("bot_Sharp 2026"));
+
+        // Another board, another game through the same position: the line
+        // comes back, without the engine having run there.
+        let other = Mutex::new(Session::new());
+        other.lock().unwrap().load_record(game("2s ed7s\n"));
+        assert!(save_session(&library, &other, &Mutex::new(None)));
+        let s = other.lock().unwrap();
+        let tree = s.saveable().unwrap().tree;
+        let at = tree.main_line()[3];
+        let found = s.stored_analysis(s.generation(), "sharp", at).expect("found by position");
+        assert_eq!((found.depth.as_deref(), found.eval, found.time_ms), (Some("12+"), line.eval, Some(5000)));
     }
 
     #[test]

@@ -737,6 +737,23 @@ plans the engine test and tournament runner.
     only by its header is fetched as `open_gameroom_game` does) and
     `delete_library_game` (a board still showing it saves it again as a
     new game if it changes).
+    Evals by position: the saver also writes the session's new lines
+    (`Session::take_unsaved_evals`, from `store_analysis`) as
+    `position_data` of kind `eval` (`StoredEval`: compact JSON with its
+    fields in a fixed order; the PV in notation, checked again with
+    `controller::validate_pv` on reading), and reads the database for
+    nodes not looked up yet (`take_eval_lookups`, setups left out) into
+    `Session::merge_stored_eval`, sending `game://changed` when that
+    adds something. Lines are kept under the engine's author
+    (`engine_author`: its `id name` and `id version`, or the installed
+    release's version when it gives none), which the analysis actor
+    reports in `ActorEvent::Started` and the session keeps by engine id
+    (`engine_authors`); the database's `local_engines` table remembers
+    it, so stored evals show before the engine runs. Lines of an engine
+    whose author isn't known yet wait. Nothing stored is looked up,
+    merged or shown while `analysis_allowed` is false (a game the user
+    plays online), so earlier analysis never shows in a game being
+    played; the lookups happen once it's over.
   - `clock_format.rs`: whether the system writes times on a 12- or a
     24-hour clock (`system_clock`, `SystemClock`), which the webview's
     own formatting misses: the desktop's GSettings clock key on Cinnamon,
