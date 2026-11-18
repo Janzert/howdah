@@ -617,6 +617,12 @@ database only mirrors.
   is needed only when the deltas grow large next to it (years at
   today's rate) or to pick up corrections; databases from before it
   still get a delta.
+- **Checking for it:** the app fetches `base.json` at most once a day,
+  keeping it in `meta` between, so opening the Games panel or restarting
+  doesn't ask GitHub again; the panel's refresh button checks at once,
+  and installing always fetches it afresh. Debug builds use the release
+  too, unless `HOWDAH_BASE_URL` names another manifest (a local server)
+  or is `off` (the end-to-end tests).
 - **Getting it:** the app keeps the time it reached in `meta`
   (`base_at`, with its games and date). `base::plan` works out what a
   database needs: nothing at the manifest's `at` or later, else the

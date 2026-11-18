@@ -994,8 +994,8 @@ pub async fn open_library_game(
 }
 
 #[tauri::command]
-pub async fn base_status(state: State<'_, Backend>) -> Result<BaseStatus, ApiError> {
-    Ok(state.base_status().await)
+pub async fn base_status(state: State<'_, Backend>, check: Option<bool>) -> Result<BaseStatus, ApiError> {
+    Ok(state.base_status(check.unwrap_or(false)).await)
 }
 
 #[tauri::command]

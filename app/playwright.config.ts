@@ -27,6 +27,8 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm run bridge',
+      // No game database downloads from GitHub in the tests.
+      env: { HOWDAH_BASE_URL: 'off' },
       port: 1421,
       reuseExistingServer: true,
       // The first run compiles the backend.

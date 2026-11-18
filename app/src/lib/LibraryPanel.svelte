@@ -96,9 +96,10 @@
   let baseError = $state<string | null>(null);
   let baseDone = $state<string | null>(null);
 
-  async function loadBase() {
+  /** `check` asks for the manifest now, not from the day's check. */
+  async function loadBase(check = false) {
     try {
-      base = await api.baseStatus();
+      base = await api.baseStatus(check);
     } catch {
       base = null;
     }
@@ -151,8 +152,14 @@
     <h1>Games</h1>
     <span class="count" aria-live="polite">{countText}</span>
     <span class="spacer"></span>
-    <button class="icon" onclick={() => load()} title="Load the list again" aria-label="Refresh"
-      ><Icon name="refresh" size={16} /></button
+    <button
+      class="icon"
+      onclick={() => {
+        void load();
+        void loadBase(true);
+      }}
+      title="Load the list again and check for new games from arimaa.com's archive"
+      aria-label="Refresh"><Icon name="refresh" size={16} /></button
     >
   </header>
   <p class="hint intro">

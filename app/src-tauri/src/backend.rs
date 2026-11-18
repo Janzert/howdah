@@ -1279,8 +1279,10 @@ impl Backend {
     }
 
     /// The base game database: what's installed and what's available.
-    pub async fn base_status(&self) -> crate::base::BaseStatus {
-        self.base.status(&self.library).await
+    /// The base database's state; `check` fetches the manifest even if
+    /// it was checked today.
+    pub async fn base_status(&self, check: bool) -> crate::base::BaseStatus {
+        self.base.status(&self.library, check).await
     }
 
     /// Downloads the newest base game database and merges it in.
@@ -1661,7 +1663,7 @@ impl Backend {
             )?),
             "open_library_game" => ok(self.open_library_game(sid()?, arg(args, "game")?).await?),
             "delete_library_game" => ok(self.delete_library_game(arg(args, "game")?)?),
-            "base_status" => ok(self.base_status().await),
+            "base_status" => ok(self.base_status(arg::<Option<bool>>(args, "check")?.unwrap_or(false)).await),
             "install_base" => ok(self.install_base().await?),
             "open_gameroom_game" => ok(self
                 .open_gameroom_game(

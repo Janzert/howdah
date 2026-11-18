@@ -773,8 +773,13 @@ plans the engine test and tournament runner.
   - `base.rs`: the base database download (Games panel's card).
     `Base::status` reads the manifest (`MANIFEST_URL`, the
     howdah-game-database repository's `current` release, whose assets
-    are swapped; debug builds only `HOWDAH_BASE_URL`, which may be plain
-    http to this computer) and `meta`'s `base_at` (the time reached),
+    are swapped; in debug builds `HOWDAH_BASE_URL` instead, which may be
+    plain http to this computer, or `off`, as the e2e tests set it),
+    at most once a day (`CHECK_EVERY`; the manifest is kept in `meta`
+    as `base_manifest`, with when and from where, so restarts don't ask
+    again; `base_status` with `check`, the panel's refresh button,
+    fetches at once, as `install` always does), and `meta`'s `base_at`
+    (the time reached),
     and offers what `base::plan` says is needed (`BaseInfo.newGames`
     when that's only a delta); `install` streams each file beside
     `games.db` (`base-download/`, removed after), checks size and

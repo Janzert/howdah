@@ -8,9 +8,14 @@
 //! unpacks it beside the game database and merges it in, and remembers
 //! the time reached after each, so only newer games are offered later.
 //!
-//! Debug builds never ask GitHub (the tests run on them):
-//! `HOWDAH_BASE_URL` names a manifest to use instead, and may be plain
-//! http to this computer, for checking the app against a local server.
+//! The manifest is fetched at most once a day (`CHECK_EVERY`) and kept
+//! in the database's `meta` between, so opening the Games panel or
+//! restarting doesn't ask GitHub again; the panel's refresh button
+//! checks at once, and installing always fetches it afresh.
+//!
+//! `HOWDAH_BASE_URL` names another manifest in debug builds, and may be
+//! plain http to this computer, for checking the app against a local
+//! server; `off` checks nothing, as the end-to-end tests do.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -40,6 +45,15 @@ const MAX_MANIFEST_BYTES: usize = 64 << 10;
 /// Larger than any base is likely to be, as a guard against a bad manifest.
 const MAX_DOWNLOAD_BYTES: u64 = 2 << 30;
 const MAX_UNPACKED_BYTES: u64 = 8 << 30;
+
+/// How often the manifest is fetched, at most, unless asked.
+const CHECK_EVERY: i64 = 24 * 60 * 60;
+
+/// The `meta` keys the last manifest fetched is kept under, with when
+/// and from where.
+const MANIFEST_KEPT: &str = "base_manifest";
+const MANIFEST_CHECKED: &str = "base_manifest_checked";
+const MANIFEST_FROM: &str = "base_manifest_url";
 
 /// The `meta` keys the installed base is recorded under: the time
 /// reached (the `at` of the last pack merged), and its games and date.
@@ -97,10 +111,42 @@ pub struct BaseProgress {
     pub detail: Option<String>,
 }
 
-/// The manifest's address, or `None` in a debug build without
-/// `HOWDAH_BASE_URL`.
+/// The manifest's address, or `None` in a debug build with
+/// `HOWDAH_BASE_URL` set to `off`.
 fn manifest_url() -> Option<String> {
-    if cfg!(debug_assertions) { std::env::var("HOWDAH_BASE_URL").ok() } else { Some(MANIFEST_URL.into()) }
+    match std::env::var("HOWDAH_BASE_URL") {
+        Ok(url) if cfg!(debug_assertions) => (url != "off" && !url.is_empty()).then_some(url),
+        _ => Some(MANIFEST_URL.into()),
+    }
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+}
+
+/// The manifest kept from the last fetch from `url`, and when that was.
+fn kept_manifest(library: &Library, url: &str) -> Option<(Manifest, i64)> {
+    if library.meta(MANIFEST_FROM).as_deref() != Some(url) {
+        return None;
+    }
+    let checked = library.meta(MANIFEST_CHECKED)?.parse().ok()?;
+    let m = serde_json::from_str(&library.meta(MANIFEST_KEPT)?).ok()?;
+    Some((m, checked))
+}
+
+/// Fetches the manifest and keeps it.
+async fn fetch_and_keep(library: &Library, url: &str) -> Result<Manifest, ApiError> {
+    let m = fetch_manifest(&http()?, url).await?;
+    let json = serde_json::to_string(&m).map_err(|e| ApiError::state(e.to_string()))?;
+    let kept = library.with_db_result(|db| {
+        db.set_meta(MANIFEST_KEPT, &json)?;
+        db.set_meta(MANIFEST_CHECKED, &now().to_string())?;
+        db.set_meta(MANIFEST_FROM, url)
+    });
+    if let Err(e) = kept {
+        eprintln!("couldn't keep the game database's manifest: {e}");
+    }
+    Ok(m)
 }
 
 /// Whether `url` may be fetched: https, or in a debug build plain http to
@@ -173,8 +219,10 @@ impl Default for Base {
 }
 
 impl Base {
-    /// What's installed and what's available (asking for the manifest).
-    pub async fn status(&self, library: &Library) -> BaseStatus {
+    /// What's installed and what's available: from the manifest kept
+    /// from the last check if that was under a day ago and not `check`,
+    /// else fetched (falling back on the kept one if that fails).
+    pub async fn status(&self, library: &Library, check: bool) -> BaseStatus {
         let installed = library.meta(BASE_GAMES).and_then(|g| g.parse().ok()).map(|games| BaseInfo {
             games,
             through: library.meta(BASE_THROUGH).filter(|t| !t.is_empty()),
@@ -191,23 +239,34 @@ impl Base {
             return status;
         }
         let Some(url) = manifest_url() else { return status };
-        match http() {
-            Ok(http) => match fetch_manifest(&http, &url).await {
-                Ok(m) => match plan(&m, library) {
-                    Ok(packs) => {
-                        let only_deltas = packs.first().is_some_and(|p| p.since.is_some());
-                        let had = status.installed.as_ref().map_or(0, |i| i.games);
-                        status.available = Some(BaseInfo {
-                            games: m.games,
-                            through: m.through.clone(),
-                            size: Some(packs.iter().map(|p| p.size).sum()),
-                            // A delta may repeat games the database has.
-                            new_games: only_deltas.then(|| (m.games - had).max(0)),
-                        });
-                        status.offer = !packs.is_empty();
+        let kept = kept_manifest(library, &url);
+        let manifest = match kept {
+            Some((m, checked)) if !check && now() - checked < CHECK_EVERY => Ok(m),
+            _ => match fetch_and_keep(library, &url).await {
+                Ok(m) => Ok(m),
+                Err(e) => match kept {
+                    Some((m, _)) => {
+                        status.problem = Some(e.message);
+                        Ok(m)
                     }
-                    Err(e) => status.problem = Some(e.message),
+                    None => Err(e),
                 },
+            },
+        };
+        match manifest {
+            Ok(m) => match plan(&m, library) {
+                Ok(packs) => {
+                    let only_deltas = packs.first().is_some_and(|p| p.since.is_some());
+                    let had = status.installed.as_ref().map_or(0, |i| i.games);
+                    status.available = Some(BaseInfo {
+                        games: m.games,
+                        through: m.through.clone(),
+                        size: Some(packs.iter().map(|p| p.size).sum()),
+                        // A delta may repeat games the database has.
+                        new_games: only_deltas.then(|| (m.games - had).max(0)),
+                    });
+                    status.offer = !packs.is_empty();
+                }
                 Err(e) => status.problem = Some(e.message),
             },
             Err(e) => status.problem = Some(e.message),
@@ -255,7 +314,7 @@ async fn install(library: &Arc<Library>, events: &Events) -> Result<String, ApiE
         .map(|d| d.join("base-download"))
         .ok_or_else(|| ApiError::state("there's no game database"))?;
     let http = http()?;
-    let manifest = fetch_manifest(&http, &url).await?;
+    let manifest = fetch_and_keep(library, &url).await?;
     let packs = plan(&manifest, library)?;
     if packs.is_empty() {
         return Ok("nothing new".into());
@@ -422,5 +481,26 @@ mod tests {
         assert!(allowed("https://github.com/x"));
         assert!(!allowed("http://example.com/x"));
         assert_eq!(allowed("http://127.0.0.1:8000/base.json"), cfg!(debug_assertions));
+    }
+
+    #[test]
+    fn a_kept_manifest_is_used_only_for_its_address() {
+        let library = Library::in_memory();
+        let m: Manifest = serde_json::from_str(
+            r#"{"format":1,"at":20,"games":2,"through":null,
+                "base":{"file":"b","size":1,"sha256":"","unpackedSize":1,"schema":1,"games":2,"at":20}}"#,
+        )
+        .unwrap();
+        assert!(kept_manifest(&library, "https://a/base.json").is_none());
+        let json = serde_json::to_string(&m).unwrap();
+        library
+            .with_db_result(|db| {
+                db.set_meta(MANIFEST_KEPT, &json)?;
+                db.set_meta(MANIFEST_CHECKED, "123")?;
+                db.set_meta(MANIFEST_FROM, "https://a/base.json")
+            })
+            .unwrap();
+        assert_eq!(kept_manifest(&library, "https://a/base.json"), Some((m, 123)));
+        assert!(kept_manifest(&library, "https://b/base.json").is_none());
     }
 }

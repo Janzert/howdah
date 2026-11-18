@@ -109,7 +109,8 @@ function makeApi(sid: () => SessionId | null) {
     openLibraryGame: (game: number) => invoke<void>('open_library_game', { session: sid(), game }),
     /** The base game database (arimaa.com's archive): what's installed,
      * and the newest one there is (asks for its manifest). */
-    baseStatus: () => invoke<BaseStatus>('base_status'),
+    /** `check` asks for the manifest even if it was checked today. */
+    baseStatus: (check = false) => invoke<BaseStatus>('base_status', { check }),
     /** Downloads the newest base game database and merges it in, sending
      * `library://base` events; resolves to what was added. */
     installBase: () => invoke<string>('install_base'),
