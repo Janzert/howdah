@@ -579,8 +579,11 @@ database only mirrors.
 - **Deltas:** the archive gains about 4,000 games a year now (2,776 in
   2026 to October), about 1.5 MB packed, so a 143 MB download for a
   week's games would be a waste. Each publish imports the whole archive
-  afresh, and the archive only grows, so the publisher keeps one table,
-  `OUTDIR/seen.db`: each game's `gid` and when it was first published.
+  afresh, and the archive only grows, so the publisher keeps one record,
+  `OUTDIR/seen.txt`: the arimaa.com game ids, in blocks under the time
+  of the publish that first had them (`@<time>`). A publish appends a
+  block, so it's small to check in and to diff; it's loaded into a
+  table (`seen-work.db`) while the publish runs.
   A delta *since* a time holds every game first published after it, so
   it brings any database at that time or later up to date; games it
   repeats are skipped by the merge. Each publish with new games
@@ -597,12 +600,17 @@ database only mirrors.
   and SHA-256, the unpacked size, the schema version, its games, the
   `at` a database reaches with it, and for a delta its `since`.
 - **Publishing it:** in its own repository,
-  `github.com/Janzert/howdah-game-database`, not Howdah's, so its
+  `github.com/Janzert/howdah-game-database` (its README has the steps),
+  not Howdah's, so its
   updates keep their own schedule and never become Howdah's latest
   release, which the update check reads. One release, tagged `current`,
   holds `base.json` and the files it names, and the app reads
   `https://github.com/Janzert/howdah-game-database/releases/download/current/base.json`,
-  taking the files from beside it. Swapping assets isn't atomic, so the
+  taking the files from beside it. That repository keeps what a
+  publish needs besides the archive files: `base.json`, `seen.txt`, and
+  `howdah-rev`, the Howdah commit whose `howdah-db` its `publish.sh`
+  builds and runs; `upload.sh` brings the release in line with
+  `base.json`. Swapping assets isn't atomic, so the
   file names carry times and are never reused (`pack` refuses to write
   over a file): the new files go up first, then the manifest, and then
   the files the publish lists as no longer named come down. A new base

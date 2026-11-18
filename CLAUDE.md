@@ -389,7 +389,8 @@ plans the engine test and tournament runner.
   database: a fresh import, `strip_for_base` (no indexes or
   fingerprints), vacuumed; `base::publish` packs it with zstd level 22
   and a 128 MB window as the base when asked or when there's none,
-  records when each game was first published in `seen.db`, rebuilds
+  records when each game was first published in `seen.txt` (blocks of
+  arimaa.com ids under `@<time>`, appended, kept with the manifest), rebuilds
   the deltas (the games first published since 1, 2, 4, … publishes
   back and since the base, up to a share of the base's size), and
   writes `base.json`, a `base::Manifest`; `base::plan` picks what a

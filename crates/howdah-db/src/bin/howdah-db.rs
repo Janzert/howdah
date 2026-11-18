@@ -7,7 +7,7 @@
 //! howdah-db list DB [PLAYER [OPPONENT]]   the newest 20 games, timed
 //! howdah-db publish OUTDIR PATH... [--new-base] [--cap PCT] [-j N]
 //!                                       the base database and its deltas from archive files,
-//!                                       with OUTDIR/base.json and OUTDIR/seen.db (keep it)
+//!                                       with OUTDIR/base.json and OUTDIR/seen.txt (keep both)
 //! howdah-db merge DB OTHER              merges another database file into DB
 //! howdah-db verify DB                  loads every game back, reporting any that fail
 //! ```

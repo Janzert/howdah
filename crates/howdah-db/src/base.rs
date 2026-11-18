@@ -33,8 +33,15 @@ pub const MANIFEST_FORMAT: u32 = 1;
 /// zstd's window for the packed files: 128 MB, which unpacking must allow.
 const WINDOW_LOG: u32 = 27;
 
-/// The publisher's record of when each game was first published.
-pub const SEEN_DB: &str = "seen.db";
+/// The publisher's record of when each game was first published, kept
+/// with the manifest (checked in where they're published from): blocks
+/// of arimaa.com game ids, one a line, each under `@<time>` (Unix
+/// seconds), the publish that first had them. A publish appends a block.
+pub const SEEN_FILE: &str = "seen.txt";
+const SEEN_HEADER: &str =
+    "# arimaa.com game ids, each under the time (Unix seconds) of the publish that first had them\n";
+/// The seen table, loaded from [`SEEN_FILE`] while a publish runs.
+const SEEN_WORK: &str = "seen-work.db";
 pub const MANIFEST_FILE: &str = "base.json";
 
 /// What a release holds: the base and the deltas to the newest games.
@@ -154,7 +161,7 @@ impl Database {
         Ok(self.connection().query_row("SELECT max(date) FROM games", [], |r| r.get(0))?)
     }
 
-    /// Keeps only the games `seen` (a [`SEEN_DB`]) first saw after
+    /// Keeps only the games `seen` (the seen table) first saw after
     /// `since`, and the players they name: a delta. Run on a copy of the
     /// newest import, then [`Database::vacuum`].
     fn keep_seen_after(&mut self, seen: &Path, since: i64) -> Result<()> {
@@ -191,6 +198,38 @@ fn open_seen(path: &Path) -> Result<Connection> {
     Ok(conn)
 }
 
+/// Loads [`SEEN_FILE`] at `text` into a fresh seen table at `db`.
+fn load_seen(text: &Path, db: &Path) -> Result<Connection> {
+    let _ = std::fs::remove_file(db);
+    let mut conn = open_seen(db)?;
+    let body = match std::fs::read_to_string(text) {
+        Ok(body) => body,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e.into()),
+    };
+    let bad = |n: usize, why: &str| Error::Archive(format!("{}:{}: {why}", text.display(), n + 1));
+    let tx = conn.transaction()?;
+    {
+        let mut insert = tx.prepare("INSERT INTO seen (gid, first) VALUES (?1, ?2)")?;
+        let mut at = None;
+        for (n, line) in body.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some(t) = line.strip_prefix('@') {
+                at = Some(t.parse::<i64>().map_err(|_| bad(n, "not a time"))?);
+                continue;
+            }
+            let at = at.ok_or_else(|| bad(n, "an id before any time"))?;
+            let gid = crate::gid_for(&crate::SourceKey::arimaa_com(line));
+            insert.execute((&gid[..], at)).map_err(|_| bad(n, "an id seen twice"))?;
+        }
+    }
+    tx.commit()?;
+    Ok(conn)
+}
+
 /// What [`publish`] is to do.
 #[derive(Clone, Debug)]
 pub struct PublishOptions {
@@ -216,36 +255,71 @@ pub struct Published {
 }
 
 /// Publishes `newest`, a fresh import of the whole archive (stripped and
-/// vacuumed), into `out_dir`: records its new games in [`SEEN_DB`],
+/// vacuumed), into `out_dir`: records its new games in [`SEEN_FILE`],
 /// packs a base if asked or if there's none, rebuilds the deltas, and
 /// writes the manifest. `None` when there's nothing new to publish.
 pub fn publish(out_dir: &Path, newest: &Path, opts: &PublishOptions) -> Result<Option<Published>> {
-    let seen_path = out_dir.join(SEEN_DB);
+    let seen_text = out_dir.join(SEEN_FILE);
+    let seen_path = out_dir.join(SEEN_WORK);
     let manifest_path = out_dir.join(MANIFEST_FILE);
     let old: Option<Manifest> = match std::fs::read(&manifest_path) {
         Ok(bytes) => Some(serde_json::from_slice(&bytes).map_err(|e| Error::Archive(e.to_string()))?),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e.into()),
     };
-    let new_games = {
+    let result = publish_with_seen(out_dir, newest, opts, old, &seen_text, &seen_path);
+    let _ = std::fs::remove_file(&seen_path);
+    let _ = std::fs::remove_file(work_path(&seen_path, "-journal"));
+    result
+}
+
+fn publish_with_seen(
+    out_dir: &Path,
+    newest: &Path,
+    opts: &PublishOptions,
+    old: Option<Manifest>,
+    seen_text: &Path,
+    seen_path: &Path,
+) -> Result<Option<Published>> {
+    let manifest_path = out_dir.join(MANIFEST_FILE);
+    let new_ids = {
         let path = newest.to_str().ok_or_else(|| Error::Archive("the import's path isn't text".into()))?;
-        let mut seen = open_seen(&seen_path)?;
+        let mut seen = load_seen(seen_text, seen_path)?;
         let last: Option<i64> = seen.query_row("SELECT max(first) FROM seen", [], |r| r.get(0))?;
         if last.is_some_and(|l| opts.at <= l) || old.as_ref().is_some_and(|m| opts.at <= m.base.at) {
             return Err(Error::Archive("this publish's time isn't after the last one's".into()));
         }
         seen.execute("ATTACH DATABASE ?1 AS newest", [path])?;
         let tx = seen.transaction()?;
-        let n = tx
-            .execute("INSERT OR IGNORE INTO seen (gid, first) SELECT gid, ?1 FROM newest.games", [opts.at])?;
-        if n == 0 && !opts.new_base && old.is_some() {
+        let mut ids: Vec<String> = {
+            let mut q = tx.prepare(
+                "SELECT source, source_id FROM newest.games WHERE gid NOT IN (SELECT gid FROM seen)",
+            )?;
+            let rows =
+                q.query_map([], |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)))?;
+            let mut ids = Vec::new();
+            for row in rows {
+                match row? {
+                    (Some(source), Some(id)) if source == crate::ARIMAA_COM => ids.push(id),
+                    _ => return Err(Error::Archive("the import has a game without an arimaa.com id".into())),
+                }
+            }
+            ids
+        };
+        if ids.is_empty() && !opts.new_base && old.is_some() {
             return Ok(None); // the transaction rolls back
         }
+        tx.execute(
+            "INSERT INTO seen (gid, first) SELECT gid, ?1 FROM newest.games WHERE gid NOT IN (SELECT gid FROM seen)",
+            [opts.at],
+        )?;
         tx.commit()?;
         seen.execute("DETACH DATABASE newest", [])?;
-        n as i64
+        ids.sort_by_key(|id| (id.parse::<u64>().unwrap_or(u64::MAX), id.clone()));
+        ids
     };
-    let seen = open_seen(&seen_path)?;
+    let new_games = new_ids.len() as i64;
+    let seen = open_seen(seen_path)?;
     let at: i64 = seen.query_row("SELECT max(first) FROM seen", [], |r| r.get(0))?;
     let times: Vec<i64> = {
         let mut q = seen.prepare("SELECT DISTINCT first FROM seen WHERE first < ?1 ORDER BY first DESC")?;
@@ -279,7 +353,7 @@ pub fn publish(out_dir: &Path, newest: &Path, opts: &PublishOptions) -> Result<O
         std::fs::copy(newest, &work)?;
         {
             let mut d = Database::open(&work)?;
-            d.keep_seen_after(&seen_path, since)?;
+            d.keep_seen_after(seen_path, since)?;
             d.vacuum()?;
         }
         let file = out_dir.join(format!("howdah-games-{}-since-{}.db.zst", stamp(opts.at), stamp(since)));
@@ -302,6 +376,22 @@ pub fn publish(out_dir: &Path, newest: &Path, opts: &PublishOptions) -> Result<O
     };
     let manifest = Manifest { format: MANIFEST_FORMAT, at, games, through, base, deltas };
     manifest.check()?;
+    // The seen file first: a manifest without it couldn't be built on.
+    if !new_ids.is_empty() {
+        let mut text = match std::fs::read_to_string(seen_text) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => SEEN_HEADER.to_string(),
+            Err(e) => return Err(e.into()),
+        };
+        text.push_str(&format!("@{}\n", opts.at));
+        for id in &new_ids {
+            text.push_str(id);
+            text.push('\n');
+        }
+        let tmp = work_path(seen_text, ".new");
+        std::fs::write(&tmp, text)?;
+        std::fs::rename(tmp, seen_text)?;
+    }
     let tmp = out_dir.join(format!("{MANIFEST_FILE}.new"));
     std::fs::write(
         &tmp,
@@ -507,6 +597,11 @@ mod tests {
             }
         }
         assert!(publish(&dir, &newest, &opts(7000)).unwrap().is_none());
+        // The seen file has a block per publish with new games, ids in order.
+        let seen = std::fs::read_to_string(dir.join(SEEN_FILE)).unwrap();
+        assert_eq!(seen.lines().filter(|l| l.starts_with('@')).count(), 6);
+        assert!(seen.contains("@1000\n1\n2\n3\n") && seen.ends_with("@6000\n19\n20\n"));
+        assert!(!dir.join(SEEN_WORK).exists());
         let m: Manifest = serde_json::from_slice(&std::fs::read(dir.join(MANIFEST_FILE)).unwrap()).unwrap();
         assert_eq!((m.at, m.games), (6000, 20));
         // 1, 2 and 4 publishes back, and the base.
