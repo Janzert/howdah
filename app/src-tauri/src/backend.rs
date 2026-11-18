@@ -177,6 +177,8 @@ pub struct Backend {
     following: tokio::sync::Mutex<()>,
     /// The game database.
     library: Arc<Library>,
+    /// Installing the base game database.
+    base: crate::base::Base,
     events: Events,
 }
 
@@ -200,6 +202,7 @@ impl Backend {
             tourney: Arc::new(Tourney::new(howdah_tourney::default_data_dir(), events.clone())),
             following: tokio::sync::Mutex::new(()),
             library: Arc::new(Library::open(None)),
+            base: crate::base::Base::default(),
             events,
         }
     }
@@ -1275,6 +1278,16 @@ impl Backend {
         }
     }
 
+    /// The base game database: what's installed and what's available.
+    pub async fn base_status(&self) -> crate::base::BaseStatus {
+        self.base.status(&self.library).await
+    }
+
+    /// Downloads the newest base game database and merges it in.
+    pub async fn install_base(&self) -> Result<String, ApiError> {
+        self.base.install(self.library.clone(), self.events.clone()).await
+    }
+
     /// Deletes game `game` from the game database. A board showing it
     /// saves it again as a new game if it's changed.
     pub fn delete_library_game(&self, game: i64) -> Result<(), ApiError> {
@@ -1648,6 +1661,8 @@ impl Backend {
             )?),
             "open_library_game" => ok(self.open_library_game(sid()?, arg(args, "game")?).await?),
             "delete_library_game" => ok(self.delete_library_game(arg(args, "game")?)?),
+            "base_status" => ok(self.base_status().await),
+            "install_base" => ok(self.install_base().await?),
             "open_gameroom_game" => ok(self
                 .open_gameroom_game(
                     sid()?,

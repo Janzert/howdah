@@ -13,3 +13,6 @@ getrandom = "0.3"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 sha2 = "0.11.0"
+zstd = { version = "0.14.4", features = ["zstdmt"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true

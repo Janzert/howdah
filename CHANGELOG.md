@@ -18,6 +18,10 @@ young).
   panel lists them, newest first, narrowed by player (by any name
   they've had), opponent, side, won or lost, ending, dates, where
   they're from and rated; each opens on a board, and can be deleted.
+- The Games panel offers arimaa.com's whole game archive (425,129
+  games through 2026-10-11) as one download of about 143 MB, merged
+  into the games already there. Games added to the archive later come
+  as small updates holding only the new ones.
 - Analysis is kept: what an engine finds about a position is saved in
   the game database by position, so it shows again in any game that
   reaches that position, without the engine running. Each engine

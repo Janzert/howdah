@@ -57,6 +57,21 @@ impl Library {
         Library { db: Mutex::new(db), path, authors: Mutex::new(authors.into_iter().collect()) }
     }
 
+    /// A fact about the game database (`meta`).
+    pub fn meta(&self, key: &str) -> Option<String> {
+        self.with("reading a fact", |db| db.meta(key)).flatten()
+    }
+
+    /// Runs `f` on the database, for callers that report its errors.
+    pub fn with_db_result<T>(
+        &self,
+        f: impl FnOnce(&mut Database) -> howdah_db::Result<T>,
+    ) -> howdah_db::Result<T> {
+        let mut db = self.db();
+        let db = db.as_mut().ok_or(howdah_db::Error::Archive("there's no game database".into()))?;
+        f(db)
+    }
+
     pub fn is_open(&self) -> bool {
         self.db().is_some()
     }

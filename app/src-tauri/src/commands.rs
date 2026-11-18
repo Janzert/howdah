@@ -5,6 +5,7 @@ use howdah_arimaa::{Color, Glyph, NodeId, Square};
 use tauri::State;
 
 use crate::backend::{self, Backend};
+use crate::base::BaseStatus;
 use crate::dto::{
     ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
     ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
@@ -990,6 +991,16 @@ pub async fn open_library_game(
     game: i64,
 ) -> Result<(), ApiError> {
     state.open_library_game(session, game).await
+}
+
+#[tauri::command]
+pub async fn base_status(state: State<'_, Backend>) -> Result<BaseStatus, ApiError> {
+    Ok(state.base_status().await)
+}
+
+#[tauri::command]
+pub async fn install_base(state: State<'_, Backend>) -> Result<String, ApiError> {
+    state.install_base().await
 }
 
 #[tauri::command]

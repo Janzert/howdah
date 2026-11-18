@@ -5,6 +5,7 @@
 //! it for the UI.
 
 pub mod backend;
+pub mod base;
 mod chat_archive;
 mod chatroom;
 mod clock_format;
@@ -209,6 +210,8 @@ pub fn run() {
             commands::library_games,
             commands::open_library_game,
             commands::delete_library_game,
+            commands::base_status,
+            commands::install_base,
             commands::open_gameroom_game,
             commands::tourney_status,
             commands::tourney_tests,

@@ -8,8 +8,10 @@
 //! [`archive`] imports arimaa.com's game archive files.
 
 pub mod archive;
+pub mod base;
 pub mod codec;
 mod game;
+mod merge;
 mod positions;
 pub mod schema;
 mod search;
@@ -20,6 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 pub use game::{ARIMAA_COM, GameData, PlayerInfo, SaveMode, SourceKey, StoredResult, gid_for};
+pub use merge::MergeReport;
 pub use positions::PositionDatum;
 pub use search::{Filter, GameSummary, Origin, Outcome, SearchPage};
 
@@ -98,6 +101,19 @@ impl Database {
             return Err(Error::ReadOnly);
         }
         Ok(&mut self.conn)
+    }
+
+    /// A fact about this database (`meta`).
+    pub fn meta(&self, key: &str) -> Result<Option<String>> {
+        Ok(self.conn.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)).optional()?)
+    }
+
+    pub fn set_meta(&mut self, key: &str, value: &str) -> Result<()> {
+        self.writable()?.execute(
+            "INSERT INTO meta (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )?;
+        Ok(())
     }
 
     /// This database's id.

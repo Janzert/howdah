@@ -2,6 +2,7 @@
 import { listen, type UnlistenFn } from './ipc';
 import { session } from './api';
 import type { AnalysisView } from './bindings/AnalysisView';
+import type { BaseProgress } from './bindings/BaseProgress';
 import type { ChatArchiveChanged } from './bindings/ChatArchiveChanged';
 import type { ChatRoomView } from './bindings/ChatRoomView';
 import type { EngineOutput } from './bindings/EngineOutput';
@@ -36,6 +37,8 @@ export interface EventMap {
   /** The engine test daemon: a test changed or finished a game, the
    * connection came or went, or its slots changed. */
   'tourney://changed': TourneyUpdate;
+  /** How installing the base game database is going. */
+  'library://base': BaseProgress;
 }
 
 /** Every event name, for the dev bridge and the docked boards' relay,
@@ -52,6 +55,7 @@ export const EVENT_NAMES: (keyof EventMap)[] = [
   'sessions://changed',
   'sessions://show',
   'tourney://changed',
+  'library://base',
 ];
 
 /** Subscribes to an event. Events from a session carry a `session` field

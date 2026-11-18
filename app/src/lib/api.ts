@@ -31,6 +31,7 @@ import type { PlayerRecordView } from './bindings/PlayerRecordView';
 import type { RatingPointView } from './bindings/RatingPointView';
 import type { PositionCheck } from './bindings/PositionCheck';
 import type { PositionSpec } from './bindings/PositionSpec';
+import type { BaseStatus } from './bindings/BaseStatus';
 import type { LibraryFilter } from './bindings/LibraryFilter';
 import type { LibraryPageView } from './bindings/LibraryPageView';
 import type { PuzzleGroupView } from './bindings/PuzzleGroupView';
@@ -106,6 +107,12 @@ function makeApi(sid: () => SessionId | null) {
     /** Opens a game from the game database (a game known only by its
      * header is fetched from arimaa.com). */
     openLibraryGame: (game: number) => invoke<void>('open_library_game', { session: sid(), game }),
+    /** The base game database (arimaa.com's archive): what's installed,
+     * and the newest one there is (asks for its manifest). */
+    baseStatus: () => invoke<BaseStatus>('base_status'),
+    /** Downloads the newest base game database and merges it in, sending
+     * `library://base` events; resolves to what was added. */
+    installBase: () => invoke<string>('install_base'),
     /** Deletes a game from the game database. */
     deleteLibraryGame: (game: number) => invoke<void>('delete_library_game', { game }),
     /** arimaa.com's puzzle list (fetched once and kept; `refresh` fetches it again). */

@@ -3,7 +3,11 @@
   // narrowed by players, dates, where they're from, rated and how they
   // ended. Each opens on a board of its own; Delete takes one out of the
   // database (a second click confirms).
+  import { onDestroy } from 'svelte';
   import { api, errorMessage } from './api';
+  import type { BaseProgress } from './bindings/BaseProgress';
+  import type { BaseStatus } from './bindings/BaseStatus';
+  import { on } from './events';
   import type { LibraryGameView } from './bindings/LibraryGameView';
   import Icon from './Icon.svelte';
   import Matchup from './gameroom/Matchup.svelte';
@@ -85,6 +89,57 @@
     }
   }
 
+  // The base database (arimaa.com's archive): offered when there's a newer
+  // one than the database has, with its download's progress.
+  let base = $state<BaseStatus | null>(null);
+  let progress = $state<BaseProgress | null>(null);
+  let baseError = $state<string | null>(null);
+  let baseDone = $state<string | null>(null);
+
+  async function loadBase() {
+    try {
+      base = await api.baseStatus();
+    } catch {
+      base = null;
+    }
+  }
+  void loadBase();
+
+  const stop = on('library://base', (p) => {
+    progress = p.phase === 'done' || p.phase === 'failed' ? null : p;
+  });
+  onDestroy(() => void stop.then((u) => u()));
+
+  async function installBase() {
+    baseError = null;
+    baseDone = null;
+    progress = { phase: 'downloading', done: 0, total: base?.available?.size ?? 0, detail: null };
+    try {
+      baseDone = await api.installBase();
+      void load();
+    } catch (e) {
+      baseError = errorMessage(e);
+    }
+    progress = null;
+    void loadBase();
+  }
+
+  const mb = (n: number) => `${Math.round(n / 1e6)} MB`;
+  const progressText = $derived.by(() => {
+    switch (progress?.phase) {
+      case 'downloading':
+        return `Downloading… ${mb(progress.done)} of ${mb(progress.total)}`;
+      case 'checking':
+        return 'Checking the download…';
+      case 'unpacking':
+        return 'Unpacking…';
+      case 'merging':
+        return 'Adding the games to yours (this can take a minute)…';
+      default:
+        return '';
+    }
+  });
+
   const filtered = $derived(JSON.stringify(form) !== JSON.stringify(EMPTY_FORM));
   const countText = $derived(
     total == null ? '' : `${total.toLocaleString()} ${total === 1 ? 'game' : 'games'}${filtered ? ' match' : ''}`,
@@ -104,6 +159,42 @@
     Every game you play, watch, analyse or open is kept here, with arimaa.com's games you've opened. Each opens on a
     board of its own, and what you add to it is saved with it.
   </p>
+
+  {#if base?.available && (base.offer || progress || base.installing || baseError)}
+    {@const a = base.available}
+    <section class="card base" aria-label="arimaa.com's game archive">
+      <p>
+        {#if base.installed && a.newGames != null}
+          {a.newGames.toLocaleString()} new {a.newGames === 1 ? 'game' : 'games'} from arimaa.com's archive{a.through
+            ? `, through ${a.through}`
+            : ''}.
+        {:else if base.installed}
+          A newer copy of arimaa.com's game archive is out: {a.games.toLocaleString()} games{a.through
+            ? ` through ${a.through}`
+            : ''}, where yours goes through {base.installed.through ?? 'an earlier date'}.
+        {:else}
+          Get arimaa.com's game archive: {a.games.toLocaleString()} games{a.through ? ` through ${a.through}` : ''}, to
+          search and open here, offline too.
+        {/if}
+        {#if a.size}<span class="size">{a.size < 1e6 ? 'Under 1 MB' : mb(a.size)} to download.</span>{/if}
+      </p>
+      {#if progress || base.installing}
+        <div class="progress" role="status" aria-live="polite">
+          {#if progress?.phase === 'downloading' && progress.total > 0}
+            <progress max={progress.total} value={progress.done}></progress>
+          {:else}
+            <progress></progress>
+          {/if}
+          <span>{progressText || 'Installing…'}</span>
+        </div>
+      {:else}
+        <button class="primary" onclick={installBase}>{base.installed ? 'Update' : 'Download'}</button>
+      {/if}
+      {#if baseError}<p class="error" role="alert">{baseError}</p>{/if}
+    </section>
+  {:else if baseDone}
+    <p class="hint done" role="status">arimaa.com's game archive is in: {baseDone}.</p>
+  {/if}
 
   <form class="filters" aria-label="Filter games" onsubmit={(e) => e.preventDefault()}>
     <label>Player <input aria-label="Player" bind:value={form.player} autocomplete="off" spellcheck="false" /></label>
@@ -268,6 +359,27 @@
   .delete.confirm {
     color: var(--warn);
     font-weight: 600;
+  }
+  .base {
+    margin-bottom: 14px;
+    padding: 12px 14px;
+  }
+  .base p {
+    margin: 0 0 8px;
+  }
+  .base .size {
+    color: var(--muted);
+  }
+  .progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .progress progress {
+    width: 16em;
+  }
+  .done {
+    margin-bottom: 12px;
   }
   .more {
     margin-top: 10px;
