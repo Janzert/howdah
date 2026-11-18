@@ -291,8 +291,11 @@ function makeApi(sid: () => SessionId | null) {
     /** Opens an arimaa.com game in this session. A live game (its gameroom
      * id) is followed as a viewer, with changes arriving as `game://changed`
      * and `gameroom://watch` events; a finished game (its permanent id) is
-     * loaded whole. */
-    openGameroomGame: (gid: string) => invoke<void>('open_gameroom_game', { session: sid(), gid }),
+     * loaded whole. With `finished` the id is known to be a finished game's
+     * permanent id, so the game database is looked in first, and a game
+     * fetched is kept there. */
+    openGameroomGame: (gid: string, finished = false) =>
+      invoke<void>('open_gameroom_game', { session: sid(), gid, finished }),
     /** Plays live arimaa.com game `gid` (its gameroom id) as `side`: this
      * session becomes the game, and the user's moves are sent to the
      * server. `unrated` sits in the gameroom's unrated mode, which makes

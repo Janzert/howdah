@@ -44,6 +44,7 @@ use crate::dto::{
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
 use crate::gameroom::{self, Gameroom, SavedLogin, WATCH_UPDATE, Watch};
+use crate::library::{self, Library};
 use crate::puzzles::PuzzleBook;
 use crate::session::{AnalysisEngine, Player, PuzzleMeta, Session};
 use crate::tourney::{self, Tourney};
@@ -95,6 +96,18 @@ pub fn emit(events: &Events, event: &str, payload: impl Serialize) {
     }
 }
 
+/// Saves a session's game to the database as it changes, until the
+/// session closes (`library.rs`).
+fn spawn_saver(library: Arc<Library>, handle: std::sync::Weak<SessionHandle>) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(library::SAVE_EVERY).await;
+            let Some(h) = handle.upgrade() else { break };
+            library::save_session(&library, &h.session, &h.saved);
+        }
+    });
+}
+
 pub fn emit_session(events: &Events, session: &Session, animation: Vec<AnimStep>, budget: Option<Duration>) {
     let update = SessionUpdate {
         view: session.view(),
@@ -111,6 +124,8 @@ struct SessionHandle {
     controller: Controller,
     events: Events,
     watch: Mutex<Option<Watch>>,
+    /// What was last saved of the session's game (`library.rs`).
+    saved: Mutex<library::Saved>,
 }
 
 impl SessionHandle {
@@ -157,6 +172,8 @@ pub struct Backend {
     /// Held while a session picks and opens a test game to follow, so
     /// sessions following one test pick different games.
     following: tokio::sync::Mutex<()>,
+    /// The game database.
+    library: Arc<Library>,
     events: Events,
 }
 
@@ -179,8 +196,15 @@ impl Backend {
             puzzles: PuzzleBook::new(),
             tourney: Arc::new(Tourney::new(howdah_tourney::default_data_dir(), events.clone())),
             following: tokio::sync::Mutex::new(()),
+            library: Arc::new(Library::open(None)),
             events,
         }
+    }
+
+    /// Keeps the game database at `path` (None: none).
+    pub fn with_library(mut self, path: Option<PathBuf>) -> Backend {
+        self.library = Arc::new(Library::open(path));
+        self
     }
 
     /// Keeps the gameroom chat room's archive in `dir` (None: in memory).
@@ -281,8 +305,15 @@ impl Backend {
         let events: Events = Arc::new(SessionEvents { id, inner: self.events.clone() });
         let session = Arc::new(Mutex::new(Session::new()));
         let controller = controller::spawn(events.clone(), session.clone(), self.engines.clone());
-        self.sessions()
-            .insert(id, Arc::new(SessionHandle { session, controller, events, watch: Mutex::new(None) }));
+        let handle = Arc::new(SessionHandle {
+            session,
+            controller,
+            events,
+            watch: Mutex::new(None),
+            saved: Mutex::new(None),
+        });
+        spawn_saver(self.library.clone(), Arc::downgrade(&handle));
+        self.sessions().insert(id, handle);
     }
 
     /// Closes a session, quitting its engines and leaving any arimaa.com
@@ -292,6 +323,7 @@ impl Backend {
             self.sessions().remove(&id).ok_or_else(|| ApiError::state(format!("no session {id}")))?;
         self.docked().remove(&id);
         handle.stop_watching();
+        library::save_session(&self.library, &handle.session, &handle.saved);
         self.sessions_changed();
         Ok(())
     }
@@ -1172,8 +1204,22 @@ impl Backend {
     /// and moves, clocks and the result arrive as the server reports them
     /// (see `gameroom.rs`). A finished game (its permanent id) is loaded
     /// whole.
-    pub async fn open_gameroom_game(&self, id: SessionId, gid: &str) -> Result<(), ApiError> {
+    ///
+    /// With `finished`, `gid` is known to be a permanent id (a finished
+    /// game's list or link gave it), so the game database is asked first
+    /// and arimaa.com only if it hasn't the game. A finished game fetched
+    /// is kept there.
+    pub async fn open_gameroom_game(&self, id: SessionId, gid: &str, finished: bool) -> Result<(), ApiError> {
         let handle = self.handle(id)?;
+        let gid = gid.trim();
+        if finished && let Some((db_id, record)) = self.library.arimaa_game(gid) {
+            handle.stop_watching();
+            return self.mutate(id, |s| {
+                s.load_record_from_start(record);
+                s.set_db_id(Some(db_id));
+                Ok(Vec::new())
+            });
+        }
         let target = gameroom::Target {
             session: handle.session.clone(),
             controller: handle.controller.clone(),
@@ -1189,8 +1235,10 @@ impl Backend {
             }
             gameroom::Open::Finished(record) => {
                 handle.stop_watching();
+                let db_id = self.library.keep_fetched(&record);
                 self.mutate(id, |s| {
                     s.load_record_from_start(record);
+                    s.set_db_id(db_id);
                     Ok(Vec::new())
                 })
             }
@@ -1557,7 +1605,13 @@ impl Backend {
             "follow_tourney_test" => {
                 ok(self.follow_tourney_test(sid()?, &arg::<String>(args, "test")?).await?)
             }
-            "open_gameroom_game" => ok(self.open_gameroom_game(sid()?, &arg::<String>(args, "gid")?).await?),
+            "open_gameroom_game" => ok(self
+                .open_gameroom_game(
+                    sid()?,
+                    &arg::<String>(args, "gid")?,
+                    arg::<Option<bool>>(args, "finished")?.unwrap_or(false),
+                )
+                .await?),
             "play_gameroom_game" => ok(self
                 .play_gameroom_game(
                     sid()?,

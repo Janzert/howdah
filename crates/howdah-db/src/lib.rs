@@ -17,7 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
-pub use game::{ARIMAA_COM, GameData, PlayerInfo, SourceKey, StoredResult, gid_for};
+pub use game::{ARIMAA_COM, GameData, PlayerInfo, SaveMode, SourceKey, StoredResult, gid_for};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -105,10 +105,48 @@ impl Database {
     /// `gid` or source key, otherwise over the one that does. Returns its
     /// id.
     pub fn save(&mut self, game: &GameData) -> Result<i64> {
+        self.save_as(game, SaveMode::User)
+    }
+
+    /// Saves a game as [`Database::save`] does, as the user's copy or a
+    /// source's ([`SaveMode`]).
+    pub fn save_as(&mut self, game: &GameData, mode: SaveMode) -> Result<i64> {
         let tx = self.writable()?.transaction()?;
-        let id = game::save(&tx, game, &mut game::PlayerCache::default())?;
+        let id = game::save(&tx, game, &mut game::PlayerCache::default(), mode)?;
         tx.commit()?;
         Ok(id)
+    }
+
+    /// Saves a record over game `id` (or as a new game): its tags and
+    /// moves replace what the record has, and headers it doesn't carry
+    /// (player ids, start and end times, ratings' uncertainty) stay as
+    /// stored. Returns the game's id.
+    ///
+    /// A record whose source key (an arimaa.com `GameId`) belongs to
+    /// another game is saved over that one, and game `id` deleted: the two
+    /// were the same game.
+    pub fn save_record(&mut self, id: Option<i64>, record: &howdah_arimaa::GameRecord) -> Result<i64> {
+        let mut id = id;
+        if let Some(source) = GameData::from_record(record).source
+            && let Some(other) = self.find_source(&source.source, &source.id)?
+            && Some(other) != id
+        {
+            if let Some(old) = id {
+                self.delete(old)?;
+            }
+            id = Some(other);
+        }
+        let mut game = match id {
+            Some(id) => self.load_header(id)?,
+            None => GameData::from_record(record),
+        };
+        game.merge_record(record);
+        self.save(&game)
+    }
+
+    /// A game's headers and tags, without its moves (`tree` is `None`).
+    pub fn load_header(&self, id: i64) -> Result<GameData> {
+        game::load_header(&self.conn, id)
     }
 
     /// Loads a game with its moves, variations and annotations.

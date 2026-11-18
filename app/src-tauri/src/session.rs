@@ -523,6 +523,8 @@ pub struct Session {
     engine_output: [VecDeque<EngineOutput>; 2],
     /// The last number given to engine output, counting across games.
     output_seq: u64,
+    /// The game in the database this one is saved as, once it is.
+    db_id: Option<i64>,
 }
 
 /// How many of each side's engine output lines a session keeps.
@@ -598,6 +600,7 @@ impl Session {
             test_game: None,
             engine_output: Default::default(),
             output_seq: 0,
+            db_id: None,
         };
         s.refresh();
         s
@@ -628,6 +631,30 @@ impl Session {
     /// Replaces the record's tags (players, event and so on).
     pub fn set_tags(&mut self, tags: Vec<(String, String)>) {
         self.tags = tags;
+    }
+
+    /// The game in the database this one is saved as.
+    pub fn db_id(&self) -> Option<i64> {
+        self.db_id
+    }
+
+    /// Links the game to its copy in the database, until it's replaced.
+    pub fn set_db_id(&mut self, id: Option<i64>) {
+        self.db_id = id;
+    }
+
+    /// The game as a record to save in the database, or `None` when it
+    /// isn't saved: an empty board, a puzzle (its solution stays out of
+    /// the tree until found), or an engine test's game (tests keep their
+    /// own games).
+    pub fn saveable(&self) -> Option<GameRecord> {
+        if self.puzzle.is_some()
+            || self.test_game.is_some()
+            || self.tree[GameTree::ROOT].children().is_empty()
+        {
+            return None;
+        }
+        Some(GameRecord { tags: self.tags.clone(), tree: self.tree.clone() })
     }
 
     /// Marks the game as an engine test's game, until it's replaced.

@@ -9,7 +9,7 @@
 </script>
 
 <li class="pick">
-  <button onclick={() => gameroom.open(g.gid, g.comments)} disabled={gameroom.busy} title="Open game {g.gid}">
+  <button onclick={() => gameroom.openFinished(g.gid, g.comments)} disabled={gameroom.busy} title="Open game {g.gid}">
     <span class="row-text">
       <span class="row-line"><Matchup gold={g.gold} silver={g.silver} /></span>
       <span class="meta">{pastMeta(g)}</span>

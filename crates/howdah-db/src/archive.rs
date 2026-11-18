@@ -303,7 +303,7 @@ impl Database {
             let games = read_file(path, threads)?;
             let tx = self.writable()?.transaction()?;
             for g in &games {
-                game::save(&tx, g, &mut cache)?;
+                game::save(&tx, g, &mut cache, game::SaveMode::Source)?;
                 report.replay_errors += usize::from(g.replay_error.is_some());
             }
             tx.execute(

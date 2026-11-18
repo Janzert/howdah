@@ -365,7 +365,13 @@ plans the engine test and tournament runner.
   known only by its header). `from_record`/`to_record` convert, with
   `GameId` as the arimaa.com source key; a game with a source key gets
   `gid_for` it as its `gid`, the same in every database. `save` upserts
-  by row id, `gid` or source key; `load` replays it. Storage: the main
+  by row id, `gid` or source key; `load` replays it. `SaveMode::Source`
+  (imports, fetches) updates headers and the source's kinds (times,
+  chat, move list) and leaves the user's variations and annotations
+  alone when the main line is the stored one; `save_record` saves a
+  record over a game keeping the headers a record lacks (player ids,
+  times), and merges into the game that has its `GameId` if another
+  does. Storage: the main
   line is one blob (`codec.rs`: a setup in 8 bytes of nibbles over the
   home squares, so setups come back in square order; a turn as a step
   count and a byte per step, square times 4 plus direction, with pieces
@@ -713,6 +719,18 @@ plans the engine test and tournament runner.
     `refresh` fetches the newest manifest from its `update_url` (or the
     URL it came from) without installing. The dev bridge keeps both in
     its config dir (`installed-engines/`).
+  - `library.rs`: the game database (`howdah-db`, `games.db` in the
+    app's local data dir; the dev bridge's config dir). `Backend` holds a
+    `Library` (`with_library`; none when it can't open, with a note on
+    stderr). Every session's game is saved as it changes: a task per
+    session (`spawn_saver`) checks `Session::saveable` every
+    `SAVE_EVERY` (2 s), and `close_session` once more; it's skipped for
+    an empty board, a puzzle or a test's game. The saved game is
+    `Session::db_id`, which `replace` clears, so another game gets its
+    own row. `open_gameroom_game` with `finished` (the frontend's
+    `gameroom.openFinished`, from finished games' rows, the rating chart
+    and chat links) looks in the database first and needs no login for a
+    game there; a finished game fetched is kept (`keep_fetched`).
   - `clock_format.rs`: whether the system writes times on a 12- or a
     24-hour clock (`system_clock`, `SystemClock`), which the webview's
     own formatting misses: the desktop's GSettings clock key on Cinnamon,

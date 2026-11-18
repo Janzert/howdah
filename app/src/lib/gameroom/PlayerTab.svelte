@@ -212,7 +212,7 @@
     <RatingChart
       points={page.history.value}
       current={p?.rating ?? null}
-      onOpen={(gid) => gameroom.open(gid)}
+      onOpen={(gid) => gameroom.openFinished(gid)}
       label="{username}'s rating over time"
     />
   {/if}

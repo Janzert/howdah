@@ -9,6 +9,13 @@ young).
 
 ### Added
 
+- A game database: every game on a board is saved as it changes
+  (played, watched, opened from a record, or analysed; not puzzles or
+  engine tests' games), in `games.db` in the app's data directory. A
+  finished arimaa.com game opened from a list or a link is looked for
+  there first, so it opens at once and offline, and one fetched from
+  arimaa.com is kept, with any analysis added to it. There's no way to
+  browse the saved games in the app yet.
 - Engine tests can start their games from positions reached by play
   (`[positions]` in a test's spec: a file with each position's moves
   from the start, sent to the engines as moves). Each position is

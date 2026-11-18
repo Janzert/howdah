@@ -320,6 +320,14 @@ class GameroomStore {
     return this.enter((a) => a.openGameroomGame(id), { gid: id, play: false, comments });
   }
 
+  /** Loads a finished game by its permanent id (from a list of finished
+   * games or a link to one): from the game database when it's there,
+   * otherwise from arimaa.com, keeping it. */
+  openFinished(gid: string, comments?: number) {
+    const id = gid.trim();
+    return this.enter((a) => a.openGameroomGame(id, true), { gid: id, play: false, comments });
+  }
+
   play(gid: string, side: Color, unrated = false) {
     return this.enter((a) => a.playGameroomGame(gid, side, unrated), { gid, play: true });
   }

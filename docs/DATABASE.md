@@ -1,7 +1,7 @@
 # Game database: survey and plan
 
-Status: plan agreed (2026-11-17). Build step 1 is done; see "Built so far"
-at the end.
+Status: plan agreed (2026-11-17). Build steps 1 and 2 are done; see
+"Built so far" at the end.
 
 `VARIATIONS.md` already decided that a game database will be the primary
 store for games played and analysed, with records for sharing. This note
@@ -476,3 +476,38 @@ Measured on the whole archive (254 `allgames` files, 425,129 games,
   takes 182 s on one thread, 2,300 games a second, with none failing.
   That's fine for opening a game; scans for the explorer and position
   search will need a decoder that skips the legality checks.
+
+### Step 2 (2026-11-17): the app saves and caches games
+
+- **Every game is saved as it changes.** A session's game is saved once
+  it has a move, every 2 seconds while it changes and when its board
+  closes: games played (local and on arimaa.com, watched or played),
+  records opened, and analysis boards. Puzzles (their solution stays
+  out of the tree until found) and engine tests' games (decided) are
+  not. A game loaded from the database is saved back into its own row,
+  so analysis of an arimaa.com game stays with it.
+- **Finished arimaa.com games open from the database first.** The
+  frontend says when an id is a finished game's permanent id (lists of
+  finished games, the rating chart, chat links), since a live game's
+  gameroom id can be the same number as an old game's permanent id.
+  Such a game opens from the database with no request and no login; one
+  that isn't there is fetched as before and kept. The game id field,
+  which takes either kind, still goes to arimaa.com, and keeps what it
+  gets if it's a finished game.
+- **A source's copy never wipes the user's work** (`SaveMode::Source`):
+  re-importing an archive file or fetching a game again updates its
+  headers and move times, and keeps the user's variations and comments
+  while the main line is the same.
+- A watched game is saved without an id while it's played, and gets
+  its `GameId` at the end; if the database already has that game, the
+  two merge into the existing one.
+
+Checked in the browser preview: game 620100 (imported) opened from the
+database while logged out in 12 ms, with move times; a variation and a
+comment added there were saved into its row, with the archive's
+headers kept, and came back in a new board; game 93252 (not there) took
+0.5 s from arimaa.com the first time and 0.02 s from the database the
+second; a record opened was saved as a new game.
+
+Not done yet: there's no way in the app to see or delete saved games
+(step 3), so they collect unseen until then.

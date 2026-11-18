@@ -14,6 +14,7 @@ pub mod dto;
 pub mod engine_install;
 pub mod engines;
 pub mod gameroom;
+pub mod library;
 mod puzzles;
 pub mod session;
 mod sweep;
@@ -61,9 +62,11 @@ pub fn run() {
             );
             let saved_login = SavedLogin::new(Some(config_dir.join("gameroom-login.json")));
             let archive_dir = app.path().app_local_data_dir()?.join("chat-archive");
+            let games = app.path().app_local_data_dir()?.join(library::FILE_NAME);
             app.manage(
                 Backend::new(registry, catalog, saved_login, Arc::new(app.handle().clone()))
-                    .with_chat_archive_dir(Some(archive_dir)),
+                    .with_chat_archive_dir(Some(archive_dir))
+                    .with_library(Some(games)),
             );
             Ok(())
         })

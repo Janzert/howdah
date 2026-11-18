@@ -212,6 +212,39 @@ impl GameData {
     }
 }
 
+impl GameData {
+    /// Takes what `record` says over what's stored: its tags (those with
+    /// columns, when present, and all the others), its moves, and the main
+    /// line's result when it has one. Headers a record doesn't carry stay.
+    pub fn merge_record(&mut self, record: &GameRecord) {
+        let r = GameData::from_record(record);
+        fn take<T>(to: &mut Option<T>, from: Option<T>) {
+            if from.is_some() {
+                *to = from;
+            }
+        }
+        take(&mut self.event, r.event);
+        take(&mut self.site, r.site);
+        take(&mut self.time_control, r.time_control);
+        take(&mut self.rated, r.rated);
+        take(&mut self.postal, r.postal);
+        take(&mut self.date, r.date);
+        take(&mut self.result, r.result);
+        if self.source.is_none() {
+            self.source = r.source;
+        }
+        for (to, from) in self.players.iter_mut().zip(r.players) {
+            if from.name.is_some() && from.name != to.name {
+                *to = PlayerInfo::default();
+            }
+            take(&mut to.name, from.name);
+            take(&mut to.rating, from.rating);
+        }
+        self.tags = r.tags;
+        self.tree = r.tree;
+    }
+}
+
 impl Default for GameData {
     fn default() -> Self {
         GameData::new()
@@ -437,7 +470,24 @@ fn with_elapsed(comment: Option<&str>, ms: u64) -> Option<String> {
     Some(parts.join(" "))
 }
 
-pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache) -> Result<i64> {
+/// Whose copy of a game is being saved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaveMode {
+    /// The user's: it replaces the game's moves, variations and the
+    /// user's annotations.
+    User,
+    /// A source's (an archive import, a fetch from arimaa.com): it
+    /// updates the headers, and the kinds of data a source gives (move
+    /// times, chat, an unreplayable move list). If the main line is the
+    /// one stored, the user's variations and annotations stay; if it
+    /// differs, the game is replaced as for [`SaveMode::User`].
+    Source,
+}
+
+/// The annotation kinds a source gives.
+const SOURCE_KINDS: [&str; 3] = ["times", "chat", "movelist"];
+
+pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache, mode: SaveMode) -> Result<i64> {
     let site = g.source.as_ref().map(|s| s.source.as_str());
     let gold = player(tx, cache, site, &g.players[0])?;
     let silver = player(tx, cache, site, &g.players[1])?;
@@ -467,6 +517,19 @@ pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache) -> R
     let moves = encoded.as_ref().map(|e| e.moves.as_slice());
     let plies = encoded.as_ref().map_or(0, |e| e.main.len() as i64 - 1);
     let fp = moves.map(|m| fingerprint(start_ply, board.as_deref(), m));
+    // A source's copy over the same moves leaves the user's work alone.
+    let keep_user = mode == SaveMode::Source
+        && match existing {
+            Some(id) => {
+                let stored: Option<Vec<u8>> = tx
+                    .prepare_cached("SELECT moves FROM games WHERE id = ?1")?
+                    .query_row([id], |r| r.get(0))
+                    .optional()?
+                    .flatten();
+                stored.is_some() && stored.as_deref() == moves
+            }
+            None => false,
+        };
     let t = now();
     let [p0, p1] = &g.players;
     let values = params![
@@ -541,7 +604,9 @@ pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache) -> R
     };
     if existing.is_some() {
         tx.prepare_cached("DELETE FROM game_tags WHERE game = ?1")?.execute([id])?;
-        tx.prepare_cached("DELETE FROM nodes WHERE game = ?1")?.execute([id])?;
+        if !keep_user {
+            tx.prepare_cached("DELETE FROM nodes WHERE game = ?1")?.execute([id])?;
+        }
     }
     {
         let mut insert =
@@ -552,10 +617,13 @@ pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache) -> R
     }
     let mut notes: Vec<(i64, &str, Vec<u8>)> = Vec::new();
     if let (Some(tree), Some(e)) = (&g.tree, &encoded) {
-        let mut insert =
-            tx.prepare_cached("INSERT INTO nodes (game, id, parent, ord, move) VALUES (?1, ?2, ?3, ?4, ?5)")?;
-        for (vid, parent, ord, bytes) in &e.variations {
-            insert.execute(params![id, vid, parent, ord, bytes])?;
+        if !keep_user {
+            let mut insert = tx.prepare_cached(
+                "INSERT INTO nodes (game, id, parent, ord, move) VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            for (vid, parent, ord, bytes) in &e.variations {
+                insert.execute(params![id, vid, parent, ord, bytes])?;
+            }
         }
         let main_moves: HashSet<NodeId> = e.main[1..].iter().copied().collect();
         let mut times = vec![None; e.main.len() - 1];
@@ -591,17 +659,23 @@ pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache) -> R
     if let Some(m) = &g.movelist {
         notes.push((0, "movelist", m.clone().into_bytes()));
     }
-    write_annotations(tx, id, existing.is_some(), &notes, t)?;
+    if keep_user {
+        notes.retain(|(_, kind, _)| SOURCE_KINDS.contains(kind));
+    }
+    let scope: &[&str] = if keep_user { &SOURCE_KINDS } else { &[] };
+    write_annotations(tx, id, existing.is_some(), &notes, scope, t)?;
     Ok(id)
 }
 
 /// Writes the user's own annotations on a game (author ''), keeping the
-/// creation time of the ones that stay and dropping the ones gone.
+/// creation time of the ones that stay and dropping the ones gone: of
+/// every kind, or only of the kinds in `scope` when it isn't empty.
 fn write_annotations(
     tx: &Transaction,
     game: i64,
     existed: bool,
     notes: &[(i64, &str, Vec<u8>)],
+    scope: &[&str],
     t: i64,
 ) -> Result<()> {
     let mut upsert = tx.prepare_cached(
@@ -623,7 +697,7 @@ fn write_annotations(
             let rows = q.query_map([game], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
             for row in rows {
                 let (n, k) = row?;
-                if !kept.contains(&(n, k.as_str())) {
+                if !kept.contains(&(n, k.as_str())) && (scope.is_empty() || scope.contains(&k.as_str())) {
                     stale.push((n, k));
                 }
             }
@@ -643,6 +717,14 @@ fn text(bytes: Vec<u8>) -> String {
 }
 
 pub(crate) fn load(conn: &Connection, id: i64) -> Result<GameData> {
+    load_with(conn, id, true)
+}
+
+pub(crate) fn load_header(conn: &Connection, id: i64) -> Result<GameData> {
+    load_with(conn, id, false)
+}
+
+fn load_with(conn: &Connection, id: i64, with_moves: bool) -> Result<GameData> {
     let g = conn
         .prepare_cached(
             "SELECT gid, source, source_id, gold_name, silver_name, gold_rating, silver_rating,
@@ -715,7 +797,7 @@ pub(crate) fn load(conn: &Connection, id: i64) -> Result<GameData> {
     }
     let mut refs: Vec<NodeId> = Vec::new();
     let mut var_refs: HashMap<i64, NodeId> = HashMap::new();
-    if let Some(blob) = moves {
+    if let Some(blob) = moves.filter(|_| with_moves) {
         let mut tree = match board {
             Some(board) => {
                 let side = if start_ply % 2 == 0 { Color::Gold } else { Color::Silver };

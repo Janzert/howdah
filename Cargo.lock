@@ -1402,6 +1402,7 @@ dependencies = [
  "gtk",
  "howdah-aei",
  "howdah-arimaa",
+ "howdah-db",
  "howdah-gameroom",
  "howdah-tourney",
  "open",

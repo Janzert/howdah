@@ -189,3 +189,38 @@ fn reopens_from_a_file() {
     drop((db, ro));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_source_copy_keeps_the_users_work() {
+    use howdah_db::SaveMode;
+    let mut db = Database::open_in_memory().unwrap();
+    let mut source = GameData::from_record(&record());
+    source.source = Some(SourceKey::arimaa_com("1"));
+    source.gid = gid_for(source.source.as_ref().unwrap());
+    source.start_ts = Some(1_541_048_963);
+    source.players[0].site_id = Some("54851".into());
+    let id = db.save_as(&source, SaveMode::Source).unwrap();
+
+    // The user's copy, edited through a record.
+    let mut rec = db.load(id).unwrap().to_record();
+    let main = rec.tree.main_line();
+    rec.tree.annotation_mut(main[4]).unwrap().set_comment_text("Mine.");
+    db.save_record(Some(id), &rec).unwrap();
+    let saved = db.load(id).unwrap();
+    assert_eq!(saved.start_ts, Some(1_541_048_963), "headers the record lacks stay");
+    assert_eq!(saved.players[0].site_id.as_deref(), Some("54851"));
+
+    // The source again, with the same moves: the comment and variations stay.
+    db.save_as(&source, SaveMode::Source).unwrap();
+    let again = db.load(id).unwrap();
+    same_trees(saved.tree.as_ref().unwrap(), again.tree.as_ref().unwrap());
+
+    // With different moves it replaces them.
+    let mut longer = source.clone();
+    let tree = longer.tree.as_mut().unwrap();
+    let end = *tree.main_line().last().unwrap();
+    tree.add_notation(end, "hg7s hg6s rg8s rg7s").unwrap();
+    db.save_as(&longer, SaveMode::Source).unwrap();
+    let replaced = db.load(id).unwrap();
+    same_trees(longer.tree.as_ref().unwrap(), replaced.tree.as_ref().unwrap());
+}

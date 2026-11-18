@@ -11,6 +11,7 @@ rust-version = "1.85"
 howdah-arimaa = { path = "crates/howdah-arimaa" }
 howdah-aei = { path = "crates/howdah-aei" }
 howdah-gameroom = { path = "crates/howdah-gameroom" }
+howdah-db = { path = "crates/howdah-db" }
 # The app takes only its client; the crate itself builds with everything.
 howdah-tourney = { path = "crates/howdah-tourney", default-features = false }
 serde = { version = "1", features = ["derive"] }

@@ -82,7 +82,8 @@ async fn main() {
     let backend = Arc::new(
         Backend::new(registry, catalog, saved_login, Arc::new(Broadcast(tx.clone())))
             .with_tourney_dir(Some(config_dir.join("tourney")))
-            .with_chat_archive_dir(Some(config_dir.join("chat-archive"))),
+            .with_chat_archive_dir(Some(config_dir.join("chat-archive")))
+            .with_library(Some(config_dir.join(howdah_lib::library::FILE_NAME))),
     );
     let app = App { backend, events: tx };
 

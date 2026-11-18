@@ -649,8 +649,9 @@ pub async fn open_gameroom_game(
     state: State<'_, Backend>,
     session: SessionId,
     gid: String,
+    finished: Option<bool>,
 ) -> Result<(), ApiError> {
-    state.open_gameroom_game(session, &gid).await
+    state.open_gameroom_game(session, &gid, finished.unwrap_or(false)).await
 }
 
 #[tauri::command]
