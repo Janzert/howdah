@@ -567,32 +567,35 @@ database only mirrors.
 
 ### Step 5 (2026-11-17): the base database
 
-- **Building it:** `howdah-db base OUTDIR ARCHIVE...` imports the
-  archive files into a new database, clears the fingerprints, drops the
-  indexes (the unique keys stay), vacuums it, and packs it with zstd
-  (level 22, a 128 MB window) as `howdah-games-<date>.db.zst`. zstd won
-  on the measurements: 143 MB, unpacked in half a second (bzip2 147 MB
-  in 9.5 s; xz 140 MB in 6 s). Packing at that level takes about five
-  minutes. The stripped database stays in `OUTDIR` as `state.db`.
-- **Deltas:** the archive gains games every week, and a 143 MB download
-  for a few hundred of them would be a waste, so the weeks after a base
-  are deltas, as Mega Database's weekly updates are.
-  `howdah-db delta OUTDIR ARCHIVE...` imports the archive afresh, keeps
-  only the games `state.db` lacks (by `gid`) and the players they name
-  (`Database::keep_only_new`), packs that as
-  `howdah-games-<date>-delta.db.zst`, adds it to the manifest, and makes
-  the new import the state. With nothing new it writes nothing. Games
-  the archive changes or drops after the base aren't carried; a new
-  base catches them.
-- **The manifest,** `base.json` beside the files, lists the base and the
-  deltas, each a `Pack`: its file's name, size and SHA-256, the unpacked
-  size, the schema version, its games and the total and newest date of
-  the state it leaves. A state is named by a uuid: the base's own
-  database's, or for a delta the uuid of the import it was taken from;
-  a delta also names the state it applies to (`from`), so the deltas
-  form one chain. The chain may start before the base (deltas kept for
-  databases that reached an older state), but it must pass through the
-  base.
+- **Building it:** `howdah-db publish OUTDIR ARCHIVE... [--new-base]
+  [--cap PCT]` imports the whole archive into a new database, clears
+  the fingerprints, drops the indexes (the unique keys stay) and
+  vacuums it, then publishes it into `OUTDIR` (`base::publish`). The
+  base is packed with zstd (level 22, a 128 MB window) as
+  `howdah-games-<time>.db.zst` the first time, and again with
+  `--new-base`. zstd won on the measurements: 143 MB, unpacked in half
+  a second (bzip2 147 MB in 9.5 s; xz 140 MB in 6 s). Packing it takes
+  about five minutes.
+- **Deltas:** the archive gains about 4,000 games a year now (2,776 in
+  2026 to October), about 1.5 MB packed, so a 143 MB download for a
+  week's games would be a waste. Each publish imports the whole archive
+  afresh, and the archive only grows, so the publisher keeps one table,
+  `OUTDIR/seen.db`: each game's `gid` and when it was first published.
+  A delta *since* a time holds every game first published after it, so
+  it brings any database at that time or later up to date; games it
+  repeats are skipped by the merge. Each publish with new games
+  rebuilds the deltas, all ending at the newest games, starting 1, 2,
+  4, 8, … publishes back and at the base, older ones stopping once one
+  is larger than `--cap` percent of the base (10 by default; the
+  base's is kept whatever its size, since a new database needs it).
+  They're `howdah-games-<time>-since-<time>.db.zst`. A publish with
+  nothing new writes nothing. Games the archive changes or drops later
+  aren't carried by deltas; a new base has them.
+- **The manifest,** `base.json` beside the files: `at`, when the newest
+  games were first published, the games in all and the newest one's
+  date, the base and the deltas. Each `Pack` gives its file's name, size
+  and SHA-256, the unpacked size, the schema version, its games, the
+  `at` a database reaches with it, and for a delta its `since`.
 - **Publishing it:** in its own repository,
   `github.com/Janzert/howdah-game-database`, not Howdah's, so its
   updates keep their own schedule and never become Howdah's latest
@@ -600,21 +603,23 @@ database only mirrors.
   holds `base.json` and the files it names, and the app reads
   `https://github.com/Janzert/howdah-game-database/releases/download/current/base.json`,
   taking the files from beside it. Swapping assets isn't atomic, so the
-  files carry dates in their names: a new file goes up first, then the
-  manifest naming it, and a file comes down only once no manifest names
-  it. A new full base now and then (say yearly) resets the chain.
-- **Getting it:** the app keeps the state it reached in `meta`
-  (`base_uuid`, with that state's games and date). `base::plan` works
-  out what a database needs: the deltas after its state when that's on
-  the chain, else the base and the deltas after it. The Games panel
-  offers that when it's anything and this version of Howdah can read
-  every file's schema, as "N new games" when it's only deltas. Each file
-  streams to `base-download/` beside `games.db`, is checked against the
-  manifest's size and SHA-256 (and refused past the size it gives),
-  unpacked and merged in, and the state is recorded after each, so a
-  failed update resumes from the last file merged. The folder is
-  removed after. Merging skips games the database has, so a file that
-  overlaps it does no harm.
+  file names carry times and are never reused (`pack` refuses to write
+  over a file): the new files go up first, then the manifest, and then
+  the files the publish lists as no longer named come down. A new base
+  is needed only when the deltas grow large next to it (years at
+  today's rate) or to pick up corrections; databases from before it
+  still get a delta.
+- **Getting it:** the app keeps the time it reached in `meta`
+  (`base_at`, with its games and date). `base::plan` works out what a
+  database needs: nothing at the manifest's `at` or later, else the
+  delta starting at or closest before its time, else the base and the
+  delta after it: two files at most. The Games panel offers that when
+  it's anything and this version of Howdah can read every file's
+  schema, as "N new games" (the manifest's count less the database's)
+  when it's only a delta. Each file streams to `base-download/` beside
+  `games.db`, is checked against the manifest's size and SHA-256 (and
+  refused past the size it gives), unpacked and merged in, and the time
+  is recorded after each. The folder is removed after.
 - **Merging** (`Database::merge_from`, also `howdah-db merge`): games
   are matched by `gid` and then source key. A new game comes with its
   tags, variations and annotations; one known only by its header gets
@@ -628,11 +633,13 @@ Checked in the browser preview against a local server: the card offered
 425,129 games through 2026.10.11 at 142 MB, the install went through
 checking, unpacking and merging, the list then had every game, and the
 card went away.
-Then with deltas, built from the archive files of 2019 (the base,
-7,827 games), to mid-2020 (4,321 more) and to 2021 (7,114 more): an
-empty database got the base and the first delta (12,148 games, 4 MB);
-with the second delta published the card offered "7,114 new games",
-2 MB, which went in alone, and then nothing was offered.
+Then with deltas, published from the archive files of 2019 (the base,
+7,827 games), to mid-2020, to 2021, and to April 2021 with a new base:
+an empty database after the second publish got the base and the delta
+after it (12,148 games, 4.4 MB). After the fourth, that database, now
+behind the new base, was offered "8,977 new games", the 3 MB delta
+since the second publish, not the 7.3 MB base; it went in alone, the
+count matched the archive's 21,125, and nothing more was offered.
 
 Games merged from the base have no fingerprint; it's only needed to
 match a record file that carries no ids, so it can be filled in later.

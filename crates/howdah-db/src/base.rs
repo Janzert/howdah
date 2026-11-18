@@ -1,27 +1,31 @@
 //! The base database: arimaa.com's game archive, built into a database
 //! file, slimmed for download (no indexes or fingerprints, which the
-//! merge doesn't need), and compressed with zstd. A manifest beside it
-//! (`base.json`, [`Manifest`]) lists the full base and the deltas after
-//! it, each a [`Pack`], and says how to check them. The app works out
-//! which files its database needs ([`plan`]), downloads them, checks
+//! merge doesn't need), and compressed with zstd, with deltas that bring
+//! a database up to the newest games. A manifest beside them
+//! (`base.json`, [`Manifest`]) lists them and says how to check them.
+//! The app works out which it needs ([`plan`]), downloads them, checks
 //! them, unpacks them and merges them in ([`Database::merge_from`]).
 //!
-//! Each pack leaves the database in a *state*, named by a uuid: the full
-//! base's own, or for a delta the uuid of the database it was taken from
-//! (the newer of the two it compares). A delta also names the state it
-//! applies to (`from`), so the deltas form a chain, and an app that
-//! remembers the last state it reached needs only the deltas after it.
-//! Merging skips games the database has, so a pack applied over a state
-//! that already has some of its games does no harm.
+//! Each publish ([`publish`]) imports the whole archive afresh, and the
+//! archive only grows, so the publisher keeps one table, `seen.db`: each
+//! game's `gid` and when it was first published. A delta *since* a time
+//! holds every game first published after it, so it brings any database
+//! at that time or later up to the newest; the games it repeats are
+//! skipped by the merge. Each publish rebuilds the deltas, all ending at
+//! the newest games and starting 1, 2, 4, 8, … publishes back, and at
+//! the base, until one grows past a share of the base's size. A client
+//! remembers the time it reached and takes the delta starting closest
+//! before it, or the base and the delta after it: two files at most.
 
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{Database, Error, Result, now, schema};
+use crate::{Database, Error, Result, schema};
 
 /// The manifest's format.
 pub const MANIFEST_FORMAT: u32 = 1;
@@ -29,14 +33,24 @@ pub const MANIFEST_FORMAT: u32 = 1;
 /// zstd's window for the packed files: 128 MB, which unpacking must allow.
 const WINDOW_LOG: u32 = 27;
 
-/// What a base database release holds: the full base, and the deltas
-/// that bring a database on from it (or from earlier states) to the
-/// newest. Each delta's `from` is the `uuid` of the one before it.
+/// The publisher's record of when each game was first published.
+pub const SEEN_DB: &str = "seen.db";
+pub const MANIFEST_FILE: &str = "base.json";
+
+/// What a release holds: the base and the deltas to the newest games.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     pub format: u32,
+    /// When the newest games were first published (Unix seconds): a
+    /// database that has reached this has them all.
+    pub at: i64,
+    /// The games there are in all, and the newest one's date
+    /// (`YYYY.MM.DD`).
+    pub games: i64,
+    pub through: Option<String>,
     pub base: Pack,
+    /// Each holds the games first published after its `since`, up to `at`.
     #[serde(default)]
     pub deltas: Vec<Pack>,
 }
@@ -52,73 +66,59 @@ pub struct Pack {
     pub sha256: String,
     /// The unpacked database's size, to check there's room.
     pub unpacked_size: u64,
-    /// The state the database is in after this pack.
-    pub uuid: String,
-    /// For a delta, the state it applies to.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from: Option<String>,
     /// The schema version it was built with.
     pub schema: i64,
     /// The games in the file.
     pub games: i64,
-    /// The games in the state it leaves (for the base, `games`).
-    pub total: i64,
-    /// The newest game's date in that state (`YYYY.MM.DD`).
-    pub through: Option<String>,
-    /// When it was built (Unix seconds).
-    pub built: i64,
+    /// For a delta, the time after which its games were first published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+    /// The time a database reaches with it.
+    pub at: i64,
 }
 
 impl Manifest {
-    pub fn new(base: Pack) -> Manifest {
-        Manifest { format: MANIFEST_FORMAT, base, deltas: Vec::new() }
-    }
-
-    /// The newest pack: the last delta, else the base.
-    pub fn newest(&self) -> &Pack {
-        self.deltas.last().unwrap_or(&self.base)
-    }
-
-    /// Checks that the deltas form one chain and that the base is on it.
-    pub fn check_chain(&self) -> Result<()> {
-        let bad = |why: &str| Err(Error::Archive(format!("the manifest's deltas {why}")));
-        for pair in self.deltas.windows(2) {
-            if pair[1].from.as_deref() != Some(pair[0].uuid.as_str()) {
-                return bad("don't follow on from each other");
-            }
+    /// Checks that the deltas end at the newest games and that the base
+    /// can be brought up to them.
+    pub fn check(&self) -> Result<()> {
+        let bad = |why: &str| Err(Error::Archive(format!("the manifest {why}")));
+        if self.base.since.is_some() {
+            return bad("has a base that isn't one");
         }
-        if let Some(first) = self.deltas.first()
-            && first.from.is_none()
-        {
-            return bad("don't say what they apply to");
+        if self.deltas.iter().any(|d| d.at != self.at || !d.since.is_some_and(|s| s < self.at)) {
+            return bad("has a delta that doesn't end at the newest games");
         }
-        if !self.deltas.is_empty() && self.after(&self.base.uuid).is_none() {
-            return bad("don't pass through the base");
+        if self.base.at < self.at && self.delta_for(self.base.at).is_none() {
+            return bad("has no delta after its base");
         }
         Ok(())
     }
 
-    /// The deltas after `state`, when it's on the chain.
-    fn after(&self, state: &str) -> Option<&[Pack]> {
-        if self.newest().uuid == state {
-            return Some(&[]);
-        }
-        let i = self.deltas.iter().position(|d| d.from.as_deref() == Some(state))?;
-        Some(&self.deltas[i..])
+    /// The delta that brings a database at `t` to the newest: the one
+    /// starting at or closest before it.
+    fn delta_for(&self, t: i64) -> Option<&Pack> {
+        self.deltas.iter().filter(|d| d.since.is_some_and(|s| s <= t)).max_by_key(|d| d.since)
     }
 }
 
-/// The packs a database in `state` (the last one it reached, or `None`)
-/// needs to reach the manifest's newest: the deltas after it when it's
-/// on the chain, else the base and the deltas after that. Empty when it's
-/// there already.
-pub fn plan<'a>(manifest: &'a Manifest, state: Option<&str>) -> Result<Vec<&'a Pack>> {
-    manifest.check_chain()?;
-    if let Some(rest) = state.and_then(|s| manifest.after(s)) {
-        return Ok(rest.iter().collect());
+/// The packs a database at `at` (the time it reached, or `None`) needs
+/// to have the manifest's newest games: none when it's there, else the
+/// delta starting closest before it, else the base and the delta after
+/// that.
+pub fn plan(manifest: &Manifest, at: Option<i64>) -> Result<Vec<&Pack>> {
+    manifest.check()?;
+    if let Some(t) = at {
+        if t >= manifest.at {
+            return Ok(Vec::new());
+        }
+        if let Some(d) = manifest.delta_for(t) {
+            return Ok(vec![d]);
+        }
     }
     let mut packs = vec![&manifest.base];
-    packs.extend(manifest.after(&manifest.base.uuid).unwrap_or(&[]));
+    if manifest.base.at < manifest.at {
+        packs.extend(manifest.delta_for(manifest.base.at));
+    }
     Ok(packs)
 }
 
@@ -154,16 +154,19 @@ impl Database {
         Ok(self.connection().query_row("SELECT max(date) FROM games", [], |r| r.get(0))?)
     }
 
-    /// Takes out every game `older` has (by `gid`), and the players no
-    /// game left names, leaving what's new: a delta. Run on a copy of
-    /// the newer base, then [`Database::vacuum`].
-    pub fn keep_only_new(&mut self, older: &Path) -> Result<()> {
-        let path = older.to_str().ok_or_else(|| Error::Archive("the older base's path isn't text".into()))?;
+    /// Keeps only the games `seen` (a [`SEEN_DB`]) first saw after
+    /// `since`, and the players they name: a delta. Run on a copy of the
+    /// newest import, then [`Database::vacuum`].
+    fn keep_seen_after(&mut self, seen: &Path, since: i64) -> Result<()> {
+        let path = seen.to_str().ok_or_else(|| Error::Archive("the seen table's path isn't text".into()))?;
         let conn = self.writable()?;
-        conn.execute("ATTACH DATABASE ?1 AS older", [path])?;
+        conn.execute("ATTACH DATABASE ?1 AS seen", [path])?;
         let result = (|| {
             let tx = conn.transaction()?;
-            tx.execute("DELETE FROM main.games WHERE gid IN (SELECT gid FROM older.games)", [])?;
+            tx.execute(
+                "DELETE FROM main.games WHERE gid NOT IN (SELECT gid FROM seen.seen WHERE first > ?1)",
+                [since],
+            )?;
             tx.execute(
                 "DELETE FROM main.players WHERE id NOT IN
                    (SELECT gold FROM main.games WHERE gold IS NOT NULL
@@ -173,36 +176,161 @@ impl Database {
             tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('kind', 'delta')", [])?;
             tx.commit()
         })();
-        conn.execute("DETACH DATABASE older", [])?;
+        conn.execute("DETACH DATABASE seen", [])?;
         Ok(result?)
     }
 }
 
-/// Builds a delta from two base databases (each stripped and vacuumed):
-/// the games in `newer` that `older` lacks, in an unpacked database at
-/// `out`. Its state is `newer`'s.
-pub fn make_delta(older: &Path, newer: &Path, out: &Path) -> Result<()> {
-    std::fs::copy(newer, out)?;
-    let mut d = Database::open(out)?;
-    d.keep_only_new(older)?;
-    d.vacuum()
+/// Opens the publisher's seen table, making it if there's none.
+fn open_seen(path: &Path) -> Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS seen (gid BLOB PRIMARY KEY, first INTEGER NOT NULL) WITHOUT ROWID;
+         CREATE INDEX IF NOT EXISTS seen_first ON seen (first);",
+    )?;
+    Ok(conn)
 }
 
-/// Compresses `db` into `out` and returns its pack. For a delta, `from`
-/// is the state it applies to and `state` the database it was taken
-/// from, which gives the total and the newest date; for a base, both are
-/// `None`.
-pub fn pack(db: &Path, out: &Path, threads: u32, from: Option<String>, state: Option<&Path>) -> Result<Pack> {
-    let (uuid, games, mut total, mut through) = {
-        let d = Database::open_read_only(db)?;
-        let games = d.game_count()?;
-        (d.uuid()?, games, games, d.newest_date()?)
+/// What [`publish`] is to do.
+#[derive(Clone, Debug)]
+pub struct PublishOptions {
+    /// This publish's time (Unix seconds), after every earlier one.
+    pub at: i64,
+    /// Pack a new base even when there's one.
+    pub new_base: bool,
+    /// Stop adding older deltas once one is larger than this share of
+    /// the base (percent).
+    pub cap_percent: u64,
+    pub threads: u32,
+}
+
+/// What a publish did.
+#[derive(Clone, Debug)]
+pub struct Published {
+    pub manifest: Manifest,
+    /// Games first published now.
+    pub new_games: i64,
+    /// Files the earlier manifest named that this one doesn't: to take
+    /// out of the release once the new manifest is up.
+    pub dropped: Vec<String>,
+}
+
+/// Publishes `newest`, a fresh import of the whole archive (stripped and
+/// vacuumed), into `out_dir`: records its new games in [`SEEN_DB`],
+/// packs a base if asked or if there's none, rebuilds the deltas, and
+/// writes the manifest. `None` when there's nothing new to publish.
+pub fn publish(out_dir: &Path, newest: &Path, opts: &PublishOptions) -> Result<Option<Published>> {
+    let seen_path = out_dir.join(SEEN_DB);
+    let manifest_path = out_dir.join(MANIFEST_FILE);
+    let old: Option<Manifest> = match std::fs::read(&manifest_path) {
+        Ok(bytes) => Some(serde_json::from_slice(&bytes).map_err(|e| Error::Archive(e.to_string()))?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.into()),
     };
-    if let Some(state) = state {
-        let s = Database::open_read_only(state)?;
-        total = s.game_count()?;
-        through = s.newest_date()?;
+    let new_games = {
+        let path = newest.to_str().ok_or_else(|| Error::Archive("the import's path isn't text".into()))?;
+        let mut seen = open_seen(&seen_path)?;
+        let last: Option<i64> = seen.query_row("SELECT max(first) FROM seen", [], |r| r.get(0))?;
+        if last.is_some_and(|l| opts.at <= l) || old.as_ref().is_some_and(|m| opts.at <= m.base.at) {
+            return Err(Error::Archive("this publish's time isn't after the last one's".into()));
+        }
+        seen.execute("ATTACH DATABASE ?1 AS newest", [path])?;
+        let tx = seen.transaction()?;
+        let n = tx
+            .execute("INSERT OR IGNORE INTO seen (gid, first) SELECT gid, ?1 FROM newest.games", [opts.at])?;
+        if n == 0 && !opts.new_base && old.is_some() {
+            return Ok(None); // the transaction rolls back
+        }
+        tx.commit()?;
+        seen.execute("DETACH DATABASE newest", [])?;
+        n as i64
+    };
+    let seen = open_seen(&seen_path)?;
+    let at: i64 = seen.query_row("SELECT max(first) FROM seen", [], |r| r.get(0))?;
+    let times: Vec<i64> = {
+        let mut q = seen.prepare("SELECT DISTINCT first FROM seen WHERE first < ?1 ORDER BY first DESC")?;
+        q.query_map([at], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+    };
+    drop(seen);
+
+    let base = match &old {
+        Some(m) if !opts.new_base => m.base.clone(),
+        _ => pack(
+            newest,
+            &out_dir.join(format!("howdah-games-{}.db.zst", stamp(opts.at))),
+            opts.threads,
+            None,
+            opts.at,
+        )?,
+    };
+
+    // Deltas from 1, 2, 4, 8, … publishes back, and from the base.
+    let mut starts: Vec<i64> =
+        (0..).map(|i| (1usize << i) - 1).take_while(|&k| k < times.len()).map(|k| times[k]).collect();
+    if base.at < at && !starts.contains(&base.at) {
+        starts.push(base.at);
     }
+    starts.sort_unstable_by(|a, b| b.cmp(a));
+    let cap = base.size.saturating_mul(opts.cap_percent) / 100;
+    let mut deltas = Vec::new();
+    let work = out_dir.join("delta-work.db");
+    for since in starts {
+        let _ = std::fs::remove_file(&work);
+        std::fs::copy(newest, &work)?;
+        {
+            let mut d = Database::open(&work)?;
+            d.keep_seen_after(&seen_path, since)?;
+            d.vacuum()?;
+        }
+        let file = out_dir.join(format!("howdah-games-{}-since-{}.db.zst", stamp(opts.at), stamp(since)));
+        let p = pack(&work, &file, opts.threads, Some(since), at)?;
+        let needed = since == base.at;
+        if p.size > cap && !needed {
+            std::fs::remove_file(&file)?;
+            if since < base.at {
+                break;
+            }
+            continue;
+        }
+        deltas.push(p);
+    }
+    let _ = std::fs::remove_file(&work);
+
+    let (games, through) = {
+        let d = Database::open_read_only(newest)?;
+        (d.game_count()?, d.newest_date()?)
+    };
+    let manifest = Manifest { format: MANIFEST_FORMAT, at, games, through, base, deltas };
+    manifest.check()?;
+    let tmp = out_dir.join(format!("{MANIFEST_FILE}.new"));
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&manifest).map_err(|e| Error::Archive(e.to_string()))? + "\n",
+    )?;
+    std::fs::rename(tmp, &manifest_path)?;
+    let named = |m: &Manifest| -> Vec<String> {
+        std::iter::once(&m.base).chain(&m.deltas).map(|p| p.file.clone()).collect()
+    };
+    let now_named = named(&manifest);
+    let dropped =
+        old.map(|m| named(&m)).unwrap_or_default().into_iter().filter(|f| !now_named.contains(f)).collect();
+    Ok(Some(Published { manifest, new_games, dropped }))
+}
+
+/// `20261118-020715` (UTC) for Unix seconds, for file names.
+fn stamp(ts: i64) -> String {
+    let secs = ts.rem_euclid(86_400);
+    let date = crate::game::utc_date(ts).replace('.', "");
+    format!("{date}-{:02}{:02}{:02}", secs / 3600, secs / 60 % 60, secs % 60)
+}
+
+/// Compresses `db` into `out` and returns its pack. A file already at
+/// `out` is left alone, since a published manifest may name it.
+pub fn pack(db: &Path, out: &Path, threads: u32, since: Option<i64>, at: i64) -> Result<Pack> {
+    if out.exists() {
+        return Err(Error::Archive(format!("{} is there already", out.display())));
+    }
+    let games = Database::open_read_only(db)?.game_count()?;
     let unpacked_size = std::fs::metadata(db)?.len();
     {
         let mut input = BufReader::new(File::open(db)?);
@@ -219,13 +347,10 @@ pub fn pack(db: &Path, out: &Path, threads: u32, from: Option<String>, state: Op
         size,
         sha256,
         unpacked_size,
-        uuid,
-        from,
         schema: schema::VERSION,
         games,
-        total,
-        through,
-        built: now(),
+        since,
+        at,
     })
 }
 
@@ -282,26 +407,26 @@ mod tests {
     use super::*;
     use crate::{GameData, SaveMode};
 
-    fn game(id: &str, date: &str) -> GameData {
+    fn game(id: u32) -> GameData {
         let mut g = GameData::new();
-        g.date = Some(date.into());
-        let key = crate::SourceKey::arimaa_com(id);
+        g.date = Some(format!("2026.{:02}.{:02}", 1 + id / 28, 1 + id % 28));
+        let key = crate::SourceKey::arimaa_com(id.to_string());
         g.gid = crate::gid_for(&key);
         g.source = Some(key);
-        // Game 3 brings a new player; the others share theirs.
-        for (i, p) in g.players.iter_mut().enumerate() {
-            let name = if id == "3" && i == 1 { "newcomer".to_string() } else { format!("p{i}") };
-            p.site_id = Some(name.clone());
-            p.name = Some(name);
-        }
+        // Each game brings a player of its own and shares one.
+        g.players[0].name = Some("regular".into());
+        g.players[0].site_id = Some("regular".into());
+        g.players[1].name = Some(format!("p{id}"));
+        g.players[1].site_id = Some(format!("p{id}"));
         g
     }
 
-    fn base_db(path: &Path, games: &[(&str, &str)]) {
+    /// An import of the archive with games `1..=n`.
+    fn import(path: &Path, n: u32) {
         let _ = std::fs::remove_file(path);
         let mut d = Database::open(path).unwrap();
-        for (id, date) in games {
-            d.save_as(&game(id, date), SaveMode::Source).unwrap();
+        for id in 1..=n {
+            d.save_as(&game(id), SaveMode::Source).unwrap();
         }
         d.strip_for_base().unwrap();
         d.vacuum().unwrap();
@@ -318,99 +443,159 @@ mod tests {
     fn packs_checks_and_unpacks() {
         let dir = temp_dir("base");
         let db = dir.join("base.db");
-        base_db(&db, &[("1", "2026.10.11")]);
+        import(&db, 1);
         let packed = dir.join("base.db.zst");
-        let m = pack(&db, &packed, 2, None, None).unwrap();
-        assert_eq!(
-            (m.games, m.total, m.through.as_deref(), m.schema, m.from.as_deref()),
-            (1, 1, Some("2026.10.11"), schema::VERSION, None)
-        );
-        check(&packed, &m).unwrap();
+        let p = pack(&db, &packed, 2, None, 100).unwrap();
+        assert_eq!((p.games, p.at, p.schema, p.since), (1, 100, schema::VERSION, None));
+        check(&packed, &p).unwrap();
         let out = dir.join("unpacked.db");
-        unpack(&packed, &out, m.unpacked_size).unwrap();
+        unpack(&packed, &out, p.unpacked_size).unwrap();
         assert_eq!(std::fs::read(&out).unwrap(), std::fs::read(&db).unwrap());
-        assert!(unpack(&packed, &out, m.unpacked_size - 1).is_err());
-        let mut wrong = m.clone();
+        assert!(unpack(&packed, &out, p.unpacked_size - 1).is_err());
+        let mut wrong = p.clone();
         wrong.sha256 = "00".into();
         assert!(check(&packed, &wrong).is_err());
-        let json = serde_json::to_string(&Manifest::new(m)).unwrap();
-        assert!(json.contains("\"unpackedSize\"") && json.contains("\"deltas\":[]"));
-        assert!(!json.contains("\"from\""));
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains("\"unpackedSize\"") && !json.contains("\"since\""));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    fn opts(at: i64) -> PublishOptions {
+        PublishOptions { at, new_base: false, cap_percent: 100_000, threads: 2 }
+    }
+
+    fn starts(m: &Manifest) -> Vec<i64> {
+        m.deltas.iter().map(|d| d.since.unwrap()).collect()
+    }
+
+    /// Installs what the plan says into `user`, as the app does, and
+    /// returns the time reached.
+    fn update(dir: &Path, user: &mut Database, at: Option<i64>) -> Option<i64> {
+        let m: Manifest = serde_json::from_slice(&std::fs::read(dir.join(MANIFEST_FILE)).unwrap()).unwrap();
+        let mut reached = at;
+        for p in plan(&m, at).unwrap() {
+            let out = dir.join("unpacked.db");
+            unpack(&dir.join(&p.file), &out, p.unpacked_size).unwrap();
+            user.merge_from(&out, "base").unwrap();
+            reached = Some(p.at);
+        }
+        reached
+    }
+
     #[test]
-    fn a_delta_holds_only_the_new_games_and_merges_in() {
-        let dir = temp_dir("delta");
-        let (old, new) = (dir.join("old.db"), dir.join("new.db"));
-        base_db(&old, &[("1", "2026.10.11"), ("2", "2026.10.12")]);
-        base_db(&new, &[("1", "2026.10.11"), ("2", "2026.10.12"), ("3", "2026.10.19")]);
-        let delta = dir.join("delta.db");
-        make_delta(&old, &new, &delta).unwrap();
-        let old_uuid = Database::open_read_only(&old).unwrap().uuid().unwrap();
-        let p = pack(&delta, &dir.join("delta.db.zst"), 2, Some(old_uuid.clone()), Some(&new)).unwrap();
-        assert_eq!((p.games, p.total, p.through.as_deref()), (1, 3, Some("2026.10.19")));
-        assert_eq!(p.uuid, Database::open_read_only(&new).unwrap().uuid().unwrap());
-        assert_eq!(p.from, Some(old_uuid));
-        let players: i64 = Database::open_read_only(&delta)
+    fn publishes_back_deltas_that_bring_any_database_up() {
+        let dir = temp_dir("publish");
+        let newest = dir.join("newest.db");
+        // Week 1: the base, 10 games.
+        import(&newest, 10);
+        let p = publish(&dir, &newest, &opts(1000)).unwrap().unwrap();
+        assert_eq!((p.new_games, p.manifest.at, p.manifest.base.games), (10, 1000, 10));
+        assert!(p.manifest.deltas.is_empty());
+        let mut early = Database::open_in_memory().unwrap();
+        let early_at = update(&dir, &mut early, None);
+        assert_eq!((early_at, early.game_count().unwrap()), (Some(1000), 10));
+
+        // Weeks 2 to 6, two games each; nothing new in week 7.
+        let mut mid = None;
+        for week in 2..=6 {
+            import(&newest, 10 + 2 * (week - 1));
+            let p = publish(&dir, &newest, &opts(1000 * week as i64)).unwrap().unwrap();
+            assert_eq!(p.new_games, 2);
+            if week == 3 {
+                let mut db = Database::open_in_memory().unwrap();
+                mid = Some((update(&dir, &mut db, None), db));
+            }
+        }
+        assert!(publish(&dir, &newest, &opts(7000)).unwrap().is_none());
+        let m: Manifest = serde_json::from_slice(&std::fs::read(dir.join(MANIFEST_FILE)).unwrap()).unwrap();
+        assert_eq!((m.at, m.games), (6000, 20));
+        // 1, 2 and 4 publishes back, and the base.
+        assert_eq!(starts(&m), [5000, 4000, 2000, 1000]);
+        assert!(m.deltas.iter().all(|d| d.at == 6000));
+        assert_eq!(m.deltas.iter().map(|d| d.games).collect::<Vec<_>>(), [2, 4, 8, 10]);
+
+        // The base's database takes the delta from the base; week 3's the
+        // one since week 2 (it repeats week 3's games); a new one gets
+        // the base and the delta after it.
+        let files = |at| plan(&m, at).unwrap().iter().map(|p| p.since).collect::<Vec<_>>();
+        assert_eq!(files(Some(1000)), [Some(1000)]);
+        assert_eq!(files(Some(3000)), [Some(2000)]);
+        assert_eq!(files(Some(5500)), [Some(5000)]);
+        assert!(files(Some(6000)).is_empty());
+        assert_eq!(files(None), [None, Some(1000)]);
+        assert_eq!(files(Some(10)), [None, Some(1000)]);
+        assert_eq!(update(&dir, &mut early, early_at), Some(6000));
+        assert_eq!(early.game_count().unwrap(), 20);
+        let (mid_at, mut mid_db) = mid.unwrap();
+        assert_eq!(mid_at, Some(3000));
+        assert_eq!(update(&dir, &mut mid_db, mid_at), Some(6000));
+        assert_eq!(mid_db.game_count().unwrap(), 20);
+        // The newest delta has its two games and only their players.
+        let out = dir.join("unpacked.db");
+        unpack(&dir.join(&m.deltas[0].file), &out, m.deltas[0].unpacked_size).unwrap();
+        let players: i64 = Database::open_read_only(&out)
             .unwrap()
             .connection()
             .query_row("SELECT count(*) FROM players", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(players, 2, "only the delta's game's players");
+        assert_eq!(players, 3);
 
-        let mut user = Database::open_in_memory().unwrap();
-        user.merge_from(&old, "base").unwrap();
-        let report = user.merge_from(&delta, "base").unwrap();
-        assert_eq!((report.games_added, user.game_count().unwrap()), (1, 3));
-        // Again, or over a database that has the games: nothing more.
-        assert_eq!(user.merge_from(&delta, "base").unwrap().games_added, 0);
+        // A new base in week 8: databases from before it still get a
+        // delta, and the earlier files are listed to take down.
+        import(&newest, 22);
+        let p = publish(&dir, &newest, &PublishOptions { new_base: true, ..opts(8000) }).unwrap().unwrap();
+        assert_eq!((p.manifest.base.at, p.manifest.base.games, p.manifest.at), (8000, 22, 8000));
+        assert_eq!(starts(&p.manifest), [6000, 5000, 3000]);
+        assert_eq!(plan(&p.manifest, Some(5500)).unwrap()[0].since, Some(5000));
+        assert_eq!(plan(&p.manifest, None).unwrap().len(), 1);
+        assert_eq!(p.dropped.len(), 5);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    fn fake(uuid: &str, from: Option<&str>) -> Pack {
-        Pack {
-            file: format!("{uuid}.db.zst"),
-            size: 1,
-            sha256: String::new(),
-            unpacked_size: 1,
-            uuid: uuid.into(),
-            from: from.map(Into::into),
-            schema: 1,
-            games: 1,
-            total: 1,
-            through: None,
-            built: 0,
+    #[test]
+    fn older_deltas_stop_at_the_cap() {
+        let dir = temp_dir("cap");
+        let newest = dir.join("newest.db");
+        import(&newest, 200);
+        publish(&dir, &newest, &opts(1000)).unwrap();
+        for week in 2..=5 {
+            import(&newest, 200 + 40 * (week - 1));
+            publish(&dir, &newest, &PublishOptions { cap_percent: 40, ..opts(1000 * week as i64) }).unwrap();
         }
-    }
-
-    fn files(packs: Vec<&Pack>) -> Vec<&str> {
-        packs.iter().map(|p| p.uuid.as_str()).collect()
+        let m: Manifest = serde_json::from_slice(&std::fs::read(dir.join(MANIFEST_FILE)).unwrap()).unwrap();
+        // The delta from 1 publish back fits, 2 back doesn't; the base's
+        // is kept however large, since a new database needs it.
+        // (Small databases are mostly overhead: about 33% of the base for
+        // one publish back, 49% for two.)
+        assert_eq!(starts(&m), [4000, 1000]);
+        assert!(m.deltas[0].size <= m.base.size * 40 / 100);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn plans_what_a_database_needs() {
-        // B is the base; a → b → B → c → d are deltas, the first two
-        // leading up to the base, which was repacked from b's state.
-        let mut m = Manifest::new(fake("B", None));
-        assert_eq!(files(plan(&m, None).unwrap()), ["B"]);
-        assert!(plan(&m, Some("B")).unwrap().is_empty());
-        assert_eq!(files(plan(&m, Some("old")).unwrap()), ["B"]);
-        m.deltas = vec![fake("c", Some("B")), fake("d", Some("c"))];
-        assert_eq!(files(plan(&m, None).unwrap()), ["B", "c", "d"]);
-        assert_eq!(files(plan(&m, Some("B")).unwrap()), ["c", "d"]);
-        assert_eq!(files(plan(&m, Some("c")).unwrap()), ["d"]);
-        assert!(plan(&m, Some("d")).unwrap().is_empty());
-        assert_eq!(files(plan(&m, Some("old")).unwrap()), ["B", "c", "d"]);
-        m.deltas.insert(0, fake("B", Some("a")));
-        m.deltas.insert(0, fake("a", Some("z")));
-        assert_eq!(files(plan(&m, Some("z")).unwrap()), ["a", "B", "c", "d"]);
-        assert_eq!(files(plan(&m, None).unwrap()), ["B", "c", "d"]);
-        // A broken chain, or one that misses the base, is refused.
-        m.deltas.remove(1);
-        assert!(plan(&m, None).is_err());
-        let mut off = Manifest::new(fake("B", None));
-        off.deltas = vec![fake("c", Some("X"))];
-        assert!(plan(&off, None).is_err());
+    fn a_broken_manifest_is_refused() {
+        let pack = |since, at| Pack {
+            file: "f".into(),
+            size: 1,
+            sha256: String::new(),
+            unpacked_size: 1,
+            schema: 1,
+            games: 1,
+            since,
+            at,
+        };
+        let mut m = Manifest {
+            format: MANIFEST_FORMAT,
+            at: 20,
+            games: 2,
+            through: None,
+            base: pack(None, 10),
+            deltas: vec![pack(Some(15), 20)],
+        };
+        assert!(plan(&m, None).is_err(), "nothing after the base");
+        m.deltas[0].since = Some(10);
+        assert_eq!(plan(&m, None).unwrap().len(), 2);
+        m.deltas[0].at = 19;
+        assert!(plan(&m, Some(12)).is_err(), "a delta short of the newest");
     }
 }

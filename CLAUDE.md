@@ -385,14 +385,15 @@ plans the engine test and tournament runner.
   failing move ending the moves with `replay_error`; times from the log's
   clock lines, else from when moves arrived). The `howdah-db` binary:
   `import DB PATH...`, `stats DB`, `show DB ID|arimaa:ID`, `list`,
-  `verify`, `base OUTDIR PATH...` (the base database: imported,
-  `strip_for_base` (no indexes or fingerprints), vacuumed, packed with
-  zstd level 22 and a 128 MB window, `base.json` beside it as a
-  `base::Manifest`, and the stripped database kept as `state.db`),
-  `delta OUTDIR PATH...` (a fresh import less the games `state.db` has,
-  `keep_only_new`, packed and added to the manifest's chain of deltas,
-  each naming the state it applies to; `base::plan` picks what a
-  database needs from the state it reached) and `merge DB OTHER` (`Database::merge_from`: games
+  `verify`, `publish OUTDIR PATH... [--new-base] [--cap PCT]` (the base
+  database: a fresh import, `strip_for_base` (no indexes or
+  fingerprints), vacuumed; `base::publish` packs it with zstd level 22
+  and a 128 MB window as the base when asked or when there's none,
+  records when each game was first published in `seen.db`, rebuilds
+  the deltas (the games first published since 1, 2, 4, … publishes
+  back and since the base, up to a share of the base's size), and
+  writes `base.json`, a `base::Manifest`; `base::plan` picks what a
+  database needs from the time it reached) and `merge DB OTHER` (`Database::merge_from`: games
   matched by `gid` then source key, added with their tags, variations
   and annotations, or filled in when only their header was there, else
   kept as they are; players by site key, else name; position data where
@@ -772,13 +773,13 @@ plans the engine test and tournament runner.
     `Base::status` reads the manifest (`MANIFEST_URL`, the
     howdah-game-database repository's `current` release, whose assets
     are swapped; debug builds only `HOWDAH_BASE_URL`, which may be plain
-    http to this computer) and `meta`'s `base_uuid` (the state reached),
+    http to this computer) and `meta`'s `base_at` (the time reached),
     and offers what `base::plan` says is needed (`BaseInfo.newGames`
-    when that's only deltas); `install` streams each file beside
+    when that's only a delta); `install` streams each file beside
     `games.db` (`base-download/`, removed after), checks size and
     SHA-256, unpacks, and `Library::merge_base`s it, recording the
-    state after each, sending `library://base` (`BaseProgress`, one
-    download count over all the files) as it goes.
+    time reached after each, sending `library://base` (`BaseProgress`,
+    one download count over all the files) as it goes.
   - `clock_format.rs`: whether the system writes times on a 12- or a
     24-hour clock (`system_clock`, `SystemClock`), which the webview's
     own formatting misses: the desktop's GSettings clock key on Cinnamon,

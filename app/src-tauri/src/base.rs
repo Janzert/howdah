@@ -1,12 +1,12 @@
 //! The base database: arimaa.com's game archive, built with `howdah-db
-//! base` (and `delta` for the weeks after) and published with its
+//! publish`) and published with its
 //! manifest in the howdah-game-database repository's releases
 //! (`docs/DATABASE.md`, "Step 5"). The app offers it in the Games panel:
-//! it works out the files its database needs (`base::plan`: the deltas
-//! after the state it reached, else the full base and the deltas after
-//! it), downloads each, checks it against the manifest, unpacks it
-//! beside the game database and merges it in, and remembers the state
-//! reached after each, so only newer deltas are offered later.
+//! it works out the files its database needs (`base::plan`: the delta
+//! starting closest before the time it reached, else the base and the
+//! delta after it), downloads each, checks it against the manifest,
+//! unpacks it beside the game database and merges it in, and remembers
+//! the time reached after each, so only newer games are offered later.
 //!
 //! Debug builds never ask GitHub (the tests run on them):
 //! `HOWDAH_BASE_URL` names a manifest to use instead, and may be plain
@@ -41,9 +41,9 @@ const MAX_MANIFEST_BYTES: usize = 64 << 10;
 const MAX_DOWNLOAD_BYTES: u64 = 2 << 30;
 const MAX_UNPACKED_BYTES: u64 = 8 << 30;
 
-/// The `meta` keys the installed base is recorded under: the state
-/// reached (the uuid of the last pack merged), and its games and date.
-const BASE_UUID: &str = "base_uuid";
+/// The `meta` keys the installed base is recorded under: the time
+/// reached (the `at` of the last pack merged), and its games and date.
+const BASE_AT: &str = "base_at";
 const BASE_GAMES: &str = "base_games";
 const BASE_THROUGH: &str = "base_through";
 
@@ -150,7 +150,7 @@ async fn fetch_manifest(http: &reqwest::Client, url: &str) -> Result<Manifest, A
     if packs().any(|p| p.size > MAX_DOWNLOAD_BYTES || p.unpacked_size > MAX_UNPACKED_BYTES) {
         return Err(ApiError::state("the game database's manifest gives an unlikely size"));
     }
-    m.check_chain().map_err(|e| ApiError::state(format!("the game database's manifest: {e}")))?;
+    m.check().map_err(|e| ApiError::state(format!("the game database's manifest: {e}")))?;
     Ok(m)
 }
 
@@ -195,13 +195,14 @@ impl Base {
             Ok(http) => match fetch_manifest(&http, &url).await {
                 Ok(m) => match plan(&m, library) {
                     Ok(packs) => {
-                        let newest = m.newest();
-                        let only_deltas = packs.first().is_some_and(|p| p.from.is_some());
+                        let only_deltas = packs.first().is_some_and(|p| p.since.is_some());
+                        let had = status.installed.as_ref().map_or(0, |i| i.games);
                         status.available = Some(BaseInfo {
-                            games: newest.total,
-                            through: newest.through.clone(),
+                            games: m.games,
+                            through: m.through.clone(),
                             size: Some(packs.iter().map(|p| p.size).sum()),
-                            new_games: only_deltas.then(|| packs.iter().map(|p| p.games).sum()),
+                            // A delta may repeat games the database has.
+                            new_games: only_deltas.then(|| (m.games - had).max(0)),
                         });
                         status.offer = !packs.is_empty();
                     }
@@ -237,8 +238,8 @@ impl Base {
 
 /// The packs the library needs, refusing any this build can't read.
 fn plan(manifest: &Manifest, library: &Library) -> Result<Vec<Pack>, ApiError> {
-    let state = library.meta(BASE_UUID);
-    let packs = base::plan(manifest, state.as_deref())
+    let at = library.meta(BASE_AT).and_then(|a| a.parse().ok());
+    let packs = base::plan(manifest, at)
         .map_err(|e| ApiError::state(format!("the game database's manifest: {e}")))?;
     if packs.iter().any(|p| p.schema > howdah_db::schema::VERSION) {
         return Err(ApiError::state("the newest game database needs a newer Howdah"));
@@ -269,9 +270,9 @@ async fn install(library: &Arc<Library>, events: &Events) -> Result<String, ApiE
             download(&http, &file_url(&url, &pack.file), &packed, &pack, done, total, events).await?;
             done += pack.size;
             let unpacked = dir.join("base.db");
-            let (lib, ev) = (library.clone(), events.clone());
+            let (lib, m, ev) = (library.clone(), manifest.clone(), events.clone());
             let report = tauri::async_runtime::spawn_blocking(move || {
-                unpack_and_merge(&lib, &pack, &packed, &unpacked, &ev)
+                unpack_and_merge(&lib, &pack, &m, &packed, &unpacked, &ev)
             })
             .await
             .map_err(|e| ApiError::state(format!("installing the game database stopped: {e}")))??;
@@ -344,6 +345,7 @@ async fn download(
 fn unpack_and_merge(
     library: &Library,
     pack: &Pack,
+    manifest: &Manifest,
     packed: &Path,
     unpacked: &Path,
     events: &Events,
@@ -355,7 +357,7 @@ fn unpack_and_merge(
     base::unpack(packed, unpacked, pack.unpacked_size).map_err(db)?;
     let _ = std::fs::remove_file(packed);
     progress(events, "merging", 0, 0);
-    let report = library.merge_base(unpacked, pack).map_err(db);
+    let report = library.merge_base(unpacked, pack, manifest).map_err(db);
     let _ = std::fs::remove_file(unpacked);
     report
 }
@@ -374,13 +376,23 @@ fn thousands(n: i64) -> String {
 }
 
 impl Library {
-    /// Merges an unpacked base or delta and records the state it leaves.
-    pub fn merge_base(&self, path: &Path, pack: &Pack) -> howdah_db::Result<howdah_db::MergeReport> {
+    /// Merges an unpacked base or delta and records the time it reaches.
+    pub fn merge_base(
+        &self,
+        path: &Path,
+        pack: &Pack,
+        manifest: &Manifest,
+    ) -> howdah_db::Result<howdah_db::MergeReport> {
+        // A base the manifest's newest games come after (its delta still
+        // to come) has only its own count, and no date to give.
+        let newest = pack.at >= manifest.at;
+        let games = if newest { manifest.games } else { pack.games };
+        let through = if newest { manifest.through.as_deref() } else { None };
         self.with_db_result(|db| {
             let report = db.merge_from(path, "base")?;
-            db.set_meta(BASE_UUID, &pack.uuid)?;
-            db.set_meta(BASE_GAMES, &pack.total.to_string())?;
-            db.set_meta(BASE_THROUGH, pack.through.as_deref().unwrap_or(""))?;
+            db.set_meta(BASE_AT, &pack.at.to_string())?;
+            db.set_meta(BASE_GAMES, &games.to_string())?;
+            db.set_meta(BASE_THROUGH, through.unwrap_or(""))?;
             Ok(report)
         })
     }

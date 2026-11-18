@@ -5,11 +5,9 @@
 //! howdah-db stats DB                   counts and sizes
 //! howdah-db show DB ID                 a game's record (`ID`, or `arimaa:ID` for a permanent id)
 //! howdah-db list DB [PLAYER [OPPONENT]]   the newest 20 games, timed
-//! howdah-db base OUTDIR PATH... [-j N]    builds the base database from archive files:
-//!                                       OUTDIR/howdah-games-<date>.db.zst, OUTDIR/base.json, and
-//!                                       OUTDIR/state.db (kept for the next delta)
-//! howdah-db delta OUTDIR PATH... [-j N]   the games added since OUTDIR/state.db, as
-//!                                       OUTDIR/howdah-games-<date>-delta.db.zst, added to base.json
+//! howdah-db publish OUTDIR PATH... [--new-base] [--cap PCT] [-j N]
+//!                                       the base database and its deltas from archive files,
+//!                                       with OUTDIR/base.json and OUTDIR/seen.db (keep it)
 //! howdah-db merge DB OTHER              merges another database file into DB
 //! howdah-db verify DB                  loads every game back, reporting any that fail
 //! ```
@@ -22,7 +20,7 @@ use howdah_db::{ARIMAA_COM, Database, archive, base};
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | base OUTDIR PATH... | delta OUTDIR PATH... | merge DB OTHER"
+        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | publish OUTDIR PATH... [--new-base] [--cap PCT] | merge DB OTHER"
     );
     ExitCode::from(2)
 }
@@ -34,8 +32,7 @@ fn main() -> ExitCode {
         Some("stats") if args.len() == 2 => stats(&args[1]),
         Some("show") if args.len() == 3 => show(&args[1], &args[2]),
         Some("verify") if args.len() == 2 => verify(&args[1]),
-        Some("base") if args.len() >= 3 => base(&args[1], &args[2..]),
-        Some("delta") if args.len() >= 3 => delta(&args[1], &args[2..]),
+        Some("publish") if args.len() >= 3 => publish(&args[1], &args[2..]),
         Some("merge") if args.len() == 3 => merge(&args[1], &args[2]),
         Some("list") if (2..=4).contains(&args.len()) => list(&args[1], args.get(2), args.get(3)),
         _ => return usage(),
@@ -174,108 +171,71 @@ fn list(
     Ok(())
 }
 
-/// The stripped database of the newest state, kept beside the manifest
-/// for the next delta.
-const STATE_DB: &str = "state.db";
-
-/// Imports archive files into a fresh database at `work`, stripped and
-/// vacuumed for a base, and returns its newest date as `YYYY-MM-DD`.
-fn build_state(
-    work: &std::path::Path,
-    rest: &[String],
-    start: Instant,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let (paths, threads) = paths_and_threads(rest)?;
-    for suffix in ["", "-wal", "-shm"] {
-        let _ = std::fs::remove_file(base::work_path(work, suffix));
+/// Imports archive files into a fresh database, strips and vacuums it,
+/// and publishes it into `OUTDIR` (`base::publish`): the base when asked
+/// or when there's none, the deltas, and `base.json`.
+fn publish(out_dir: &str, rest: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut new_base = false;
+    let mut cap_percent = 10;
+    let mut others = Vec::new();
+    let mut it = rest.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--new-base" => new_base = true,
+            "--cap" => cap_percent = it.next().ok_or("--cap needs a percentage")?.parse()?,
+            _ => others.push(a.clone()),
+        }
     }
-    let files = archive::archive_files(&paths)?;
-    let mut db = Database::open(work)?;
-    let report = db.import_archive(&files, threads, |_, _| {})?;
-    eprintln!(
-        "imported {} games from {} files in {:.0}s",
-        report.games,
-        report.files,
-        start.elapsed().as_secs_f64()
-    );
-    db.strip_for_base()?;
-    db.vacuum()?;
-    Ok(db.newest_date()?.unwrap_or_default().replace('.', "-"))
-}
-
-fn threads_of(rest: &[String]) -> Result<u32, Box<dyn std::error::Error>> {
-    Ok(paths_and_threads(rest)?.1 as u32)
-}
-
-fn write_manifest(out_dir: &std::path::Path, m: &base::Manifest) -> Result<(), Box<dyn std::error::Error>> {
-    let tmp = out_dir.join("base.json.new");
-    std::fs::write(&tmp, serde_json::to_string_pretty(m)? + "\n")?;
-    std::fs::rename(tmp, out_dir.join("base.json"))?;
-    Ok(())
-}
-
-fn describe(path: &std::path::Path, p: &base::Pack, start: Instant) {
-    eprintln!(
-        "{}: {} games ({} in all) through {}, {:.1} MB ({:.1} MB unpacked), in {:.0}s",
-        path.display(),
-        p.games,
-        p.total,
-        p.through.as_deref().unwrap_or("?"),
-        p.size as f64 / 1e6,
-        p.unpacked_size as f64 / 1e6,
-        start.elapsed().as_secs_f64()
-    );
-}
-
-/// A new full base, with no deltas; its database is kept as the state.
-fn base(out_dir: &str, rest: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let (paths, threads) = paths_and_threads(&others)?;
     let out_dir = PathBuf::from(out_dir);
     std::fs::create_dir_all(&out_dir)?;
     let start = Instant::now();
-    let work = out_dir.join("base-work.db");
-    let date = build_state(&work, rest, start)?;
-    let packed = out_dir.join(format!("howdah-games-{date}.db.zst"));
-    let pack = base::pack(&work, &packed, threads_of(rest)?, None, None)?;
-    std::fs::rename(&work, out_dir.join(STATE_DB))?;
-    write_manifest(&out_dir, &base::Manifest::new(pack.clone()))?;
-    describe(&packed, &pack, start);
-    Ok(())
-}
-
-/// The games added since the state, packed as a delta and added to the
-/// manifest; the new import becomes the state.
-fn delta(out_dir: &str, rest: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let out_dir = PathBuf::from(out_dir);
-    let state = out_dir.join(STATE_DB);
-    let mut manifest: base::Manifest = serde_json::from_slice(&std::fs::read(out_dir.join("base.json"))?)?;
-    let old_uuid = Database::open_read_only(&state)?.uuid()?;
-    if manifest.newest().uuid != old_uuid {
-        return Err(format!("{} isn't the manifest's newest state", state.display()).into());
+    let work = out_dir.join("import-work.db");
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(base::work_path(&work, suffix));
     }
-    let start = Instant::now();
-    let work = out_dir.join("delta-work.db");
-    let date = build_state(&work, rest, start)?;
-    let diff = out_dir.join("delta-diff.db");
-    base::make_delta(&state, &work, &diff)?;
-    if Database::open_read_only(&diff)?.game_count()? == 0 {
-        std::fs::remove_file(&diff)?;
-        std::fs::remove_file(&work)?;
-        eprintln!("no new games since the last state; nothing written");
+    let files = archive::archive_files(&paths)?;
+    {
+        let mut db = Database::open(&work)?;
+        let report = db.import_archive(&files, threads, |_, _| {})?;
+        eprintln!(
+            "imported {} games from {} files in {:.0}s",
+            report.games,
+            report.files,
+            start.elapsed().as_secs_f64()
+        );
+        db.strip_for_base()?;
+        db.vacuum()?;
+    }
+    let opts = base::PublishOptions {
+        at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64,
+        new_base,
+        cap_percent,
+        threads: threads as u32,
+    };
+    let published = base::publish(&out_dir, &work, &opts);
+    std::fs::remove_file(&work)?;
+    let Some(p) = published? else {
+        eprintln!("no new games since the last publish; nothing written");
         return Ok(());
+    };
+    let m = &p.manifest;
+    eprintln!(
+        "{} new games; {} in all through {}, in {:.0}s",
+        p.new_games,
+        m.games,
+        m.through.as_deref().unwrap_or("?"),
+        start.elapsed().as_secs_f64()
+    );
+    for pack in std::iter::once(&m.base).chain(&m.deltas) {
+        eprintln!("  {}: {} games, {:.2} MB", pack.file, pack.games, pack.size as f64 / 1e6);
     }
-    let packed = out_dir.join(format!("howdah-games-{date}-delta.db.zst"));
-    if packed.exists() {
-        std::fs::remove_file(&diff)?;
-        std::fs::remove_file(&work)?;
-        return Err(format!("{} is there already (a delta through the same date)", packed.display()).into());
+    if !p.dropped.is_empty() {
+        eprintln!("no longer named (take them down once base.json is up):");
+        for f in &p.dropped {
+            eprintln!("  {f}");
+        }
     }
-    let pack = base::pack(&diff, &packed, threads_of(rest)?, Some(old_uuid), Some(&work))?;
-    std::fs::remove_file(&diff)?;
-    manifest.deltas.push(pack.clone());
-    manifest.check_chain()?;
-    write_manifest(&out_dir, &manifest)?;
-    std::fs::rename(&work, &state)?;
-    describe(&packed, &pack, start);
     Ok(())
 }
 
