@@ -14,7 +14,8 @@ use crate::error::GameError;
 use crate::game::{Game, Move, build_turn};
 use crate::notation::{self, MoveBody};
 use crate::outcome::{
-    GameResult, limit_score_winner, only_repetitions, outcome_after_turn, outcome_with_history,
+    GameResult, WinReason, is_immobilized, limit_score_winner, only_repetitions, outcome_after_turn,
+    outcome_with_history,
 };
 use crate::position::Position;
 use crate::setup::{Placement, apply_setup};
@@ -302,6 +303,8 @@ pub struct GameTree {
     /// [`outcome_with_history`]). On unless someone else decides the
     /// results, as a game server does.
     repetition_immobilization: bool,
+    /// arimaa.com's rules before 2008.07.01 ([`GameTree::set_old_rules`]).
+    old_rules: bool,
     /// The absolute ply of the root: 0 from the empty board.
     start: usize,
 }
@@ -351,6 +354,7 @@ impl GameTree {
                 annotation: Annotation::default(),
             })],
             repetition_immobilization: true,
+            old_rules: false,
             start,
         }
     }
@@ -395,6 +399,20 @@ impl GameTree {
     /// apply it, and its results are the game's.
     pub fn set_repetition_immobilization(&mut self, on: bool) {
         self.repetition_immobilization = on;
+    }
+
+    /// Plays by arimaa.com's rules before 2008.07.01, for moves added from
+    /// now on: losing every rabbit doesn't end the game (play went on, and
+    /// with no rabbits on either side it was a draw), and a third
+    /// repetition is a legal move that loses (`p`). Neither ending is a
+    /// [`GameResult`], so the tree leaves them to whoever keeps the
+    /// game's result.
+    pub fn set_old_rules(&mut self, on: bool) {
+        self.old_rules = on;
+    }
+
+    pub fn old_rules(&self) -> bool {
+        self.old_rules
     }
 
     pub fn root(&self) -> NodeId {
@@ -552,12 +570,28 @@ impl GameTree {
     /// position's results, and (unless turned off) the opponent left with
     /// only third repetitions.
     pub fn outcome_after(&self, parent: NodeId, turn: &Turn) -> Option<GameResult> {
-        let mover = turn.start.side_to_move();
-        if !self.repetition_immobilization {
-            return outcome_after_turn(&turn.end, mover);
+        self.rules_outcome(&turn.end, turn.start.side_to_move(), self.repetition_history(parent))
+    }
+
+    /// How the rules end the game at `end` after `mover`'s turn, with
+    /// `before` the positions that count for repetition before it.
+    fn rules_outcome<'a>(
+        &'a self,
+        end: &'a Position,
+        mover: Color,
+        before: impl Iterator<Item = &'a Position>,
+    ) -> Option<GameResult> {
+        if self.old_rules {
+            return match outcome_after_turn(end, mover) {
+                Some(r) if r.reason == WinReason::Elimination => is_immobilized(end)
+                    .then_some(GameResult { winner: mover, reason: WinReason::Immobilization }),
+                other => other,
+            };
         }
-        let history = self.repetition_history(parent).chain([&turn.end]);
-        outcome_with_history(&turn.end, mover, history)
+        if !self.repetition_immobilization {
+            return outcome_after_turn(end, mover);
+        }
+        outcome_with_history(end, mover, before.chain([end]))
     }
 
     /// Adds a turn built with [`GameTree::begin_turn`].
@@ -569,7 +603,7 @@ impl GameTree {
         if turn.start != node.position {
             return Err(GameError::StaleTurn);
         }
-        if self.is_third_repetition(parent, &turn.end) {
+        if !self.old_rules && self.is_third_repetition(parent, &turn.end) {
             return Err(GameError::Repetition);
         }
         let result = self.outcome_after(parent, &turn);
@@ -613,11 +647,8 @@ impl GameTree {
         let by_rules = match n.parent.map(|p| &self[p]) {
             Some(parent) if !Game::is_setup_ply(self.start + parent.ply) => {
                 let mover = parent.position.side_to_move();
-                if self.repetition_immobilization {
-                    outcome_with_history(&n.position, mover, self.repetition_history(node)).is_some()
-                } else {
-                    outcome_after_turn(&n.position, mover).is_some()
-                }
+                let before = n.parent.map(|p| self.repetition_history(p)).into_iter().flatten();
+                self.rules_outcome(&n.position, mover, before).is_some()
             }
             _ => false,
         };
@@ -866,6 +897,22 @@ mod tests {
         assert!(GameTree::from_position(pos(Color::Silver, "Ra1 rh8"), 1).is_err(), "move 1 is the setups");
         let silver = GameTree::from_position(pos(Color::Silver, "Ra1 rh8"), 7).unwrap();
         assert_eq!(silver.label_after(GameTree::ROOT), "7s");
+    }
+
+    #[test]
+    fn old_rules_play_on_after_an_elimination() {
+        use crate::outcome::WinReason;
+        use crate::position::tests::pos;
+        let start = pos(Color::Gold, "Ra1 Ec5 rc4 hh8");
+        let mut t = GameTree::from_position(start.clone(), 10).unwrap();
+        let end = t.add_notation(GameTree::ROOT, "rc4s rc3x Ec5s").unwrap();
+        assert_eq!(t[end].result().map(|r| r.reason), Some(WinReason::Elimination));
+
+        let mut old = GameTree::from_position(start, 10).unwrap();
+        old.set_old_rules(true);
+        let end = old.add_notation(GameTree::ROOT, "rc4s rc3x Ec5s").unwrap();
+        assert_eq!(old[end].result(), None);
+        old.add_notation(end, "hh8w").unwrap();
     }
 
     #[test]

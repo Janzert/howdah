@@ -1,0 +1,15 @@
+[package]
+name = "howdah-db"
+version = "0.1.0"
+description = "Howdah's game database: games, variations, annotations and the arimaa.com archive in SQLite"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+howdah-arimaa.workspace = true
+thiserror.workspace = true
+getrandom = "0.3"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+sha2 = "0.11.0"

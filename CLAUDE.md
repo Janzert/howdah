@@ -352,6 +352,33 @@ plans the engine test and tournament runner.
     in running games (`EngineLine`, kept per side in the live state) has
     its own broadcast and a stream per game (`GameOutput`). `client` (feature
     `client`): `Client` and its `EventStream`.
+- `crates/howdah-db`: the game database (plan in `docs/DATABASE.md`;
+  `rusqlite` with the bundled SQLite; depends only on `howdah-arimaa`).
+  `Database::open` creates or migrates a file (`schema.rs`: an
+  `application_id`, `user_version` as the schema version, numbered
+  migrations in `migrations/`, SQL or Rust, each in a transaction; a
+  newer file this build can still read, by `meta`'s `min_reader`, opens
+  read-only). `GameData` is a game as stored: header columns (players,
+  ratings, event, site, time control, rated, postal, date, times, the
+  result as letters, so old arimaa.com draws and `p`/`n`/`a` endings
+  keep their place), other tags, and a `GameTree` (`None` for a game
+  known only by its header). `from_record`/`to_record` convert, with
+  `GameId` as the arimaa.com source key; a game with a source key gets
+  `gid_for` it as its `gid`, the same in every database. `save` upserts
+  by row id, `gid` or source key; `load` replays it. Storage: the main
+  line is one blob (`codec.rs`: a setup in 8 bytes of nibbles over the
+  home squares, so setups come back in square order; a turn as a step
+  count and a byte per step, square times 4 plus direction, with pieces
+  and captures from the position), variations are `nodes` rows (a node
+  reference is a main-line ply, or `-id` of a row), and comments, intros,
+  glyphs, the main line's `%emt` times (one blob, put back first among
+  a comment's commands), the chat and an unreplayable move list are
+  `annotations` (by node, kind and author; `''` is the user). `archive`
+  imports the `allgames*.zip` files (`Database::import_archive`,
+  skipping files unchanged since; rows replayed on up to 8 threads, a
+  failing move ending the moves with `replay_error`; times from the log's
+  clock lines, else from when moves arrived). The `howdah-db` binary:
+  `import DB PATH...`, `stats DB`, `show DB ID|arimaa:ID`.
 - `crates/howdah-render`: draws positions as images with the app's image
   themes (`image` crate; depends only on `howdah-arimaa`). The classic
   themes' manifests and files are embedded from `packages/board/src/themes/classic/`

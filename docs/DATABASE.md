@@ -1,6 +1,7 @@
 # Game database: survey and plan
 
-Status: first draft (2026-11-17), for discussion. Nothing is built yet.
+Status: plan agreed (2026-11-17). Build step 1 is done; see "Built so far"
+at the end.
 
 `VARIATIONS.md` already decided that a game database will be the primary
 store for games played and analysed, with records for sharing. This note
@@ -358,6 +359,12 @@ Two kinds, both open-ended:
 - **A game's chat is stored** (as extra data on the game, out of the
   headers), **but not exported by default**: export has an option to
   include it.
+- **The base database's download** (2026-11-17): the database with its
+  indexes and fingerprints dropped and `VACUUM`ed, compressed whole.
+  Under 200 MB is good enough for now; the app rebuilds the indexes
+  after the download. On the 2026-10 archive that's 344 MB, and 147 MB
+  with bzip2 (gzip 228 MB, zstd -19 184 MB, xz -9 167 MB on the full
+  400 MB file).
 - **Authors are a free name** for now, but the format leaves room to
   sign annotations later:
   - An annotation names its node by the move path, never a local row
@@ -420,3 +427,52 @@ JSONB (3.45), and generated columns (3.31).
   migrated to the newest and compared with a fresh database (the
   schema from `sqlite_master`, and the data read back the same), so a
   migration that drifts from the fresh schema fails CI.
+
+## Built so far
+
+### Step 1 (2026-11-17): `howdah-db`
+
+The crate, its schema and migrations, saving and loading games, and the
+archive import, as planned above, with these details:
+
+- **Identity.** A game with a source key gets a `gid` made from it (the
+  first 16 bytes of a SHA-256 of `arimaa.com:<id>`), so the same
+  arimaa.com game has the same `gid` in every database, imported or
+  cached. Other games get a random one.
+- **Results** are stored as letters (`winner` g/s/d/u and
+  `termination`), so old draws and the `p`, `n` and `a` endings keep
+  their place although the tree can't hold them.
+- **Old rules.** `GameTree::set_old_rules` plays by arimaa.com's rules
+  before 2008.07.01: losing every rabbit doesn't end the game, and a
+  third repetition is a legal move (it lost, `p`). The archive import
+  uses them for games that ended before 2008-06-18 18:50 UTC, when play
+  past eliminations stopped, and the game's `rules` column says so,
+  so it loads the same way.
+- **Takebacks** in a move list leave the taken-back move as a variation,
+  as the record reader does.
+- **Setups** come back in square order, so a record's text can differ
+  from what was saved, though the positions are the same.
+- **Move times** are one blob per game, and are put back on load as
+  `%emt` first among each comment's commands.
+- **Annotations** so far are the user's own (author `''`): comments,
+  variation intros, glyphs, times, the chat, and the move list of a game
+  that didn't replay. Other authors and position data have their tables
+  but nothing writes them yet.
+
+Measured on the whole archive (254 `allgames` files, 425,129 games,
+28.2M plies), on 8 threads:
+
+- The import takes 100 s and peaks at 490 MB of memory.
+- 51 games (0.012%) have moves that don't replay: 16 third repetitions
+  under today's rules, a few unreadable tokens and impossible steps. Their
+  moves stop there, with the move list kept.
+- The file is 400 MB: games 238 MB (the move blobs 140 MB, about 5 bytes
+  a ply; headers the rest), annotations 90 MB (the move times 67 MB), and
+  indexes about 70 MB. For the base database's download, dropping the
+  indexes and compressing is enough for now (see "Decided"); storing
+  the repeated event, site and time control strings once would shrink
+  it more if that's ever needed.
+- Loading every game back with the rules checked (`howdah-db verify`)
+  takes 182 s on one thread, 2,300 games a second, with none failing.
+  That's fine for opening a game; scans for the explorer and position
+  search will need a decoder that skips the legality checks.
