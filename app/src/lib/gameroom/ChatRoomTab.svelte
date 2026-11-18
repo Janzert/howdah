@@ -132,7 +132,11 @@
     else chatroom.scrollTop = log.scrollTop;
     if (up && log.scrollTop < LOAD_WITHIN) void chatroom.loadEarlier();
   }
-  const roomTime = (unix: number) => chatTime(unix, clock.options);
+  // Rewritten at midnight: yesterday's lines get their date.
+  const roomTime = $derived.by(() => {
+    const [options, today] = [clock.options, clock.today];
+    return (unix: number) => chatTime(unix, options, today);
+  });
   const quietDate = (unix: number) =>
     new Date(unix * 1000).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 
