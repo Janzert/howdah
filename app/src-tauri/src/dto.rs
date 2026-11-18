@@ -2063,3 +2063,75 @@ pub struct TourneyUpdate {
     /// Whether the daemon is shutting down, when that changed.
     pub closing: Option<bool>,
 }
+
+/// What games the game list shows (`howdah_db::Filter`); every field set
+/// narrows it.
+#[derive(Clone, Debug, Default, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+#[ts(export)]
+pub struct LibraryFilter {
+    /// A player, by any name they've had; case doesn't matter.
+    pub player: Option<String>,
+    /// Their opponent, or without `player`, either player.
+    pub opponent: Option<String>,
+    /// The player's side.
+    pub side: Option<Color>,
+    /// Unix seconds: from (inclusive) and to (exclusive).
+    #[ts(type = "number | null")]
+    pub from: Option<i64>,
+    #[ts(type = "number | null")]
+    pub to: Option<i64>,
+    /// `arimaa` (arimaa.com's games) or `local` (games from the app).
+    pub origin: Option<String>,
+    pub rated: Option<bool>,
+    /// `won` or `lost`, for the player.
+    pub outcome: Option<String>,
+    /// The ending's letter (`g`, `e`, `m`, `t`, `r`, ...).
+    pub termination: Option<String>,
+}
+
+/// A game in the game list.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LibraryGameView {
+    #[ts(type = "number")]
+    pub id: i64,
+    /// arimaa.com's permanent id, for its games.
+    pub arimaa_id: Option<String>,
+    pub gold: Option<String>,
+    pub silver: Option<String>,
+    #[ts(type = "number | null")]
+    pub gold_rating: Option<i64>,
+    #[ts(type = "number | null")]
+    pub silver_rating: Option<i64>,
+    /// `YYYY.MM.DD`.
+    pub date: String,
+    pub event: Option<String>,
+    pub time_control: Option<String>,
+    pub rated: Option<bool>,
+    pub postal: Option<bool>,
+    /// `g`, `s`, or old arimaa.com's `d` (draw) and `u` (unknown).
+    pub winner: Option<String>,
+    pub termination: Option<String>,
+    /// Moves on the main line, setups included.
+    #[ts(type = "number")]
+    pub plies: i64,
+    /// Only its header is known (not yet fetched).
+    pub header_only: bool,
+    pub set_position: bool,
+    pub variations: bool,
+}
+
+/// A page of the game list.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LibraryPageView {
+    pub games: Vec<LibraryGameView>,
+    /// How many games match the filter.
+    #[ts(type = "number")]
+    pub total: i64,
+    /// Whether there's a game database at all.
+    pub available: bool,
+}

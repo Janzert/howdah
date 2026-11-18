@@ -31,6 +31,8 @@ import type { PlayerRecordView } from './bindings/PlayerRecordView';
 import type { RatingPointView } from './bindings/RatingPointView';
 import type { PositionCheck } from './bindings/PositionCheck';
 import type { PositionSpec } from './bindings/PositionSpec';
+import type { LibraryFilter } from './bindings/LibraryFilter';
+import type { LibraryPageView } from './bindings/LibraryPageView';
 import type { PuzzleGroupView } from './bindings/PuzzleGroupView';
 import type { PostalGameView } from './bindings/PostalGameView';
 import type { PositionView } from './bindings/PositionView';
@@ -98,6 +100,14 @@ function makeApi(sid: () => SessionId | null) {
     editPosition: (position: PositionSpec, text: string) => invoke<PositionSpec>('edit_position', { position, text }),
     /** Both default setups, gold to move. */
     defaultPosition: () => invoke<PositionSpec>('default_position'),
+    /** A page of the game list: games matching `filter`, newest first. */
+    libraryGames: (filter: LibraryFilter, offset = 0, limit = 50) =>
+      invoke<LibraryPageView>('library_games', { filter, offset, limit }),
+    /** Opens a game from the game database (a game known only by its
+     * header is fetched from arimaa.com). */
+    openLibraryGame: (game: number) => invoke<void>('open_library_game', { session: sid(), game }),
+    /** Deletes a game from the game database. */
+    deleteLibraryGame: (game: number) => invoke<void>('delete_library_game', { game }),
     /** arimaa.com's puzzle list (fetched once and kept; `refresh` fetches it again). */
     puzzleList: (refresh = false) => invoke<PuzzleGroupView[]>('puzzle_list', { refresh }),
     /** Opens an arimaa.com puzzle (`p4`) to solve. */

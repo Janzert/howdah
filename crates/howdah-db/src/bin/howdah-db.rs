@@ -4,6 +4,7 @@
 //! howdah-db import DB PATH... [-j N]   arimaa.com archive files (or directories of them)
 //! howdah-db stats DB                   counts and sizes
 //! howdah-db show DB ID                 a game's record (`ID`, or `arimaa:ID` for a permanent id)
+//! howdah-db list DB [PLAYER [OPPONENT]]   the newest 20 games, timed
 //! howdah-db verify DB                  loads every game back, reporting any that fail
 //! ```
 
@@ -14,7 +15,9 @@ use std::time::Instant;
 use howdah_db::{ARIMAA_COM, Database, archive};
 
 fn usage() -> ExitCode {
-    eprintln!("usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB");
+    eprintln!(
+        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]]"
+    );
     ExitCode::from(2)
 }
 
@@ -25,6 +28,7 @@ fn main() -> ExitCode {
         Some("stats") if args.len() == 2 => stats(&args[1]),
         Some("show") if args.len() == 3 => show(&args[1], &args[2]),
         Some("verify") if args.len() == 2 => verify(&args[1]),
+        Some("list") if (2..=4).contains(&args.len()) => list(&args[1], args.get(2), args.get(3)),
         _ => return usage(),
     };
     match result {
@@ -125,5 +129,32 @@ fn verify(db: &str) -> Result<(), Box<dyn std::error::Error>> {
         ids.len(),
         ids.len() as f64 / secs
     );
+    Ok(())
+}
+
+fn list(
+    db: &str,
+    player: Option<&String>,
+    opponent: Option<&String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db = Database::open(db)?;
+    let filter =
+        howdah_db::Filter { player: player.cloned(), opponent: opponent.cloned(), ..Default::default() };
+    let start = Instant::now();
+    let page = db.search(&filter, 0, 20)?;
+    let took = start.elapsed();
+    for g in &page.games {
+        println!(
+            "{:>7} {} {:<16} {:<16} {:>4} {}{}",
+            g.id,
+            g.date,
+            g.gold.as_deref().unwrap_or("?"),
+            g.silver.as_deref().unwrap_or("?"),
+            g.plies,
+            g.winner.unwrap_or('-'),
+            g.termination.unwrap_or(' '),
+        );
+    }
+    println!("{} games match; the page took {:.1} ms", page.total, took.as_secs_f64() * 1000.0);
     Ok(())
 }

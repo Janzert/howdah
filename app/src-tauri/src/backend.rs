@@ -34,12 +34,12 @@ use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
     ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
-    GameCommentView, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView,
-    PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView, PlayerSpec, PositionCheck,
-    PositionProblemView, PositionSpec, PositionView, PostalGameView, PuzzleGroupView, RatingPointView,
-    ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged, ShowBoard, SpsaStepView,
-    StartedBotView, StepTarget, SystemClock, TestDetailView, TestView, TourneyStatusView, UpdateView,
-    WatchView,
+    GameCommentView, GameroomGames, GameroomStatus, LibraryFilter, LibraryPageView, MatchSpec, MoveReplay,
+    NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView,
+    PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView,
+    PuzzleGroupView, RatingPointView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
+    ShowBoard, SpsaStepView, StartedBotView, StepTarget, SystemClock, TestDetailView, TestView,
+    TourneyStatusView, UpdateView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -1245,6 +1245,39 @@ impl Backend {
         }
     }
 
+    /// A page of the game list: `limit` games matching `filter`, newest
+    /// first, after skipping `offset`.
+    pub fn library_games(
+        &self,
+        filter: &LibraryFilter,
+        offset: u32,
+        limit: u32,
+    ) -> Result<LibraryPageView, ApiError> {
+        self.library.page(filter, offset, limit.min(500))
+    }
+
+    /// Opens game `game` from the game database in session `id`. A game
+    /// known only by its header is fetched from arimaa.com.
+    pub async fn open_library_game(&self, id: SessionId, game: i64) -> Result<(), ApiError> {
+        match self.library.record(game)? {
+            Ok(record) => {
+                self.handle(id)?.stop_watching();
+                self.mutate(id, |s| {
+                    s.load_record_from_start(record);
+                    s.set_db_id(Some(game));
+                    Ok(Vec::new())
+                })
+            }
+            Err(gid) => self.open_gameroom_game(id, &gid, true).await,
+        }
+    }
+
+    /// Deletes game `game` from the game database. A board showing it
+    /// saves it again as a new game if it's changed.
+    pub fn delete_library_game(&self, game: i64) -> Result<(), ApiError> {
+        self.library.delete(game)
+    }
+
     /// Plays live arimaa.com game `gid` (its gameroom id) in session `id`
     /// as `side`: the user's seat is taken, the session becomes that game
     /// with the user as `side`'s human player, and the moves played there
@@ -1605,6 +1638,13 @@ impl Backend {
             "follow_tourney_test" => {
                 ok(self.follow_tourney_test(sid()?, &arg::<String>(args, "test")?).await?)
             }
+            "library_games" => ok(self.library_games(
+                &arg(args, "filter")?,
+                arg::<Option<u32>>(args, "offset")?.unwrap_or(0),
+                arg::<Option<u32>>(args, "limit")?.unwrap_or(50),
+            )?),
+            "open_library_game" => ok(self.open_library_game(sid()?, arg(args, "game")?).await?),
+            "delete_library_game" => ok(self.delete_library_game(arg(args, "game")?)?),
             "open_gameroom_game" => ok(self
                 .open_gameroom_game(
                     sid()?,

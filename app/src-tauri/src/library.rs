@@ -13,9 +13,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-use howdah_arimaa::GameRecord;
-use howdah_db::{ARIMAA_COM, Database, GameData, SaveMode};
+use howdah_arimaa::{Color, GameRecord};
+use howdah_db::{ARIMAA_COM, Database, Filter, GameData, Origin, Outcome, SaveMode};
 
+use crate::dto::{ApiError, LibraryFilter, LibraryGameView, LibraryPageView};
 use crate::session::Session;
 
 /// How often a session's game is checked for changes to save.
@@ -71,6 +72,67 @@ impl Library {
         }
     }
 
+    /// [`Library::with`] for the game list's commands, whose errors go to
+    /// the user.
+    fn try_with<T>(&self, f: impl FnOnce(&mut Database) -> howdah_db::Result<T>) -> Result<T, ApiError> {
+        let mut db = self.db();
+        let db = db.as_mut().ok_or_else(|| ApiError::state("there's no game database"))?;
+        f(db).map_err(|e| ApiError::state(format!("game database: {e}")))
+    }
+
+    /// A page of the game list.
+    pub fn page(&self, filter: &LibraryFilter, offset: u32, limit: u32) -> Result<LibraryPageView, ApiError> {
+        if self.db().is_none() {
+            return Ok(LibraryPageView { games: Vec::new(), total: 0, available: false });
+        }
+        let filter = to_filter(filter);
+        let page = self.try_with(|db| db.search(&filter, offset.into(), limit.into()))?;
+        let letter = |c: Option<char>| c.map(String::from);
+        Ok(LibraryPageView {
+            games: page
+                .games
+                .into_iter()
+                .map(|g| LibraryGameView {
+                    id: g.id,
+                    arimaa_id: g.arimaa_id,
+                    gold: g.gold,
+                    silver: g.silver,
+                    gold_rating: g.gold_rating,
+                    silver_rating: g.silver_rating,
+                    date: g.date,
+                    event: g.event,
+                    time_control: g.time_control,
+                    rated: g.rated,
+                    postal: g.postal,
+                    winner: letter(g.winner),
+                    termination: letter(g.termination),
+                    plies: g.plies,
+                    header_only: g.header_only,
+                    set_position: g.set_position,
+                    variations: g.variations,
+                })
+                .collect(),
+            total: page.total,
+            available: true,
+        })
+    }
+
+    /// Game `id` as a record, or its arimaa.com id when only its header
+    /// is here.
+    pub fn record(&self, id: i64) -> Result<Result<GameRecord, String>, ApiError> {
+        self.try_with(|db| {
+            let game = db.load(id)?;
+            Ok(match (&game.tree, &game.source) {
+                (None, Some(s)) if s.source == ARIMAA_COM => Err(s.id.clone()),
+                _ => Ok(game.to_record()),
+            })
+        })
+    }
+
+    pub fn delete(&self, id: i64) -> Result<(), ApiError> {
+        self.try_with(|db| db.delete(id))
+    }
+
     /// Finished arimaa.com game `gid` (its permanent id) as a record, if
     /// it's here with its moves, and its id here.
     pub fn arimaa_game(&self, gid: &str) -> Option<(i64, GameRecord)> {
@@ -106,6 +168,29 @@ impl Library {
     /// its id.
     pub fn save(&self, id: Option<i64>, record: &GameRecord) -> Option<i64> {
         self.with("saving a game", |db| db.save_record(id, record))
+    }
+}
+
+fn to_filter(f: &LibraryFilter) -> Filter {
+    let text = |s: &Option<String>| s.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(String::from);
+    Filter {
+        player: text(&f.player),
+        opponent: text(&f.opponent),
+        side: f.side.map(Color::letter),
+        from: f.from,
+        to: f.to,
+        origin: match f.origin.as_deref() {
+            Some("arimaa") => Some(Origin::ArimaaCom),
+            Some("local") => Some(Origin::Local),
+            _ => None,
+        },
+        rated: f.rated,
+        outcome: match f.outcome.as_deref() {
+            Some("won") => Some(Outcome::Won),
+            Some("lost") => Some(Outcome::Lost),
+            _ => None,
+        },
+        termination: f.termination.as_deref().and_then(|t| t.chars().next()),
     }
 }
 

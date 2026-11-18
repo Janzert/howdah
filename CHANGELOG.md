@@ -14,8 +14,10 @@ young).
   engine tests' games), in `games.db` in the app's data directory. A
   finished arimaa.com game opened from a list or a link is looked for
   there first, so it opens at once and offline, and one fetched from
-  arimaa.com is kept, with any analysis added to it. There's no way to
-  browse the saved games in the app yet.
+  arimaa.com is kept, with any analysis added to it. The lobby's Games
+  panel lists them, newest first, narrowed by player (by any name
+  they've had), opponent, side, won or lost, ending, dates, where
+  they're from and rated; each opens on a board, and can be deleted.
 - Engine tests can start their games from positions reached by play
   (`[positions]` in a test's spec: a file with each position's moves
   from the start, sent to the engines as moves). Each position is

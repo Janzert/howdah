@@ -152,7 +152,7 @@ test('Alt+arrows and Alt+digits go through the sidebar, from a docked board too'
   await lobby(page);
   const current = () => sidebar(page).locator('[aria-current="page"]').getAttribute('aria-label');
   await page.keyboard.press('Alt+ArrowDown');
-  expect(await current()).toMatch(/^arimaa\.com/);
+  expect(await current()).toBe('Games');
   await expect(page.locator('main h1')).toBeFocused();
   await page.keyboard.press('Alt+1');
   expect(await current()).toBe('Home');

@@ -8,11 +8,11 @@ use crate::backend::{self, Backend};
 use crate::dto::{
     ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
     ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
-    GameCommentView, GameroomGames, GameroomStatus, MatchSpec, MoveReplay, NewTestSpec, PastGameView,
-    PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView, PositionCheck, PositionSpec,
-    PositionView, PostalGameView, PuzzleGroupView, RatingPointView, ServerBotsView, SessionId, SessionView,
-    SpsaStepView, StartedBotView, StepTarget, SystemClock, TestDetailView, TestView, TourneyStatusView,
-    UpdateView, WatchView,
+    GameCommentView, GameroomGames, GameroomStatus, LibraryFilter, LibraryPageView, MatchSpec, MoveReplay,
+    NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView,
+    PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView, RatingPointView,
+    ServerBotsView, SessionId, SessionView, SpsaStepView, StartedBotView, StepTarget, SystemClock,
+    TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
 };
 
 #[tauri::command]
@@ -971,4 +971,28 @@ pub async fn follow_tourney_test(
     test: String,
 ) -> Result<bool, ApiError> {
     state.follow_tourney_test(session, &test).await
+}
+
+#[tauri::command]
+pub fn library_games(
+    state: State<'_, Backend>,
+    filter: LibraryFilter,
+    offset: Option<u32>,
+    limit: Option<u32>,
+) -> Result<LibraryPageView, ApiError> {
+    state.library_games(&filter, offset.unwrap_or(0), limit.unwrap_or(50))
+}
+
+#[tauri::command]
+pub async fn open_library_game(
+    state: State<'_, Backend>,
+    session: SessionId,
+    game: i64,
+) -> Result<(), ApiError> {
+    state.open_library_game(session, game).await
+}
+
+#[tauri::command]
+pub fn delete_library_game(state: State<'_, Backend>, game: i64) -> Result<(), ApiError> {
+    state.delete_library_game(game)
 }

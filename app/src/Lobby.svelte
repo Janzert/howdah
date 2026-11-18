@@ -51,6 +51,7 @@
   import { type ListedWindow, listWindow } from './lib/lobbyWindows';
   import NewGameDialog from './lib/NewGameDialog.svelte';
   import { OpenGames } from './lib/openGames.svelte';
+  import LibraryPanel from './lib/LibraryPanel.svelte';
   import PuzzlesPanel from './lib/PuzzlesPanel.svelte';
   import RecordDialog from './lib/RecordDialog.svelte';
   import { settings } from './lib/settings.svelte';
@@ -68,7 +69,7 @@
   import { focusGameWindow, inTauri, openBoard, openWindowFor, showBoard, type HandOff } from './lib/windows';
   import './lobby.css';
 
-  /** The panel shown: `home`, `puzzles`, `gameroom`, `gameroom:<panel>`, `tests`,
+  /** The panel shown: `home`, `puzzles`, `games`, `gameroom`, `gameroom:<panel>`, `tests`,
    * `test:<id>`, `board:<session>`, `engines`, `settings` or `help`. */
   let selected = $state(pref('lobby.panel') || 'home');
   let collapsed = $state(pref('lobby.sidebar') === 'collapsed');
@@ -147,7 +148,7 @@
     if (key.startsWith('test:')) return testsOpen.includes(key.slice(5));
     if (key.startsWith('board:')) return games.docked.includes(Number(key.slice(6)));
     if (key === 'puzzles') return puzzlesOpen;
-    return ['home', 'gameroom', 'tests', 'engines', 'settings', 'help'].includes(key);
+    return ['home', 'games', 'gameroom', 'tests', 'engines', 'settings', 'help'].includes(key);
   }
 
   function openPuzzles() {
@@ -542,6 +543,7 @@
   const entries = $derived([
     'home',
     ...(puzzlesOpen ? ['puzzles'] : []),
+    'games',
     'gameroom',
     ...gameroomOpen.map((p) => `gameroom:${p}`),
     'tests',
@@ -591,6 +593,7 @@
     { id: string; label: string; icon: IconName; badge: number; badgeTitle: string; offline?: boolean }[]
   >([
     { id: 'home', label: 'Home', icon: 'home', badge: 0, badgeTitle: '' },
+    { id: 'games', label: 'Games', icon: 'database', badge: 0, badgeTitle: '' },
     {
       id: 'gameroom',
       label: 'arimaa.com',
@@ -834,6 +837,8 @@
             onOpen={(id) => openNew((a) => a.openPuzzle(id), null, 'Loading the puzzle…')}
             onClose={closePuzzles}
           />
+        {:else if selected === 'games'}
+          <LibraryPanel onOpen={(id) => openNew((a) => a.openLibraryGame(id), null, 'Opening the game…')} />
         {:else if selected === 'gameroom'}
           <GameroomScreen />
         {:else if selected.startsWith('gameroom:')}

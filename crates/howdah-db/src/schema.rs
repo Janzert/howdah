@@ -30,11 +30,18 @@ pub(crate) enum Step {
 }
 
 /// Version `n` is the database after the first `n` migrations.
-pub(crate) const MIGRATIONS: &[Migration] = &[Migration {
-    name: "0001_init",
-    step: Step::Sql(include_str!("../migrations/0001_init.sql")),
-    readable_before: false,
-}];
+pub(crate) const MIGRATIONS: &[Migration] = &[
+    Migration {
+        name: "0001_init",
+        step: Step::Sql(include_str!("../migrations/0001_init.sql")),
+        readable_before: false,
+    },
+    Migration {
+        name: "0002_list_order",
+        step: Step::Sql(include_str!("../migrations/0002_list_order.sql")),
+        readable_before: true,
+    },
+];
 
 /// The schema version this build writes.
 pub const VERSION: i64 = MIGRATIONS.len() as i64;
@@ -134,8 +141,34 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         migrate(&mut conn).unwrap();
         assert_eq!(check(&conn).unwrap(), Compat::Current);
-        assert_eq!(min_reader(&conn).unwrap(), 1);
+        assert_eq!(min_reader(&conn).unwrap(), 1, "every step since the first is readable by version 1");
         migrate(&mut conn).unwrap();
+    }
+
+    #[test]
+    fn migrates_from_each_version() {
+        // A database made at version 1 comes up to the newest, and ends up
+        // as a fresh one does.
+        let schema = |c: &Connection| -> Vec<String> {
+            let mut q =
+                c.prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name").unwrap();
+            q.query_map([], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+        };
+        let mut fresh = Connection::open_in_memory().unwrap();
+        migrate(&mut fresh).unwrap();
+        let mut old = Connection::open_in_memory().unwrap();
+        let tx = old.transaction().unwrap();
+        tx.execute_batch(include_str!("../migrations/0001_init.sql")).unwrap();
+        tx.pragma_update(None, "application_id", APPLICATION_ID).unwrap();
+        tx.pragma_update(None, "user_version", 1).unwrap();
+        tx.execute("INSERT INTO meta (key, value) VALUES ('min_reader', '1')", []).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(check(&old).unwrap(), Compat::Older(1));
+        migrate(&mut old).unwrap();
+        assert_eq!(check(&old).unwrap(), Compat::Current);
+        assert_eq!(schema(&old), schema(&fresh));
+        // Adding an index leaves the file readable by version 1.
+        assert_eq!(min_reader(&old).unwrap(), 1);
     }
 
     #[test]

@@ -11,6 +11,7 @@ pub mod archive;
 pub mod codec;
 mod game;
 pub mod schema;
+mod search;
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,6 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 pub use game::{ARIMAA_COM, GameData, PlayerInfo, SaveMode, SourceKey, StoredResult, gid_for};
+pub use search::{Filter, GameSummary, Origin, Outcome, SearchPage};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -136,10 +138,16 @@ impl Database {
             }
             id = Some(other);
         }
-        let mut game = match id {
-            Some(id) => self.load_header(id)?,
-            None => GameData::from_record(record),
+        // A game deleted while a board still had it comes back as a new one.
+        let stored = match id {
+            Some(id) => match self.load_header(id) {
+                Ok(g) => Some(g),
+                Err(Error::NoGame(_)) => None,
+                Err(e) => return Err(e),
+            },
+            None => None,
         };
+        let mut game = stored.unwrap_or_else(|| GameData::from_record(record));
         game.merge_record(record);
         self.save(&game)
     }

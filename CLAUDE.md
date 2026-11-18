@@ -731,6 +731,12 @@ plans the engine test and tournament runner.
     `gameroom.openFinished`, from finished games' rows, the rating chart
     and chat links) looks in the database first and needs no login for a
     game there; a finished game fetched is kept (`keep_fetched`).
+    The game list: `library_games` (a `LibraryFilter`, offset and limit;
+    `howdah_db::Database::search`, newest first by start, end or added
+    time, the `games_when` index), `open_library_game` (a game known
+    only by its header is fetched as `open_gameroom_game` does) and
+    `delete_library_game` (a board still showing it saves it again as a
+    new game if it changes).
   - `clock_format.rs`: whether the system writes times on a 12- or a
     24-hour clock (`system_clock`, `SystemClock`), which the webview's
     own formatting misses: the desktop's GSettings clock key on Cinnamon,
@@ -855,6 +861,11 @@ plans the engine test and tournament runner.
     `docs/WINDOWS.md`, "Boards as panels"); a board docked since the last
     change is shown. In Tauri it asks before the main window closes on
     docked boards still playing when that quits (`guardMainWindow`).
+    `LibraryPanel.svelte` (Games, under Home): the game database's
+    list, filtered by `lib/library.ts`'s `FilterForm` (kept in
+    localStorage as `lobby.gamesFilter`, reloaded 250 ms after a
+    change), 50 games a page with Show more, each row opening a board
+    and with Delete (a second click confirms).
     `HomeScreen.svelte`: Play and
     analyse (New game, Analysis board with the last analysis engine, Open
     record, Position editor, Puzzles, as cards), a note when arimaa.com

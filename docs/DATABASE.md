@@ -1,6 +1,6 @@
 # Game database: survey and plan
 
-Status: plan agreed (2026-11-17). Build steps 1 and 2 are done; see
+Status: plan agreed (2026-11-17). Build steps 1 to 3 are done; see
 "Built so far" at the end.
 
 `VARIATIONS.md` already decided that a game database will be the primary
@@ -509,5 +509,19 @@ headers kept, and came back in a new board; game 93252 (not there) took
 0.5 s from arimaa.com the first time and 0.02 s from the database the
 second; a record opened was saved as a new game.
 
-Not done yet: there's no way in the app to see or delete saved games
-(step 3), so they collect unseen until then.
+### Step 3 (2026-11-17): the game list
+
+The lobby's **Games** panel (under Home in the sidebar) lists the
+database's games, newest first: by start time, else end time (88
+archive games were forfeited before they started), else when they were
+added. Filters: a player (by any name they've had, any case), an
+opponent (or either player), the player's side, won or lost, the
+ending (arimaa.com's letters, old ones included), a date range (UTC
+days), arimaa.com or this app, and rated. 50 games a page with Show
+more; each opens on a board, and Delete takes one out (a second click
+confirms). A game known only by its header is fetched when opened.
+
+The order has its own index, added by the second migration (an index
+on an expression, which SQLite has had since 3.9). On the whole archive
+a page takes 1–2 ms unfiltered and 4–8 ms by player, counting
+included. Checked in the browser preview on the whole archive.
