@@ -1577,6 +1577,10 @@ BRIDGE_PORT=1422 npm run dev -- --port 1431   # a Vite that uses it
   `npx tauri icon src-tauri/app-icon.png` in `app/` to remake `icons/`,
   and delete the `android/` and `ios/` directories it also writes.
 - Linux system packages: see README.md (WebKitGTK 4.1 is the essential one).
+- The workspace's `rust-version` (every crate, the app included) is
+  the stable CI builds with, raised as stable moves (1.100 since
+  2026-11-19): the 2024 edition's resolver picks dependencies that
+  support it, so a lower one holds them back for nothing CI tests.
 - TypeScript is pinned to 6.x because svelte-check doesn't support TS 7 yet.
 - Tauri 3 is in alpha; stay on 2.x.
 

@@ -5,7 +5,7 @@ members = ["crates/howdah-arimaa", "crates/howdah-aei", "crates/howdah-gameroom"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-rust-version = "1.85"
+rust-version = "1.100"
 
 [workspace.dependencies]
 howdah-arimaa = { path = "crates/howdah-arimaa" }

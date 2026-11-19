@@ -1259,7 +1259,7 @@ fn write_game(
 
     let mut by_engine = [0.0; 2];
     for (i, t) in used.iter().enumerate() {
-        let side_engine = if (start_ply + i) % 2 == 0 { gold } else { 1 - gold };
+        let side_engine = if (start_ply + i).is_multiple_of(2) { gold } else { 1 - gold };
         by_engine[side_engine] += t.as_secs_f64();
     }
     let notations: Vec<String> = outcome.game.moves().iter().map(|m| m.notation()).collect();

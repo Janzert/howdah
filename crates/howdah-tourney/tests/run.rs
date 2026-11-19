@@ -140,7 +140,7 @@ async fn plays_from_start_positions_with_engine_one_to_move() {
         let comment = record.tree[line[start]].annotation().comment_text().unwrap_or_default();
         assert!(comment.contains(&format!("play starts at {first}")), "{comment:?}");
         // Engine 1 ("one") plays the side to move at the start position.
-        let one = if start % 2 == 0 { "Gold" } else { "Silver" };
+        let one = if start.is_multiple_of(2) { "Gold" } else { "Silver" };
         assert_eq!(record.tag(one), Some("one"), "{e:?}");
         // The start's moves have no times; every move played has one.
         let timed: Vec<bool> =

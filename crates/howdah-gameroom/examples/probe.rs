@@ -182,10 +182,10 @@ async fn main() {
         }
         _ => usage(),
     };
-    if lobby.is_logged_in() {
-        if let Err(e) = lobby.logout().await {
-            println!("logout: {e}");
-        }
+    if lobby.is_logged_in()
+        && let Err(e) = lobby.logout().await
+    {
+        println!("logout: {e}");
     }
     if let Err(e) = result {
         println!("failed: {e}");

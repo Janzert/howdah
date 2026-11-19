@@ -4,7 +4,7 @@ version = "0.7.1"
 description = "Desktop client for Arimaa"
 edition.workspace = true
 license.workspace = true
-rust-version = "1.90"
+rust-version.workspace = true
 # The app; `dev-bridge` is a second, feature-gated binary.
 default-run = "howdah"
 

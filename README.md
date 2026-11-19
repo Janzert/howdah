@@ -128,7 +128,7 @@ Svelte and TypeScript frontend.
 
 ### Prerequisites
 
-- Rust (stable, 1.90+) and Node.js 22.12+ (or 24+) with npm.
+- Rust (stable, 1.100+) and Node.js 22.12+ (or 24+) with npm.
 - The platform packages Tauri needs:
 
 **Linux**

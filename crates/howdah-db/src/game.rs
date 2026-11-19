@@ -451,7 +451,7 @@ fn split_elapsed(comment: &str) -> (Option<String>, Option<u64>) {
 fn with_elapsed(comment: Option<&str>, ms: u64) -> Option<String> {
     let mut a = howdah_arimaa::Annotation::default();
     let d = Duration::from_millis(ms);
-    if ms % 1000 == 0 {
+    if ms.is_multiple_of(1000) {
         a.set_elapsed(d)
     } else {
         a.set_elapsed_ms(d)

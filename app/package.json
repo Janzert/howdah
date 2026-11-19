@@ -32,6 +32,6 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",
-    "@tauri-apps/plugin-dialog": "~2.7.0"
+    "@tauri-apps/plugin-dialog": "^2.8.4"
   }
 }

@@ -129,7 +129,7 @@ pub fn parse_move_line(line: &str) -> Result<MoveLine, ParseError> {
 
 /// Move number label for a ply, e.g. ply 0 → `1g`, ply 3 → `2s`.
 pub fn move_label(ply: usize) -> String {
-    let color = if ply % 2 == 0 { Color::Gold } else { Color::Silver };
+    let color = if ply.is_multiple_of(2) { Color::Gold } else { Color::Silver };
     format!("{}{}", ply / 2 + 1, color.letter())
 }
 
