@@ -9,6 +9,10 @@ young).
 
 ### Added
 
+- Engines are told how long their setup gets, with AEI's new `tcsetup`
+  option: arimaa.com's minute in games with a person, an engine test's
+  `setup_minimum`, or 0 (the plain move time). Engines that don't know
+  it, Sharp and OpFor among them, log a warning and play on.
 - A game database: every game on a board is saved as it changes
   (played, watched, opened from a record, or analysed; not puzzles or
   engine tests' games), in `games.db` in the app's data directory. A

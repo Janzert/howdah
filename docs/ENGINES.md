@@ -22,6 +22,10 @@ working Python controller. Engine quirks live in one place in the code,
   Sharp and pyrimaa's `simple_engine` both accept it.
 - **Clocks:** the time-control options (`tcmove`, `tcreserve`, ...) at
   `newgame`, then `greserve`/`sreserve` before every `go`, as pyrimaa does.
+  `tcsetup` is the least move time the setup gets: arimaa.com's minute in
+  games with a person, 0 (the plain move time) in engine-only games unless
+  howdah-tourney's spec sets `setup_minimum`. Sharp and OpFor don't know it
+  and log an unknown-option warning, which is harmless.
   Engines that keep their own reserve (Sharp does) need the latter.
   Times go in whole seconds (reserves rounded down, as pyrimaa sends
   them) unless the time control has fractions of a second (`0.5s/30s`):

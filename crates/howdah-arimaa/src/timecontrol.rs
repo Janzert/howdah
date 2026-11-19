@@ -19,12 +19,17 @@
 //!
 //! The setup follows arimaa.com's match rules (`matchRules.html`): with
 //! under a minute per move it gets a minute, past which the reserve is
-//! used, and unused setup time is never added to the reserve. The minute
+//! used, and unused setup time is never added to the reserve. The rules
+//! say that last part only for under a minute a move, but the server's
+//! event logs in the game archive show it at every time control: a setup
+//! shorter than its move time left the reserve as it was, and overtime
+//! past the move time (or the minute) came out of it. AEI's `tcsetup`
+//! option tells engines the minimum. The minute
 //! is there for humans; `with_setup_minimum` changes or drops it (engine
 //! games), and records say so with a `SetupMinimum` tag
 //! ([`SETUP_MINIMUM_TAG`]). It isn't part of the `M/R/P/L/G/T` text, which
-//! always means the minute. (pyrimaa gives the setup the plain move time,
-//! doesn't add unused time, and never charges overtime to the reserve.)
+//! always means the minute. (pyrimaa's local games give the setup the
+//! plain move time, with the same reserve rule.)
 
 use std::fmt;
 use std::str::FromStr;

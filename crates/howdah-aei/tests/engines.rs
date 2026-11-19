@@ -199,17 +199,25 @@ async fn times_go_out_in_the_time_controls_precision() {
         "tcturns=0",
         "tctotal=7200",
         "tcturntime=90",
+        "tcsetup=60",
     ];
-    assert_eq!(sent[..7], whole);
-    assert_eq!(sent[7..], ["greserve=1", "sreserve=61", "moveused=0"], "rounded down, as pyrimaa does");
+    assert_eq!(sent[..8], whole, "the text's time control keeps arimaa.com's setup minute");
+    assert_eq!(sent[8..], ["greserve=1", "sreserve=61", "moveused=0"], "rounded down, as pyrimaa does");
 
     let tc: TimeControl = "0.8s/1.5s/100/0/0/1.25s".parse().unwrap();
+    let tc = tc.with_setup_minimum(Duration::from_millis(2_500));
     engine.set_time_control(&tc).await.unwrap();
     engine.set_clock(reserves, !tc.is_whole_seconds()).await.unwrap();
     let sent = options_sent(&mut engine).await;
     assert_eq!(sent[..2], ["tcmove=0.8", "tcreserve=1.5"]);
-    assert_eq!(sent[6], "tcturntime=1.25");
-    assert_eq!(sent[7..], ["greserve=1.5", "sreserve=61.999", "moveused=0"]);
+    assert_eq!(sent[6..8], ["tcturntime=1.25", "tcsetup=2.5"]);
+    assert_eq!(sent[8..], ["greserve=1.5", "sreserve=61.999", "moveused=0"]);
+
+    // Engine-only games drop the minute: the setup gets the plain move time.
+    let tc: TimeControl = "30s/1m".parse().unwrap();
+    engine.set_time_control(&tc.with_setup_minimum(Duration::ZERO)).await.unwrap();
+    let sent = options_sent(&mut engine).await;
+    assert_eq!(sent[7], "tcsetup=0");
     engine.quit(Duration::from_secs(5)).await.unwrap();
 }
 

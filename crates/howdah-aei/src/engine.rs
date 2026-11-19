@@ -327,7 +327,9 @@ impl Engine {
 
     /// Sends the time-control options (`tcmove`, `tcreserve`, ...), in
     /// seconds. A control with fractions of a second sends decimals
-    /// (`0.5`); others send whole numbers, as pyrimaa does.
+    /// (`0.5`); others send whole numbers, as pyrimaa does. `tcsetup` is
+    /// the setup minimum (0 for none); engines that don't know it log a
+    /// warning and go on, as AEI asks (Sharp and OpFor do).
     pub async fn set_time_control(&mut self, tc: &TimeControl) -> Result<(), AeiError> {
         self.set_option("tcmove", format_seconds(tc.move_time())).await?;
         self.set_option("tcreserve", format_seconds(tc.starting_reserve())).await?;
@@ -335,7 +337,8 @@ impl Engine {
         self.set_option("tcmax", format_seconds(tc.max_reserve())).await?;
         self.set_option("tcturns", tc.turn_limit).await?;
         self.set_option("tctotal", format_seconds(tc.time_limit())).await?;
-        self.set_option("tcturntime", format_seconds(tc.max_turn_time())).await
+        self.set_option("tcturntime", format_seconds(tc.max_turn_time())).await?;
+        self.set_option("tcsetup", format_seconds(tc.setup_minimum())).await
     }
 
     /// Sends the per-turn clock options: both reserves (gold, silver) and
