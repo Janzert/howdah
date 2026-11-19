@@ -58,4 +58,9 @@ positionMatch: string | null,
 /**
  * Leaves out one game (a board's own, from its explorer).
  */
-exclude: number | null, };
+exclude: number | null, 
+/**
+ * Only what came from one source (`LibrarySourceView.id`): the
+ * games it brought and the games it annotated.
+ */
+fromDb: number | null, };

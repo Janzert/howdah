@@ -14,7 +14,15 @@
 //! howdah-db publish OUTDIR PATH... [--new-base] [--cap PCT] [-j N]
 //!                                       the base database and its deltas from archive files,
 //!                                       with OUTDIR/base.json and OUTDIR/seen.txt (keep both)
-//! howdah-db merge DB OTHER              merges another database file into DB
+//! howdah-db merge DB OTHER              merges another database file into DB (brought up to
+//!                                       this schema in place: a base database's copy)
+//! howdah-db import-db DB FILE [NAME]    imports a shared database file, leaving it as it is
+//! howdah-db import-records DB FILE...   imports record files' games
+//! howdah-db export DB OUT [--player NAME] [--ids 1,2,..] [--no-variations] [--no-comments]
+//!                  [--no-times] [--chat] [--evals none|games|all] [--engine AUTHOR]... [--author NAME]
+//!                                       writes a selection as a new database file
+//! howdah-db origins DB                  the databases its data came from
+//! howdah-db remove-origin DB ID         takes out what came from one of them
 //! howdah-db verify DB                  loads every game back, reporting any that fail
 //! ```
 
@@ -26,7 +34,7 @@ use howdah_db::{ARIMAA_COM, Database, archive, base};
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | setups DB [gold|silver|KEY] [PLAYER] | explore DB [--pieces] [MOVES|POSITION] | publish OUTDIR PATH... [--new-base] [--cap PCT] | merge DB OTHER"
+        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | setups DB [gold|silver|KEY] [PLAYER] | explore DB [--pieces] [MOVES|POSITION] | publish OUTDIR PATH... [--new-base] [--cap PCT] | merge DB OTHER | import-db DB FILE [NAME] | import-records DB FILE... | export DB OUT [options] | origins DB | remove-origin DB ID"
     );
     ExitCode::from(2)
 }
@@ -40,6 +48,11 @@ fn main() -> ExitCode {
         Some("verify") if args.len() == 2 => verify(&args[1]),
         Some("publish") if args.len() >= 3 => publish(&args[1], &args[2..]),
         Some("merge") if args.len() == 3 => merge(&args[1], &args[2]),
+        Some("import-db") if (3..=4).contains(&args.len()) => import_db(&args[1], &args[2], args.get(3)),
+        Some("import-records") if args.len() >= 3 => import_records(&args[1], &args[2..]),
+        Some("export") if args.len() >= 3 => export(&args[1], &args[2], &args[3..]),
+        Some("origins") if args.len() == 2 => origins(&args[1]),
+        Some("remove-origin") if args.len() == 3 => remove_origin(&args[1], &args[2]),
         Some("list") if (2..=4).contains(&args.len()) => list(&args[1], args.get(2), args.get(3)),
         Some("explore") if args.len() >= 2 => explore(&args[1], &args[2..]),
         Some("setups") if (2..=4).contains(&args.len()) => setups(&args[1], args.get(2), args.get(3)),
@@ -329,5 +342,98 @@ fn merge(db: &str, other: &str) -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
     let report = db.merge_from(std::path::Path::new(other), other)?;
     println!("{report:?} in {:.1}s", start.elapsed().as_secs_f64());
+    Ok(())
+}
+
+fn import_db(db: &str, file: &str, name: Option<&String>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut db = Database::open(db)?;
+    let start = Instant::now();
+    let name = name.cloned().unwrap_or_else(|| file_name(file));
+    let report = db.import_file(std::path::Path::new(file), &name)?;
+    println!("{report:?} in {:.1}s", start.elapsed().as_secs_f64());
+    Ok(())
+}
+
+fn import_records(db: &str, files: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut db = Database::open(db)?;
+    for file in files {
+        let text = std::fs::read_to_string(file)?;
+        let records = howdah_arimaa::GameRecord::parse_all(&text)?;
+        let start = Instant::now();
+        let report = db.import_records(&records, &file_name(file))?;
+        println!("{file}: {} records, {report:?} in {:.1}s", records.len(), start.elapsed().as_secs_f64());
+    }
+    Ok(())
+}
+
+fn file_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned())
+}
+
+fn export(db: &str, out: &str, rest: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use howdah_db::{ExportOptions, Filter, PositionScope, Selection};
+    let db = Database::open(db)?;
+    let mut o = ExportOptions::default();
+    let mut filter = Filter::default();
+    let mut ids: Option<Vec<i64>> = None;
+    let mut engines = Vec::new();
+    let mut it = rest.iter();
+    while let Some(a) = it.next() {
+        let mut value = || it.next().ok_or_else(|| format!("{a} needs a value"));
+        match a.as_str() {
+            "--player" => filter.player = Some(value()?.clone()),
+            "--ids" => ids = Some(value()?.split(',').map(str::parse).collect::<Result<_, _>>()?),
+            "--no-variations" => o.variations = false,
+            "--no-comments" => o.annotations = false,
+            "--no-times" => o.times = false,
+            "--chat" => o.chat = true,
+            "--evals" => {
+                o.positions = match value()?.as_str() {
+                    "none" => PositionScope::None,
+                    "games" => PositionScope::Games,
+                    "all" => PositionScope::All,
+                    v => return Err(format!("--evals {v}: none, games or all").into()),
+                }
+            }
+            "--engine" => engines.push(value()?.clone()),
+            "--author" => o.author = value()?.clone(),
+            _ => return Err(format!("unknown option {a}").into()),
+        }
+    }
+    if !engines.is_empty() {
+        o.position_authors = Some(engines);
+    }
+    o.games = match ids {
+        Some(ids) => Selection::Games(ids),
+        None => Selection::Filter(Box::new(filter)),
+    };
+    let start = Instant::now();
+    let report = db.export(std::path::Path::new(out), &o)?;
+    println!("{report:?} in {:.1}s", start.elapsed().as_secs_f64());
+    Ok(())
+}
+
+fn origins(db: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let db = Database::open(db)?;
+    for o in db.origins()? {
+        println!(
+            "{:>3} {} {:<20} games {:>7}  annotations {:>8}  position data {:>6}{}",
+            o.id,
+            &o.uuid[..8],
+            if o.name.is_empty() { "-" } else { &o.name },
+            o.games,
+            o.annotations,
+            o.position_data,
+            if o.own { "  (this database)" } else { "" }
+        );
+    }
+    Ok(())
+}
+
+fn remove_origin(db: &str, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut db = Database::open(db)?;
+    println!("{:?}", db.remove_origin(id.parse()?)?);
     Ok(())
 }

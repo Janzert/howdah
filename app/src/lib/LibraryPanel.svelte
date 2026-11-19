@@ -13,7 +13,11 @@
   import Matchup from './gameroom/Matchup.svelte';
   import SetupDiagram from './SetupDiagram.svelte';
   import SetupExplorer from './SetupExplorer.svelte';
-  import { EMPTY_FORM, ENDINGS, libraryMeta, toFilter, type FilterForm } from './library';
+  import { EMPTY_FORM, ENDINGS, importWords, libraryMeta, sourceName, toFilter, type FilterForm } from './library';
+  import type { LibrarySourceView } from './bindings/LibrarySourceView';
+  import ExportDialog from './ExportDialog.svelte';
+  import SourcesDialog from './SourcesDialog.svelte';
+  import { IMPORT_FILTERS, chooseOpenPath, nativeFiles } from './files';
   import { pref, savePref } from './gameroom/store.svelte';
   import PositionEditor from './editor/PositionEditor.svelte';
   import { EditorBoard } from './editor/editorBoard';
@@ -141,6 +145,68 @@
     }
   }
 
+  // Sharing: Export… writes the list's games to a file, Import… takes a
+  // game database file or a record file in, and Sources… lists where
+  // everything came from. The Source filter offers the sources too.
+  let exporting = $state(false);
+  let showSources = $state(false);
+  let sources = $state<LibrarySourceView[]>([]);
+  /** In the browser preview, the path being typed for an import. */
+  let importPath = $state<string | null>(null);
+  let importing = $state(false);
+  let imported = $state<string | null>(null);
+  let importError = $state<string | null>(null);
+
+  async function loadSources() {
+    try {
+      sources = await api.librarySources();
+    } catch {
+      sources = [];
+    }
+  }
+  void loadSources();
+  const otherSources = $derived(sources.filter((s) => !s.own && s.games > 0));
+
+  /** The Source select's value: `arimaa`, `local`, or `db:<id>`. */
+  const sourceValue = $derived(form.fromDb ? `db:${form.fromDb}` : form.origin);
+  function setSource(v: string) {
+    form = v.startsWith('db:')
+      ? { ...form, origin: '', fromDb: v.slice(3) }
+      : { ...form, origin: v as FilterForm['origin'], fromDb: '' };
+  }
+
+  async function startImport() {
+    imported = null;
+    importError = null;
+    if (!nativeFiles) {
+      importPath = importPath ?? '';
+      return;
+    }
+    const path = await chooseOpenPath(IMPORT_FILTERS);
+    if (path) await importFrom(path);
+  }
+
+  async function importFrom(path: string) {
+    if (!path.trim()) return;
+    importing = true;
+    importError = null;
+    try {
+      imported = importWords(await api.libraryImport(path.trim()));
+      importPath = null;
+      void load();
+      void loadSources();
+    } catch (e) {
+      importError = errorMessage(e);
+    }
+    importing = false;
+  }
+
+  /** What the list shows, for an export's file name. */
+  const exportWhat = $derived(
+    [form.player.trim(), form.opponent.trim() && `vs ${form.opponent.trim()}`].filter((x) => x).join(' ') ||
+      (JSON.stringify(form) !== JSON.stringify(EMPTY_FORM) ? 'selection' : 'all'),
+  );
+
   // The base database (arimaa.com's archive): offered when there's a newer
   // one than the database has, with its download's progress.
   let base = $state<BaseStatus | null>(null);
@@ -199,6 +265,23 @@
   );
 </script>
 
+{#if exporting}
+  <ExportDialog filter={toFilter(form)} count={total} what={exportWhat} onClose={() => (exporting = false)} />
+{/if}
+{#if showSources}
+  <SourcesDialog
+    onShow={(id) => {
+      form = { ...form, origin: '', fromDb: String(id) };
+      view = 'games';
+    }}
+    onChanged={() => {
+      void load();
+      void loadSources();
+    }}
+    onClose={() => (showSources = false)}
+  />
+{/if}
+
 {#if editing}
   <div class="editor-over">
     <PositionEditor
@@ -227,11 +310,21 @@
     </div>
     {#if view === 'games'}<span class="count" aria-live="polite">{countText}</span>{/if}
     <span class="spacer"></span>
+    <button onclick={startImport} disabled={importing} title="Add the games from a game database file or a record file"
+      >{importing ? 'Importing…' : 'Import…'}</button
+    >
+    <button onclick={() => (exporting = true)} disabled={!available} title="Write the list's games to a file to share"
+      >Export…</button
+    >
+    {#if otherSources.length > 0}
+      <button onclick={() => (showSources = true)} title="Where your games came from">Sources…</button>
+    {/if}
     <button
       class="icon"
       onclick={() => {
         void load();
         void loadBase(true);
+        void loadSources();
       }}
       title="Load the list again and check for new games from arimaa.com's archive"
       aria-label="Refresh"><Icon name="refresh" size={16} /></button
@@ -241,6 +334,26 @@
     Every game you play, watch, analyse or open is kept here, with arimaa.com's games you've opened. Each opens on a
     board of its own, and what you add to it is saved with it.
   </p>
+
+  {#if importPath != null}
+    <form
+      class="import-path"
+      aria-label="Import a file"
+      onsubmit={(e) => {
+        e.preventDefault();
+        void importFrom(importPath ?? '');
+      }}
+    >
+      <label
+        >File to import (a path on this computer)
+        <input bind:value={importPath} aria-label="File to import" autocomplete="off" spellcheck="false" /></label
+      >
+      <button class="primary" disabled={importing || !importPath.trim()}>{importing ? 'Importing…' : 'Import'}</button>
+      <button type="button" onclick={() => (importPath = null)}>Cancel</button>
+    </form>
+  {/if}
+  {#if imported}<p class="hint done" role="status">Imported {imported}</p>{/if}
+  {#if importError}<p class="error" role="alert">{importError}</p>{/if}
 
   {#if base?.available && (base.offer || progress || base.installing || baseError)}
     {@const a = base.available}
@@ -310,10 +423,16 @@
     <label>To <input type="date" aria-label="To" bind:value={form.to} /></label>
     <label>
       Source
-      <select aria-label="Source" bind:value={form.origin}>
+      <select aria-label="Source" value={sourceValue} onchange={(e) => setSource(e.currentTarget.value)}>
         <option value="">Anywhere</option>
         <option value="arimaa">arimaa.com</option>
         <option value="local">This app</option>
+        {#each otherSources as s (s.id)}
+          {#if s.name !== 'base'}<option value={`db:${s.id}`}>From {sourceName(s)}</option>{/if}
+        {/each}
+        {#if form.fromDb && !otherSources.some((s) => String(s.id) === form.fromDb)}
+          <option value={`db:${form.fromDb}`}>From a source</option>
+        {/if}
       </select>
     </label>
     <label>
@@ -572,6 +691,22 @@
   }
   .more {
     margin-top: 10px;
+  }
+  .import-path {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .import-path label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+    color: var(--muted);
+    flex: 1;
+    min-width: 16em;
   }
   .error {
     margin-bottom: 10px;

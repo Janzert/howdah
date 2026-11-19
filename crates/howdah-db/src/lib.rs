@@ -17,6 +17,7 @@ mod positions;
 pub mod schema;
 mod search;
 mod setups;
+mod share;
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -29,6 +30,7 @@ pub use merge::MergeReport;
 pub use positions::PositionDatum;
 pub use search::{Filter, GameSummary, Origin, Outcome, SearchPage};
 pub use setups::{Setup, SetupLevel, SetupStat, SetupStats};
+pub use share::{ExportOptions, ExportReport, OriginInfo, PositionScope, RemoveReport, Selection};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -201,6 +203,14 @@ impl Database {
                 (source, source_id),
                 |r| r.get(0),
             )
+            .optional()?)
+    }
+
+    /// The game with a `gid`.
+    pub fn find_gid(&self, gid: &[u8; 16]) -> Result<Option<i64>> {
+        Ok(self
+            .conn
+            .query_row("SELECT id FROM games WHERE gid = ?1", [gid.as_slice()], |r| r.get(0))
             .optional()?)
     }
 

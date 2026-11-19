@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_FORM, dayStart, percent, resultWords, setupPieces, setupWords, toFilter } from './library';
+import {
+  EMPTY_FORM,
+  dayStart,
+  importWords,
+  percent,
+  resultWords,
+  setupPieces,
+  setupWords,
+  sourceName,
+  toFilter,
+} from './library';
+import { exportName } from './files';
 
 describe('library', () => {
   it('words results, old draws included', () => {
@@ -41,5 +52,48 @@ describe('library', () => {
     const short = `[${' '.repeat(35)}EM${' '.repeat(27)}]`;
     const f = toFilter({ ...EMPTY_FORM, position: short, positionSide: 'silver', positionMatch: 'pieces' });
     expect(f).toMatchObject({ position: { short, sideToMove: 'silver' }, positionMatch: 'pieces' });
+  });
+
+  it('filters by source', () => {
+    expect(toFilter({ ...EMPTY_FORM, fromDb: '4' }).fromDb).toBe(4);
+    expect(toFilter(EMPTY_FORM).fromDb).toBeNull();
+  });
+
+  it('names sources', () => {
+    expect(sourceName({ own: true, name: '' })).toBe('This computer');
+    expect(sourceName({ own: false, name: 'base' })).toBe("arimaa.com's archive");
+    expect(sourceName({ own: false, name: ' ' })).toBe('An imported file');
+    expect(sourceName({ own: false, name: 'Ann' })).toBe('Ann');
+  });
+
+  it('words an import', () => {
+    const none = {
+      kind: 'records',
+      name: 'games.txt',
+      records: 3,
+      gamesAdded: 0,
+      gamesFilled: 0,
+      gamesKept: 0,
+      movesAdded: 0,
+      annotationsAdded: 0,
+      annotationConflicts: 0,
+      evalsAdded: 0,
+      evalsReplaced: 0,
+    };
+    expect(importWords(none)).toBe('games.txt: nothing new.');
+    expect(importWords({ ...none, gamesAdded: 1, gamesKept: 2, movesAdded: 1, annotationsAdded: 3 })).toBe(
+      'games.txt: 1 game added, 2 games already here (1 move and 3 comments added to them).',
+    );
+    expect(importWords({ ...none, gamesKept: 1, annotationConflicts: 1, evalsReplaced: 2 })).toBe(
+      "games.txt: 1 game already here, 1 comment you'd both changed kept beside yours, under the file's name, " +
+        '2 evals replaced by deeper ones.',
+    );
+  });
+
+  it('names export files', () => {
+    expect(exportName('99of9 vs Fritzlein', new Date('2026-11-19T12:00:00Z'))).toBe(
+      'games-99of9-vs-fritzlein-2026-11-19.db',
+    );
+    expect(exportName('', new Date('2026-11-19T12:00:00Z'))).toBe('games-export-2026-11-19.db');
   });
 });

@@ -2103,6 +2103,134 @@ pub struct LibraryFilter {
     /// Leaves out one game (a board's own, from its explorer).
     #[ts(type = "number | null")]
     pub exclude: Option<i64>,
+    /// Only what came from one source (`LibrarySourceView.id`): the
+    /// games it brought and the games it annotated.
+    #[ts(type = "number | null")]
+    pub from_db: Option<i64>,
+}
+
+/// What an export of the game database holds.
+#[derive(Clone, Debug, Default, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LibraryExportSpec {
+    /// The games the list's filter lets through, or `games` by id, or
+    /// with neither none (only evals).
+    pub filter: Option<LibraryFilter>,
+    #[ts(type = "number[] | null")]
+    pub games: Option<Vec<i64>>,
+    pub variations: bool,
+    /// Comments, variation intros and glyphs.
+    pub comments: bool,
+    /// The move times.
+    pub times: bool,
+    pub chat: bool,
+    /// Engine evals: `none`, `games` (the positions the games reach) or
+    /// `all`.
+    pub evals: String,
+    /// The engines whose evals go (`LibraryEngineView.author`), or all.
+    pub engines: Option<Vec<String>>,
+    /// The name the user's own work goes under for whoever imports it.
+    pub author: String,
+}
+
+/// What an export wrote.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LibraryExportView {
+    pub path: String,
+    #[ts(type = "number")]
+    pub games: i64,
+    #[ts(type = "number")]
+    pub annotations: i64,
+    #[ts(type = "number")]
+    pub evals: i64,
+}
+
+/// What an import (a shared database or a record file) did.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LibraryImportView {
+    /// `database` or `records`.
+    pub kind: String,
+    /// The file's name, which its source is listed under.
+    pub name: String,
+    /// For a record file, the games it held.
+    pub records: Option<u32>,
+    #[ts(type = "number")]
+    pub games_added: i64,
+    /// Games known by their header only that got their moves.
+    #[ts(type = "number")]
+    pub games_filled: i64,
+    /// Games already here, with what was new joined in.
+    #[ts(type = "number")]
+    pub games_kept: i64,
+    /// Moves added as variations to games already here.
+    #[ts(type = "number")]
+    pub moves_added: i64,
+    #[ts(type = "number")]
+    pub annotations_added: i64,
+    /// Comments both had changed, kept beside the user's under the
+    /// source's name.
+    #[ts(type = "number")]
+    pub annotation_conflicts: i64,
+    #[ts(type = "number")]
+    pub evals_added: i64,
+    /// Evals replaced by deeper ones.
+    #[ts(type = "number")]
+    pub evals_replaced: i64,
+}
+
+/// A database the game database's contents came from: this computer,
+/// the base download, a shared file or a record file imported.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LibrarySourceView {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub name: String,
+    /// This computer's own.
+    pub own: bool,
+    /// When it was first imported (Unix seconds).
+    #[ts(type = "number")]
+    pub added_at: i64,
+    #[ts(type = "number")]
+    pub games: i64,
+    #[ts(type = "number")]
+    pub annotations: i64,
+    #[ts(type = "number")]
+    pub evals: i64,
+}
+
+/// What removing a source took out.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LibraryRemoveView {
+    #[ts(type = "number")]
+    pub games: i64,
+    /// Its games kept, since they have the user's (or another source's)
+    /// annotations.
+    #[ts(type = "number")]
+    pub games_kept: i64,
+    #[ts(type = "number")]
+    pub annotations: i64,
+    #[ts(type = "number")]
+    pub evals: i64,
+}
+
+/// An engine with evals in the game database.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LibraryEngineView {
+    /// Its name and version, as its evals are kept.
+    pub author: String,
+    #[ts(type = "number")]
+    pub evals: i64,
 }
 
 /// A game in the game list.

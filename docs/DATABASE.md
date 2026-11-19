@@ -1,6 +1,6 @@
 # Game database: survey and plan
 
-Status: plan agreed (2026-11-17). Build steps 1 to 5 are done; see
+Status: plan agreed (2026-11-17). Build steps 1 to 7 are done; see
 "Built so far" at the end.
 
 `VARIATIONS.md` already decided that a game database will be the primary
@@ -346,7 +346,7 @@ Two kinds, both open-ended:
 5. The base database: a build script, a release asset, the first-run
    download, and update by import.
 6. The setup explorer, the move tree and position search (built).
-7. Export and import of selections, with provenance filters.
+7. Export and import of selections, with provenance filters (built).
 
 ### Decided (Brian, 2026-11-17)
 
@@ -793,3 +793,85 @@ preview reuses the tab).
 Ideas left: a position's games by player in the tree (beyond the
 Player field), mirror images in the board's Explorer, and an index if the archive
 grows past where a scan is quick enough.
+
+### Step 7 (2026-11-19): sharing
+
+`howdah-db`'s `share.rs` (export, origins) and `merge.rs` (import), and
+the Games panel's Import…, Export… and Sources….
+
+- **Export** (`Database::export`, `ExportOptions`): a new database file
+  at this schema holding the games a `Filter` lets through (or chosen
+  ids, or none), their players and tags, and as chosen: variations,
+  comments (with intros, glyphs and kinds this build doesn't know),
+  move times, the chat (off by default), and engine evals (none, the
+  positions the games reach, or all; by chosen engines). The move list
+  of a game that didn't replay always goes. Whole archive: 3.7 s, a
+  player's 792 games 0.03 s.
+- **Provenance travels.** Every row keeps its origin, and the export
+  carries the `origins` rows its rows use (only those, so it names no
+  unrelated file or person), this database's own named with the
+  export's author. An import maps them by uuid, adding new ones, so data
+  passed on twice still says where it was first written, and this
+  database's own data coming back from an export of it is its own again
+  (origin 1). An unnamed origin takes the name the import was given
+  (the file's name). A user's edit of an imported annotation or eval
+  makes it origin 1.
+- **Import** (`Database::import_file`): the file is copied beside the
+  database with `VACUUM INTO` (so a file in WAL mode comes whole),
+  brought up to this schema there, merged and the copy removed; the
+  file itself is never changed. The merge (also the base download's):
+  - games by `gid`, then source key; a game both have keeps its headers
+    and the trees are joined by move path: the other's moves this game
+    lacks become variations (`nodes` rows after the existing siblings).
+    Only games whose moves, variations or annotations differ are
+    looked at, so re-importing the whole archive takes 1.7 s;
+  - annotations by node, kind and author: added where missing; where
+    both differ, the newer edit wins if both come from the same origin,
+    otherwise this database's stays and the other's is kept beside it
+    under its origin's name as the author (`conflict_author`; not shown
+    yet, as other authors' evals aren't). Source kinds (times, chat,
+    move list) are never replaced, and times only go with an identical
+    main line;
+  - evals: added where missing, replacing this database's when deeper
+    (the number `depth` starts with), or as deep and newer; other kinds
+    of position data when newer.
+- **Record files** (`Database::import_records`, which the user asked
+  for with the file dialogs): the records are saved into a scratch
+  database and merged as above, so a record of a game already here
+  joins its variations and comments into it. Record games have made-up
+  ids, so for them only, games are also matched by fingerprint (moves
+  and start) with the same players' names. Matching shared databases by
+  fingerprint would join different games with the same moves.
+- **Sources** (`Database::origins`, `remove_origin`, `Filter::from_db`):
+  each origin with its counts; the list can be narrowed to what came
+  from one (the games it brought or annotated). Removing one deletes its
+  annotations, its evals and its games, except games with annotations
+  from elsewhere (which become this database's); variations it added
+  stay, since nodes don't record an origin. Its row stays, so a second
+  import is still known.
+- **The app**: `tauri-plugin-dialog` for the system's Open and Save
+  dialogs (`lib/files.ts`; the browser preview has none, so it asks for
+  a path). Import… takes a game database or a record file (told apart
+  by SQLite's header) and says what it did (`importWords`); Export…
+  (`ExportDialog.svelte`) exports the list's games with the choices
+  above and the user's name (kept in localStorage); Sources…
+  (`SourcesDialog.svelte`) lists the sources with Games and Remove; the
+  Source filter offers each imported source.
+- CLI: `export`, `import-db`, `import-records`, `origins`,
+  `remove-origin`.
+
+Checked in the browser preview on the bridge's copy of the archive: a
+shared file's 2 games added; a record file with a new comment and
+variation for them joined (1 move and 1 comment added, opened on a
+board with both); the list narrowed by source; an export of them with
+an eval, its origins as expected; a source removed, keeping the game
+another source had annotated. In the real app (Xephyr): Import… and
+Export… open the GTK Open and Save dialogs with their filters and name
+(cancelled; nothing written).
+
+Not done: other authors' annotations kept from conflicts aren't shown
+or chosen anywhere yet; a board showing a game while an import joins
+into it saves its own tree back over the joined variations if it then
+changes; nodes have no origin, so removing a source leaves the moves it
+added.
+

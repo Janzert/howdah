@@ -1362,6 +1362,52 @@ impl Backend {
         self.base.install(self.library.clone(), self.events.clone()).await
     }
 
+    /// Exports a selection of the game database to a new file at `path`.
+    /// Runs on a blocking thread.
+    pub async fn library_export(
+        &self,
+        spec: crate::dto::LibraryExportSpec,
+        path: String,
+    ) -> Result<crate::dto::LibraryExportView, ApiError> {
+        let library = self.library.clone();
+        tauri::async_runtime::spawn_blocking(move || library.export(&spec, std::path::Path::new(&path)))
+            .await
+            .map_err(|e| ApiError::state(format!("the export stopped: {e}")))?
+    }
+
+    /// Imports a game database file or a record file at `path` into the
+    /// game database. Runs on a blocking thread.
+    pub async fn library_import(&self, path: String) -> Result<crate::dto::LibraryImportView, ApiError> {
+        let library = self.library.clone();
+        tauri::async_runtime::spawn_blocking(move || library.import(std::path::Path::new(&path)))
+            .await
+            .map_err(|e| ApiError::state(format!("the import stopped: {e}")))?
+    }
+
+    /// The sources of the game database's contents.
+    pub async fn library_sources(&self) -> Result<Vec<crate::dto::LibrarySourceView>, ApiError> {
+        let library = self.library.clone();
+        tauri::async_runtime::spawn_blocking(move || library.sources())
+            .await
+            .map_err(|e| ApiError::state(format!("the sources stopped: {e}")))?
+    }
+
+    /// Removes what came from source `source`.
+    pub async fn library_remove_source(
+        &self,
+        source: i64,
+    ) -> Result<crate::dto::LibraryRemoveView, ApiError> {
+        let library = self.library.clone();
+        tauri::async_runtime::spawn_blocking(move || library.remove_source(source))
+            .await
+            .map_err(|e| ApiError::state(format!("removing the source stopped: {e}")))?
+    }
+
+    /// The engines with evals in the game database.
+    pub fn library_eval_engines(&self) -> Result<Vec<crate::dto::LibraryEngineView>, ApiError> {
+        self.library.eval_engines()
+    }
+
     /// Deletes game `game` from the game database. A board showing it
     /// saves it again as a new game if it's changed.
     pub fn delete_library_game(&self, game: i64) -> Result<(), ApiError> {
@@ -1763,6 +1809,11 @@ impl Backend {
                 )
                 .await?),
             "delete_library_game" => ok(self.delete_library_game(arg(args, "game")?)?),
+            "library_export" => ok(self.library_export(arg(args, "spec")?, arg(args, "path")?).await?),
+            "library_import" => ok(self.library_import(arg(args, "path")?).await?),
+            "library_sources" => ok(self.library_sources().await?),
+            "library_remove_source" => ok(self.library_remove_source(arg(args, "source")?).await?),
+            "library_eval_engines" => ok(self.library_eval_engines()?),
             "base_status" => ok(self.base_status(arg::<Option<bool>>(args, "check")?.unwrap_or(false)).await),
             "install_base" => ok(self.install_base().await?),
             "open_gameroom_game" => ok(self

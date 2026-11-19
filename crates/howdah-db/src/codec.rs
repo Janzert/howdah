@@ -117,6 +117,13 @@ impl<'a> Reader<'a> {
         self.bytes.is_empty()
     }
 
+    /// The next move's bytes, without reading it: a setup when `setup`
+    /// (the tree's [`GameTree::setup_due`]), else a turn.
+    pub fn next_bytes(&mut self, setup: bool) -> Result<&'a [u8], CodecError> {
+        let n = if setup { 8 } else { 1 + *self.bytes.first().ok_or(CodecError::Truncated)? as usize };
+        self.take(n)
+    }
+
     fn take(&mut self, n: usize) -> Result<&'a [u8], CodecError> {
         if self.bytes.len() < n {
             return Err(CodecError::Truncated);
@@ -160,6 +167,18 @@ impl<'a> Reader<'a> {
         }
         Ok(tree.add_turn(parent, tb.finish()?)?)
     }
+}
+
+/// A line's moves, each as its bytes, without playing them. `start_ply`
+/// is the absolute ply of the line's first position (0 from the setups),
+/// which says which moves are setups.
+pub fn split_line(blob: &[u8], start_ply: usize) -> Result<Vec<&[u8]>, CodecError> {
+    let mut r = Reader::line(blob)?;
+    let mut out = Vec::new();
+    while !r.is_empty() {
+        out.push(r.next_bytes(start_ply + out.len() < 2)?);
+    }
+    Ok(out)
 }
 
 /// Encodes move times in milliseconds, `None` for unknown ones.

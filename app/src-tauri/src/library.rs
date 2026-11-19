@@ -23,8 +23,9 @@ use howdah_db::{
 use serde::{Deserialize, Serialize};
 
 use crate::dto::{
-    AnalysisLine, ApiError, Eval, ExplorerMoveView, ExplorerView, LibraryFilter, LibraryGameView,
-    LibraryPageView, PositionSpec, PvTurn, ResultsView, SetupStatView, SetupStatsView,
+    AnalysisLine, ApiError, Eval, ExplorerMoveView, ExplorerView, LibraryEngineView, LibraryExportSpec,
+    LibraryExportView, LibraryFilter, LibraryGameView, LibraryImportView, LibraryPageView, LibraryRemoveView,
+    LibrarySourceView, PositionSpec, PvTurn, ResultsView, SetupStatView, SetupStatsView,
 };
 use crate::session::Session;
 
@@ -162,6 +163,118 @@ impl Library {
         let mut db = self.db();
         let db = db.as_mut().ok_or_else(|| ApiError::state("there's no game database"))?;
         f(db).map_err(|e| ApiError::state(format!("game database: {e}")))
+    }
+
+    /// Writes what `spec` chooses to a new database file at `path`.
+    pub fn export(&self, spec: &LibraryExportSpec, path: &Path) -> Result<LibraryExportView, ApiError> {
+        let games = match (&spec.filter, &spec.games) {
+            (_, Some(ids)) => howdah_db::Selection::Games(ids.clone()),
+            (Some(f), None) => howdah_db::Selection::Filter(Box::new(to_filter(f)?)),
+            (None, None) => howdah_db::Selection::None,
+        };
+        let options = howdah_db::ExportOptions {
+            games,
+            variations: spec.variations,
+            annotations: spec.comments,
+            annotation_authors: None,
+            times: spec.times,
+            chat: spec.chat,
+            positions: match spec.evals.as_str() {
+                "none" => howdah_db::PositionScope::None,
+                "games" => howdah_db::PositionScope::Games,
+                "all" => howdah_db::PositionScope::All,
+                e => return Err(ApiError::state(format!("no eval choice {e:?}"))),
+            },
+            position_authors: spec.engines.clone(),
+            author: spec.author.trim().to_string(),
+        };
+        let report = self.try_with(|db| db.export(path, &options))?;
+        Ok(LibraryExportView {
+            path: path.display().to_string(),
+            games: report.games,
+            annotations: report.annotations,
+            evals: report.position_data,
+        })
+    }
+
+    /// Imports a file: a Howdah game database (one exported or shared),
+    /// or a record file of one or more games. The file is left as it is.
+    pub fn import(&self, path: &Path) -> Result<LibraryImportView, ApiError> {
+        let name =
+            path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+        let mut head = [0u8; 16];
+        let read = std::fs::File::open(path)
+            .and_then(|mut f| std::io::Read::read(&mut f, &mut head))
+            .map_err(|e| ApiError::state(format!("{name}: {e}")))?;
+        let (kind, records, report) = if read == 16 && &head == b"SQLite format 3\0" {
+            ("database", None, self.try_with(|db| db.import_file(path, &name))?)
+        } else {
+            let size = std::fs::metadata(path).map_err(|e| ApiError::state(format!("{name}: {e}")))?.len();
+            if size > MAX_RECORD_FILE {
+                return Err(ApiError::state(format!("{name} is too large for a record file")));
+            }
+            let text = std::fs::read(path).map_err(|e| ApiError::state(format!("{name}: {e}")))?;
+            let text = String::from_utf8_lossy(&text);
+            let games =
+                GameRecord::parse_all(&text).map_err(|e| ApiError::illegal(format!("{name}: {e}")))?;
+            if games.is_empty() {
+                return Err(ApiError::illegal(format!("{name} holds no games")));
+            }
+            let n = games.len() as u32;
+            ("records", Some(n), self.try_with(|db| db.import_records(&games, &name))?)
+        };
+        Ok(LibraryImportView {
+            kind: kind.into(),
+            name,
+            records,
+            games_added: report.games_added,
+            games_filled: report.games_filled,
+            games_kept: report.games_kept,
+            moves_added: report.nodes_added,
+            annotations_added: report.annotations_added,
+            annotation_conflicts: report.annotation_conflicts,
+            evals_added: report.position_data_added,
+            evals_replaced: report.position_data_replaced,
+        })
+    }
+
+    /// Where the database's contents came from: this computer first, then
+    /// every source something is left from.
+    pub fn sources(&self) -> Result<Vec<LibrarySourceView>, ApiError> {
+        let origins = self.try_with(|db| db.origins())?;
+        Ok(origins
+            .into_iter()
+            .filter(|o| o.own || o.games + o.annotations + o.position_data > 0)
+            .map(|o| LibrarySourceView {
+                id: o.id,
+                name: o.name,
+                own: o.own,
+                added_at: o.added_at,
+                games: o.games,
+                annotations: o.annotations,
+                evals: o.position_data,
+            })
+            .collect())
+    }
+
+    /// Takes out what came from source `id`.
+    pub fn remove_source(&self, id: i64) -> Result<LibraryRemoveView, ApiError> {
+        if id == 1 {
+            return Err(ApiError::state("this computer's own games can't be removed as a source"));
+        }
+        let r = self.try_with(|db| db.remove_origin(id))?;
+        Ok(LibraryRemoveView {
+            games: r.games,
+            games_kept: r.games_kept,
+            annotations: r.annotations,
+            evals: r.position_data,
+        })
+    }
+
+    /// The engines with evals here, most evals first.
+    pub fn eval_engines(&self) -> Result<Vec<LibraryEngineView>, ApiError> {
+        let authors = self.try_with(|db| db.position_authors(EVAL))?;
+        Ok(authors.into_iter().map(|(author, evals)| LibraryEngineView { author, evals }).collect())
     }
 
     /// A page of the game list.
@@ -428,8 +541,12 @@ fn to_filter(f: &LibraryFilter) -> Result<Filter, ApiError> {
         silver_setup: text(&f.silver_setup),
         position,
         exclude: f.exclude,
+        from_db: f.from_db,
     })
 }
+
+/// The largest record file imported (a text file of games).
+const MAX_RECORD_FILE: u64 = 256 << 20;
 
 fn open_at(path: &Path) -> howdah_db::Result<Database> {
     if let Some(dir) = path.parent() {

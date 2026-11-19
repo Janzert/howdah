@@ -1,6 +1,8 @@
 // Words and dates for the lobby's Games panel (the game database's list).
 import type { LibraryFilter } from './bindings/LibraryFilter';
 import type { LibraryGameView } from './bindings/LibraryGameView';
+import type { LibraryImportView } from './bindings/LibraryImportView';
+import type { LibrarySourceView } from './bindings/LibrarySourceView';
 import type { Color } from './bindings/Color';
 import type { PieceKind } from './bindings/PieceKind';
 
@@ -89,6 +91,9 @@ export interface FilterForm {
   position: string;
   positionSide: Color;
   positionMatch: 'exact' | 'pieces' | 'mirrored';
+  /** Only what came from one source (`LibrarySourceView.id`, '' for
+   * any). */
+  fromDb: string;
 }
 
 export const EMPTY_FORM: FilterForm = {
@@ -106,6 +111,7 @@ export const EMPTY_FORM: FilterForm = {
   position: '',
   positionSide: 'gold',
   positionMatch: 'exact',
+  fromDb: '',
 };
 
 /** The backend's filter from the form. The side and outcome only count
@@ -128,7 +134,42 @@ export function toFilter(f: FilterForm): LibraryFilter {
     position: f.position ? { short: f.position, sideToMove: f.positionSide ?? 'gold', moveNumber: 2 } : null,
     positionMatch: f.position ? (f.positionMatch ?? 'exact') : null,
     exclude: null,
+    fromDb: f.fromDb ? Number(f.fromDb) : null,
   };
+}
+
+/** A source as the panel names it. */
+export function sourceName(s: Pick<LibrarySourceView, 'own' | 'name'>): string {
+  if (s.own) return 'This computer';
+  if (s.name === 'base') return "arimaa.com's archive";
+  return s.name.trim() || 'An imported file';
+}
+
+const count = (x: number, one: string, many: string) => `${x.toLocaleString()} ${x === 1 ? one : many}`;
+
+/** An import's outcome in a sentence: "games.txt: 3 games added, 2 already
+ * here (1 move and 2 comments added to them)." */
+export function importWords(r: LibraryImportView): string {
+  const parts: string[] = [];
+  if (r.gamesAdded > 0) parts.push(`${count(r.gamesAdded, 'game', 'games')} added`);
+  if (r.gamesFilled > 0) parts.push(`${count(r.gamesFilled, 'game', 'games')} filled in`);
+  if (r.gamesKept > 0) {
+    const joined = [
+      r.movesAdded > 0 && count(r.movesAdded, 'move', 'moves'),
+      r.annotationsAdded > 0 && count(r.annotationsAdded, 'comment', 'comments'),
+    ].filter((x) => x);
+    parts.push(
+      `${count(r.gamesKept, 'game', 'games')} already here` +
+        (joined.length ? ` (${joined.join(' and ')} added to them)` : ''),
+    );
+  }
+  if (r.annotationConflicts > 0)
+    parts.push(
+      `${count(r.annotationConflicts, 'comment', 'comments')} you'd both changed kept beside yours, under the file's name`,
+    );
+  if (r.evalsAdded > 0) parts.push(`${count(r.evalsAdded, 'eval', 'evals')} added`);
+  if (r.evalsReplaced > 0) parts.push(`${count(r.evalsReplaced, 'eval', 'evals')} replaced by deeper ones`);
+  return `${r.name}: ${parts.length ? parts.join(', ') : 'nothing new'}.`;
 }
 
 const KINDS: Record<string, PieceKind> = {

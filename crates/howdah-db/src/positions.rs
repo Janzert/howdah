@@ -33,6 +33,7 @@ impl Database {
                  ON CONFLICT (hash, kind, author) DO UPDATE SET
                    modified_at = CASE WHEN payload = excluded.payload THEN modified_at
                                       ELSE excluded.modified_at END,
+                   origin = CASE WHEN payload = excluded.payload THEN origin ELSE 1 END,
                    payload = excluded.payload",
             )?;
             let t = now();
@@ -65,6 +66,15 @@ impl Database {
             }
         }
         Ok(out)
+    }
+
+    /// The authors with data of `kind` (for evals, the engines), most
+    /// data first.
+    pub fn position_authors(&self, kind: &str) -> Result<Vec<(String, i64)>> {
+        let mut q = self.connection().prepare(
+            "SELECT author, count(*) FROM position_data WHERE kind = ?1 GROUP BY author ORDER BY 2 DESC, 1",
+        )?;
+        Ok(q.query_map([kind], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
     }
 
     /// The app's engines and the authors their data is kept under.

@@ -55,6 +55,10 @@ pub struct Filter {
     pub position: Option<crate::PositionQuery>,
     /// Leaves out one game (a board's own, from its explorer).
     pub exclude: Option<i64>,
+    /// Only what came from one database (an `origins` row, see
+    /// [`crate::Database::origins`]): the games it brought and the games
+    /// it annotated.
+    pub from_db: Option<i64>,
 }
 
 /// A game as the list shows it.
@@ -182,6 +186,14 @@ pub(crate) fn conditions(filter: &Filter) -> (Vec<String>, Vec<Value>) {
             clauses.push("howdah_setup(moves, start_ply, 's') = ?".into());
             params.push(setup(s, true));
         }
+    }
+    if let Some(origin) = filter.from_db {
+        clauses.push(
+            "(origin = ? OR EXISTS (SELECT 1 FROM annotations a WHERE a.game = games.id AND a.origin = ?))"
+                .into(),
+        );
+        params.push(Value::Integer(origin));
+        params.push(Value::Integer(origin));
     }
     if let Some(id) = filter.exclude {
         clauses.push("id != ?".into());

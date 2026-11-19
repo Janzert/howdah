@@ -683,6 +683,7 @@ fn write_annotations(
          VALUES (?1, ?2, ?3, '', 1, ?4, ?4, ?5)
          ON CONFLICT (game, node, kind, author) DO UPDATE SET
            modified_at = CASE WHEN payload = excluded.payload THEN modified_at ELSE excluded.modified_at END,
+           origin = CASE WHEN payload = excluded.payload THEN origin ELSE 1 END,
            payload = excluded.payload",
     )?;
     for (node, kind, payload) in notes {

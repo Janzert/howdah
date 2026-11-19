@@ -34,6 +34,12 @@ import type { PositionSpec } from './bindings/PositionSpec';
 import type { BaseStatus } from './bindings/BaseStatus';
 import type { ExplorerView } from './bindings/ExplorerView';
 import type { LibraryFilter } from './bindings/LibraryFilter';
+import type { LibraryEngineView } from './bindings/LibraryEngineView';
+import type { LibraryExportSpec } from './bindings/LibraryExportSpec';
+import type { LibraryExportView } from './bindings/LibraryExportView';
+import type { LibraryImportView } from './bindings/LibraryImportView';
+import type { LibraryRemoveView } from './bindings/LibraryRemoveView';
+import type { LibrarySourceView } from './bindings/LibrarySourceView';
 import type { LibraryPageView } from './bindings/LibraryPageView';
 import type { SetupStatsView } from './bindings/SetupStatsView';
 import type { PuzzleGroupView } from './bindings/PuzzleGroupView';
@@ -134,6 +140,17 @@ function makeApi(sid: () => SessionId | null) {
     installBase: () => invoke<string>('install_base'),
     /** Deletes a game from the game database. */
     deleteLibraryGame: (game: number) => invoke<void>('delete_library_game', { game }),
+    /** Writes a selection of the game database to a new file at `path`. */
+    libraryExport: (spec: LibraryExportSpec, path: string) =>
+      invoke<LibraryExportView>('library_export', { spec, path }),
+    /** Imports a game database file (exported or shared) or a record file. */
+    libraryImport: (path: string) => invoke<LibraryImportView>('library_import', { path }),
+    /** Where the game database's contents came from. */
+    librarySources: () => invoke<LibrarySourceView[]>('library_sources'),
+    /** Takes out what came from a source. */
+    libraryRemoveSource: (source: number) => invoke<LibraryRemoveView>('library_remove_source', { source }),
+    /** The engines with evals in the game database. */
+    libraryEvalEngines: () => invoke<LibraryEngineView[]>('library_eval_engines'),
     /** arimaa.com's puzzle list (fetched once and kept; `refresh` fetches it again). */
     puzzleList: (refresh = false) => invoke<PuzzleGroupView[]>('puzzle_list', { refresh }),
     /** Opens an arimaa.com puzzle (`p4`) to solve. */

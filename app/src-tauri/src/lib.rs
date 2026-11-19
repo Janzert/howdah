@@ -54,6 +54,7 @@ fn game_windows(app: &AppHandle, except: Option<&str>) -> usize {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let registry = EngineRegistry::load(config_dir.join("engines.json"));
@@ -213,6 +214,11 @@ pub fn run() {
             commands::explore_library,
             commands::library_line,
             commands::delete_library_game,
+            commands::library_export,
+            commands::library_import,
+            commands::library_sources,
+            commands::library_remove_source,
+            commands::library_eval_engines,
             commands::base_status,
             commands::install_base,
             commands::open_gameroom_game,

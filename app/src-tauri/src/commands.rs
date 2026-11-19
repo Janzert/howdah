@@ -1041,3 +1041,42 @@ pub async fn install_base(state: State<'_, Backend>) -> Result<String, ApiError>
 pub fn delete_library_game(state: State<'_, Backend>, game: i64) -> Result<(), ApiError> {
     state.delete_library_game(game)
 }
+
+#[tauri::command]
+pub async fn library_export(
+    state: State<'_, Backend>,
+    spec: crate::dto::LibraryExportSpec,
+    path: String,
+) -> Result<crate::dto::LibraryExportView, ApiError> {
+    state.library_export(spec, path).await
+}
+
+#[tauri::command]
+pub async fn library_import(
+    state: State<'_, Backend>,
+    path: String,
+) -> Result<crate::dto::LibraryImportView, ApiError> {
+    state.library_import(path).await
+}
+
+#[tauri::command]
+pub async fn library_sources(
+    state: State<'_, Backend>,
+) -> Result<Vec<crate::dto::LibrarySourceView>, ApiError> {
+    state.library_sources().await
+}
+
+#[tauri::command]
+pub async fn library_remove_source(
+    state: State<'_, Backend>,
+    source: i64,
+) -> Result<crate::dto::LibraryRemoveView, ApiError> {
+    state.library_remove_source(source).await
+}
+
+#[tauri::command]
+pub fn library_eval_engines(
+    state: State<'_, Backend>,
+) -> Result<Vec<crate::dto::LibraryEngineView>, ApiError> {
+    state.library_eval_engines()
+}

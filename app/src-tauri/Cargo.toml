@@ -23,6 +23,7 @@ howdah-gameroom.workspace = true
 howdah-db.workspace = true
 howdah-tourney = { workspace = true, default-features = false, features = ["client"] }
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

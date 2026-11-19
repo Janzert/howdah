@@ -401,6 +401,20 @@ plans the engine test and tournament runner.
   there's none from the same author; the other file's uuid becomes an
   `origins` row; new games' ids are offset past the highest, so it's
   bulk SQL through an attached database, 8.5 s for the whole archive).
+  Sharing (`share.rs`, `merge.rs`; DATABASE.md "Step 7"):
+  `Database::export` (`ExportOptions`: a `Selection` of games,
+  variations, comments, times, chat, `PositionScope` evals by engine,
+  and the author naming the exporter's origin) writes a new database
+  carrying each row's origin and only the `origins` rows used;
+  `import_file` merges a copy (`VACUUM INTO`, so the file is left as it
+  is) with origins mapped by uuid, trees of games both have joined by
+  move path (`join_game`; only games that differ are looked at), an
+  annotation both changed kept beside under its origin's name
+  (`conflict_author`; same origin: newer wins), and evals replaced when
+  deeper; `import_records` saves records into a scratch database and
+  merges it, matching games by fingerprint too (records only).
+  `origins`, `remove_origin` and `Filter::from_db` are the sources.
+  `howdah-db export|import-db|import-records|origins|remove-origin`.
   `setups.rs`: the setup explorer. A `Setup` key is 16 letters, a1 …
   h2 seen from gold's side (silver's ranks 8/7 read as 1/2), mirror
   images one key with the elephant on files e–h, a reply mirrored with
@@ -779,6 +793,15 @@ plans the engine test and tournament runner.
     only by its header is fetched as `open_gameroom_game` does) and
     `delete_library_game` (a board still showing it saves it again as a
     new game if it changes).
+    Sharing: `library_export` (`LibraryExportSpec`), `library_import`
+    (a game database or a record file, told apart by SQLite's header),
+    `library_sources`, `library_remove_source` and
+    `library_eval_engines`, on blocking threads; the file dialogs are
+    `tauri-plugin-dialog`'s (`dialog:allow-open`/`allow-save`; keep the
+    npm package on the crate's minor, which `tauri dev` checks), from
+    `lib/files.ts`, which in the
+    browser preview has none (`nativeFiles`), so the panel asks for a
+    path.
     Evals by position: the saver also writes the session's new lines
     (`Session::take_unsaved_evals`, from `store_analysis`) as
     `position_data` of kind `eval` (`StoredEval`: compact JSON with its
@@ -947,7 +970,10 @@ plans the engine test and tournament runner.
     pair and each move the next (`library_line`, `place.reply` and
     `place.moves`, with a breadcrumb); a row's Games narrows the list to it
     (the form's `goldSetup`/`silverSetup`). `library_games` and
-    `library_setups` run on a blocking thread. The filter's position
+    `library_setups` run on a blocking thread. Import…, Export…
+    (`ExportDialog.svelte`) and Sources… (`SourcesDialog.svelte`) are in
+    its header; the Source filter's `db:<id>` values are
+    `FilterForm.fromDb`. The filter's position
     (`FilterForm.position`, short format, side and `positionMatch`) is
     set in the position editor shown over the panel
     (`PositionEditor`'s `onSearch`: Find position, Find these pieces);

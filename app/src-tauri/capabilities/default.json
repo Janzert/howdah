@@ -12,6 +12,8 @@
     "core:window:allow-show",
     "core:window:allow-unminimize",
     "core:window:allow-set-focus",
-    "core:window:allow-set-title"
+    "core:window:allow-set-title",
+    "dialog:allow-open",
+    "dialog:allow-save"
   ]
 }
