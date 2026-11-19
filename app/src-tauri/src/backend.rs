@@ -34,12 +34,12 @@ use crate::controller::{self, Controller, SharedRegistry, SharedSession};
 use crate::dto::{
     AnimStep, ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
     ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
-    GameCommentView, GameroomGames, GameroomStatus, LibraryFilter, LibraryPageView, MatchSpec, MoveReplay,
-    NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView,
-    PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView, PostalGameView,
-    PuzzleGroupView, RatingPointView, ServerBotsView, SessionId, SessionUpdate, SessionView, SessionsChanged,
-    SetupStatsView, ShowBoard, SpsaStepView, StartedBotView, StepTarget, SystemClock, TestDetailView,
-    TestView, TourneyStatusView, UpdateView, WatchView,
+    ExplorerView, GameCommentView, GameroomGames, GameroomStatus, LibraryFilter, LibraryPageView, MatchSpec,
+    MoveReplay, NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerProfileView,
+    PlayerRecordView, PlayerSpec, PositionCheck, PositionProblemView, PositionSpec, PositionView,
+    PostalGameView, PuzzleGroupView, RatingPointView, ServerBotsView, SessionId, SessionUpdate, SessionView,
+    SessionsChanged, SetupStatsView, ShowBoard, SpsaStepView, StartedBotView, StepTarget, SystemClock,
+    TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
 };
 use crate::engine_install::{self, EngineCatalog};
 use crate::engines::{self, EngineRegistry};
@@ -1285,15 +1285,64 @@ impl Backend {
         .map_err(|e| ApiError::state(format!("the setup explorer stopped: {e}")))?
     }
 
-    /// Opens game `game` from the game database in session `id`. A game
+    /// The game database's move tree at session `id`'s shown position,
+    /// over the games `filter` lets through: the `limit` most played
+    /// moves next. Refused while the user plays an online game. Runs on
+    /// a blocking thread, since it replays the games.
+    pub async fn explore_library(
+        &self,
+        id: SessionId,
+        filter: LibraryFilter,
+        limit: u32,
+    ) -> Result<ExplorerView, ApiError> {
+        let ((node, position, ply), exclude) = self
+            .read(id, |s| s.explorer_position().map(|p| (p, s.db_id())))?
+            .ok_or_else(|| ApiError::state("the game database isn't open during an online game you play"))?;
+        let library = self.library.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            library.explore(&filter, node, position, ply, exclude, limit.min(500) as usize)
+        })
+        .await
+        .map_err(|e| ApiError::state(format!("the explorer stopped: {e}")))?
+    }
+
+    /// The setup explorer's move tree after gold setup `gold`, silver's
+    /// reply `reply` and `moves` (`Library::line`). Runs on a blocking
+    /// thread.
+    pub async fn library_line(
+        &self,
+        filter: LibraryFilter,
+        gold: String,
+        reply: String,
+        moves: Vec<String>,
+        limit: u32,
+    ) -> Result<ExplorerView, ApiError> {
+        let library = self.library.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            library.line(&filter, &gold, &reply, &moves, limit.min(500) as usize)
+        })
+        .await
+        .map_err(|e| ApiError::state(format!("the explorer stopped: {e}")))?
+    }
+
+    /// Opens game `game` from the game database in session `id`, showing
+    /// the position after `ply` moves if given (else the start). A game
     /// known only by its header is fetched from arimaa.com.
-    pub async fn open_library_game(&self, id: SessionId, game: i64) -> Result<(), ApiError> {
+    pub async fn open_library_game(
+        &self,
+        id: SessionId,
+        game: i64,
+        ply: Option<usize>,
+    ) -> Result<(), ApiError> {
         match self.library.record(game)? {
             Ok(record) => {
                 self.handle(id)?.stop_watching();
                 self.mutate(id, |s| {
                     s.load_record_from_start(record);
                     s.set_db_id(Some(game));
+                    if let Some(ply) = ply {
+                        s.goto(ply)?;
+                    }
                     Ok(Vec::new())
                 })
             }
@@ -1694,7 +1743,25 @@ impl Backend {
                     arg::<Option<u32>>(args, "limit")?.unwrap_or(100),
                 )
                 .await?),
-            "open_library_game" => ok(self.open_library_game(sid()?, arg(args, "game")?).await?),
+            "open_library_game" => {
+                ok(self.open_library_game(sid()?, arg(args, "game")?, arg(args, "ply")?).await?)
+            }
+            "library_line" => ok(self
+                .library_line(
+                    arg(args, "filter")?,
+                    arg(args, "gold")?,
+                    arg(args, "reply")?,
+                    arg(args, "moves")?,
+                    arg::<Option<u32>>(args, "limit")?.unwrap_or(50),
+                )
+                .await?),
+            "explore_library" => ok(self
+                .explore_library(
+                    sid()?,
+                    arg(args, "filter")?,
+                    arg::<Option<u32>>(args, "limit")?.unwrap_or(50),
+                )
+                .await?),
             "delete_library_game" => ok(self.delete_library_game(arg(args, "game")?)?),
             "base_status" => ok(self.base_status(arg::<Option<bool>>(args, "check")?.unwrap_or(false)).await),
             "install_base" => ok(self.install_base().await?),

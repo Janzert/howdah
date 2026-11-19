@@ -23,3 +23,15 @@ tokio = "1"
 # The movegen cross-check test explores ~50k positions; unoptimized it's ~10x slower.
 [profile.test]
 opt-level = 1
+
+# The game database's position search replays every game: optimize the
+# crates it runs in even in dev builds (the dev bridge), where it's
+# otherwise 20 times slower.
+[profile.dev.package.howdah-arimaa]
+opt-level = 3
+
+[profile.dev.package.howdah-db]
+opt-level = 3
+
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3

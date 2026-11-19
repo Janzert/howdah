@@ -25,12 +25,16 @@
     theme: Theme;
     flipped: boolean;
     /** Starts free play (analysis) from the position. */
-    onAnalyse: (position: PositionSpec) => Promise<string | null>;
+    onAnalyse?: (position: PositionSpec) => Promise<string | null>;
     /** Opens the new-game dialog for the position. */
-    onPlay: (position: PositionSpec) => void;
+    onPlay?: (position: PositionSpec) => void;
+    /** Searching the game database instead (the Games panel): the games
+     * reaching the position, or with its pieces on their squares. In
+     * place of Analyse and Play, and needing no playable position. */
+    onSearch?: (position: PositionSpec, match: 'exact' | 'pieces') => void;
     onClose: () => void;
   }
-  let { initial, theme, flipped = $bindable(), onAnalyse, onPlay, onClose }: Props = $props();
+  let { initial, theme, flipped = $bindable(), onAnalyse, onPlay, onSearch, onClose }: Props = $props();
 
   /** The editor's own board model: the window's game keeps updating its own. */
   const model = new BoardModel();
@@ -52,7 +56,7 @@
   let checkSeq = 0;
 
   const spec = (): PositionSpec => board.spec(side, moveNumber);
-  const marked = $derived([...new Set(check?.problems.flatMap((p) => p.squares) ?? [])]);
+  const marked = $derived(onSearch ? [] : [...new Set(check?.problems.flatMap((p) => p.squares) ?? [])]);
   const playable = $derived(check != null && check.problems.length === 0 && !busy);
   const left = $derived(new Map(check?.left ?? []));
 
@@ -215,10 +219,14 @@
   }
 
   async function analyse() {
+    if (!onAnalyse) return;
     busy = true;
     error = await onAnalyse(spec());
     busy = false;
   }
+
+  /** Any piece on the board, for a search by pieces. */
+  const anyPiece = $derived(check != null && /[A-Za-z]/.test(check.short.replace(/^\[|\]$/g, '')));
 
   function isTool(t: Tool, piece?: Piece): boolean {
     if (piece) return tool.kind === 'piece' && tool.piece.kind === piece.kind && tool.piece.color === piece.color;
@@ -331,6 +339,8 @@
     <div class="status" role="status" aria-live="polite">
       {#if check == null}
         Checking…
+      {:else if onSearch}
+        <span>Search the game database for this position ({side} to move), or for its pieces alone.</span>
       {:else if check.problems.length === 0}
         <span class="ok">Ready: {check.label}, {side} to move</span>
       {:else}
@@ -399,22 +409,44 @@
 
     <div class="spacer"></div>
     <div class="actions">
+      {#if onSearch}
+        <button
+          class="primary"
+          disabled={check == null}
+          onclick={() => onSearch(spec(), 'exact')}
+          title="The games reaching this position, with this side to move"
+        >
+          Find position
+        </button>
+        <button
+          disabled={!anyPiece}
+          onclick={() => onSearch(spec(), 'pieces')}
+          title="The games where these pieces stand on these squares, whatever else is on the board"
+        >
+          Find these pieces
+        </button>
+      {:else}
+        <button
+          class="primary"
+          disabled={!playable}
+          onclick={analyse}
+          title="Free play from this position, to analyse it"
+        >
+          Analyse
+        </button>
+        <button
+          disabled={!playable}
+          onclick={() => onPlay?.(spec())}
+          title="A new game from this position: against an engine, or with a clock"
+        >
+          Play…
+        </button>
+      {/if}
       <button
-        class="primary"
-        disabled={!playable}
-        onclick={analyse}
-        title="Free play from this position, to analyse it"
+        onclick={onClose}
+        title={onSearch ? 'Leave the editor without searching' : 'Leave the editor without starting from this position'}
+        >Cancel</button
       >
-        Analyse
-      </button>
-      <button
-        disabled={!playable}
-        onclick={() => onPlay(spec())}
-        title="A new game from this position: against an engine, or with a clock"
-      >
-        Play…
-      </button>
-      <button onclick={onClose} title="Leave the editor without starting from this position">Cancel</button>
     </div>
   </aside>
 

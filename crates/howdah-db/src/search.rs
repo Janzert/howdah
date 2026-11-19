@@ -50,6 +50,11 @@ pub struct Filter {
     /// [`crate::Database::setup_stats`] gives it), else silver's setup
     /// alone (either way round).
     pub silver_setup: Option<String>,
+    /// Only games reaching a position ([`crate::PositionQuery`]), found by
+    /// replaying them; see [`crate::Database::explore`].
+    pub position: Option<crate::PositionQuery>,
+    /// Leaves out one game (a board's own, from its explorer).
+    pub exclude: Option<i64>,
 }
 
 /// A game as the list shows it.
@@ -80,6 +85,9 @@ pub struct GameSummary {
     pub set_position: bool,
     /// Has variations.
     pub variations: bool,
+    /// With a [`Filter::position`]: the moves before the game first
+    /// reached it.
+    pub position_ply: Option<i64>,
 }
 
 /// A page of games and how many match in all.
@@ -175,6 +183,10 @@ pub(crate) fn conditions(filter: &Filter) -> (Vec<String>, Vec<Value>) {
             params.push(setup(s, true));
         }
     }
+    if let Some(id) = filter.exclude {
+        clauses.push("id != ?".into());
+        params.push(Value::Integer(id));
+    }
     (clauses, params)
 }
 
@@ -182,6 +194,19 @@ impl Database {
     /// The games `filter` lets through, newest first, `limit` of them
     /// after skipping `offset`, and how many there are.
     pub fn search(&self, filter: &Filter, offset: i64, limit: i64) -> Result<SearchPage> {
+        if filter.position.is_some() {
+            let (page, total) = self.position_page(filter, offset, limit)?;
+            let marks = vec!["?"; page.len()].join(", ");
+            let params: Vec<Value> = page.iter().map(|&(id, _)| Value::Integer(id)).collect();
+            let mut games = self.summaries(&format!("WHERE id IN ({marks})"), params)?;
+            let at: std::collections::HashMap<i64, usize> =
+                page.iter().enumerate().map(|(i, &(id, _))| (id, i)).collect();
+            games.sort_by_key(|g| at[&g.id]);
+            for g in &mut games {
+                g.position_ply = Some(page[at[&g.id]].1 as i64);
+            }
+            return Ok(SearchPage { games, total });
+        }
         let (clauses, mut params) = conditions(filter);
         let wheres =
             if clauses.is_empty() { String::new() } else { format!("WHERE {}", clauses.join(" AND ")) };
@@ -190,15 +215,23 @@ impl Database {
             rusqlite::params_from_iter(params.iter()),
             |r| r.get(0),
         )?;
+        params.push(Value::Integer(limit));
+        params.push(Value::Integer(offset));
+        let games = self.summaries(&format!("{wheres} LIMIT ? OFFSET ?"), params)?;
+        Ok(SearchPage { games, total })
+    }
+
+    /// The games `tail` (a WHERE clause and any limit) picks, newest first.
+    fn summaries(&self, tail: &str, params: Vec<Value>) -> Result<Vec<GameSummary>> {
+        let (wheres, limits) = tail.split_once(" LIMIT").map_or((tail, ""), |(w, l)| (w, l));
+        let limits = if limits.is_empty() { String::new() } else { format!("LIMIT{limits}") };
         let sql = format!(
             "SELECT id, source, source_id, gold_name, silver_name, gold_rating, silver_rating, date,
              coalesce(start_ts, end_ts, added_at), event, time_control, rated, postal, winner, termination, plies,
              moves IS NULL, start_ply > 0, EXISTS (SELECT 1 FROM nodes n WHERE n.game = games.id)
              FROM games {wheres}
-             ORDER BY coalesce(start_ts, end_ts, added_at) DESC, id DESC LIMIT ? OFFSET ?"
+             ORDER BY coalesce(start_ts, end_ts, added_at) DESC, id DESC {limits}"
         );
-        params.push(Value::Integer(limit));
-        params.push(Value::Integer(offset));
         let mut q = self.connection().prepare(&sql)?;
         let ch = |s: Option<String>| s.and_then(|s| s.chars().next());
         let games = q
@@ -224,10 +257,11 @@ impl Database {
                     header_only: r.get(16)?,
                     set_position: r.get(17)?,
                     variations: r.get(18)?,
+                    position_ply: None,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(SearchPage { games, total })
+        Ok(games)
     }
 }
 

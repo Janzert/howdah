@@ -345,7 +345,7 @@ Two kinds, both open-ended:
    `position_data`, so analysis persists and carries across games.
 5. The base database: a build script, a release asset, the first-run
    download, and update by import.
-6. The setup explorer (built), then the move tree and position search.
+6. The setup explorer, the move tree and position search (built).
 7. Export and import of selections, with provenance filters.
 
 ### Decided (Brian, 2026-11-17)
@@ -709,6 +709,87 @@ match a record file that carries no ids, so it can be filled in later.
 Checked in the browser preview on the published base (425,307 games):
 gold setups, the replies to the second most played (55,781 games, 6,037
 replies), and the top reply's games (5,932, matching its row).
-Not done yet: per-player pages of setups beyond the filter, partial
-setups (only some pieces, such as the elephant and camel), and the move
-tree and position search.
+Not done yet: per-player pages of setups beyond the filter, and partial
+setups (only some pieces, such as the elephant and camel; a search by
+pieces covers part of it).
+
+### Step 6, second part (2026-11-18): the move tree and position search
+
+`howdah-db`'s `explore.rs`, the board's Explorer and the Games panel's
+position filter.
+
+- **One scan for both.** A `PositionQuery` is a whole position (pieces
+  and side to move, `Exact`) or a pattern (these pieces on these
+  squares, anything else anywhere, either side to move, `Pieces`).
+  `Filter::position` holds one; the games the rest of the filter lets
+  through are read on the calling thread and replayed on up to 7 more
+  (`Replay`: the codec's moves on a `Position` with the raw step
+  mechanics, no legality checks, since saving checked them), each until
+  it reaches the position or has fewer of some piece than it (captures
+  are for good). No index and no derived table, as with the setups.
+- **Speed** on the whole archive (425k games, 16-core laptop, release
+  build): 250–350 ms for an exact position (most games stop at their
+  first capture), 500–600 ms for a pattern of a few pieces, which
+  replays most games to their end. The dev bridge was 20 times slower
+  until the workspace's dev profile optimized `howdah-arimaa`,
+  `howdah-db` and `libsqlite3-sys`; it's now about 0.5 s.
+- **Kept scans.** The last 8 scans are kept by filter, while
+  `Connection::total_changes` stays the same, so the tree, the game
+  list over it and the setups over it share one, and going back a move
+  is instant. Any save drops them (a board's own game saves as it
+  changes), which is correct and costs a scan only after a change.
+- **The move tree** (`Database::explore`): the games reaching the
+  position, and the moves played next grouped by the position they lead
+  to, so the same steps in another order count as one move (shown as
+  its most played spelling). The same statistics as the setup explorer
+  (`Tally`), the rating being the side to move's; games that ended at
+  the position. Positions are exact: no mirror images, unlike the
+  setups, since a move has to be played on the board as it is. At the
+  start it lists gold's setups, after them silver's.
+- **The game list** with a position: newest first from the scan, a page
+  read by id, with `GameSummary::position_ply`, the moves before the
+  game first reached it; opening a game there shows that ply
+  (`open_library_game`'s `ply`). The setups view with a position counts
+  only those games.
+- Games from a set position aren't searched, as with the setups.
+- **The board's Explorer** (`ExplorerPanel.svelte`, under the comment
+  box, folded until opened): the shown position's games and next moves
+  (ten, then thirty), with a Player field; a move plays on the board as
+  a variation (`add_line`), and Games lists the games reaching it, each
+  opening on a board of its own at that ply. It leaves out the board's
+  own game (`Filter::exclude`), and is off while the user plays an
+  online game, as analysis is (`Session::explorer_position`), and in
+  puzzles.
+- **The Games panel's position filter:** Position… opens the position
+  editor over the panel (`PositionEditor`'s `onSearch`: Find position
+  or Find these pieces in place of Analyse and Play, no playable
+  position needed); the filter shows the position small, with its match
+  (this position, or these pieces), Edit position… and Any position.
+- **Down the line from the setups.** In the Games panel's Setups view a
+  silver reply opens the moves played after the pair, and each move the
+  moves after it, with a breadcrumb of the setups and moves to go back
+  and Games for any point (`library_line`: the setup keys and the moves
+  in notation, `howdah_db::line_position`). Since the setups count a
+  setup and its mirror image as one, so does the line: `Mirrored` matches
+  the position or its mirror image, and a mirrored game's next move is
+  mirrored too (`mirror`, `mirror_bytes`), so a reply's 8,252 games are
+  the line's 8,252 and the moves read as the setups are drawn. Its Games
+  sets the list's position with that match ("This position or its
+  mirror image"), which the Setups view itself then ignores, as it does
+  the setup chips.
+- `howdah-db explore DB [--pieces] [MOVES|POSITION]` prints the tree,
+  timed.
+
+Checked in the browser preview on the bridge's copy of the archive:
+after a common setup pair the tree's 3,940 games and its top move
+(2,296 games) agree with the CLI; playing the move from the tree shows
+silver's replies to it; the board's game list and opening a game at its
+ply (ply 3, the same position); and in the Games panel, the pattern
+gold elephant d4, camel e4 (1,355 games won by elimination), whose
+game opened at 36g, the first time it stood so. The real app's new
+window from a game window's Games list wasn't checked (the browser
+preview reuses the tab).
+
+Ideas left: a position's games by player in the tree (beyond the
+Player field), mirror images in the board's Explorer, and an index if the archive
+grows past where a scan is quick enough.

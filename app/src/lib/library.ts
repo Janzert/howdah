@@ -83,6 +83,12 @@ export interface FilterForm {
    * silver's reply to it (or with no gold setup, silver's alone). */
   goldSetup: string;
   silverSetup: string;
+  /** Only games reaching a position: its short format (`[` + 64 squares
+   * + `]`, '' for none) and side to move; `pieces` matches its pieces on
+   * their squares with anything else anywhere, either side to move. */
+  position: string;
+  positionSide: Color;
+  positionMatch: 'exact' | 'pieces' | 'mirrored';
 }
 
 export const EMPTY_FORM: FilterForm = {
@@ -97,6 +103,9 @@ export const EMPTY_FORM: FilterForm = {
   rated: '',
   goldSetup: '',
   silverSetup: '',
+  position: '',
+  positionSide: 'gold',
+  positionMatch: 'exact',
 };
 
 /** The backend's filter from the form. The side and outcome only count
@@ -116,6 +125,9 @@ export function toFilter(f: FilterForm): LibraryFilter {
     rated: f.rated === '' ? null : f.rated === 'rated',
     goldSetup: text(f.goldSetup ?? ''),
     silverSetup: text(f.silverSetup ?? ''),
+    position: f.position ? { short: f.position, sideToMove: f.positionSide ?? 'gold', moveNumber: 2 } : null,
+    positionMatch: f.position ? (f.positionMatch ?? 'exact') : null,
+    exclude: null,
   };
 }
 

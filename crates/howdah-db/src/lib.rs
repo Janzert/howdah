@@ -10,6 +10,7 @@
 pub mod archive;
 pub mod base;
 pub mod codec;
+mod explore;
 mod game;
 mod merge;
 mod positions;
@@ -22,6 +23,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
+pub use explore::{Explorer, MoveStat, PositionMatch, PositionQuery, Replay, Tally, line_position, mirror};
 pub use game::{ARIMAA_COM, GameData, PlayerInfo, SaveMode, SourceKey, StoredResult, gid_for};
 pub use merge::MergeReport;
 pub use positions::PositionDatum;
@@ -58,6 +60,8 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub struct Database {
     conn: Connection,
     read_only: bool,
+    /// Position searches kept for the next queries ([`explore`]).
+    scan_cache: std::cell::RefCell<explore::ScanCache>,
 }
 
 impl Database {
@@ -75,7 +79,7 @@ impl Database {
         setups::register(&conn)?;
         match schema::check(&conn)? {
             schema::Compat::Older(_) => Err(Error::ReadOnly),
-            _ => Ok(Database { conn, read_only: true }),
+            _ => Ok(Database { conn, read_only: true, scan_cache: Default::default() }),
         }
     }
 
@@ -89,7 +93,11 @@ impl Database {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         let compat = schema::check(&conn)?;
         schema::migrate(&mut conn)?;
-        Ok(Database { conn, read_only: matches!(compat, schema::Compat::NewerReadable(_)) })
+        Ok(Database {
+            conn,
+            read_only: matches!(compat, schema::Compat::NewerReadable(_)),
+            scan_cache: Default::default(),
+        })
     }
 
     pub fn connection(&self) -> &Connection {

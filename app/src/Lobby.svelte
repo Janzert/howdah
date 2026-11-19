@@ -838,7 +838,7 @@
             onClose={closePuzzles}
           />
         {:else if selected === 'games'}
-          <LibraryPanel onOpen={(id) => openNew((a) => a.openLibraryGame(id), null, 'Opening the game…')} />
+          <LibraryPanel onOpen={(id, ply) => openNew((a) => a.openLibraryGame(id, ply), null, 'Opening the game…')} />
         {:else if selected === 'gameroom'}
           <GameroomScreen />
         {:else if selected.startsWith('gameroom:')}

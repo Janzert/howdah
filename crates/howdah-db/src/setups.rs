@@ -82,6 +82,29 @@ impl Setup {
             .collect()
     }
 
+    /// The setup's pieces for `color` (for silver, the key's first row is
+    /// rank 8 and its second rank 7).
+    pub fn placements(self, color: howdah_arimaa::Color) -> Vec<howdah_arimaa::Placement> {
+        let silver = color == howdah_arimaa::Color::Silver;
+        self.0
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &k)| {
+                let kind = *PieceKind::ALL.get((k as usize).checked_sub(1)?)?;
+                let rank = match (silver, i < 8) {
+                    (false, true) => 0,
+                    (false, false) => 1,
+                    (true, true) => 7,
+                    (true, false) => 6,
+                };
+                Some(howdah_arimaa::Placement {
+                    piece: howdah_arimaa::Piece::new(color, kind),
+                    square: howdah_arimaa::Square::new(rank * 8 + (i % 8) as u8)?,
+                })
+            })
+            .collect()
+    }
+
     /// Reads a [`Setup::key`].
     pub fn parse(key: &str) -> Option<Setup> {
         let mut n = [0u8; 16];
@@ -182,7 +205,7 @@ pub struct SetupStats {
 }
 
 /// Gold's expected score from the ratings (Elo).
-fn expected(gold: i64, silver: i64) -> f64 {
+pub(crate) fn expected(gold: i64, silver: i64) -> f64 {
     1.0 / (1.0 + 10f64.powf((silver - gold) as f64 / 400.0))
 }
 
@@ -200,7 +223,7 @@ impl Database {
         let (mut clauses, params) = conditions(filter);
         clauses.push("moves IS NOT NULL AND start_ply = 0".into());
         let sql = format!(
-            "SELECT moves, winner, gold_rating, silver_rating, coalesce(start_ts, end_ts, added_at)
+            "SELECT moves, winner, gold_rating, silver_rating, coalesce(start_ts, end_ts, added_at), id
              FROM games WHERE {}",
             clauses.join(" AND ")
         );
@@ -211,8 +234,18 @@ impl Database {
         let mut groups: HashMap<Setup, Acc> = HashMap::new();
         let mut q = self.connection().prepare(&sql)?;
         let mut rows = q.query(rusqlite::params_from_iter(params.iter()))?;
+        // A position in the filter: only the games reaching it.
+        let reaching: Option<std::collections::HashSet<i64>> = match filter.position {
+            Some(_) => Some(self.scan(filter)?.iter().map(|h| h.id).collect()),
+            None => None,
+        };
         let mut games = 0;
         while let Some(r) = rows.next()? {
+            if let Some(ids) = &reaching
+                && !ids.contains(&r.get(5)?)
+            {
+                continue;
+            }
             let ValueRef::Blob(moves) = r.get_ref(0)? else { continue };
             let Some(k) = keys(moves, 0) else { continue };
             let setup = match (level, only_gold) {

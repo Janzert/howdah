@@ -210,6 +210,8 @@ pub fn run() {
             commands::library_games,
             commands::library_setups,
             commands::open_library_game,
+            commands::explore_library,
+            commands::library_line,
             commands::delete_library_game,
             commands::base_status,
             commands::install_base,

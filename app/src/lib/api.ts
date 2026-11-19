@@ -32,6 +32,7 @@ import type { RatingPointView } from './bindings/RatingPointView';
 import type { PositionCheck } from './bindings/PositionCheck';
 import type { PositionSpec } from './bindings/PositionSpec';
 import type { BaseStatus } from './bindings/BaseStatus';
+import type { ExplorerView } from './bindings/ExplorerView';
 import type { LibraryFilter } from './bindings/LibraryFilter';
 import type { LibraryPageView } from './bindings/LibraryPageView';
 import type { SetupStatsView } from './bindings/SetupStatsView';
@@ -112,7 +113,18 @@ function makeApi(sid: () => SessionId | null) {
       invoke<SetupStatsView>('library_setups', { filter, level, gold, limit }),
     /** Opens a game from the game database (a game known only by its
      * header is fetched from arimaa.com). */
-    openLibraryGame: (game: number) => invoke<void>('open_library_game', { session: sid(), game }),
+    openLibraryGame: (game: number, ply: number | null = null) =>
+      invoke<void>('open_library_game', { session: sid(), game, ply }),
+    /** The game database's move tree at the board's shown position: the
+     * games reaching it (among those `filter` lets through) and the
+     * `limit` most played moves next. */
+    /** The setup explorer's move tree: after gold setup `gold`, silver's
+     * reply `reply` (keys as `librarySetups` gives them) and `moves`,
+     * counting each game's mirror image as the game. */
+    libraryLine: (filter: LibraryFilter, gold: string, reply: string, moves: string[], limit = 50) =>
+      invoke<ExplorerView>('library_line', { filter, gold, reply, moves, limit }),
+    exploreLibrary: (filter: LibraryFilter, limit = 50) =>
+      invoke<ExplorerView>('explore_library', { session: sid(), filter, limit }),
     /** The base game database (arimaa.com's archive): what's installed,
      * and the newest one there is (asks for its manifest). */
     /** `check` asks for the manifest even if it was checked today. */

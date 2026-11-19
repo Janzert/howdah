@@ -15,15 +15,16 @@ use std::time::Duration;
 
 use std::collections::HashMap;
 
-use howdah_arimaa::{Color, GameRecord, NodeId};
+use howdah_arimaa::{Color, GameRecord, NodeId, Position};
 use howdah_db::{
-    ARIMAA_COM, Database, Filter, GameData, Origin, Outcome, PositionDatum, SaveMode, SetupLevel,
+    ARIMAA_COM, Database, Filter, GameData, Origin, Outcome, PositionDatum, PositionQuery, SaveMode,
+    SetupLevel, Tally,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dto::{
-    AnalysisLine, ApiError, Eval, LibraryFilter, LibraryGameView, LibraryPageView, PvTurn, SetupStatView,
-    SetupStatsView,
+    AnalysisLine, ApiError, Eval, ExplorerMoveView, ExplorerView, LibraryFilter, LibraryGameView,
+    LibraryPageView, PositionSpec, PvTurn, ResultsView, SetupStatView, SetupStatsView,
 };
 use crate::session::Session;
 
@@ -168,7 +169,7 @@ impl Library {
         if self.db().is_none() {
             return Ok(LibraryPageView { games: Vec::new(), total: 0, available: false });
         }
-        let filter = to_filter(filter);
+        let filter = to_filter(filter)?;
         let page = self.try_with(|db| db.search(&filter, offset.into(), limit.into()))?;
         let letter = |c: Option<char>| c.map(String::from);
         Ok(LibraryPageView {
@@ -193,6 +194,7 @@ impl Library {
                     header_only: g.header_only,
                     set_position: g.set_position,
                     variations: g.variations,
+                    position_ply: g.position_ply,
                 })
                 .collect(),
             total: page.total,
@@ -219,7 +221,7 @@ impl Library {
             ("replies", Some(g)) => SetupLevel::Replies(g.to_string()),
             _ => return Err(ApiError::state(format!("no setup level {level:?}"))),
         };
-        let filter = to_filter(filter);
+        let filter = to_filter(filter)?;
         let stats = self.try_with(|db| db.setup_stats(&filter, &level, limit))?;
         Ok(SetupStatsView {
             rows: stats
@@ -241,6 +243,84 @@ impl Library {
             setups: stats.setups,
             available: true,
         })
+    }
+
+    /// The setup explorer's move tree: the games `filter` lets through
+    /// after gold setup `gold`, silver's reply `reply` (keys as
+    /// `setups` gives them) and `moves`, each game or its mirror image
+    /// (moves seen as the keys have it), and the `limit` most played
+    /// moves next.
+    pub fn line(
+        &self,
+        filter: &LibraryFilter,
+        gold: &str,
+        reply: &str,
+        moves: &[String],
+        limit: usize,
+    ) -> Result<ExplorerView, ApiError> {
+        let position = howdah_db::line_position(gold, reply, moves).map_err(ApiError::illegal)?;
+        let mut view = self.explore_query(filter, NodeId(0), position, 2 + moves.len(), None, true, limit)?;
+        view.position_match = "mirrored".into();
+        Ok(view)
+    }
+
+    /// The move tree at `position` (a board's node `node`, at absolute
+    /// ply `ply`) over the games `filter` lets through (its own position
+    /// is replaced): the `limit` most played moves next.
+    pub fn explore(
+        &self,
+        filter: &LibraryFilter,
+        node: NodeId,
+        position: Position,
+        ply: usize,
+        exclude: Option<i64>,
+        limit: usize,
+    ) -> Result<ExplorerView, ApiError> {
+        self.explore_query(filter, node, position, ply, exclude, false, limit)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn explore_query(
+        &self,
+        filter: &LibraryFilter,
+        node: NodeId,
+        position: Position,
+        ply: usize,
+        exclude: Option<i64>,
+        mirrored: bool,
+        limit: usize,
+    ) -> Result<ExplorerView, ApiError> {
+        let spec = PositionSpec {
+            short: position.to_short_string(),
+            side_to_move: position.side_to_move(),
+            move_number: (ply / 2 + 1) as u32,
+        };
+        let mut view = ExplorerView {
+            node,
+            position: spec,
+            position_match: "exact".into(),
+            exclude,
+            games: ResultsView::default(),
+            moves: Vec::new(),
+            distinct: 0,
+            available: false,
+        };
+        if self.db().is_none() {
+            return Ok(view);
+        }
+        let mut filter = to_filter(&LibraryFilter { position: None, exclude, ..filter.clone() })?;
+        filter.position =
+            Some(if mirrored { PositionQuery::mirrored(position) } else { PositionQuery::exact(position) });
+        let tree = self.try_with(|db| db.explore(&filter, limit))?;
+        view.games = results_view(tree.games);
+        view.moves = tree
+            .moves
+            .into_iter()
+            .map(|m| ExplorerMoveView { notation: m.notation, tally: results_view(m.tally) })
+            .collect();
+        view.distinct = tree.distinct;
+        view.available = true;
+        Ok(view)
     }
 
     /// Game `id` as a record, or its arimaa.com id when only its header
@@ -297,9 +377,36 @@ impl Library {
     }
 }
 
-fn to_filter(f: &LibraryFilter) -> Filter {
+fn results_view(t: Tally) -> ResultsView {
+    ResultsView {
+        games: t.games,
+        gold_wins: t.gold_wins,
+        silver_wins: t.silver_wins,
+        rated_games: t.rated_games,
+        rated_gold_wins: t.rated_gold_wins,
+        expected_gold_wins: t.expected_gold_wins,
+        rating: t.rating,
+        last_date: t.last_date,
+        ended: t.ended,
+    }
+}
+
+fn to_filter(f: &LibraryFilter) -> Result<Filter, ApiError> {
     let text = |s: &Option<String>| s.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(String::from);
-    Filter {
+    let position = match &f.position {
+        Some(p) => {
+            let position = Position::from_short_string(p.side_to_move, &p.short)
+                .map_err(|e| ApiError::illegal(format!("the position: {e}")))?;
+            Some(match f.position_match.as_deref() {
+                None | Some("exact") => PositionQuery::exact(position),
+                Some("pieces") => PositionQuery::pieces(position),
+                Some("mirrored") => PositionQuery::mirrored(position),
+                Some(m) => return Err(ApiError::state(format!("no position match {m:?}"))),
+            })
+        }
+        None => None,
+    };
+    Ok(Filter {
         player: text(&f.player),
         opponent: text(&f.opponent),
         side: f.side.map(Color::letter),
@@ -319,7 +426,9 @@ fn to_filter(f: &LibraryFilter) -> Filter {
         termination: f.termination.as_deref().and_then(|t| t.chars().next()),
         gold_setup: text(&f.gold_setup),
         silver_setup: text(&f.silver_setup),
-    }
+        position,
+        exclude: f.exclude,
+    })
 }
 
 fn open_at(path: &Path) -> howdah_db::Result<Database> {
@@ -524,6 +633,36 @@ mod tests {
         save_session(&library, &session, &saved);
         assert_ne!(session.lock().unwrap().db_id(), Some(id));
         assert_eq!(library.with("count", |db| db.game_count()), Some(2));
+    }
+
+    #[test]
+    fn the_explorer_leaves_out_the_boards_own_game() {
+        let library = Library::in_memory();
+        let record = |moves: &str| {
+            GameRecord::parse(&format!(
+                "1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Da2 Hb2 Cc2 Ed2 Me2 Hf2 Cg2 Dh2\n\
+                 1s ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8 da7 hb7 cc7 ed7 me7 hf7 cg7 dh7\n{moves}"
+            ))
+            .unwrap()
+        };
+        library.save(None, &record("2g Ed2n\n"));
+        library.save(None, &record("2g Me2n\n"));
+        let mine = library.save(None, &record("2g Ed2n\n2s ed7s\n")).unwrap();
+        let session = Mutex::new(Session::new());
+        session.lock().unwrap().load_record(record(""));
+        let (node, position, ply) = session.lock().unwrap().explorer_position().unwrap();
+        assert_eq!(ply, 2);
+        let all = library.explore(&LibraryFilter::default(), node, position.clone(), ply, None, 10).unwrap();
+        assert_eq!((all.games.games, all.distinct), (3, 2));
+        assert_eq!((all.moves[0].notation.as_str(), all.moves[0].tally.games), ("Ed2n", 2));
+        let others = library.explore(&LibraryFilter::default(), node, position, ply, Some(mine), 10).unwrap();
+        assert_eq!(others.games.games, 2);
+        // The game list over the same position.
+        let filter =
+            LibraryFilter { position: Some(others.position), exclude: Some(mine), ..Default::default() };
+        let page = library.page(&filter, 0, 10).unwrap();
+        assert_eq!(page.total, 2);
+        assert!(page.games.iter().all(|g| g.position_ply == Some(2)));
     }
 
     #[test]

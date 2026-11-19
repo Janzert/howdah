@@ -410,6 +410,23 @@ plans the engine test and tournament runner.
   use the SQL function `howdah_setup`, registered on each connection
   (never in the schema); `search::conditions` is the WHERE both share.
   `howdah-db setups DB [gold|silver|KEY] [PLAYER]`.
+  `explore.rs`: the move tree and position search. `Filter::position`
+  (a `PositionQuery`: `Exact`, pieces and side to move, or `Pieces`, a
+  pattern) makes `search`, `setup_stats` and `explore` use a scan
+  (`Database::scan`): the filter's games replayed with `Replay` (raw
+  steps, no legality checks) on up to 7 threads, each until it reaches
+  the position or has lost a piece the position has; the last 8 scans
+  are kept while `total_changes` stays. `Database::explore` groups the
+  next moves by the position they lead to (`MoveStat`, `Tally`);
+  `GameSummary::position_ply` is where a listed game first reached it.
+  `Filter::exclude` leaves out one game. `Mirrored` also matches the
+  mirror image (`mirror`), its next moves mirrored back, and
+  `line_position` builds the position after a setup pair's keys and
+  moves, for the setup explorer's line (`Library::line`,
+  `library_line`). The workspace's dev profile
+  optimizes `howdah-arimaa`, `howdah-db` and `libsqlite3-sys`, or a scan
+  takes seconds in the dev bridge. `howdah-db explore DB [--pieces]
+  [MOVES|POSITION]`.
 - `crates/howdah-render`: draws positions as images with the app's image
   themes (`image` crate; depends only on `howdah-arimaa`). The classic
   themes' manifests and files are embedded from `packages/board/src/themes/classic/`
@@ -926,9 +943,15 @@ plans the engine test and tournament runner.
     and with Delete (a second click confirms). Its Setups view
     (`SetupExplorer.svelte`, `library_setups`, over the same filter) lists
     gold's or silver's setups, or silver's replies to one gold setup,
-    drawn by `SetupDiagram.svelte`; a row's Games narrows the list to it
+    drawn by `SetupDiagram.svelte`; a reply opens the moves after the
+    pair and each move the next (`library_line`, `place.reply` and
+    `place.moves`, with a breadcrumb); a row's Games narrows the list to it
     (the form's `goldSetup`/`silverSetup`). `library_games` and
-    `library_setups` run on a blocking thread.
+    `library_setups` run on a blocking thread. The filter's position
+    (`FilterForm.position`, short format, side and `positionMatch`) is
+    set in the position editor shown over the panel
+    (`PositionEditor`'s `onSearch`: Find position, Find these pieces);
+    a listed game then opens at `positionPly`.
     `HomeScreen.svelte`: Play and
     analyse (New game, Analysis board with the last analysis engine, Open
     record, Position editor, Puzzles, as cards), a note when arimaa.com
@@ -1053,6 +1076,14 @@ plans the engine test and tournament runner.
     (`priorAnalysis`), PV chips with a `MiniBoard` hover preview, engine
     log), `EvalBar.svelte` beside the board, `EvalGraph.svelte` under it, and the PV's first turn drawn by `LastMoveLayer` with `pv`.
     `lib/analysis.ts` formats evals and picks the engine.
+  - `ExplorerPanel.svelte`, under the comment box (folded until
+    opened, `board.explorerOpen`): the game database's move tree at the
+    shown position (`explore_library`, from `Session::explorer_position`,
+    which is `None` while the user plays online; the board's own game,
+    `db_id`, left out), with a Player field; a move plays as a variation
+    (`add_line`), Games lists the games reaching it (`library_games`
+    with the position) and opens one on a new board at its ply
+    (`open_library_game`'s `ply`). Not in puzzles.
   - `CommentBox.svelte`, under the move list (folded away until opened),
     edits the shown move's comment (the game comment at the start; saved on blur or Ctrl+Enter,
     Esc reverts) and toggles its move glyphs.

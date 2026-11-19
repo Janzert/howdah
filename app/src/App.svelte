@@ -28,6 +28,7 @@
   import { on } from './lib/events';
   import MoveList from './lib/MoveList.svelte';
   import CommentBox from './lib/CommentBox.svelte';
+  import ExplorerPanel from './lib/ExplorerPanel.svelte';
   import NewGameDialog from './lib/NewGameDialog.svelte';
   import PositionEditor from './lib/editor/PositionEditor.svelte';
   import PuzzlePanel from './lib/PuzzlePanel.svelte';
@@ -1035,6 +1036,7 @@
         {/if}
         <MoveList {view} onGoto={goto} onGotoNode={(id) => run(api.gotoNode(id))} {run} />
         <CommentBox {view} {run} />
+        {#if !view.puzzle}<ExplorerPanel {view} {run} />{/if}
         {#if watch}
           <WatchPanel {watch} {view} {run} {receivedAt} {now} onNewGame={newOnlineGame} />
         {/if}

@@ -9,11 +9,11 @@ use crate::base::BaseStatus;
 use crate::dto::{
     ApiError, ArchivedTestView, BotInfoView, ChatArchiveDay, ChatArchiveEarlier, ChatArchiveMonth,
     ChatMessageView, ChatRoomView, EngineCatalogView, EngineIdentity, EngineOption, EngineOutput, EngineSpec,
-    GameCommentView, GameroomGames, GameroomStatus, LibraryFilter, LibraryPageView, MatchSpec, MoveReplay,
-    NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerProfileView, PlayerRecordView,
-    PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView, RatingPointView,
-    ServerBotsView, SessionId, SessionView, SetupStatsView, SpsaStepView, StartedBotView, StepTarget,
-    SystemClock, TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
+    ExplorerView, GameCommentView, GameroomGames, GameroomStatus, LibraryFilter, LibraryPageView, MatchSpec,
+    MoveReplay, NewTestSpec, PastGameView, PlayerGamesView, PlayerMatchView, PlayerProfileView,
+    PlayerRecordView, PositionCheck, PositionSpec, PositionView, PostalGameView, PuzzleGroupView,
+    RatingPointView, ServerBotsView, SessionId, SessionView, SetupStatsView, SpsaStepView, StartedBotView,
+    StepTarget, SystemClock, TestDetailView, TestView, TourneyStatusView, UpdateView, WatchView,
 };
 
 #[tauri::command]
@@ -1000,8 +1000,31 @@ pub async fn open_library_game(
     state: State<'_, Backend>,
     session: SessionId,
     game: i64,
+    ply: Option<usize>,
 ) -> Result<(), ApiError> {
-    state.open_library_game(session, game).await
+    state.open_library_game(session, game, ply).await
+}
+
+#[tauri::command]
+pub async fn library_line(
+    state: State<'_, Backend>,
+    filter: LibraryFilter,
+    gold: String,
+    reply: String,
+    moves: Vec<String>,
+    limit: Option<u32>,
+) -> Result<ExplorerView, ApiError> {
+    state.library_line(filter, gold, reply, moves, limit.unwrap_or(50)).await
+}
+
+#[tauri::command]
+pub async fn explore_library(
+    state: State<'_, Backend>,
+    session: SessionId,
+    filter: LibraryFilter,
+    limit: Option<u32>,
+) -> Result<ExplorerView, ApiError> {
+    state.explore_library(session, filter, limit.unwrap_or(50)).await
 }
 
 #[tauri::command]

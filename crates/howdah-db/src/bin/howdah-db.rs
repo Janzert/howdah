@@ -8,6 +8,9 @@
 //! howdah-db setups DB [gold|silver|KEY] [PLAYER]
 //!                                       the 20 most played setups (gold's, silver's, or the
 //!                                       replies to gold setup KEY), timed
+//! howdah-db explore DB [--pieces] [MOVES|POSITION]
+//!                                       the move tree after a move list (from the setups) or at a position (`2g [...]`), timed;
+//!                                       with --pieces, the games with the position's pieces
 //! howdah-db publish OUTDIR PATH... [--new-base] [--cap PCT] [-j N]
 //!                                       the base database and its deltas from archive files,
 //!                                       with OUTDIR/base.json and OUTDIR/seen.txt (keep both)
@@ -23,7 +26,7 @@ use howdah_db::{ARIMAA_COM, Database, archive, base};
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | setups DB [gold|silver|KEY] [PLAYER] | publish OUTDIR PATH... [--new-base] [--cap PCT] | merge DB OTHER"
+        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | setups DB [gold|silver|KEY] [PLAYER] | explore DB [--pieces] [MOVES|POSITION] | publish OUTDIR PATH... [--new-base] [--cap PCT] | merge DB OTHER"
     );
     ExitCode::from(2)
 }
@@ -38,6 +41,7 @@ fn main() -> ExitCode {
         Some("publish") if args.len() >= 3 => publish(&args[1], &args[2..]),
         Some("merge") if args.len() == 3 => merge(&args[1], &args[2]),
         Some("list") if (2..=4).contains(&args.len()) => list(&args[1], args.get(2), args.get(3)),
+        Some("explore") if args.len() >= 2 => explore(&args[1], &args[2..]),
         Some("setups") if (2..=4).contains(&args.len()) => setups(&args[1], args.get(2), args.get(3)),
         _ => return usage(),
     };
@@ -204,6 +208,51 @@ fn setups(
         );
     }
     println!("{} games, {} setups; took {:.1} ms", stats.games, stats.setups, took.as_secs_f64() * 1000.0);
+    Ok(())
+}
+
+fn explore(db: &str, rest: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use howdah_arimaa::{GameRecord, StartPosition};
+    use howdah_db::{Filter, PositionQuery};
+    let pieces = rest.iter().any(|a| a == "--pieces");
+    let text: Vec<&str> = rest.iter().filter(|a| *a != "--pieces").map(String::as_str).collect();
+    let text = text.join(" ");
+    // A position (`2g [...]`), else moves from the setups.
+    let position = match text.contains('[').then(|| StartPosition::parse(&text)) {
+        Some(p) => p?.position,
+        None => {
+            let record = GameRecord::parse(&text)?;
+            let line = record.tree.main_line();
+            record.tree[*line.last().expect("a root")].position().clone()
+        }
+    };
+    let db = Database::open(db)?;
+    let query = if pieces { PositionQuery::pieces(position) } else { PositionQuery::exact(position) };
+    let filter = Filter { position: Some(query), ..Default::default() };
+    let start = Instant::now();
+    let tree = db.explore(&filter, 20)?;
+    let took = start.elapsed();
+    let again = Instant::now();
+    db.explore(&filter, 20)?;
+    let kept = again.elapsed();
+    for m in &tree.moves {
+        let t = &m.tally;
+        println!(
+            "{:>7} games, gold {:>5.1}% (expected {:>5.1}%)  {}",
+            t.games,
+            100.0 * t.gold_wins as f64 / t.games as f64,
+            100.0 * t.expected_gold_wins / t.rated_games.max(1) as f64,
+            m.notation
+        );
+    }
+    println!(
+        "{} games ({} ended here), {} moves; took {:.0} ms ({:.1} ms kept)",
+        tree.games.games,
+        tree.games.ended,
+        tree.distinct,
+        took.as_secs_f64() * 1000.0,
+        kept.as_secs_f64() * 1000.0
+    );
     Ok(())
 }
 

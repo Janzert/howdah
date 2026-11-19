@@ -2179,6 +2179,17 @@ impl Session {
     /// or the node's position has a result on the board. A turn being
     /// entered is ignored (AEI can't hand an engine a partial turn), so the
     /// search stays on the turn's start.
+    /// The shown node's position for the game database's explorer, with
+    /// its absolute ply; `None` while the user plays an online game
+    /// (as for analysis).
+    pub fn explorer_position(&self) -> Option<(NodeId, howdah_arimaa::Position, usize)> {
+        if !self.analysis_allowed() {
+            return None;
+        }
+        let node = self.cursor_node();
+        Some((node, self.tree[node].position().clone(), self.tree.start_ply() + self.tree[node].ply()))
+    }
+
     pub fn analysis_target(&self) -> Option<AnalysisTarget> {
         self.analysis.as_ref()?;
         let sweep = self.sweep_node();

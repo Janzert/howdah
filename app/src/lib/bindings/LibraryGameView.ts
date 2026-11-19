@@ -23,4 +23,9 @@ plies: number,
 /**
  * Only its header is known (not yet fetched).
  */
-headerOnly: boolean, setPosition: boolean, variations: boolean, };
+headerOnly: boolean, setPosition: boolean, variations: boolean, 
+/**
+ * With a position in the filter: the moves before the game first
+ * reached it, setups included.
+ */
+positionPly: number | null, };

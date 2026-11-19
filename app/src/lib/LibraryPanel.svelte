@@ -15,10 +15,17 @@
   import SetupExplorer from './SetupExplorer.svelte';
   import { EMPTY_FORM, ENDINGS, libraryMeta, toFilter, type FilterForm } from './library';
   import { pref, savePref } from './gameroom/store.svelte';
+  import PositionEditor from './editor/PositionEditor.svelte';
+  import { EditorBoard } from './editor/editorBoard';
+  import MiniBoard from '@howdah/board/board/MiniBoard.svelte';
+  import { findTheme } from '@howdah/board/theme';
+  import { settings } from './settings.svelte';
+  import type { PositionSpec } from './bindings/PositionSpec';
 
   interface Props {
-    /** Opens a game; resolves to an error message, or null. */
-    onOpen: (id: number) => Promise<string | null>;
+    /** Opens a game, at the position after `ply` moves if given; resolves
+     * to an error message, or null. */
+    onOpen: (id: number, ply: number | null) => Promise<string | null>;
   }
   let { onOpen }: Props = $props();
 
@@ -37,7 +44,16 @@
   let view = $state<'games' | 'setups'>(pref('lobby.gamesView') === 'setups' ? 'setups' : 'games');
   $effect(() => savePref('lobby.gamesView', view));
   /** The filter without the setups, for the explorer. */
-  const explorerFilter = $derived(toFilter({ ...form, goldSetup: '', silverSetup: '' }));
+  // A position from the setup explorer's line (matched with its mirror
+  // image) is left out too: it came from there.
+  const explorerFilter = $derived(
+    toFilter({
+      ...form,
+      goldSetup: '',
+      silverSetup: '',
+      position: form.positionMatch === 'mirrored' ? '' : form.position,
+    }),
+  );
 
   function showSetupGames(gold: string | null, silver: string | null) {
     form = { ...form, goldSetup: gold ?? '', silverSetup: silver ?? '' };
@@ -80,11 +96,35 @@
     return () => clearTimeout(timer);
   });
 
-  async function open(id: number) {
+  async function open(id: number, ply: number | null) {
     opening = id;
-    error = await onOpen(id);
+    error = await onOpen(id, ply);
     opening = null;
   }
+
+  // The position filter, set in the position editor shown over the panel.
+  const theme = $derived(findTheme(settings.theme));
+  let editing = $state<PositionSpec | null>(null);
+  let editorFlipped = $state(false);
+  async function editPosition() {
+    editing = form.position
+      ? { short: form.position, sideToMove: form.positionSide, moveNumber: 2 }
+      : await api.defaultPosition();
+  }
+  function searchPosition(p: PositionSpec, match: 'exact' | 'pieces') {
+    form = { ...form, position: p.short, positionSide: p.sideToMove, positionMatch: match };
+    editing = null;
+    view = 'games';
+  }
+  const positionPreview = $derived(
+    form.position
+      ? {
+          sideToMove: form.positionSide,
+          pieces: EditorBoard.fromShort(form.position).pieceViews(),
+          short: form.position,
+        }
+      : null,
+  );
 
   async function remove(id: number) {
     if (confirming !== id) {
@@ -158,6 +198,18 @@
     total == null ? '' : `${total.toLocaleString()} ${total === 1 ? 'game' : 'games'}${filtered ? ' match' : ''}`,
   );
 </script>
+
+{#if editing}
+  <div class="editor-over">
+    <PositionEditor
+      initial={editing}
+      {theme}
+      bind:flipped={editorFlipped}
+      onSearch={searchPosition}
+      onClose={() => (editing = null)}
+    />
+  </div>
+{/if}
 
 <div class="screen">
   <header>
@@ -291,8 +343,45 @@
     </div>
   {/if}
 
+  <div class="position-filter" role="group" aria-label="Position the list is narrowed to">
+    {#if positionPreview}
+      <span class="mini" title={form.positionMatch === 'pieces' ? 'These pieces on these squares' : 'This position'}
+        ><MiniBoard position={positionPreview} {theme} flipped={false} /></span
+      >
+      <label>
+        <select aria-label="Position match" bind:value={form.positionMatch}>
+          <option value="exact">This position, {form.positionSide} to move</option>
+          <option value="pieces">These pieces, anything else anywhere</option>
+          <option value="mirrored">This position or its mirror image</option>
+        </select>
+      </label>
+      <button type="button" onclick={editPosition}>Edit position…</button>
+      <button type="button" onclick={() => (form = { ...form, position: '' })}>Any position</button>
+    {:else}
+      <button
+        type="button"
+        onclick={editPosition}
+        title="Find the games reaching a position, or with some pieces on some squares">Position…</button
+      >
+    {/if}
+  </div>
+
   {#if view === 'setups'}
-    <SetupExplorer filter={explorerFilter} onGames={showSetupGames} />
+    <SetupExplorer
+      filter={explorerFilter}
+      onGames={showSetupGames}
+      onPosition={(p) => {
+        form = {
+          ...form,
+          goldSetup: '',
+          silverSetup: '',
+          position: p.short,
+          positionSide: p.sideToMove,
+          positionMatch: 'mirrored',
+        };
+        view = 'games';
+      }}
+    />
   {:else}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if !available}
@@ -305,7 +394,7 @@
           <li class="pick">
             <button
               class="open"
-              onclick={() => open(g.id)}
+              onclick={() => open(g.id, g.positionPly)}
               disabled={opening != null}
               aria-label="Open {g.gold ?? '?'} vs {g.silver ?? '?'}, {g.date}"
             >
@@ -344,6 +433,24 @@
 </div>
 
 <style>
+  .editor-over {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: var(--bg);
+  }
+  .position-filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin: -6px 0 12px;
+  }
+  .position-filter .mini {
+    width: 72px;
+    height: 72px;
+    display: block;
+  }
   header {
     display: flex;
     align-items: baseline;

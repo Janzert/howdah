@@ -2093,6 +2093,16 @@ pub struct LibraryFilter {
     /// Silver's reply to `gold_setup` as the setup explorer gives it, or
     /// with no `gold_setup`, silver's setup seen from gold's side.
     pub silver_setup: Option<String>,
+    /// Only games reaching a position (the side to move counts, the
+    /// move number doesn't).
+    pub position: Option<PositionSpec>,
+    /// How `position` matches: `exact` (the default), `pieces` (its
+    /// pieces on their squares, anything else anywhere, either side to
+    /// move) or `mirrored` (exact, or its mirror image).
+    pub position_match: Option<String>,
+    /// Leaves out one game (a board's own, from its explorer).
+    #[ts(type = "number | null")]
+    pub exclude: Option<i64>,
 }
 
 /// A game in the game list.
@@ -2126,6 +2136,10 @@ pub struct LibraryGameView {
     pub header_only: bool,
     pub set_position: bool,
     pub variations: bool,
+    /// With a position in the filter: the moves before the game first
+    /// reached it, setups included.
+    #[ts(type = "number | null")]
+    pub position_ply: Option<i64>,
 }
 
 /// One setup in the setup explorer (`howdah_db::SetupStat`).
@@ -2166,6 +2180,68 @@ pub struct SetupStatsView {
     pub games: i64,
     #[ts(type = "number")]
     pub setups: i64,
+    pub available: bool,
+}
+
+/// Results over some games (`howdah_db::Tally`).
+#[derive(Clone, Debug, Default, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ResultsView {
+    #[ts(type = "number")]
+    pub games: i64,
+    #[ts(type = "number")]
+    pub gold_wins: i64,
+    #[ts(type = "number")]
+    pub silver_wins: i64,
+    /// Games with both ratings, gold's wins in them, and the wins the
+    /// ratings predicted for gold.
+    #[ts(type = "number")]
+    pub rated_games: i64,
+    #[ts(type = "number")]
+    pub rated_gold_wins: i64,
+    pub expected_gold_wins: f64,
+    /// The average rating of the side to move at the position.
+    pub rating: Option<f64>,
+    /// The newest game's date, `YYYY.MM.DD`.
+    pub last_date: String,
+    /// Games that ended at the position.
+    #[ts(type = "number")]
+    pub ended: i64,
+}
+
+/// A move played from the explorer's position.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExplorerMoveView {
+    /// The move's notation, as most often played (the steps in another
+    /// order count as the same move).
+    pub notation: String,
+    pub tally: ResultsView,
+}
+
+/// The game database's move tree at a board's shown position.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExplorerView {
+    /// The node it's for, and its position (for the game list).
+    pub node: NodeId,
+    pub position: PositionSpec,
+    /// How the position matches, for the game list (`exact`, or
+    /// `mirrored` in the setup explorer).
+    pub position_match: String,
+    /// The board's own game in the database, which is left out.
+    #[ts(type = "number | null")]
+    pub exclude: Option<i64>,
+    pub games: ResultsView,
+    /// The moves played next, most played first.
+    pub moves: Vec<ExplorerMoveView>,
+    /// Distinct moves played next.
+    #[ts(type = "number")]
+    pub distinct: i64,
+    /// There's a game database to search.
     pub available: bool,
 }
 

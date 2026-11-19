@@ -35,4 +35,11 @@ describe('library', () => {
     const f = toFilter({ ...EMPTY_FORM, goldSetup: 'RRRCCRRRRHDMEDHR' });
     expect(f).toMatchObject({ goldSetup: 'RRRCCRRRRHDMEDHR', silverSetup: null });
   });
+
+  it('passes a position on only when there is one', () => {
+    expect(toFilter(EMPTY_FORM)).toMatchObject({ position: null, positionMatch: null });
+    const short = `[${' '.repeat(35)}EM${' '.repeat(27)}]`;
+    const f = toFilter({ ...EMPTY_FORM, position: short, positionSide: 'silver', positionMatch: 'pieces' });
+    expect(f).toMatchObject({ position: { short, sideToMove: 'silver' }, positionMatch: 'pieces' });
+  });
 });
