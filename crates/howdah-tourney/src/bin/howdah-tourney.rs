@@ -223,6 +223,7 @@ async fn command(args: &[String], data: &Path) -> Result<(), String> {
                 working_dir: None,
                 options: Default::default(),
                 restart_each_game: false,
+                ponder: false,
                 copy_dir: false,
                 retired: false,
                 source: None,

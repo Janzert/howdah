@@ -839,6 +839,7 @@ fn daemon_engine(e: EngineSpec, name: String) -> Result<howdah_tourney::EngineSp
         working_dir: e.working_dir.filter(|d| !d.trim().is_empty()).map(PathBuf::from),
         options,
         restart_each_game: false,
+        ponder: false,
         // An installed engine may need the files beside it.
         copy_dir: e.installed.is_some(),
         retired: false,

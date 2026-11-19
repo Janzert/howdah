@@ -41,6 +41,13 @@ working Python controller. Engine quirks live in one place in the code,
   the old one and waits up to 2 s for its `bestmove`, so moves never reach
   an engine mid-search. An early `bestmove` (a proven win, a single legal
   move, a setup) isn't an error.
+- **Pondering** (engine matches only: `MatchConfig::ponder`, a tourney
+  engine's `ponder = true`): after its move the engine gets `go ponder`,
+  and the opponent's `makemove` ends it, as in pyrimaa's gameroom and
+  Sharp (which sends no `bestmove` for a ponder). Before the engine's
+  next `go`, an `isready` gathers what it sent meanwhile, so a stray
+  `bestmove` from the ponder is reported, not played. The app's games
+  don't ponder yet.
 - **Ending engines:** `quit`, then a kill after a timeout. Engines are
   also killed when their `Engine` is dropped, but that needs our
   destructors to run, which they don't when the app is killed or exits

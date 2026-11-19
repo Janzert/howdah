@@ -15,6 +15,7 @@
 //! name = "dev"
 //! program = "../OpFor/bot_opfor"
 //! options = { hash = 64 }
+//! # ponder = true       # go ponder after each of its moves
 //!
 //! [[engines]]
 //! name = "base"
@@ -71,6 +72,7 @@
 //! name = "opfor"
 //! program = "../OpFor/bot_opfor"
 //! options = { hash = 64 }
+//! # ponder = true       # go ponder after each of its moves
 //! ```
 //!
 //! A pool (see `pool`) has `[pool]` and two or more engines, and plays
@@ -234,6 +236,11 @@ pub struct EngineSpec {
     /// Start a new process for every game instead of reusing one.
     #[serde(default, skip_serializing_if = "is_false")]
     pub restart_each_game: bool,
+    /// Ponder: `go ponder` after each of its moves, searching through the
+    /// opponent's turn (`MatchConfig::ponder`). On one machine it takes
+    /// CPU from the opponent unless each has cores of its own.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ponder: bool,
     /// Snapshot the program's whole directory, for an engine that needs
     /// files beside it.
     #[serde(default, skip_serializing_if = "is_false")]

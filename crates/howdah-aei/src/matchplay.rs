@@ -22,6 +22,11 @@ pub struct MatchConfig {
     /// short turns aren't stopped at once.
     pub stop_margin: Duration,
     pub ready_timeout: Duration,
+    /// Which sides (gold, silver) ponder: after its move an engine gets
+    /// `go ponder`, which the opponent's `makemove` ends, and an
+    /// `isready` before its next `go` gathers what it sent meanwhile
+    /// (as pyrimaa's gameroom does, without the `isready`).
+    pub ponder: [bool; 2],
 }
 
 impl Default for MatchConfig {
@@ -30,6 +35,7 @@ impl Default for MatchConfig {
             time_control: None,
             stop_margin: Duration::from_secs(1),
             ready_timeout: Duration::from_secs(30),
+            ponder: [false; 2],
         }
     }
 }
@@ -127,6 +133,7 @@ pub async fn play_match_from(
     let game_start = Instant::now();
     let game_deadline = tc.filter(|t| t.time_limit_ms > 0).map(|t| game_start + t.time_limit());
     let mut detail = None;
+    let mut pondering = [false; 2];
 
     while game.result().is_none() {
         let ply = game.ply_count();
@@ -149,13 +156,32 @@ pub async fn play_match_from(
         }
         on_event(MatchEvent::TurnStarted { ply, side, reserve: reserves.map(|r| r[me]), allowance });
 
-        let start = Instant::now();
-        let reply = match engine.go().await {
-            Ok(()) => {
-                let margin = allowance.map_or(config.stop_margin, |a| config.stop_margin.min(a / 4));
-                wait_for_move(engine, side, deadline, margin, &mut on_event).await
+        // A ponder ended with the opponent's `makemove`: whatever the
+        // engine sent since, a stray `bestmove` included, is read here and
+        // not taken for this turn's move.
+        let flushed = if std::mem::take(&mut pondering[me]) {
+            match engine.is_ready(config.ready_timeout).await {
+                Ok(messages) => {
+                    for msg in messages {
+                        report(side, msg, &mut on_event);
+                    }
+                    Ok(())
+                }
+                Err(e) => Err(e),
             }
+        } else {
+            Ok(())
+        };
+        let start = Instant::now();
+        let reply = match flushed {
             Err(e) => Err(e),
+            Ok(()) => match engine.go().await {
+                Ok(()) => {
+                    let margin = allowance.map_or(config.stop_margin, |a| config.stop_margin.min(a / 4));
+                    wait_for_move(engine, side, deadline, margin, &mut on_event).await
+                }
+                Err(e) => Err(e),
+            },
         };
         let used = start.elapsed();
         let opponent = side.opponent();
@@ -203,6 +229,10 @@ pub async fn play_match_from(
             engine.make_move(&notation).await.ok();
         }
         on_event(MatchEvent::MovePlayed { ply, side, notation, used, reserve: reserves.map(|r| r[me]) });
+        if config.ponder[me] && game.result().is_none() {
+            // A failure shows up on the engine's next turn.
+            pondering[me] = engines[me].go_ponder().await.is_ok();
+        }
 
         if let Some(tc) = tc
             && tc.turn_limit > 0
@@ -244,11 +274,18 @@ async fn wait_for_move(
             }
             None => return Ok(None),
             Some(EngineMessage::BestMove(text)) => return Ok(Some(text)),
-            Some(EngineMessage::Info(info)) => on_event(MatchEvent::Info { side, info }),
-            Some(EngineMessage::Log(text)) => on_event(MatchEvent::Log { side, text }),
-            Some(EngineMessage::Unknown(line)) => on_event(MatchEvent::Unexpected { side, line }),
-            Some(other) => on_event(MatchEvent::Unexpected { side, line: format!("{other:?}") }),
+            Some(other) => report(side, other, on_event),
         }
+    }
+}
+
+/// Passes on a message that isn't the move being waited for.
+fn report(side: Color, msg: EngineMessage, on_event: &mut impl FnMut(MatchEvent)) {
+    match msg {
+        EngineMessage::Info(info) => on_event(MatchEvent::Info { side, info }),
+        EngineMessage::Log(text) => on_event(MatchEvent::Log { side, text }),
+        EngineMessage::Unknown(line) => on_event(MatchEvent::Unexpected { side, line }),
+        other => on_event(MatchEvent::Unexpected { side, line: format!("{other:?}") }),
     }
 }
 

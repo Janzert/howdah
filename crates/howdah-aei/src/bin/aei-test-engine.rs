@@ -2,7 +2,8 @@
 //! to misbehave. Not a useful opponent.
 //!
 //! Usage: `aei-test-engine [--mode MODE] [--after N] [--delay-ms MS] [--seed S] [--name NAME] [--until-stop]
-//! [--grow-mb MB] [--think-ms MS] [--ignore-quit] [--child-pid-file PATH]`
+//! [--grow-mb MB] [--think-ms MS] [--ignore-quit] [--child-pid-file PATH]
+//! [--stray-ponder]`
 //!
 //! `--name` sets the name it gives (`id name`), so it can stand in for an
 //! engine with a `Profile`.
@@ -11,6 +12,10 @@
 //! does), sending `info depth/score/pv` every 20 ms, and any command but
 //! `stop`, `isready`, `quit` and `setoption` (valid at any time) during a
 //! search is logged as an error.
+//!
+//! `go ponder` does nothing, unless `--stray-ponder`: then it logs
+//! `pondering` and sends a `bestmove` that isn't a move, as a careless
+//! engine might, for a controller to ignore.
 //!
 //! Modes (applied once, on the engine's (N+1)-th move; N defaults to 0):
 //! - `random` (default): random legal moves.
@@ -75,6 +80,7 @@ struct Options {
     think: Duration,
     ignore_quit: bool,
     child_pid_file: Option<String>,
+    stray_ponder: bool,
 }
 
 fn parse_options() -> Options {
@@ -89,6 +95,7 @@ fn parse_options() -> Options {
         think: Duration::ZERO,
         ignore_quit: false,
         child_pid_file: None,
+        stray_ponder: false,
     };
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut flag = |name: &str| match args.iter().position(|a| a == name) {
@@ -105,6 +112,7 @@ fn parse_options() -> Options {
     }
     o.until_stop = flag("--until-stop");
     o.ignore_quit = flag("--ignore-quit");
+    o.stray_ponder = flag("--stray-ponder");
     let mut i = 0;
     while i + 1 < args.len() {
         let v = &args[i + 1];
@@ -272,7 +280,12 @@ fn main() {
                     say(&format!("log Error: bad makemove {rest:?}: {e}"));
                 }
             }
-            "go" if rest == "ponder" => {}
+            "go" if rest == "ponder" => {
+                if opts.stray_ponder {
+                    say("log pondering");
+                    say("bestmove stray-ponder-move");
+                }
+            }
             "go" => {
                 if opts.grow_mb > 0 {
                     hoard.push(vec![1u8; opts.grow_mb << 20]);

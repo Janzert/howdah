@@ -1012,7 +1012,9 @@ async fn play_game(
         let (a, b) = (&mut a.as_mut().expect("started").engine, &mut b.as_mut().expect("started").engine);
         let (g, s) = if gold == 0 { (a, b) } else { (b, a) };
         let opening = ctx.start_of((pair, game)).map_or_else(Game::new, |s| s.game.clone());
-        let game_played = play_match_from(g, s, &ctx.config, &opening, |event| match event {
+        let ponder = [specs[gold].ponder, specs[1 - gold].ponder];
+        let config = MatchConfig { ponder, ..ctx.config.clone() };
+        let game_played = play_match_from(g, s, &config, &opening, |event| match event {
             MatchEvent::MovePlayed { ply, side, notation, used: u, reserve } => {
                 used.push(u);
                 let reserves = ctx.live_move((pair, game), side.index(), &notation, u, reserve);

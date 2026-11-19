@@ -100,6 +100,26 @@ async fn random_engines_finish_a_legal_game() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn pondering_engines_get_go_ponder_and_their_stray_output_is_set_aside() {
+    // Gold ponders and answers `go ponder` with a `bestmove` of its own;
+    // the game still plays its real moves, and the stray one is reported.
+    let mut g = start(&["--seed", "21", "--stray-ponder"]).await;
+    let mut s = start(&["--seed", "22"]).await;
+    let config = MatchConfig { ponder: [true, false], ..MatchConfig::default() };
+    let mut events = Vec::new();
+    let outcome = play_match(&mut g, &mut s, &config, |e| events.push(e)).await.unwrap();
+    assert!(outcome.game.ply_count() > 4, "{:?}", outcome.detail);
+    assert_ne!(outcome.result.reason, WinReason::IllegalMove, "{:?}", outcome.detail);
+    let gold = |e: &&MatchEvent| match e {
+        MatchEvent::Log { side: Color::Gold, text } => text == "pondering",
+        MatchEvent::Unexpected { side: Color::Gold, line } => line.contains("stray-ponder-move"),
+        _ => false,
+    };
+    let seen: Vec<&MatchEvent> = events.iter().filter(gold).collect();
+    assert!(seen.len() >= 2, "{seen:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn illegal_move_loses() {
     // Silver's first turn (after both setups) is illegal.
     let (outcome, _) = run(&[], &["--mode", "illegal", "--after", "1"], None).await;
