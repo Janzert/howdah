@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use howdah_arimaa::{Color, Game, GameResult, TimeControl, WinReason};
+use howdah_arimaa::{Color, Game, GameResult, Rounding, TimeControl, WinReason};
 use tokio::time::Instant;
 
 use crate::engine::{Engine, EngineId};
@@ -219,7 +219,7 @@ pub async fn play_match_from(
             res[me] = if Game::is_setup_ply(ply) {
                 tc.reserve_after_setup(res[me], used)
             } else {
-                tc.reserve_after(res[me], used)
+                tc.reserve_after(res[me], used, Rounding::Exact)
             };
         }
 

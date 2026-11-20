@@ -2,7 +2,9 @@
 //!
 //! - `M`: time per move
 //! - `R`: starting reserve
-//! - `P`: percent of unused move time added to the reserve (default 100)
+//! - `P`: percent of unused move time added to the reserve (default 100,
+//!   but 0 when the time control has only `M` and `R`, as arimaa.com
+//!   reads `2/2`: its game logs show nothing added for those)
 //! - `L`: reserve limit (0 = none)
 //! - `G`: game time limit, or a turn limit with a `t` suffix (0 = none)
 //! - `T`: maximum time for a single turn (0 = none)
@@ -56,6 +58,22 @@ data_type! {
         /// changed; 0 for none).
         pub setup_minimum_ms: u64,
     }
+}
+
+/// How a clock adds unused move time to the reserve
+/// ([`TimeControl::reserve_after`]). It depends on how the time used was
+/// measured, not on the time control.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rounding {
+    /// Time charged in whole seconds, as arimaa.com (and Maqha) charge a
+    /// turn: the addition is rounded up to a whole second, as the game
+    /// logs show (75%: 99.94% of turns; 110%: all). With whole seconds
+    /// used, that only changes anything when the percent isn't 0 or 100.
+    Gameroom,
+    /// Time measured to the millisecond (games played here): the addition
+    /// to the nearest millisecond. Rounding up to a second would add up to
+    /// a second a move, and fractional time controls need the precision.
+    Exact,
 }
 
 /// The least move time a setup gets by arimaa.com's rules.
@@ -182,6 +200,8 @@ impl FromStr for TimeControl {
         }
         let reserve_ms = time(1, 'm')?;
         let percent = match field(2) {
+            // arimaa.com adds nothing for a time control of two fields.
+            None if fields.len() == 2 => 0,
             None => 100,
             Some(p) => p.parse().map_err(|_| ParseError::new(format!("invalid percent {p:?}")))?,
         };
@@ -226,12 +246,15 @@ impl fmt::Display for TimeControl {
             format_time(self.max_turn_ms),
         ];
         let defaults = ["", "", "100", "0", "0", "0"];
-        while out.len() > 2 && out.last().map(String::as_str) == Some(defaults[out.len() - 1]) {
+        while out.len() > 3 && out.last().map(String::as_str) == Some(defaults[out.len() - 1]) {
             out.pop();
         }
-        // pyrimaa writes an all-zero control with an explicit reserve limit.
         if out == ["0", "0", "0"] {
+            // pyrimaa writes an all-zero control with an explicit reserve limit.
             out.push("0".into());
+        } else if out.len() == 3 && out[2] == "0" {
+            // Two fields mean a percent of 0; 100 has to be written.
+            out.pop();
         }
         write!(f, "{}", out.join("/"))
     }
@@ -320,25 +343,27 @@ impl TimeControl {
     }
 
     /// Reserve after a turn that took `used`. Unused move time is added at
-    /// `percent`; overtime comes out of the reserve. Additions stop at the
-    /// reserve limit, but a reserve already over it isn't cut (`matchRules.html`).
-    /// Setups use `reserve_after_setup` instead.
-    pub fn reserve_after(&self, reserve: Duration, used: Duration) -> Duration {
+    /// `percent`, as `rounding` says; overtime comes out of the reserve.
+    /// Additions stop at the reserve limit, but a reserve already over it
+    /// isn't cut (`matchRules.html`, and arimaa.com's game logs). Setups
+    /// use `reserve_after_setup` instead.
+    pub fn reserve_after(&self, reserve: Duration, used: Duration, rounding: Rounding) -> Duration {
         let move_time = self.move_time();
         let updated = if used <= move_time {
-            reserve + self.added_to_reserve(move_time - used)
+            reserve + self.added_to_reserve(move_time - used, rounding)
         } else {
             reserve.saturating_sub(used - move_time)
         };
         if self.max_reserve_ms > 0 { updated.min(self.max_reserve().max(reserve)) } else { updated }
     }
 
-    /// `percent` of `unused` move time, rounded to the nearest second as
-    /// `matchRules.html` has it, or to the millisecond in a time control
-    /// with fractions of a second.
-    fn added_to_reserve(&self, unused: Duration) -> Duration {
-        let unit: u128 = if self.is_whole_seconds() { 1000 } else { 1 };
-        let added = (unused.as_millis() * u128::from(self.percent) + 50 * unit) / (100 * unit) * unit;
+    /// `percent` of `unused` move time, as `rounding` says.
+    fn added_to_reserve(&self, unused: Duration, rounding: Rounding) -> Duration {
+        let scaled = unused.as_millis() * u128::from(self.percent);
+        let added = match rounding {
+            Rounding::Gameroom => scaled.div_ceil(100_000) * 1000,
+            Rounding::Exact => (scaled + 50) / 100,
+        };
         Duration::from_millis(added as u64)
     }
 }
@@ -372,6 +397,7 @@ mod tests {
         assert_eq!(tc("1s/0/100/0/1d2").time_limit_ms, 93_600_000);
         assert_eq!(tc("1s/0/100/0/0/1m0.5").max_turn_ms, 60_500);
         assert_eq!(tc("2m30/1").to_string(), "2m30s/1m");
+        assert_eq!(tc("2m30/1/100").to_string(), "2m30s/1m/100");
         assert!("1s30/0".parse::<TimeControl>().is_err(), "nothing below seconds");
     }
 
@@ -384,8 +410,10 @@ mod tests {
 
     #[test]
     fn percent() {
-        assert_eq!(tc("30s/10s").percent, 100);
+        assert_eq!(tc("30s/10s").percent, 0, "two fields add nothing, as on arimaa.com");
         assert_eq!(tc("30s/10s/100").percent, 100);
+        assert_eq!(tc("30s/10s/").percent, 100, "an empty field is the default");
+        assert_eq!(tc("0:30/3").percent, 0);
         assert_eq!(tc("30s/10s/50").percent, 50);
         assert_eq!(tc("30s/10s/0").percent, 0);
     }
@@ -418,11 +446,14 @@ mod tests {
     #[test]
     fn display() {
         assert_eq!(tc("0/0/0").to_string(), "0/0/0/0");
-        assert_eq!(tc("1:30/5/100/0").to_string(), "1m30s/5m");
+        assert_eq!(tc("1:30/5/100/0").to_string(), "1m30s/5m/100", "100 has to be written");
+        assert_eq!(tc("1:30/5/0").to_string(), "1m30s/5m");
         assert_eq!(tc("60m/15h/50").to_string(), "1h/15h/50");
         assert_eq!(tc("1/1/100/10/5/5").to_string(), "1m/1m/100/10m/5h/5m");
         assert_eq!(tc("1/1/100/0/50t/5").to_string(), "1m/1m/100/0/50t/5m");
-        for s in ["1m30s/5m", "1h/15h/50", "1m/1m/100/10m/5h/5m", "1m/1m/100/0/50t/5m", "0/0/0/0"] {
+        for s in
+            ["1m30s/5m", "1m30s/5m/100", "1h/15h/50", "1m/1m/100/10m/5h/5m", "1m/1m/100/0/50t/5m", "0/0/0/0"]
+        {
             assert_eq!(tc(s).to_string(), s, "round trip");
         }
     }
@@ -443,7 +474,7 @@ mod tests {
         assert_eq!(tc("1s/0/100/0/0.5h").time_limit_ms, 1_800_000);
         assert_eq!(tc("0.1s/0/100/0/0/0.3s").max_turn_ms, 300);
         assert_eq!(tc("0.5s/1m0.25s").to_string(), "0.5s/1m0.25s");
-        assert_eq!(tc("1.5s/2s").to_string(), "1.5s/2s");
+        assert_eq!(tc("1.5s/2s/100").to_string(), "1.5s/2s/100");
         assert!(tc("30s/1m").is_whole_seconds());
         assert!(!tc("0.5s/1m").is_whole_seconds());
         for bad in ["0.0005s/1s", "1./1s", ".5s/1s", "1.5.5s/1s"] {
@@ -490,32 +521,47 @@ mod tests {
         assert_eq!(t.turn_allowance(s(60)), s(45), "capped by max turn time");
         assert_eq!(tc("30s/1m").turn_allowance(s(60)), s(90));
         // 10 s unused, half of it added.
-        assert_eq!(t.reserve_after(s(60), s(20)), s(65));
+        assert_eq!(t.reserve_after(s(60), s(20), Rounding::Exact), s(65));
         // 5 s over the move time comes out of the reserve.
-        assert_eq!(t.reserve_after(s(60), s(35)), s(55));
+        assert_eq!(t.reserve_after(s(60), s(35), Rounding::Exact), s(55));
         // Capped at 90 s.
-        assert_eq!(t.reserve_after(s(88), s(0)), s(90));
-        assert_eq!(t.reserve_after(s(3), s(60)), s(0));
+        assert_eq!(t.reserve_after(s(88), s(0), Rounding::Exact), s(90));
+        assert_eq!(t.reserve_after(s(3), s(60), Rounding::Exact), s(0));
     }
 
     #[test]
     fn a_reserve_over_the_limit_is_not_cut() {
         let s = Duration::from_secs;
         let t = tc("30s/5m/100/3m");
-        assert_eq!(t.reserve_after(s(300), s(10)), s(300), "nothing added, nothing cut");
-        assert_eq!(t.reserve_after(s(300), s(40)), s(290), "overtime still comes off");
-        assert_eq!(t.reserve_after(s(170), s(0)), s(180), "under the limit, capped at it");
+        assert_eq!(t.reserve_after(s(300), s(10), Rounding::Exact), s(300), "nothing added, nothing cut");
+        assert_eq!(t.reserve_after(s(300), s(40), Rounding::Exact), s(290), "overtime still comes off");
+        assert_eq!(t.reserve_after(s(170), s(0), Rounding::Exact), s(180), "under the limit, capped at it");
     }
 
     #[test]
-    fn additions_round_to_the_nearest_second() {
+    fn additions_round_up_to_a_second_in_whole_seconds() {
         let ms = Duration::from_millis;
         let t = tc("30s/1m/75");
-        assert_eq!(t.reserve_after(ms(60_000), ms(20_000)), ms(68_000), "7.5 s rounds up");
-        assert_eq!(t.reserve_after(ms(60_000), ms(20_800)), ms(67_000), "6.9 s");
-        assert_eq!(t.reserve_after(ms(60_000), ms(21_000)), ms(67_000), "6.75 s");
+        let g = |used| t.reserve_after(ms(60_000), ms(used), Rounding::Gameroom);
+        assert_eq!(g(20_000), ms(68_000), "7.5 s rounds up");
+        assert_eq!(g(21_000), ms(67_000), "6.75 s rounds up");
+        assert_eq!(g(22_000), ms(66_000), "6 s");
+        assert_eq!(tc("30s/1m/110").reserve_after(ms(60_000), ms(25_000), Rounding::Gameroom), ms(66_000));
+        // Whole seconds at 100%: nothing to round.
+        assert_eq!(tc("30s/1m/100").reserve_after(ms(60_000), ms(20_000), Rounding::Gameroom), ms(70_000));
+    }
+
+    #[test]
+    fn exact_additions_go_to_the_millisecond() {
+        let ms = Duration::from_millis;
+        let t = tc("30s/1m/75");
+        let e = |used| t.reserve_after(ms(60_000), ms(used), Rounding::Exact);
+        assert_eq!(e(20_000), ms(67_500));
+        assert_eq!(e(20_800), ms(66_900));
+        // No second's bonus for a turn measured in ms.
+        assert_eq!(tc("2s/1m/100").reserve_after(ms(60_000), ms(1_200), Rounding::Exact), ms(60_800));
         let tenths = tc("0.5s/1m/75");
-        assert_eq!(tenths.reserve_after(ms(60_000), ms(100)), ms(60_300), "to the ms with fractions");
+        assert_eq!(tenths.reserve_after(ms(60_000), ms(100), Rounding::Exact), ms(60_300));
     }
 
     #[test]

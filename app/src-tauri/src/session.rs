@@ -33,8 +33,8 @@ use std::time::{Duration, Instant};
 
 use howdah_arimaa::{
     Annotation, Color, DEFAULT_SETUP_MINIMUM, Game, GameError, GameRecord, GameResult, GameTree, Glyph, Move,
-    NodeId, Placement, Position, Route, SETUP_MINIMUM_TAG, Square, StartPosition, Step, StepEffect, StepKind,
-    TimeControl, Turn, TurnBuilder, ViewerGame, WinReason, check_start_position, default_setup,
+    NodeId, Placement, Position, Rounding, Route, SETUP_MINIMUM_TAG, Square, StartPosition, Step, StepEffect,
+    StepKind, TimeControl, Turn, TurnBuilder, ViewerGame, WinReason, check_start_position, default_setup,
     is_viewer_vars,
 };
 
@@ -1324,8 +1324,11 @@ impl Session {
             self.finish(GameResult { winner: side.opponent(), reason: WinReason::Timeout }, None);
             return false;
         }
-        clock.reserves[side.index()] =
-            if setup { tc.reserve_after_setup(reserve, used) } else { tc.reserve_after(reserve, used) };
+        clock.reserves[side.index()] = if setup {
+            tc.reserve_after_setup(reserve, used)
+        } else {
+            tc.reserve_after(reserve, used, Rounding::Exact)
+        };
         true
     }
 
@@ -3362,7 +3365,10 @@ impl Session {
                 reserves[side.index()] = if Game::is_setup_ply(self.tree.start_ply() + node.ply() - 1) {
                     tc.reserve_after_setup(reserve, used)
                 } else {
-                    tc.reserve_after(reserve, used)
+                    // Whole seconds were charged, as arimaa.com does, unless
+                    // the time control has fractions.
+                    let rounding = if tc.is_whole_seconds() { Rounding::Gameroom } else { Rounding::Exact };
+                    tc.reserve_after(reserve, used, rounding)
                 };
             }
         }

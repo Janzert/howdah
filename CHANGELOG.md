@@ -65,6 +65,18 @@ young).
   before.
 - In an engine game, the side panel lists the engines in the board's
   order, the side at the top first, instead of always gold first.
+- A time control of two fields (`2/2`, `0:30/3`) adds nothing to the
+  reserve, as arimaa.com reads it: its game logs show no time added in
+  those games. Howdah used to add all of the unused move time. A time
+  control that adds it all is now written with the `100`
+  (`1m30s/5m/100`).
+- Unused move time is added the way the time was measured. Where turns
+  are charged in whole seconds, as arimaa.com charges them (the clocks
+  worked out for a finished game's moves), the addition is rounded up
+  to a whole second, as arimaa.com's game logs show, not to the nearest.
+  Games played here, measured to the millisecond, add it to the
+  millisecond, so a fast game no longer gains up to half a second a
+  move from the rounding.
 
 - The engine panel shows an engine's chance of winning when it gives one
   (`win 63%`), with its eval in rabbits on hover, and a forced result as

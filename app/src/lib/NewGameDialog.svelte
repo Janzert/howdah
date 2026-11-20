@@ -137,7 +137,10 @@
         <input type="checkbox" bind:checked={separate} onchange={toggleSeparate} />
         Separate time control for each player
       </label>
-      <p class="hint">move/reserve[/percent/max reserve/game limit/max turn], e.g. <code>30s/2m</code></p>
+      <p class="hint">
+        move/reserve[/percent/max reserve/game limit/max turn], e.g. <code>30s/2m/100</code> (with two fields nothing is added
+        to the reserve, as on arimaa.com)
+      </p>
     </div>
     <span></span>
     <div>
