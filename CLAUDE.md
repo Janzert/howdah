@@ -972,7 +972,9 @@ plans the engine test and tournament runner.
     `test:<id>`, `board:<session>`, …), the panels opened as
     `lobby.gameroomPanels` and `lobby.testPanels`; closing one goes back
     to the panel shown before it. Docked boards are iframes over the
-    panel area, all loaded, one shown (`serveFrames` relays their IPC;
+    panel area, all loaded, one shown (`serveFrames` relays their IPC,
+    which a board posts as plain copies, `lib/plainCopy.ts`, since
+    `postMessage` can't clone `$state` proxies;
     `docs/WINDOWS.md`, "Boards as panels"); a board docked since the last
     change is shown. In Tauri it asks before the main window closes on
     docked boards still playing when that quits (`guardMainWindow`).

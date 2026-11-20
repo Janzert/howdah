@@ -14,6 +14,7 @@ import type { ApiError } from './bindings/ApiError';
 import type { SessionId } from './bindings/SessionId';
 import { EVENT_NAMES } from './events';
 import { useIpc } from './ipc';
+import { plainCopy } from './plainCopy';
 
 /** What a docked board asks of the lobby. */
 export type FrameRequest =
@@ -60,7 +61,7 @@ const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unk
 let onRequestClose: (() => void) | null = null;
 
 function post(message: ToLobby) {
-  window.parent.postMessage(message, location.origin);
+  window.parent.postMessage(plainCopy(message), location.origin);
 }
 
 /** In a docked board, before anything invokes or listens: routes both
