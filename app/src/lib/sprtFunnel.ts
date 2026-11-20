@@ -17,6 +17,13 @@ export interface Funnel {
   /** The LLR's fail and pass bounds. */
   lower: number;
   upper: number;
+  /** The test's padded pair-score variance over the one `modelVar` gives
+   * at its score: above 1 when pairs split less often than independent
+   * games would (each engine winning both games of a pair), below 1 when
+   * they split more. The curves scale the modelled variance by it, so
+   * that at the test's own pair count and score `llrAt` is the LLR
+   * `stats.rs` reports; 1 before the first pair. */
+  dispersion: number;
 }
 
 /** A point of a curve: pairs played and the Elo there. */
@@ -40,7 +47,26 @@ export function funnelOf(t: TestView): Funnel | null {
   const { elo0, elo1 } = t.sprt;
   const s0 = scoreFromElo(elo0);
   const s1 = scoreFromElo(elo1);
-  return { elo0, elo1, s0, s1, mid: (s0 + s1) / 2, lower: t.llrBounds[0], upper: t.llrBounds[1] };
+  return {
+    elo0,
+    elo1,
+    s0,
+    s1,
+    mid: (s0 + s1) / 2,
+    lower: t.llrBounds[0],
+    upper: t.llrBounds[1],
+    dispersion: dispersionOf(t.pairCounts),
+  };
+}
+
+/** `Funnel.dispersion` for these pair counts. */
+export function dispersionOf(counts: readonly [number, number, number] | undefined): number {
+  if (!counts) return 1;
+  const [c0, c1, c2] = counts;
+  const n = c0 + c1 + c2;
+  if (n === 0) return 1;
+  const m = (0.5 * c1 + c2) / n;
+  return pairVar(c0 + 1, c1 + 1, c2 + 1) / modelVar(n, m);
 }
 
 /** Variance of pair scores 0, ½ and 1 with these counts. */
@@ -57,9 +83,10 @@ function modelVar(n: number, m: number): number {
   return pairVar(n * q * q + 1, 2 * n * m * q + 1, n * m * m + 1);
 }
 
-/** The LLR after n pairs whose games are won with chance m. */
+/** The LLR after n pairs whose games are won with chance m, the variance
+ * scaled by the funnel's dispersion. */
 export function llrAt(f: Funnel, n: number, m: number): number {
-  return (n * (f.s1 - f.s0) * (2 * m - f.s0 - f.s1)) / (2 * modelVar(n, m));
+  return (n * (f.s1 - f.s0) * (2 * m - f.s0 - f.s1)) / (2 * f.dispersion * modelVar(n, m));
 }
 
 /** The score that puts the LLR on `bound` after n pairs, on the bound's
@@ -152,7 +179,7 @@ export function reachChance(f: Funnel, n: number, m: number, maxPairs: number): 
     const s2 = (d * d) / v;
     return Math.min(1, cross(f.upper - l, mu, s2, left) + cross(l - f.lower, -mu, s2, left));
   };
-  const sd = Math.sqrt(modelVar(n, m) / n);
+  const sd = Math.sqrt((f.dispersion * modelVar(n, m)) / n);
   let sum = 0;
   for (let i = 0; i < POST_Z.length; i++)
     sum += POST_W[i] * hit(Math.min(1 - 1e-6, Math.max(1e-6, m + sd * POST_Z[i])));
@@ -210,7 +237,10 @@ export function undecidedBand(
   below: number,
   points = 200,
 ): [pairs: number, lo: number, hi: number][] {
-  const key = `${f.elo0} ${f.elo1} ${f.lower} ${f.upper} ${maxPairs} ${below} ${points}`;
+  // The dispersion moves a little with every pair; to a fiftieth it
+  // changes the band by less than a line's width, and keeps it cached.
+  f = { ...f, dispersion: Math.round(f.dispersion * 50) / 50 };
+  const key = `${f.elo0} ${f.elo1} ${f.lower} ${f.upper} ${f.dispersion} ${maxPairs} ${below} ${points}`;
   const kept = bandCache.get(key);
   if (kept) return kept;
   const rows: [number, number, number][] = [];

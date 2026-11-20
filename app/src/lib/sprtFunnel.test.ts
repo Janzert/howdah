@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TestGameView } from './bindings/TestGameView';
 import type { TestView } from './bindings/TestView';
 import {
+  cutoffsAt,
   eloFromScore,
   eloSpan,
   funnelCurves,
@@ -67,6 +68,22 @@ describe('funnel', () => {
     // Counts that are exactly what games won with chance m give.
     expect(llrAt(f, 100, 0.5)).toBeCloseTo(rustLlr(f, [25, 50, 25]), 12);
     expect(llrAt(f, 100, 0.6)).toBeCloseTo(rustLlr(f, [16, 48, 36]), 12);
+  });
+
+  it("scales the variance to the test's own pairs", () => {
+    // A test whose pairs split less often than independent games would:
+    // LLR 2.931, short of the 2.944 bound, at +112 Elo after 96 pairs.
+    const counts: [number, number, number] = [15, 36, 45];
+    const test = { sprt: { elo0: 0, elo1: 20, undecidedBelow: null }, llrBounds: [-BOUND, BOUND], pairCounts: counts };
+    const f = funnelOf(test as unknown as TestView)!;
+    expect(f.dispersion).toBeGreaterThan(1.1);
+    const m = (0.5 * 36 + 45) / 96;
+    expect(llrAt(f, 96, m)).toBeCloseTo(rustLlr(f, counts), 12);
+    expect(llrAt(f, 96, m)).toBeLessThan(BOUND);
+    // So the test is still left of the pass curve.
+    expect(cutoffsAt(f, 96).pass!).toBeGreaterThan(eloFromScore(m));
+    // And independent-looking counts change nothing.
+    expect(funnelOf({ ...test, pairCounts: [0, 0, 0] } as unknown as TestView)!.dispersion).toBe(1);
   });
 
   it('puts the LLR on a bound along each curve', () => {
