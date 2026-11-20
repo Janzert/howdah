@@ -169,7 +169,7 @@
         {#if ratingNote}<span class="meta">{ratingNote}</span>{/if}
       </div>
       <dl class="facts">
-        {#if p.name}<dt>Name</dt>
+        {#if p.name}<dt>{p.bot ? 'Author' : 'Name'}</dt>
           <dd>{p.name}</dd>{/if}
         {#if p.country}<dt>From</dt>
           <dd>{p.country}</dd>{/if}
