@@ -581,6 +581,87 @@ mod tests {
         assert_eq!((again.nodes_added, again.annotations_added, again.annotation_conflicts), (0, 0, 0));
     }
 
+    /// Where game `id`'s annotations by `author` are, as (parent reference,
+    /// place among siblings) of their variation node.
+    fn variation_notes(db: &Database, id: i64, author: &str) -> Vec<(i64, i64, String)> {
+        let mut q = db
+            .connection()
+            .prepare(
+                "SELECT n.parent, n.ord, CAST(a.payload AS TEXT) FROM annotations a
+                 JOIN nodes n ON n.game = a.game AND n.id = -a.node
+                 WHERE a.game = ?1 AND a.author = ?2 AND a.node < 0 ORDER BY n.parent, n.ord",
+            )
+            .unwrap();
+        q.query_map(rusqlite::params![id, author], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn other_authors_notes_follow_their_variation_on_save() {
+        let dir = Dir::new("renumber");
+        let mut ann = Database::open(dir.path("ann.db")).unwrap();
+        let g = GameData::from_record(&record());
+        let id = ann.save(&g).unwrap();
+        // A variation for silver's second move, with a comment.
+        let mut game = ann.load(id).unwrap();
+        let tree = game.tree.as_mut().unwrap();
+        let x = tree.add_notation(tree.main_line()[3], "dh7s").unwrap();
+        tree.annotation_mut(x).unwrap().set_comment_text("Ann on X.");
+        ann.save(&game).unwrap();
+        ann.export(&dir.path("1.db"), &all(id)).unwrap();
+        let mut bob = Database::open_in_memory().unwrap();
+        bob.import_file(&dir.path("1.db"), "1").unwrap();
+        let b = bob.find_gid(&g.gid).unwrap().unwrap();
+
+        // Ann adds a variation for gold's second move, earlier in the
+        // tree, and edits X's comment; Bob edits it too.
+        let mut game = ann.load(id).unwrap();
+        let tree = game.tree.as_mut().unwrap();
+        tree.add_notation(tree.main_line()[2], "Hb2n").unwrap();
+        ann.save(&game).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let mut game = ann.load(id).unwrap();
+        let tree = game.tree.as_mut().unwrap();
+        let x = tree[tree.main_line()[3]].children()[1];
+        tree.annotation_mut(x).unwrap().set_comment_text("Ann again on X.");
+        ann.save(&game).unwrap();
+        let mut game = bob.load(b).unwrap();
+        let tree = game.tree.as_mut().unwrap();
+        let x = tree[tree.main_line()[3]].children()[1];
+        tree.annotation_mut(x).unwrap().set_comment_text("Bob on X.");
+        bob.save(&game).unwrap();
+        ann.export(&dir.path("2.db"), &all(id)).unwrap();
+        let r = bob.import_file(&dir.path("2.db"), "2").unwrap();
+        assert_eq!((r.nodes_added, r.annotation_conflicts), (1, 1));
+        let x_note = vec![(3, 1, "Ann again on X.".to_string())];
+        assert_eq!(variation_notes(&bob, b, "Ann"), x_note);
+
+        // The board saves Bob's game with another variation before X.
+        let mut record = bob.load(b).unwrap().to_record();
+        let tree = &mut record.tree;
+        tree.add_notation(tree.main_line()[2], "Cc2n").unwrap();
+        bob.save_record(Some(b), &record).unwrap();
+        assert_eq!(variation_notes(&bob, b, "Ann"), x_note, "Ann's copy stays on X");
+        assert_eq!(variation_notes(&bob, b, ""), vec![(3, 1, "Bob on X.".to_string())]);
+
+        // A variation gone takes the notes on it along.
+        let mut game = bob.load(b).unwrap();
+        let tree = game.tree.as_mut().unwrap();
+        let x = tree[tree.main_line()[3]].children()[1];
+        tree.delete(x).unwrap();
+        bob.save(&game).unwrap();
+        assert_eq!(variation_notes(&bob, b, "Ann"), vec![]);
+        let left: i64 = bob
+            .connection()
+            .query_row("SELECT count(*) FROM annotations WHERE game = ?1 AND author = 'Ann'", [b], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(left, 0);
+    }
+
     #[test]
     fn deeper_evals_win() {
         let dir = Dir::new("evals");
