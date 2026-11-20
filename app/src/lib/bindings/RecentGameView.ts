@@ -8,7 +8,11 @@ export type RecentGameView = {
 /**
  * The permanent id.
  */
-gid: string, gold: string | null, silver: string | null, goldRating: string | null, silverRating: string | null, timeControl: string | null, rated: boolean, postal: boolean, result: GameResult | null, 
+gid: string, gold: string | null, silver: string | null, goldRating: string | null, silverRating: string | null, 
+/**
+ * The players' ids, for their pages.
+ */
+goldId: string | null, silverId: string | null, timeControl: string | null, rated: boolean, postal: boolean, result: GameResult | null, 
 /**
  * The last move's number (`5` for a game ending at 5b).
  */

@@ -15,7 +15,19 @@ import {
 } from './gameroom';
 
 function game(gold: string | null, silver: string | null, turn: LiveGameView['turn']): LiveGameView {
-  return { gid: '1', gold, silver, timeControl: '1d/30d/100/0/0', rated: false, postal: true, turn };
+  return {
+    gid: '1',
+    gold,
+    silver,
+    goldRating: null,
+    silverRating: null,
+    goldId: null,
+    silverId: null,
+    timeControl: '1d/30d/100/0/0',
+    rated: false,
+    postal: true,
+    turn,
+  };
 }
 
 function watch(gid: string, side: WatchView['side'], chat: WatchView['chat']): WatchView {

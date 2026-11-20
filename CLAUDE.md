@@ -792,6 +792,11 @@ plans the engine test and tournament runner.
     `gameroom.openFinished`, from finished games' rows, the rating chart
     and chat links) looks in the database first and needs no login for a
     game there; a finished game fetched is kept (`keep_fetched`).
+    The past games pages give only the players' ratings now, so their
+    rows get the ratings before the game from here
+    (`Backend::rate_past_games`, `Database::source_ratings`), and a
+    player's page fills in the player's own from their rating history
+    (`PlayerPage.withRating`).
     The game list: `library_games` (a `LibraryFilter`, offset and limit;
     `howdah_db::Database::search`, newest first by start, end or added
     time, the `games_when` index), `open_library_game` (a game known
@@ -1184,7 +1189,9 @@ plans the engine test and tournament runner.
     `preview`). Closing its panel leaves the room.
     `NewGameDialog.svelte` creates a game or, with an opponent, invites
     them (Invite anywhere opens it with the opponent filled in).
-    `format.ts` words the rows. The gameroom
+    `format.ts` words the rows. Game rows (`li.pick.split`) open
+    their game only from the button at their end; a player's name
+    (`Matchup` given the list's player ids) opens their page. The gameroom
     login (with "Remember password"; a saved login fills the username, and
     the password field says "Saved password"); live games have Watch,
     finished ones Open; the player search goes straight to an exact

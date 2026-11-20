@@ -77,6 +77,8 @@ pub struct PastGame {
     pub players: [String; 2],
     /// The players' ratings now (the page doesn't give the game's).
     pub ratings: [Option<String>; 2],
+    /// Gold's and silver's player ids, from the links to their pages.
+    pub player_ids: [Option<String>; 2],
     pub time_control: Option<String>,
     /// Whether it was rated (an `R`, in bold on newer pages, before the
     /// time control).
@@ -103,6 +105,8 @@ pub struct PostalGame {
     /// Gold's and silver's usernames.
     pub players: [String; 2],
     pub ratings: [Option<String>; 2],
+    /// Gold's and silver's player ids, from the links to their pages.
+    pub player_ids: [Option<String>; 2],
     pub time_control: Option<String>,
     pub rated: bool,
 }
@@ -185,8 +189,8 @@ fn past_game(before: &str, row: &str) -> Option<PastGame> {
         rest = &body[close + 5..];
     }
     let silver = cells.first()?;
-    let [(gold_name, gold_rating, gold_won), (silver_name, silver_rating, silver_won)] =
-        [player_cell(gold)?, player_cell(silver)?];
+    let [gold, silver] = [player_cell(gold)?, player_cell(silver)?];
+    let (gold_won, silver_won) = (gold.won, silver.won);
     let mut info = cells[1..].iter().map(|c| text_of(c)).filter(|t| !t.is_empty());
     let reason = info.next().filter(|r| r.chars().all(|c| c.is_ascii_alphabetic()));
     let moves = info.next().and_then(|m| m.parse().ok());
@@ -203,8 +207,9 @@ fn past_game(before: &str, row: &str) -> Option<PastGame> {
     });
     (!id.is_empty()).then_some(PastGame {
         id,
-        players: [gold_name, silver_name],
-        ratings: [gold_rating, silver_rating],
+        players: [gold.name, silver.name],
+        ratings: [gold.rating, silver.rating],
+        player_ids: [gold.id, silver.id],
         time_control,
         rated,
         winner,
@@ -238,24 +243,36 @@ fn postal_game(before: &str, row: &str) -> Option<PostalGame> {
     let after = &after[after.find("</td>")? + 5..];
     let silver = &after[after.find("<td")?..];
     let silver = &silver[..silver.find("</td>")?];
-    let [(gold_name, gold_rating, _), (silver_name, silver_rating, _)] =
-        [player_cell(gold)?, player_cell(silver)?];
+    let [gold, silver] = [player_cell(gold)?, player_cell(silver)?];
     (!gid.is_empty()).then_some(PostalGame {
         gid,
-        players: [gold_name, silver_name],
-        ratings: [gold_rating, silver_rating],
+        players: [gold.name, silver.name],
+        ratings: [gold.rating, silver.rating],
+        player_ids: [gold.id, silver.id],
         time_control: Some(time_control).filter(|t| !t.is_empty()),
         rated,
     })
 }
 
-/// A player's cell: the username, the rating, and whether they won (a `*`
-/// next to the name).
-fn player_cell(cell: &str) -> Option<(String, Option<String>, bool)> {
+/// A player's cell on a games page.
+struct PlayerCell {
+    name: String,
+    /// From the link to their page, `playerPage(<id>)`.
+    id: Option<String>,
+    rating: Option<String>,
+    /// A `*` next to the name.
+    won: bool,
+}
+
+fn player_cell(cell: &str) -> Option<PlayerCell> {
     let a = cell.find("<a ")?;
     let name_start = a + cell[a..].find('>')? + 1;
     let name_end = name_start + cell[name_start..].find("</a>")?;
     let name = text_of(&cell[name_start..name_end]);
+    let id = cell[a..name_start].find("playerPage(").and_then(|i| {
+        let digits: String = cell[a + i + 11..name_start].chars().take_while(char::is_ascii_digit).collect();
+        (!digits.is_empty()).then_some(digits)
+    });
     let after = &cell[name_end + 4..];
     let (mark, details) = after.split_once("<br>").unwrap_or((after, ""));
     let won = cell[..a].contains('*') || mark.contains('*');
@@ -263,7 +280,7 @@ fn player_cell(cell: &str) -> Option<(String, Option<String>, bool)> {
         .split_whitespace()
         .find(|t| t.chars().all(|c| c.is_ascii_digit()))
         .map(str::to_string);
-    (!name.is_empty()).then_some((name, rating, won))
+    (!name.is_empty()).then_some(PlayerCell { name, id, rating, won })
 }
 
 /// HTML's text, without tags, `&nbsp;` as spaces and whitespace collapsed.
@@ -369,6 +386,7 @@ mod tests {
                 gid: "539426".into(),
                 players: ["gold_player".into(), "silver_player".into()],
                 ratings: [Some("1206".into()), Some("1000".into())],
+                player_ids: [Some("13566".into()), Some("4609".into())],
                 time_control: Some("1d/60d/100/0/300d/21d".into()),
                 rated: true,
             }]
@@ -563,6 +581,7 @@ mod tests {
                 id: "671629".into(),
                 players: ["Fritzlein".into(), "bot_testbot".into()],
                 ratings: [Some("2100".into()), Some("1400".into())],
+                player_ids: [Some("1".into()), Some("19377".into())],
                 time_control: Some("15s/1/100/2/2".into()),
                 rated: true,
                 winner: Some(Color::Gold),
@@ -585,6 +604,7 @@ mod tests {
                     id: "287937".into(),
                     players: ["Janzert".into(), "Janzert_test".into()],
                     ratings: [Some("1677".into()), Some("1400".into())],
+                    player_ids: [Some("397".into()), Some("21487".into())],
                     time_control: Some("15s/2m/100/0/4h/2m".into()),
                     rated: false,
                     winner: Some(Color::Silver),
@@ -597,6 +617,7 @@ mod tests {
                     id: "120092".into(),
                     players: ["bot_OpFor".into(), "Janzert".into()],
                     ratings: [Some("1825".into()), Some("1677".into())],
+                    player_ids: [Some("7653".into()), Some("397".into())],
                     time_control: Some("15s/1/100/2/2".into()),
                     rated: true,
                     winner: Some(Color::Gold),

@@ -19,6 +19,7 @@ mod search;
 mod setups;
 mod share;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -204,6 +205,35 @@ impl Database {
                 |r| r.get(0),
             )
             .optional()?)
+    }
+
+    /// Gold's and silver's ratings before the game, for the games here
+    /// with these source keys (a game list's ids), by source key. Games
+    /// that aren't here, or have neither rating, are left out.
+    pub fn source_ratings(
+        &self,
+        source: &str,
+        source_ids: &[&str],
+    ) -> Result<HashMap<String, [Option<i64>; 2]>> {
+        let mut ratings = HashMap::new();
+        // Under SQLite's default limit of 999 parameters.
+        for chunk in source_ids.chunks(500) {
+            let marks = vec!["?"; chunk.len()].join(",");
+            let mut stmt = self.conn.prepare(&format!(
+                "SELECT source_id, gold_rating, silver_rating FROM games \
+                 WHERE source = ? AND source_id IN ({marks}) \
+                 AND (gold_rating IS NOT NULL OR silver_rating IS NOT NULL)"
+            ))?;
+            let params = std::iter::once(&source).chain(chunk.iter());
+            let rows = stmt.query_map(rusqlite::params_from_iter(params), |r| {
+                Ok((r.get::<_, String>(0)?, [r.get(1)?, r.get(2)?]))
+            })?;
+            for row in rows {
+                let (id, pair) = row?;
+                ratings.insert(id, pair);
+            }
+        }
+        Ok(ratings)
     }
 
     /// The game with a `gid`.

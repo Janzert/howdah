@@ -24,6 +24,8 @@ pub struct RecentGame {
     /// Gold's and silver's usernames.
     pub players: [Option<String>; 2],
     pub ratings: [Option<String>; 2],
+    /// Gold's and silver's player ids.
+    pub player_ids: [Option<String>; 2],
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
@@ -46,6 +48,7 @@ impl RecentGame {
             id: r.nonempty("id")?,
             players: [name("wusername"), name("busername")],
             ratings: [name("wrating"), name("brating")],
+            player_ids: [name("wplayerid"), name("bplayerid")],
             time_control: name("timecontrol"),
             rated: r.flag("rated"),
             postal: r.flag("postal"),
@@ -283,7 +286,7 @@ arimaa.window();
     fn recent_games_are_read() {
         let r = Record::decode(
             r#"{"recentgames":[{"id":"671442","wusername":"a","busername":"b","wrating":"2678",
-                "timecontrol":"20s/20m/100","rated":"1","postal":"0","result":"w","termination":"g",
+                "wplayerid":"397","timecontrol":"20s/20m/100","rated":"1","postal":"0","result":"w","termination":"g",
                 "plycount":"33","endts":"1791130988","event":"Casual game"}]}"#,
         )
         .unwrap();
@@ -295,6 +298,7 @@ arimaa.window();
             (g.id.as_str(), g.players[1].as_deref(), g.ratings[1].as_deref()),
             ("671442", Some("b"), None)
         );
+        assert_eq!(g.player_ids, [Some("397".into()), None]);
         assert!(g.rated && !g.postal);
         assert_eq!(
             (g.result.as_deref(), g.reason.as_deref(), g.moves, g.ended),

@@ -496,6 +496,11 @@ pub struct GameInfo {
     pub gid: String,
     /// Gold's and silver's usernames, where the list gives them.
     pub players: [Option<String>; 2],
+    /// Gold's and silver's ratings, where the list gives them
+    /// (`livegames` does).
+    pub ratings: [Option<String>; 2],
+    /// Gold's and silver's player ids, where the list gives them.
+    pub player_ids: [Option<String>; 2],
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
@@ -509,6 +514,8 @@ impl GameInfo {
         Some(GameInfo {
             gid: r.nonempty("id").or_else(|| r.nonempty("gid"))?,
             players: [name("wusername"), name("busername")],
+            ratings: [name("wrating"), name("brating")],
+            player_ids: [name("wplayerid"), name("bplayerid")],
             time_control: r.nonempty("timecontrol"),
             rated: r.flag("rated"),
             postal: r.flag("postal"),
@@ -1585,11 +1592,14 @@ mod tests {
               "opengames":[{"id":"7","wusername":"me","busername":""},
                            {"id":"8","wusername":"","busername":"them","timecontrol":"1m/2m","rated":"1","schts":"0"},
                            {"id":"9","wusername":"later","busername":"","schts":"5000"}],
-              "livegames":[{"id":"6","wusername":"a","busername":"b"}]}"#,
+              "livegames":[{"id":"6","wusername":"a","busername":"b","wrating":"2658","brating":"1759",
+                            "wplayerid":"63421","bplayerid":"13600"}]}"#,
         )
         .unwrap();
         let games = LobbyGames::from_state(&r);
         assert_eq!(games.live.len(), 1);
+        assert_eq!(games.live[0].ratings, [Some("2658".into()), Some("1759".into())]);
+        assert_eq!(games.live[0].player_ids, [Some("63421".into()), Some("13600".into())]);
         assert_eq!(games.mine.len(), 1);
         assert_eq!(games.mine[0].players, [Some("me".into()), None]);
         assert_eq!(games.user_id.as_deref(), Some("21"));

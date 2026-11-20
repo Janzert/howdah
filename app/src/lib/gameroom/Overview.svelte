@@ -94,7 +94,15 @@
               <span class="row-text">
                 <span class="row-line">
                   {#if turn}<span class="badge">Your move</span>{/if}
-                  <Matchup gold={g.gold} silver={g.silver} empty="open seat" />
+                  <Matchup
+                    gold={g.gold}
+                    silver={g.silver}
+                    goldRating={g.goldRating}
+                    silverRating={g.silverRating}
+                    goldId={g.goldId}
+                    silverId={g.silverId}
+                    empty="open seat"
+                  />
                 </span>
                 <span class="meta">{gameMeta(g)}</span>
               </span>
@@ -148,11 +156,21 @@
         <ul class="list scroll" aria-label="Open games">
           {#each games.open as g (g.gid)}
             {@const side = freeSide(g)}
+            {@const who = g.gold ?? g.silver}
+            {@const whoId = g.gold != null ? g.goldId : g.silverId}
             <li>
               <span class="row-text">
                 <span class="row-line">
                   <span class="dot {side === 'gold' ? 'silver' : 'gold'}"></span>
-                  <span class="name">{g.gold ?? g.silver ?? '?'}</span>
+                  {#if who && whoId}
+                    <button
+                      class="link name player"
+                      onclick={() => showPlayerPage({ id: whoId, username: who })}
+                      title="{who}'s page">{who}</button
+                    >
+                  {:else}
+                    <span class="name">{who ?? '?'}</span>
+                  {/if}
                   <span class="vs">wants an opponent</span>
                 </span>
                 <span class="meta">{gameMeta(g)}</span>

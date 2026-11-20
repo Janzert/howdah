@@ -9,14 +9,21 @@
   let { game: g }: { game: RecentGameView } = $props();
 </script>
 
-<li class="pick">
-  <button onclick={() => gameroom.openFinished(g.gid)} disabled={gameroom.busy} title="Open game {g.gid}">
-    <span class="row-text">
-      <span class="row-line">
-        <Matchup gold={g.gold} silver={g.silver} goldRating={g.goldRating} silverRating={g.silverRating} />
-      </span>
-      <span class="meta">{recentMeta(g, clock.options)}</span>
+<li class="pick split">
+  <span class="row-text">
+    <span class="row-line">
+      <Matchup
+        gold={g.gold}
+        silver={g.silver}
+        goldRating={g.goldRating}
+        silverRating={g.silverRating}
+        goldId={g.goldId}
+        silverId={g.silverId}
+      />
     </span>
-    <span class="action">Open</span>
-  </button>
+    <span class="meta">{recentMeta(g, clock.options)}</span>
+  </span>
+  <button class="open" onclick={() => gameroom.openFinished(g.gid)} disabled={gameroom.busy} title="Open game {g.gid}"
+    >Open</button
+  >
 </li>

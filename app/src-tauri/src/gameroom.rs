@@ -720,12 +720,15 @@ impl Gameroom {
             .map(|g| {
                 let [gold, silver] = g.players;
                 let [gold_rating, silver_rating] = g.ratings;
+                let [gold_id, silver_id] = g.player_ids;
                 PostalGameView {
                     gid: g.gid,
                     gold,
                     silver,
                     gold_rating,
                     silver_rating,
+                    gold_id,
+                    silver_id,
                     time_control: g.time_control,
                     rated: g.rated,
                 }
@@ -891,10 +894,16 @@ fn online_view(p: OnlinePlayer) -> OnlinePlayerView {
 
 fn game_view(g: GameInfo) -> LiveGameView {
     let [gold, silver] = g.players;
+    let [gold_rating, silver_rating] = g.ratings;
+    let [gold_id, silver_id] = g.player_ids;
     LiveGameView {
         gid: g.gid,
         gold,
         silver,
+        gold_rating,
+        silver_rating,
+        gold_id,
+        silver_id,
         time_control: g.time_control,
         rated: g.rated,
         postal: g.postal,
@@ -904,17 +913,21 @@ fn game_view(g: GameInfo) -> LiveGameView {
 
 fn past_view(g: PastGame) -> PastGameView {
     let [gold, silver] = g.players;
-    let [gold_rating, silver_rating] = g.ratings;
+    let [gold_id, silver_id] = g.player_ids;
     let result = match (g.winner, &g.reason) {
         (Some(w), Some(r)) => parse_result(&format!("{}{r}", if w == Color::Gold { 'w' } else { 'b' })),
         _ => None,
     };
+    // The page's ratings are the players' ratings now; the game's come
+    // from the game database (`Backend::rate_past_games`).
     PastGameView {
         gid: g.id,
         gold,
         silver,
-        gold_rating,
-        silver_rating,
+        gold_rating: None,
+        silver_rating: None,
+        gold_id,
+        silver_id,
         time_control: g.time_control,
         rated: g.rated,
         result,
@@ -939,6 +952,7 @@ fn record_line_view(line: RecordLine) -> RecordLineView {
 fn recent_view(g: RecentGame) -> RecentGameView {
     let [gold, silver] = g.players;
     let [gold_rating, silver_rating] = g.ratings;
+    let [gold_id, silver_id] = g.player_ids;
     let result = match (&g.result, &g.reason) {
         (Some(w), Some(r)) => parse_result(&format!("{w}{r}")),
         _ => None,
@@ -949,6 +963,8 @@ fn recent_view(g: RecentGame) -> RecentGameView {
         silver,
         gold_rating,
         silver_rating,
+        gold_id,
+        silver_id,
         time_control: g.time_control,
         rated: g.rated,
         postal: g.postal,

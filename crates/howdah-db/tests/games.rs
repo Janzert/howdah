@@ -224,3 +224,21 @@ fn a_source_copy_keeps_the_users_work() {
     let replaced = db.load(id).unwrap();
     same_trees(longer.tree.as_ref().unwrap(), replaced.tree.as_ref().unwrap());
 }
+
+#[test]
+fn ratings_by_source_key() {
+    let mut db = Database::open_in_memory().unwrap();
+    for (id, ratings) in [("1", [Some(1800), Some(1650)]), ("2", [None, Some(1500)]), ("3", [None, None])] {
+        let mut data = GameData::new();
+        data.source = Some(SourceKey::arimaa_com(id));
+        data.gid = gid_for(data.source.as_ref().unwrap());
+        data.tree = None;
+        data.players[0].rating = ratings[0];
+        data.players[1].rating = ratings[1];
+        db.save(&data).unwrap();
+    }
+    let found = db.source_ratings("arimaa.com", &["1", "2", "3", "4"]).unwrap();
+    assert_eq!(found.len(), 2);
+    assert_eq!(found["1"], [Some(1800), Some(1650)]);
+    assert_eq!(found["2"], [None, Some(1500)]);
+}

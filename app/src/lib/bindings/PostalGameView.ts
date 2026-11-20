@@ -8,4 +8,8 @@ export type PostalGameView = {
 /**
  * The gameroom id, to watch it by.
  */
-gid: string, gold: string, silver: string, goldRating: string | null, silverRating: string | null, timeControl: string | null, rated: boolean, };
+gid: string, gold: string, silver: string, goldRating: string | null, silverRating: string | null, 
+/**
+ * The players' ids, for their pages.
+ */
+goldId: string | null, silverId: string | null, timeControl: string | null, rated: boolean, };

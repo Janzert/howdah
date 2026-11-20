@@ -51,12 +51,26 @@ export class PlayerPage {
   /** The section shown under the graph. */
   tab = $state<'games' | 'record'>('games');
 
+  /** The player's rating before each rated game, by permanent id. */
+  readonly ratingBefore = $derived(new Map((this.history.value ?? []).map((p) => [p.gid, p.rating])));
+
   /** Counts the loads, so replies for an earlier one are dropped. */
   #shown = 0;
 
   constructor(player: PlayerRef) {
     this.player = player;
     this.#load();
+  }
+
+  /** Game `g` with the player's own rating before it, from their rating
+   * history, where the game database didn't give it. */
+  withRating(g: PastGameView): PastGameView {
+    const rating = this.ratingBefore.get(g.gid);
+    if (rating == null) return g;
+    const name = this.player.username.toLowerCase();
+    if (g.goldRating == null && g.gold.toLowerCase() === name) return { ...g, goldRating: String(rating) };
+    if (g.silverRating == null && g.silver.toLowerCase() === name) return { ...g, silverRating: String(rating) };
+    return g;
   }
 
   /** Fetches the page again. */

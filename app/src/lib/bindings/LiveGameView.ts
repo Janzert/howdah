@@ -5,7 +5,15 @@ import type { Color } from "./Color";
  * A game in one of the gameroom's lists: being played, open for a
  * player to sit, or the user's own. A free seat has no player.
  */
-export type LiveGameView = { gid: string, gold: string | null, silver: string | null, timeControl: string | null, rated: boolean, postal: boolean, 
+export type LiveGameView = { gid: string, gold: string | null, silver: string | null, 
+/**
+ * The players' ratings, where the list gives them (the live games).
+ */
+goldRating: string | null, silverRating: string | null, 
+/**
+ * The players' ids, for their pages, where the list gives them.
+ */
+goldId: string | null, silverId: string | null, timeControl: string | null, rated: boolean, postal: boolean, 
 /**
  * The side to move, where the list says (the user's games).
  */

@@ -1036,6 +1036,12 @@ pub struct LiveGameView {
     pub gid: String,
     pub gold: Option<String>,
     pub silver: Option<String>,
+    /// The players' ratings, where the list gives them (the live games).
+    pub gold_rating: Option<String>,
+    pub silver_rating: Option<String>,
+    /// The players' ids, for their pages, where the list gives them.
+    pub gold_id: Option<String>,
+    pub silver_id: Option<String>,
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
@@ -1055,6 +1061,9 @@ pub struct PostalGameView {
     pub silver: String,
     pub gold_rating: Option<String>,
     pub silver_rating: Option<String>,
+    /// The players' ids, for their pages.
+    pub gold_id: Option<String>,
+    pub silver_id: Option<String>,
     pub time_control: Option<String>,
     pub rated: bool,
 }
@@ -1070,6 +1079,9 @@ pub struct RecentGameView {
     pub silver: Option<String>,
     pub gold_rating: Option<String>,
     pub silver_rating: Option<String>,
+    /// The players' ids, for their pages.
+    pub gold_id: Option<String>,
+    pub silver_id: Option<String>,
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
@@ -1102,9 +1114,13 @@ pub struct PastGameView {
     pub gid: String,
     pub gold: String,
     pub silver: String,
-    /// The players' ratings now, not at the time of the game.
+    /// The players' ratings before the game, from the game database
+    /// when it has the game (the page gives only their ratings now).
     pub gold_rating: Option<String>,
     pub silver_rating: Option<String>,
+    /// The players' ids, for their pages.
+    pub gold_id: Option<String>,
+    pub silver_id: Option<String>,
     pub time_control: Option<String>,
     pub rated: bool,
     pub result: Option<GameResult>,

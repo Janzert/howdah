@@ -10,9 +10,14 @@ export type PastGameView = {
  */
 gid: string, gold: string, silver: string, 
 /**
- * The players' ratings now, not at the time of the game.
+ * The players' ratings before the game, from the game database
+ * when it has the game (the page gives only their ratings now).
  */
-goldRating: string | null, silverRating: string | null, timeControl: string | null, rated: boolean, result: GameResult | null, 
+goldRating: string | null, silverRating: string | null, 
+/**
+ * The players' ids, for their pages.
+ */
+goldId: string | null, silverId: string | null, timeControl: string | null, rated: boolean, result: GameResult | null, 
 /**
  * The last move's number.
  */

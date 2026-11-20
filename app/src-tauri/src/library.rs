@@ -452,6 +452,12 @@ impl Library {
         self.try_with(|db| db.delete(id))
     }
 
+    /// Gold's and silver's ratings before the arimaa.com games with these
+    /// permanent ids, for those here with a rating.
+    pub fn arimaa_ratings(&self, gids: &[&str]) -> HashMap<String, [Option<i64>; 2]> {
+        self.with("reading ratings", |db| db.source_ratings(ARIMAA_COM, gids)).unwrap_or_default()
+    }
+
     /// Finished arimaa.com game `gid` (its permanent id) as a record, if
     /// it's here with its moves, and its id here.
     pub fn arimaa_game(&self, gid: &str) -> Option<(i64, GameRecord)> {

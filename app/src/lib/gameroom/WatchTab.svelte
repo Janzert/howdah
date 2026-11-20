@@ -65,16 +65,26 @@
     {:else}
       <ul class="list scroll" aria-label="Postal games">
         {#each shownPostal as g (g.gid)}
-          <li class="pick">
-            <button onclick={() => gameroom.open(g.gid)} disabled={gameroom.busy} title="Watch postal game {g.gid}">
-              <span class="row-text">
-                <span class="row-line">
-                  <Matchup gold={g.gold} silver={g.silver} goldRating={g.goldRating} silverRating={g.silverRating} />
-                </span>
-                <span class="meta">{gameMeta({ ...g, postal: false, turn: null })}</span>
+          <li class="pick split">
+            <span class="row-text">
+              <span class="row-line">
+                <Matchup
+                  gold={g.gold}
+                  silver={g.silver}
+                  goldRating={g.goldRating}
+                  silverRating={g.silverRating}
+                  goldId={g.goldId}
+                  silverId={g.silverId}
+                />
               </span>
-              <span class="action">Watch</span>
-            </button>
+              <span class="meta">{gameMeta({ ...g, postal: false, turn: null })}</span>
+            </span>
+            <button
+              class="open"
+              onclick={() => gameroom.open(g.gid)}
+              disabled={gameroom.busy}
+              title="Watch postal game {g.gid}">Watch</button
+            >
           </li>
         {/each}
       </ul>

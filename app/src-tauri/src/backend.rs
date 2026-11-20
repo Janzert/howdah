@@ -985,7 +985,9 @@ impl Backend {
         player_id: &str,
         offset: u32,
     ) -> Result<PlayerGamesView, ApiError> {
-        self.gameroom.player_games(player_id, offset).await
+        let mut page = self.gameroom.player_games(player_id, offset).await?;
+        page.games = self.rate_past_games(page.games).await;
+        Ok(page)
     }
 
     /// What an arimaa.com player's page says about them.
@@ -1017,12 +1019,34 @@ impl Backend {
         rated: Option<bool>,
         bots: Option<bool>,
     ) -> Result<Vec<PastGameView>, ApiError> {
-        self.gameroom.games_against(player_id, opponent_id, RecordFilter { rated, bots }).await
+        let games = self.gameroom.games_against(player_id, opponent_id, RecordFilter { rated, bots }).await?;
+        Ok(self.rate_past_games(games).await)
     }
 
     /// The last 100 games finished in the gameroom, newest first.
     pub async fn gameroom_recent_games(&self) -> Result<Vec<PastGameView>, ApiError> {
-        self.gameroom.recent_games().await
+        let games = self.gameroom.recent_games().await?;
+        Ok(self.rate_past_games(games).await)
+    }
+
+    /// Fills in past games' ratings before the game from the game
+    /// database, for the games it has (the base database has them all up
+    /// to its last update). A game it doesn't have keeps none.
+    async fn rate_past_games(&self, mut games: Vec<PastGameView>) -> Vec<PastGameView> {
+        let library = self.library.clone();
+        let gids: Vec<String> = games.iter().map(|g| g.gid.clone()).collect();
+        let found = tauri::async_runtime::spawn_blocking(move || {
+            library.arimaa_ratings(&gids.iter().map(String::as_str).collect::<Vec<_>>())
+        })
+        .await
+        .unwrap_or_default();
+        for g in &mut games {
+            if let Some([gold, silver]) = found.get(&g.gid) {
+                g.gold_rating = gold.map(|r| r.to_string());
+                g.silver_rating = silver.map(|r| r.to_string());
+            }
+        }
+        games
     }
 
     /// The comments on a finished arimaa.com game, oldest first.

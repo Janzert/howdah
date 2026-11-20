@@ -257,6 +257,51 @@
   color: var(--accent);
 }
 
+/* A game row whose players' names open their pages: only the end of the
+ * row, around what it does, opens the board, so a click on a name or
+ * the text beside it opens nothing. */
+.lobby .list > li.pick.split {
+  align-items: stretch;
+  gap: 0;
+}
+
+.lobby .list > li.pick.split > .row-text {
+  justify-content: center;
+  padding: 7px 10px;
+}
+
+/* Overrides `li.pick > button`, the whole-row button. */
+.lobby .list > li.pick.split > button.open {
+  flex: none;
+  justify-content: center;
+  width: auto;
+  min-width: 76px;
+  padding: 0 14px;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+}
+
+.lobby .list > li.pick.split > button.open:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+.lobby .row-line button.player {
+  min-width: 0;
+  color: var(--text);
+  font-size: inherit;
+  white-space: nowrap;
+}
+
+.lobby .row-line button.player:hover:not(:disabled) {
+  color: var(--accent);
+}
+
 /* A panel's heading takes focus when the panel opens (Lobby's
  * `focusPanel`), as a place to start from, not something to act on. */
 .lobby main h1:focus {

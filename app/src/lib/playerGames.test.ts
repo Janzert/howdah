@@ -16,6 +16,8 @@ const game = (
   silver,
   goldRating: null,
   silverRating: null,
+  goldId: null,
+  silverId: null,
   timeControl: null,
   rated,
   result: winner ? { winner, reason } : null,

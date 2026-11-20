@@ -298,7 +298,7 @@
         {:else}
           <ul class="list" aria-label="{username}'s games">
             {#each shownGames as g (g.gid)}
-              <PastGameRow game={g} />
+              <PastGameRow game={page.withRating(g)} />
             {/each}
           </ul>
         {/if}
@@ -403,7 +403,7 @@
                     {:else if page.against.value}
                       <ul class="list" aria-label="Games against {r.opponent}">
                         {#each page.against.value as g (g.gid)}
-                          <PastGameRow game={g} />
+                          <PastGameRow game={page.withRating(g)} />
                         {/each}
                       </ul>
                     {/if}
