@@ -1401,11 +1401,30 @@ impl Backend {
 
     /// Imports a game database file or a record file at `path` into the
     /// game database. Runs on a blocking thread.
+    /// Boards showing a game the import joined into take the joined game
+    /// in, or their next save would write over what it added.
     pub async fn library_import(&self, path: String) -> Result<crate::dto::LibraryImportView, ApiError> {
         let library = self.library.clone();
-        tauri::async_runtime::spawn_blocking(move || library.import(std::path::Path::new(&path)))
-            .await
-            .map_err(|e| ApiError::state(format!("the import stopped: {e}")))?
+        let handles: Vec<Arc<SessionHandle>> = self.sessions().values().cloned().collect();
+        let (view, joined) = tauri::async_runtime::spawn_blocking(move || {
+            // Saved first, so the import joins into what the boards show.
+            for h in &handles {
+                library::save_session(&library, &h.session, &h.saved);
+            }
+            library.import(std::path::Path::new(&path))
+        })
+        .await
+        .map_err(|e| ApiError::state(format!("the import stopped: {e}")))??;
+        let handles: Vec<Arc<SessionHandle>> = self.sessions().values().cloned().collect();
+        for (id, record) in &joined {
+            for h in &handles {
+                let mut s = h.lock();
+                if s.join_stored(*id, &record.tree) {
+                    emit_session(&h.events, &s, Vec::new(), None);
+                }
+            }
+        }
+        Ok(view)
     }
 
     /// The sources of the game database's contents.
@@ -2061,6 +2080,43 @@ pub(crate) mod tests {
         b.close_session(other).unwrap();
         assert!(b.docked_sessions().is_empty());
         assert!(b.set_session_docked(other, true).is_err());
+    }
+
+    /// An import joining into a game a board shows: the board takes the
+    /// joined variation and comment in, so its next save keeps them.
+    #[test]
+    fn a_board_keeps_what_an_import_joined_into_its_game() {
+        let tmp = tempfile::tempdir().unwrap();
+        let recorder = Arc::new(Recorder::default());
+        let b = backend(recorder.clone()).with_library(Some(tmp.path().join("games.db")));
+        let game = "[Gold \"a\"]\n[Silver \"b\"]\n\
+             1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Da2 Hb2 Cc2 Ed2 Me2 Hf2 Cg2 Dh2\n\
+             1s ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8 da7 hb7 cc7 ed7 me7 hf7 cg7 dh7\n2g Ed2n\n2s ed7s\n";
+        let id = b.open_session();
+        b.load_game(id, game).unwrap();
+        let h = b.handle(id).unwrap();
+        library::save_session(&b.library, &h.session, &h.saved);
+        let db_id = h.lock().db_id().expect("saved");
+
+        let file = tmp.path().join("shared.txt");
+        let shared = game.replace("2s ed7s", "2s ed7s {Hm.} (2s dh7s)");
+        std::fs::write(&file, shared).unwrap();
+        recorder.0.lock().unwrap().clear();
+        let view = runtime().block_on(b.library_import(file.display().to_string())).unwrap();
+        assert_eq!((view.games_kept, view.moves_added, view.annotations_added), (1, 1, 1));
+        assert!(
+            recorder.0.lock().unwrap().iter().any(|(name, _)| name == GAME_CHANGED),
+            "the board shows the joined game"
+        );
+
+        // The board changes, and saves.
+        let first_move = h.lock().saveable().unwrap().tree.main_line()[3];
+        b.set_comment(id, first_move, "Mine.").unwrap();
+        library::save_session(&b.library, &h.session, &h.saved);
+        let stored = b.library.record(db_id).unwrap().unwrap().to_record();
+        assert!(stored.contains("(\n2s dh7s\n)"), "the joined variation stays: {stored}");
+        assert!(stored.contains("Hm."), "the joined comment stays: {stored}");
+        assert!(stored.contains("Mine."), "and the board's edit is saved: {stored}");
     }
 
     #[test]

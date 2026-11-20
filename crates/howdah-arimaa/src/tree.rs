@@ -763,6 +763,48 @@ impl GameTree {
         (tree, at)
     }
 
+    /// Adds what `other`, a tree of the same game, has and this one lacks:
+    /// its moves this tree doesn't have, as variations after this tree's
+    /// own (so no line here changes place), and the parts of an
+    /// annotation (comment, intro, glyphs) a node here has none of. What
+    /// this tree has stays as it is. Returns how many nodes and parts
+    /// were added; trees from different starts aren't joined (0).
+    pub fn join(&mut self, other: &GameTree) -> usize {
+        if self.start != other.start || self[Self::ROOT].position != other[Self::ROOT].position {
+            return 0;
+        }
+        let mut added = 0;
+        let mut stack = vec![(Self::ROOT, Self::ROOT)];
+        while let Some((o, at)) = stack.pop() {
+            let from = other[o].annotation();
+            let to = &mut self.get_mut(at).expect("joined node").annotation;
+            if to.comment.is_none() && from.comment.is_some() {
+                to.comment.clone_from(&from.comment);
+                added += 1;
+            }
+            if to.intro.is_none() && from.intro.is_some() {
+                to.intro.clone_from(&from.intro);
+                added += 1;
+            }
+            if to.glyphs.is_empty() && !from.glyphs.is_empty() {
+                to.glyphs.clone_from(&from.glyphs);
+                added += 1;
+            }
+            for &c in other[o].children() {
+                let n = &other[c];
+                let Some(mv) = n.mv() else { continue };
+                let before = self.nodes.len();
+                let child = self.add_child(at, mv.clone(), n.position.clone(), n.result);
+                if self.nodes.len() > before {
+                    self.get_mut(child).expect("just added").end_marker.clone_from(&n.end_marker);
+                    added += 1;
+                }
+                stack.push((c, child));
+            }
+        }
+        added
+    }
+
     /// Deletes `node` and everything after it. The root can't be deleted.
     pub fn delete(&mut self, node: NodeId) -> Result<(), GameError> {
         let parent = self.get(node)?.parent.ok_or(GameError::IsRoot)?;
@@ -848,6 +890,38 @@ mod tests {
         // Engines and servers can't send one.
         assert!(matches!(t.add_notation(moved, "pass"), Err(GameError::Pass)));
         assert!(matches!(GameTree::new().add_pass(GameTree::ROOT), Err(GameError::ExpectedSetup)));
+    }
+
+    #[test]
+    fn joining_adds_only_what_is_missing() {
+        use crate::position::tests::pos;
+        let start = || GameTree::from_position(pos(Color::Gold, "Ra1 Hb2 hg7 rh8"), 2).unwrap();
+        let mut ours = start();
+        let a = ours.add_notation(GameTree::ROOT, "Ra1n").unwrap();
+        let ours_reply = ours.add_notation(a, "hg7s").unwrap();
+        ours.annotation_mut(a).unwrap().comment = Some("ours".into());
+        let mut theirs = start();
+        let a2 = theirs.add_notation(GameTree::ROOT, "Ra1n").unwrap();
+        let reply = theirs.add_notation(a2, "rh8s").unwrap();
+        theirs.add_notation(reply, "Hb2e").unwrap();
+        theirs.add_notation(GameTree::ROOT, "Hb2n").unwrap();
+        theirs.annotation_mut(a2).unwrap().comment = Some("theirs".into());
+        theirs.annotation_mut(a2).unwrap().set_glyph(Glyph(1));
+        theirs.annotation_mut(reply).unwrap().intro = Some("or".into());
+
+        assert_eq!(ours.join(&theirs), 5, "three moves, a glyph and an intro");
+        let main = ours.main_line();
+        assert_eq!(main[1..], [a, ours_reply], "our main line stays first");
+        assert_eq!(ours[a].children().len(), 2);
+        let joined = ours[a].children()[1];
+        assert_eq!(ours[joined].annotation().intro.as_deref(), Some("or"));
+        assert_eq!(ours[joined].children().len(), 1);
+        assert_eq!(ours[a].annotation().comment.as_deref(), Some("ours"), "ours stays");
+        assert_eq!(ours[a].annotation().glyphs, [Glyph(1)]);
+        assert_eq!(ours[GameTree::ROOT].children().len(), 2);
+        assert_eq!(ours.join(&theirs), 0, "nothing more to add");
+        let other_start = GameTree::from_position(pos(Color::Gold, "Ra1 hg7 rh8"), 2).unwrap();
+        assert_eq!(ours.join(&other_start), 0, "another game");
     }
 
     #[test]

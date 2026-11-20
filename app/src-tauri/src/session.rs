@@ -658,6 +658,20 @@ impl Session {
         self.db_id = id;
     }
 
+    /// Takes in what the database's copy of this game (`db_id`) has
+    /// beyond this one, after an import joined into it: its other moves
+    /// as variations and the annotations missing here
+    /// ([`GameTree::join`]), so the next save keeps them. Nothing here
+    /// changes place, and the user's own edits stay. Returns whether
+    /// anything was added.
+    pub fn join_stored(&mut self, id: i64, stored: &GameTree) -> bool {
+        if self.db_id != Some(id) || self.tree.join(stored) == 0 {
+            return false;
+        }
+        self.refresh();
+        true
+    }
+
     /// The game as a record to save in the database, or `None` when it
     /// isn't saved: an empty board, a puzzle (its solution stays out of
     /// the tree until found), or an engine test's game (tests keep their

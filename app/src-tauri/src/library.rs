@@ -199,15 +199,37 @@ impl Library {
 
     /// Imports a file: a Howdah game database (one exported or shared),
     /// or a record file of one or more games. The file is left as it is.
-    pub fn import(&self, path: &Path) -> Result<LibraryImportView, ApiError> {
+    /// Also returns the games here the import joined into, as they are
+    /// right after it, for the boards showing them ([`Session::join_stored`]).
+    pub fn import(&self, path: &Path) -> Result<(LibraryImportView, Vec<(i64, GameRecord)>), ApiError> {
+        // Read under the same lock as the import, before any board's save
+        // can write its older copy over a joined game.
+        fn joined(
+            db: &mut Database,
+            report: howdah_db::MergeReport,
+        ) -> howdah_db::Result<(howdah_db::MergeReport, Vec<(i64, GameRecord)>)> {
+            let games = report
+                .games_joined
+                .iter()
+                .map(|&id| Ok((id, db.load(id)?.to_record())))
+                .collect::<howdah_db::Result<_>>()?;
+            Ok((report, games))
+        }
         let name =
             path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
         let mut head = [0u8; 16];
         let read = std::fs::File::open(path)
             .and_then(|mut f| std::io::Read::read(&mut f, &mut head))
             .map_err(|e| ApiError::state(format!("{name}: {e}")))?;
-        let (kind, records, report) = if read == 16 && &head == b"SQLite format 3\0" {
-            ("database", None, self.try_with(|db| db.import_file(path, &name))?)
+        let (kind, records, (report, joined)) = if read == 16 && &head == b"SQLite format 3\0" {
+            (
+                "database",
+                None,
+                self.try_with(|db| {
+                    let report = db.import_file(path, &name)?;
+                    joined(db, report)
+                })?,
+            )
         } else {
             let size = std::fs::metadata(path).map_err(|e| ApiError::state(format!("{name}: {e}")))?.len();
             if size > MAX_RECORD_FILE {
@@ -221,9 +243,16 @@ impl Library {
                 return Err(ApiError::illegal(format!("{name} holds no games")));
             }
             let n = games.len() as u32;
-            ("records", Some(n), self.try_with(|db| db.import_records(&games, &name))?)
+            (
+                "records",
+                Some(n),
+                self.try_with(|db| {
+                    let report = db.import_records(&games, &name)?;
+                    joined(db, report)
+                })?,
+            )
         };
-        Ok(LibraryImportView {
+        let view = LibraryImportView {
             kind: kind.into(),
             name,
             records,
@@ -235,7 +264,8 @@ impl Library {
             annotation_conflicts: report.annotation_conflicts,
             evals_added: report.position_data_added,
             evals_replaced: report.position_data_replaced,
-        })
+        };
+        Ok((view, joined))
     }
 
     /// Where the database's contents came from: this computer first, then

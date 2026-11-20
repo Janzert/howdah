@@ -804,7 +804,11 @@ plans the engine test and tournament runner.
     `delete_library_game` (a board still showing it saves it again as a
     new game if it changes).
     Sharing: `library_export` (`LibraryExportSpec`), `library_import`
-    (a game database or a record file, told apart by SQLite's header),
+    (a game database or a record file, told apart by SQLite's header;
+    every board is saved first, and a board showing a game the import
+    joined into takes the joined game in, `Session::join_stored` with
+    `GameTree::join` and `MergeReport::games_joined`, or its next save
+    would write over what the import added),
     `library_sources`, `library_remove_source` and
     `library_eval_engines`, on blocking threads; the file dialogs are
     `tauri-plugin-dialog`'s (`dialog:allow-open`/`allow-save`; keep the

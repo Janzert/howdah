@@ -56,6 +56,9 @@ pub struct MergeReport {
     pub position_data_added: i64,
     /// Data on positions replaced by better data.
     pub position_data_replaced: i64,
+    /// The games here whose trees or annotations a join changed (by id),
+    /// so a board showing one can take the joined game in.
+    pub games_joined: Vec<i64>,
 }
 
 /// The games' columns copied as they are (`id`, `origin` and the players
@@ -392,6 +395,7 @@ fn merge_attached(
     };
     for (s, d) in joins {
         join_game(&tx, s, d, origin, &mut report)?;
+        report.games_joined.push(d);
     }
 
     report.position_data_replaced = tx.execute(
