@@ -346,11 +346,16 @@ set time; since 2026-11-14 it takes a time for the whole game
   aren't in the run, except a game in progress's new moves; moves deleted
   drop out of it.
 - **A position's time** starts when the engine is up. When it's over the
-  coordinator stores the line and moves on, without waiting for a
-  `bestmove`: the next `Think` stops the search, and an engine that won't
-  stop fails as usual. A search ending by itself (a proven win) moves on
-  at once. The run's last output for a position is lost that way, which
-  matters less than a lost `stop` hanging the run.
+  coordinator sends `stop` and waits for the `bestmove`, taking in what
+  the engine says meanwhile, then stores the line and moves on. That
+  output is often the only line a quick look gets: OpFor may not finish
+  its first iteration in a quarter second midgame, and says where it got
+  to only on `stop` (2026-11-20: moving on at once, without it, left 26
+  of 41 positions with no line). An engine that doesn't answer within
+  `STOP_TIMEOUT` (2 s) is left to the next `Think`, which fails as usual
+  if it won't stop, so a lost `stop` can't hang the run. The time charged
+  is up to the `stop`. A search ending by itself (a proven win) moves on
+  at once.
 - **Results** go in `evals`, as every search's do, so they show on return
   to a node. `MoveNodeView.eval` gives the move list its evals (after that
   move, from gold's side) and `EvalGraph.svelte` plots the main line's,
@@ -623,7 +628,10 @@ session gives it the main line as `Entry`s from `sweep_entries`):
   weighted by closeness, 4p(1 − p) of the share, the higher of the two
   positions'. A position's priority is divided by 1 + log2 of its search
   time over the quick pass's, so long-searched positions count for less.
-  Below 0.02 a move is settled.
+  Below 0.02 a move is settled. A position whose search left no eval
+  counts 1 (as much as an even game's biggest gap), since neither move
+  beside it can be judged, until it has had eight quick passes' time
+  (`UNEVALUATED_QUICKS`; an engine may never give one there).
 - **Batches** are the best four the remaining budget pays for, each at
   double its time so far (at least the quick pass's), in game order with
   a focused pair first. A pair is refined less-searched side first. When

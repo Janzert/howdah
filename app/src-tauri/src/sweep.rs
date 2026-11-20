@@ -20,6 +20,9 @@ const ALLOWANCE_QUICKS: u32 = 4;
 const BATCH: usize = 4;
 /// Below this priority (a share of the eval bar) a move is settled.
 pub const MIN_PRIORITY: f64 = 0.02;
+/// A position without an eval is searched again until it has had this many
+/// quick passes' time; an engine may never give one for some positions.
+const UNEVALUATED_QUICKS: u32 = 8;
 /// How near a mark's threshold a drop must be to count, in share.
 const NEAR_THRESHOLD: f64 = 0.05;
 /// The marks' thresholds (`MARK_DROPS` in the session).
@@ -311,7 +314,10 @@ impl Run {
 
 /// How much each position is worth more search, as `(index, priority)`
 /// (several per index possible). `searched` says how long a position has
-/// been searched; more search already done makes it count for less.
+/// been searched; more search already done makes it count for less. A
+/// searchable position without an eval (its search gave no line) counts
+/// as much as an even game's biggest gap, as nothing around it can be
+/// judged until it has one, up to [`UNEVALUATED_QUICKS`].
 pub fn priorities(
     entries: &[Entry],
     searched: impl Fn(&Entry) -> Duration,
@@ -321,7 +327,12 @@ pub fn priorities(
         let ratio = searched(e).as_secs_f64() / quick.as_secs_f64().max(1e-3);
         1.0 + ratio.max(1.0).log2()
     };
-    let mut out = Vec::new();
+    let mut out: Vec<(usize, f64)> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.searchable && e.share.is_none() && searched(e) < quick * UNEVALUATED_QUICKS)
+        .map(|(i, e)| (i, 1.0 / cost(e)))
+        .collect();
     for i in 0..entries.len().saturating_sub(1) {
         let Some(p) = move_signal(entries, i) else { continue };
         // The pair is refined together: the less searched side first.
@@ -450,6 +461,22 @@ mod tests {
         sorted.sort_by_key(|n| es.iter().position(|e| e.node == *n));
         assert_eq!(batch, sorted, "game order");
         assert!(run.batch.iter().all(|&(_, t)| t == Duration::from_secs(2)), "double the quick pass");
+    }
+
+    #[test]
+    fn a_position_left_without_an_eval_is_searched_again() {
+        // The quick look at position 2 gave no line: no share.
+        let mut es = entries(&[0.5, 0.51, 0.5, 0.51, 0.5]);
+        es[2].share = None;
+        let mut run = Run::new(&es, Some(Duration::from_secs(60)));
+        quick_pass(&mut run, &es);
+        assert!(run.refresh(&es, false), "not settled while a position has no eval");
+        assert_eq!(run.next(&es, false), Next::Search(es[2].node, run.quick() * 2));
+        // Still none after a few tries: the engine gives none here, so
+        // the run stops asking.
+        run.done(es[2].node, run.quick() * 2, false);
+        es[2].searched = run.quick() * UNEVALUATED_QUICKS;
+        assert!(!run.refresh(&es, false), "settled");
     }
 
     #[test]

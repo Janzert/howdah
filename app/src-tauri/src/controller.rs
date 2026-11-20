@@ -177,10 +177,15 @@ struct Analysis {
     /// The request searching `target`; output from older ones is dropped.
     request: u64,
     state: AnalysisState,
-    /// When this search's time is up, in a run over the whole game.
+    /// When this search's time is up, in a run over the whole game; once
+    /// it's stopped, when to move on without its `bestmove`.
     stop_at: Option<Instant>,
     /// When that timed search started; taken when it's over, so it ends once.
     timed_from: Option<Instant>,
+    /// The timed search was stopped after this long and its `bestmove` is
+    /// awaited: what the engine says on `stop` is often the only line a
+    /// short search gets.
+    stopping: Option<Duration>,
     /// What this search has found so far.
     line: Option<AnalysisLine>,
     /// Engine output not sent yet.
@@ -422,6 +427,7 @@ impl Coordinator {
                     a.target = None;
                     a.stop_at = None;
                     a.timed_from = None;
+                    a.stopping = None;
                     if a.started {
                         a.state = AnalysisState::Idle;
                     }
@@ -468,6 +474,7 @@ impl Coordinator {
             state: AnalysisState::Starting,
             stop_at: None,
             timed_from: None,
+            stopping: None,
             line: None,
             log: Vec::new(),
             pv_cut: false,
@@ -552,25 +559,49 @@ impl Coordinator {
         [stop, deadline, analysis, sweep].into_iter().flatten().min()
     }
 
+    /// The time of a search in a run over the whole game is up: stops it
+    /// and waits for its `bestmove` (up to [`STOP_TIMEOUT`]), since the
+    /// engine may give its line only then.
+    fn sweep_step_stop(&mut self) {
+        let Some(a) = &mut self.analysis else { return };
+        let Some(from) = a.timed_from else { return };
+        a.stopping = Some(from.elapsed());
+        a.stop_at = Some(Instant::now() + STOP_TIMEOUT);
+        let _ = a.cmd.send(ActorCmd::Stop);
+    }
+
     /// The search of a position in a run over the whole game is over: keeps
-    /// what it found and moves the run on. The next `Think` stops the
-    /// engine; one that won't stop fails as usual.
+    /// what it found and moves the run on, charging the time until it was
+    /// stopped. An engine that never answered the `stop` gets the next
+    /// `Think`, which fails as usual if it won't stop.
     /// `ended`: the engine ended the search by itself (a proven result).
     fn sweep_step_done(&mut self, ended: bool) {
         self.flush_analysis(true);
         let Some(a) = &mut self.analysis else { return };
         a.stop_at = None;
+        let stopped = a.stopping.take();
         let Some(from) = a.timed_from.take() else { return };
         let Some(t) = a.target.as_ref().filter(|t| t.time.is_some()) else { return };
         let mut s = lock(&self.session);
-        s.sweep_done(t.generation, t.node, from.elapsed(), ended);
+        s.sweep_done(
+            t.generation,
+            t.node,
+            stopped.unwrap_or_else(|| from.elapsed()),
+            ended && stopped.is_none(),
+        );
         emit_session(&self.events, &s, Vec::new(), None);
     }
 
     fn on_timer(&mut self) {
         self.flush_analysis(false);
-        if self.analysis.as_ref().and_then(|a| a.stop_at).is_some_and(|t| Instant::now() >= t) {
-            self.sweep_step_done(false);
+        if let Some(a) = &self.analysis
+            && a.stop_at.is_some_and(|t| Instant::now() >= t)
+        {
+            if a.stopping.is_some() {
+                self.sweep_step_done(false);
+            } else {
+                self.sweep_step_stop();
+            }
         }
         let now = Instant::now();
         if let Some(p) = &mut self.pending
@@ -728,6 +759,7 @@ impl Analysis {
         self.line = None;
         self.pv_cut = false;
         self.proven = false;
+        self.stopping = None;
         self.set_stop_time();
     }
 
@@ -1799,5 +1831,35 @@ mod tests {
         let updates = lock(&recorder.0);
         let last = updates.iter().rev().find(|(e, _)| e == ANALYSIS_UPDATE).unwrap();
         assert_eq!(last.1["state"], "searching", "{}", last.1);
+    }
+
+    /// An engine that says nothing before `stop` (a search too short for
+    /// its first iteration) still leaves a line at every position.
+    #[tokio::test]
+    async fn a_sweep_keeps_the_line_an_engine_gives_on_stop() {
+        let path = std::env::temp_dir().join(format!("arimaa-sweep-stop-test-{}.json", std::process::id()));
+        let mut registry = EngineRegistry::load(path.clone());
+        let spec = registry.save(test_engine(&["--until-stop", "--silent"])).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let session = Arc::new(Mutex::new(Session::new()));
+        let recorder = Arc::new(Recorder(Mutex::new(Vec::new())));
+        let (controller, run) = new(recorder.clone(), session.clone(), Arc::new(Mutex::new(registry)));
+        tokio::spawn(run);
+        let line = {
+            let mut s = lock(&session);
+            s.load(&format!("1g {}\n1s {}\n2g Ee2n Ee3n\n2s ed7s ed6s\n", SETUPS[0], SETUPS[1])).unwrap();
+            let engine = AnalysisEngine { id: spec.id.clone(), name: spec.name.clone(), options: vec![] };
+            s.set_analysis(Some(engine)).unwrap();
+            s.start_sweep(Some(Duration::from_secs(2))).unwrap();
+            s.view().tree.iter().map(|m| m.id).collect::<Vec<_>>()
+        };
+        controller.poke();
+        tokio::time::sleep(Duration::from_millis(3600)).await;
+        let s = lock(&session);
+        assert!(s.view().sweep.is_none(), "the run is over");
+        for &node in &line[2..] {
+            let kept = s.stored_analysis(s.generation(), &spec.id, node);
+            assert!(kept.is_some_and(|l| l.eval.is_some() && !l.pv.is_empty()), "{node:?}: {kept:?}");
+        }
     }
 }

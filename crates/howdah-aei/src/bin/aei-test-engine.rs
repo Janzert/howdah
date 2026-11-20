@@ -2,7 +2,7 @@
 //! to misbehave. Not a useful opponent.
 //!
 //! Usage: `aei-test-engine [--mode MODE] [--after N] [--delay-ms MS] [--seed S] [--name NAME] [--until-stop]
-//! [--grow-mb MB] [--think-ms MS] [--ignore-quit] [--child-pid-file PATH]
+//! [--silent] [--grow-mb MB] [--think-ms MS] [--ignore-quit] [--child-pid-file PATH]
 //! [--stray-ponder]`
 //!
 //! `--name` sets the name it gives (`id name`), so it can stand in for an
@@ -11,7 +11,8 @@
 //! `--until-stop`, every `go` searches until `stop` (as an engine analysing
 //! does), sending `info depth/score/pv` every 20 ms, and any command but
 //! `stop`, `isready`, `quit` and `setoption` (valid at any time) during a
-//! search is logged as an error.
+//! search is logged as an error. `--silent` sends that `info` only once
+//! stopped, as an engine still in its first iteration does.
 //!
 //! `go ponder` does nothing, unless `--stray-ponder`: then it logs
 //! `pondering` and sends a `bestmove` that isn't a move, as a careless
@@ -75,6 +76,7 @@ struct Options {
     delay: Duration,
     seed: u64,
     until_stop: bool,
+    silent: bool,
     name: String,
     grow_mb: usize,
     think: Duration,
@@ -90,6 +92,7 @@ fn parse_options() -> Options {
         delay: Duration::from_millis(0),
         seed: SystemTime::now().duration_since(UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1,
         until_stop: false,
+        silent: false,
         name: "aei-test-engine".into(),
         grow_mb: 0,
         think: Duration::ZERO,
@@ -111,6 +114,7 @@ fn parse_options() -> Options {
         }
     }
     o.until_stop = flag("--until-stop");
+    o.silent = flag("--silent");
     o.ignore_quit = flag("--ignore-quit");
     o.stray_ponder = flag("--stray-ponder");
     let mut i = 0;
@@ -325,13 +329,25 @@ fn main() {
                 if opts.until_stop {
                     let pv = best.clone().unwrap_or_default();
                     let mut depth = 1;
+                    let info = |depth: u32| {
+                        [
+                            format!("info depth {depth}"),
+                            format!("info score {}", depth * 10),
+                            format!("info pv {pv}"),
+                        ]
+                    };
                     loop {
-                        say(&format!("info depth {depth}"));
-                        say(&format!("info score {}", depth * 10));
-                        say(&format!("info pv {pv}"));
+                        if !opts.silent {
+                            info(depth).iter().for_each(|l| say(l));
+                        }
                         depth += 1;
                         match rx.recv_timeout(Duration::from_millis(20)) {
-                            Ok(l) if l.trim() == "stop" => break,
+                            Ok(l) if l.trim() == "stop" => {
+                                if opts.silent {
+                                    info(depth).iter().for_each(|l| say(l));
+                                }
+                                break;
+                            }
                             Ok(l) if l.trim() == "quit" => return,
                             Ok(l) if l.trim() == "isready" => say("readyok"),
                             Ok(l) if l.starts_with("setoption ") => {

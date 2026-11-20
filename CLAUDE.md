@@ -587,8 +587,11 @@ plans the engine test and tournament runner.
       threshold, closeness) in batches in game order, each visit at
       double the last; in a match it follows new moves (`sweep_live`),
       and `focus_sweep` (an eval graph click) refines a move next. Each
-      search's time is `AnalysisTarget.time`; the coordinator moves on
-      when it's up (`sweep_step_done`, which charges the time taken).
+      search's time is `AnalysisTarget.time`; when it's up the coordinator
+      sends `stop` and moves on at the `bestmove` (`sweep_step_stop`, then
+      `sweep_step_done`, which charges the time to the `stop`), or after
+      `STOP_TIMEOUT` without one. A position left without an eval is
+      searched again (`sweep::priorities`, up to `UNEVALUATED_QUICKS`).
       `sweep_entries` is the main line as the run sees it, and
       `MoveMark.provisional` says whether more search may change a mark.
       A node keeps the line from the most search (`more_search`: time,
