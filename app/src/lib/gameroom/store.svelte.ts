@@ -376,9 +376,10 @@ class GameroomStore {
     return this.enter((a) => a.acceptGameroomInvitation(i.otherId, i.created));
   }
 
-  decline(i: InvitationView) {
+  /** Declines an invitation, with a message for the inviter (may be empty). */
+  decline(i: InvitationView, reason = '') {
     return this.attempt(async () => {
-      await api.declineGameroomInvitation(i.otherId, i.created, '');
+      await api.declineGameroomInvitation(i.otherId, i.created, reason);
       this.setGames(await api.gameroomGames());
     });
   }

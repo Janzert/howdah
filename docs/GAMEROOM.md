@@ -244,7 +244,8 @@ architecture. Decided and checked against the live server in October 2026.
   the New game form's Opponent field invites a player, a background wait
   on the inviter's waiting page brings the answer (accepted, the game
   opens in a new window; declined, with the reason), and the lobby lists invitations
-  both ways with Accept, Decline and Cancel. The Online list (who's
+  both ways with Accept, Decline (which asks for an optional message, the
+  reason the inviter sees) and Cancel. The Online list (who's
   logged in, from `state`'s `online`, leaving out anyone whose last
   lobby request, `idle`, is over 60 s old, as the browser lobby does)
   has Invite, which fills in the Opponent field, for players who take

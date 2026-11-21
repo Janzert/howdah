@@ -6,6 +6,7 @@
   // too while the header's toggle (GameroomScreen) is on.
   import Icon from '../Icon.svelte';
   import type { Color } from '../bindings/Color';
+  import type { InvitationView } from '../bindings/InvitationView';
   import type { LiveGameView } from '../bindings/LiveGameView';
   import Announcement from './Announcement.svelte';
   import { announcementKey } from '../gameroom';
@@ -28,6 +29,25 @@
   /** The free seat of an open game. */
   const freeSide = (g: LiveGameView): Color => (g.gold == null ? 'gold' : 'silver');
   const sideName = (c: Color) => (c === 'gold' ? 'Gold' : 'Silver');
+
+  /** The invitation being declined (its key), and the message going with it. */
+  let declining = $state<string | null>(null);
+  let declineReason = $state('');
+  const inviteKey = (i: InvitationView) => i.created + i.otherId;
+
+  function startDecline(i: InvitationView) {
+    declining = inviteKey(i);
+    declineReason = '';
+  }
+
+  async function sendDecline(i: InvitationView) {
+    const reason = declineReason.trim();
+    declining = null;
+    await gameroom.decline(i, reason);
+  }
+
+  /** Focuses the message box as it appears. */
+  const focusOnMount = (el: HTMLInputElement) => el.focus();
 
   const nothingMine = $derived(
     gameroom.myGames.length === 0 && gameroom.incoming.length === 0 && gameroom.outgoing.length === 0,
@@ -64,8 +84,8 @@
         </p>
       {:else}
         <ul class="list" aria-label="Your games and invitations">
-          {#each gameroom.incoming as i (i.created + i.otherId)}
-            <li class="highlight">
+          {#each gameroom.incoming as i (inviteKey(i))}
+            <li class="highlight" class:declining={declining === inviteKey(i)}>
               <span class="row-text">
                 <span class="row-line">
                   <span class="badge">Invitation</span>
@@ -74,17 +94,46 @@
                 </span>
                 <span class="meta">{invitationMeta(i)}{i.message ? ` · “${i.message}”` : ''}</span>
               </span>
-              <button
-                class="primary"
-                onclick={() => gameroom.accept(i)}
-                disabled={busy}
-                aria-label="Accept the invitation from {i.opponent}">Accept</button
-              >
-              <button
-                onclick={() => gameroom.decline(i)}
-                disabled={busy}
-                aria-label="Decline the invitation from {i.opponent}">Decline</button
-              >
+              {#if declining === inviteKey(i)}
+                <form
+                  class="decline-form"
+                  onsubmit={(e) => {
+                    e.preventDefault();
+                    sendDecline(i);
+                  }}
+                >
+                  <input
+                    type="text"
+                    bind:value={declineReason}
+                    placeholder="Message (optional)"
+                    maxlength="200"
+                    aria-label="Message to {i.opponent} with the decline"
+                    onkeydown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.stopPropagation();
+                        declining = null;
+                      }
+                    }}
+                    {@attach focusOnMount}
+                  />
+                  <button type="button" class="subtle" onclick={() => (declining = null)}>Back</button>
+                  <button type="submit" class="primary" disabled={busy} aria-label="Send the decline to {i.opponent}"
+                    >Decline</button
+                  >
+                </form>
+              {:else}
+                <button
+                  class="primary"
+                  onclick={() => gameroom.accept(i)}
+                  disabled={busy}
+                  aria-label="Accept the invitation from {i.opponent}">Accept</button
+                >
+                <button
+                  onclick={() => startDecline(i)}
+                  disabled={busy}
+                  aria-label="Decline the invitation from {i.opponent}">Decline…</button
+                >
+              {/if}
             </li>
           {/each}
           {#each gameroom.myGames as g (g.gid)}
@@ -302,6 +351,18 @@
   }
   .more {
     margin-top: 8px;
+  }
+  li.declining {
+    flex-wrap: wrap;
+  }
+  .decline-form {
+    display: flex;
+    gap: 8px;
+    flex-basis: 100%;
+  }
+  .decline-form input {
+    flex: 1;
+    min-width: 0;
   }
   .chips {
     list-style: none;

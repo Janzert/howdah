@@ -1247,7 +1247,8 @@ plans the engine test and tournament runner.
     as `gameroom://invitation`; accepted, the lobby opens a window playing
     it), and Your games lists them with
     Accept (`accept_gameroom_invitation`, which also takes the seat),
-    Decline and Cancel. Announcements (`GameroomGames.announcements`,
+    Decline (a message box opens in the row: the optional reason
+    `declineInvite.cgi` passes on to the inviter) and Cancel. Announcements (`GameroomGames.announcements`,
     `AnnouncementView` with `age` by the server's clock) show at the top
     of the overview when edited within `FRESH_ANNOUNCEMENT_S` (90 days,
     `splitAnnouncements` in `lib/gameroom.ts`) and not hidden (Hide,
