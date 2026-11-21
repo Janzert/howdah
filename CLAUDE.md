@@ -402,7 +402,9 @@ plans the engine test and tournament runner.
   database needs from the time it reached) and `merge DB OTHER` (`Database::merge_from`: games
   matched by `gid` then source key, added with their tags, variations
   and annotations, or filled in when only their header was there, else
-  kept as they are; players by site key, else name; position data where
+  kept as they are, taking the other's headers only where theirs are
+  empty (`FILLED_HEADERS`: a game fetched before the archive had it gets
+  its event, site and times from the base later); players by site key, else name; position data where
   there's none from the same author; the other file's uuid becomes an
   `origins` row; new games' ids are offset past the highest, so it's
   bulk SQL through an attached database, 8.5 s for the whole archive).
@@ -690,7 +692,9 @@ plans the engine test and tournament runner.
     delay, so it shows the time left for a move sent now. A
     session's `Watch` lives in its `SessionHandle`; `new_game`,
     `load_game`, `start_match` and `end_match` stop and forget it. The
-    record gets the archive's `Event` and `Site` ("Over the Net"), and at
+    record gets the archive's `Event` and `Site` (`howdah_gameroom::SITE`,
+    "arimaa.com", which `FinishedGame::record` and the archive import,
+    mapping the archive's "Over the Net", give too), and at
     the end the permanent id as `GameId` (`WatchView.finishedId` too): from
     the final state's `finishedId`, or else `find_id` asks `findgameid` up
     to four times, 2, 4, 6 and 8 s apart, since the server may not know it

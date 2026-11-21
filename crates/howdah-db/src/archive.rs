@@ -63,7 +63,12 @@ pub fn game_from_row(row: &Row) -> Option<GameData> {
     g.gid = game::gid_for(g.source.as_ref().expect("set"));
     g.players = [row.player('w'), row.player('b')];
     g.event = row.get("event").map(String::from);
-    g.site = row.get("site").map(String::from);
+    // The archive's "Over the Net" (every game's) says only that it was
+    // played online; the server's name says where.
+    g.site = match row.get("site") {
+        None | Some("Over the Net") => Some(game::ARIMAA_COM_SITE.into()),
+        Some(other) => Some(other.into()),
+    };
     g.time_control = row.get("timecontrol").map(String::from);
     g.rated = row.flag("rated");
     g.postal = row.flag("postal");
@@ -395,6 +400,16 @@ mod tests {
         1541049034 [Thu Nov  1 05:10:34 2018] after 1w, move used:70 wresv:120 bresv:120 game:70\\n\
         1541049035 [Thu Nov  1 05:10:35 2018] move 1b received from b [ra8]\\n\
         1541049035 [Thu Nov  1 05:10:35 2018] after 1b, move used:1 wresv:120 bresv:120 game:71\\n";
+
+    #[test]
+    fn the_site_is_the_server() {
+        let columns: HashMap<String, usize> =
+            ["id", "site"].iter().enumerate().map(|(i, c)| (c.to_string(), i)).collect();
+        let site = |fields: Vec<&str>| game_from_row(&Row { columns: &columns, fields }).unwrap().site;
+        assert_eq!(site(vec!["1", "Over the Net"]).as_deref(), Some("arimaa.com"));
+        assert_eq!(site(vec!["2", ""]).as_deref(), Some("arimaa.com"), "none given");
+        assert_eq!(site(vec!["3", "Tokyo"]).as_deref(), Some("Tokyo"), "any other kept");
+    }
 
     #[test]
     fn times_from_clock_lines() {

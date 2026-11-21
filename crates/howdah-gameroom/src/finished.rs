@@ -143,6 +143,7 @@ impl FinishedGame {
         let mut record = GameRecord::parse(&text)?;
         let [gold, silver] = self.players();
         let tags = [
+            ("Site", Some(crate::SITE.to_string())),
             ("Gold", gold),
             ("Silver", silver),
             ("GoldRating", v.nonempty("wrating")),
@@ -254,6 +255,8 @@ arimaa.window();
         assert_eq!(state.finished_id.as_deref(), Some("671438"));
         let record = game.record().unwrap();
         assert_eq!(record.tag("Gold"), Some("bot_testbot"));
+        assert_eq!(record.tag("Site"), Some("arimaa.com"));
+        assert_eq!(record.tag("Event"), None, "the page doesn't say");
         assert_eq!(record.tag("SilverRating"), Some("1848"));
         assert_eq!(record.tag("GameId"), Some("671438"));
         assert_eq!(record.tag("Date"), Some("2026.10.04"));

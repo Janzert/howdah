@@ -1250,9 +1250,9 @@ fn start(s: &mut Session, state: &GameState) {
     if state.rated {
         s.forbid_takeback_requests();
     }
-    // As the arimaa.com archive has them.
+    // The event as the arimaa.com archive has it.
     let event = state.raw.nonempty("event").unwrap_or_else(|| "Casual game".into());
-    let mut tags = vec![("Event".to_string(), event), ("Site".into(), "Over the Net".into())];
+    let mut tags = vec![("Event".to_string(), event), ("Site".into(), howdah_gameroom::SITE.into())];
     for (i, side) in ["Gold", "Silver"].into_iter().enumerate() {
         if let Some(p) = &state.players[i] {
             tags.push((side.into(), p.clone()));

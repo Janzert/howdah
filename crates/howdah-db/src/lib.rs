@@ -26,7 +26,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 pub use explore::{Explorer, MoveStat, PositionMatch, PositionQuery, Replay, Tally, line_position, mirror};
-pub use game::{ARIMAA_COM, GameData, PlayerInfo, SaveMode, SourceKey, StoredResult, gid_for};
+pub use game::{
+    ARIMAA_COM, ARIMAA_COM_SITE, GameData, PlayerInfo, SaveMode, SourceKey, StoredResult, gid_for,
+};
 pub use merge::MergeReport;
 pub use positions::PositionDatum;
 pub use search::{Filter, GameSummary, Origin, Outcome, SearchPage};

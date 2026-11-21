@@ -20,8 +20,18 @@ young).
   position, its moves animated as they're played, with Watch to open it
   on a full board.
 
+### Changed
+
+- arimaa.com's games name the server as their site, `arimaa.com`, in
+  place of the archive's "Over the Net", which every game had. Games
+  already in the database are updated when it opens.
+
 ### Fixed
 
+- A finished arimaa.com game opened before it reached the archive
+  lacked the event, site and times the archive's games have; it now
+  gets its site at once and the rest from the game database download
+  once that has the game.
 - Copying (a move, the moves to it, a record, a position, a chat link
   or the version) no longer fails on Linux with "NotAllowedError".
 - The board preview of an engine line's move closes when the move is

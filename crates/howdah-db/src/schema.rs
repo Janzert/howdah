@@ -46,6 +46,11 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         step: Step::Sql(include_str!("../migrations/0003_local_engines.sql")),
         readable_before: true,
     },
+    Migration {
+        name: "0004_arimaa_com_site",
+        step: Step::Sql(include_str!("../migrations/0004_arimaa_com_site.sql")),
+        readable_before: true,
+    },
 ];
 
 /// The schema version this build writes.
@@ -174,6 +179,44 @@ mod tests {
         assert_eq!(schema(&old), schema(&fresh));
         // Adding an index leaves the file readable by version 1.
         assert_eq!(min_reader(&old).unwrap(), 1);
+    }
+
+    #[test]
+    fn arimaa_com_games_get_the_server_as_their_site() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        let tx = conn.transaction().unwrap();
+        for m in &MIGRATIONS[..3] {
+            let Step::Sql(sql) = m.step else { unreachable!() };
+            tx.execute_batch(sql).unwrap();
+        }
+        tx.pragma_update(None, "application_id", APPLICATION_ID).unwrap();
+        tx.pragma_update(None, "user_version", 3).unwrap();
+        tx.execute("INSERT INTO meta (key, value) VALUES ('min_reader', '1')", []).unwrap();
+        tx.execute("INSERT INTO origins (id, uuid, added_at) VALUES (1, x'01', 0)", []).unwrap();
+        let game = |id: i64, source: Option<&str>, site: Option<&str>| {
+            let gid = id.to_be_bytes().repeat(2);
+            tx.execute(
+                "INSERT INTO games (id, gid, origin, source, source_id, site, added_at, modified_at)
+                 VALUES (?1, ?2, 1, ?3, ?4, ?5, 0, 0)",
+                rusqlite::params![id, gid, source, source.map(|_| id.to_string()), site],
+            )
+            .unwrap();
+        };
+        game(1, Some("arimaa.com"), Some("Over the Net"));
+        game(2, Some("arimaa.com"), None);
+        game(3, None, Some("Over the Net"));
+        game(4, Some("arimaa.com"), Some("Somewhere"));
+        tx.commit().unwrap();
+        migrate(&mut conn).unwrap();
+        let sites: Vec<Option<String>> = conn
+            .prepare("SELECT site FROM games ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let want = [Some("arimaa.com"), Some("arimaa.com"), Some("Over the Net"), Some("Somewhere")];
+        assert_eq!(sites, want.map(|s| s.map(String::from)), "only arimaa.com's games change");
     }
 
     #[test]

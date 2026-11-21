@@ -13,7 +13,8 @@
 //!   A game this
 //!   database doesn't have is added with its tags, variations and
 //!   annotations; one it has only the header of gets the other's moves.
-//!   One both have keeps its headers, and the two trees are joined: a
+//!   One both have keeps its headers, taking the other's only where its
+//!   own are empty, and the two trees are joined: a
 //!   node is its moves from the start, so a node both have is the same
 //!   node, and the other's new moves are added as variations.
 //! - **Annotations** (by node, kind and author) are added where this
@@ -45,6 +46,9 @@ pub struct MergeReport {
     pub games_filled: i64,
     /// Games both had, kept with their headers (their trees joined).
     pub games_kept: i64,
+    /// Games both had whose empty headers (event, site, ...) the other's
+    /// filled in.
+    pub games_completed: i64,
     /// Moves added as variations to games both had.
     pub nodes_added: i64,
     /// Annotations added to games both had, or replacing older edits.
@@ -359,6 +363,26 @@ fn merge_attached(
         [],
     )? as i64;
     report.games_kept = tx.query_row("SELECT count(*) FROM temp.gmap WHERE how = 0", [], |r| r.get(0))?;
+    // A game both have keeps its headers, but takes the other's where its
+    // own are empty: a game fetched before it reached the archive lacks
+    // what only the archive has (event, site, times), and gets it from the
+    // base database later.
+    let empty =
+        FILLED_HEADERS.iter().map(|c| format!("games.{c} IS NULL AND s.{c} IS NOT NULL")).collect::<Vec<_>>();
+    report.games_completed = tx.execute(
+        &format!(
+            "UPDATE main.games SET {}
+             FROM temp.gmap AS m JOIN src.games AS s ON s.id = m.src
+             WHERE m.dst = games.id AND m.how = 0 AND ({})",
+            FILLED_HEADERS
+                .iter()
+                .map(|c| format!("{c} = coalesce(games.{c}, s.{c})"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            empty.join(" OR "),
+        ),
+        [],
+    )? as i64;
     tx.execute_batch(
         "INSERT INTO main.game_tags (game, ord, name, value)
            SELECT m.dst, t.ord, t.name, t.value FROM src.game_tags t JOIN temp.gmap m ON m.src = t.game
@@ -594,6 +618,24 @@ fn join_game(tx: &Transaction, s: i64, d: i64, fallback: i64, report: &mut Merge
     Ok(())
 }
 
+/// The header columns a game both databases have takes from the other
+/// when its own are empty: what describes the game, not its moves or
+/// result, which go with its tree.
+const FILLED_HEADERS: [&str; 12] = [
+    "event",
+    "site",
+    "date",
+    "start_ts",
+    "end_ts",
+    "gold_rating",
+    "silver_rating",
+    "gold_rating_k",
+    "silver_rating_k",
+    "time_control",
+    "rated",
+    "postal",
+];
+
 /// The columns copied when filling in a game known by its header (all but
 /// its `gid`, which it keeps).
 const GAME_COLUMNS_NO_GID: &str = "source, source_id, gold_name, silver_name, gold_rating, silver_rating, \
@@ -634,6 +676,39 @@ mod tests {
             g.tree = None;
         }
         g
+    }
+
+    #[test]
+    fn a_game_both_have_takes_the_others_headers_only_where_its_own_are_empty() {
+        let dir = std::env::temp_dir().join(format!("howdah-merge-headers-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let base_path = dir.join("base.db");
+        let _ = std::fs::remove_file(&base_path);
+        {
+            let mut base = Database::open(&base_path).unwrap();
+            let mut g = arimaa("1", "Ann", "10", false);
+            g.event = Some("2026 WC".into());
+            g.site = Some("arimaa.com".into());
+            g.start_ts = Some(1_000);
+            g.time_control = Some("base".into());
+            base.save(&g).unwrap();
+        }
+        let mut main = Database::open_in_memory().unwrap();
+        // Fetched before the archive had it: no event, site or start, but
+        // its own time control.
+        let mut fetched = arimaa("1", "Ann", "10", false);
+        (fetched.event, fetched.site, fetched.start_ts) = (None, None, None);
+        fetched.time_control = Some("mine".into());
+        let id = main.save(&fetched).unwrap();
+        let report = main.merge_from(&base_path, "base").unwrap();
+        assert_eq!((report.games_kept, report.games_completed), (1, 1));
+        let g = main.load(id).unwrap();
+        assert_eq!(
+            (g.event.as_deref(), g.site.as_deref(), g.start_ts),
+            (Some("2026 WC"), Some("arimaa.com"), Some(1_000))
+        );
+        assert_eq!(g.time_control.as_deref(), Some("mine"), "a header it has stays");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -696,6 +771,7 @@ mod tests {
         // A second merge adds nothing.
         let again = main.merge_from(&base_path, "base").unwrap();
         assert_eq!((again.games_added, again.games_filled, again.games_kept), (0, 0, 3));
+        assert_eq!(again.games_completed, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

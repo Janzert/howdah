@@ -14,6 +14,9 @@ use crate::{Error, Result, now};
 
 /// arimaa.com's name as a source and a players' site.
 pub const ARIMAA_COM: &str = "arimaa.com";
+/// The `Site` of arimaa.com's games: the server, as online chess names
+/// its own (the archive's `site` is "Over the Net" for every game).
+pub const ARIMAA_COM_SITE: &str = "arimaa.com";
 
 /// Where a game is from: a server and its id there.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -36,6 +36,11 @@
 //!
 //! `examples/probe.rs` runs these against the live server by hand.
 
+/// The `Site` tag of arimaa.com's games: the server, as online chess
+/// names its own (lichess, chess.com). The archive's own `site` is "Over
+/// the Net" for every game, which says only that it was played online.
+pub const SITE: &str = "arimaa.com";
+
 pub mod announcements;
 pub mod bots;
 pub mod chat;

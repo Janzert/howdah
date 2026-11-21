@@ -2,7 +2,7 @@ use howdah_arimaa::{Color, GameRecord, GameTree, Glyph};
 use howdah_db::{Database, GameData, PlayerInfo, SourceKey, StoredResult, gid_for};
 
 const RECORD: &str = r#"[Event "Casual game"]
-[Site "Over the Net"]
+[Site "arimaa.com"]
 [Date "2018.11.01"]
 [Gold "Tri21"]
 [Silver "bot_ArimaaScoreP1"]
