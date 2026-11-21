@@ -11,7 +11,7 @@
 //! itself isn't kept.
 
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -221,52 +221,113 @@ pub fn archive_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-fn read_zip(path: &Path) -> Result<Vec<u8>> {
+/// Rows read and replayed at a time, at most, and the text they may
+/// add up to, so a month's file is never held whole (Jan 2014's is
+/// 160 MB, mostly long event logs).
+const BATCH_ROWS: usize = 2000;
+const BATCH_BYTES: usize = 8 << 20;
+
+/// Passes each line of the zip's `.txt` entries, in order and without
+/// its `\n`, to `line`, as if the entries were one file.
+fn zip_lines(path: &Path, mut line: impl FnMut(&[u8]) -> Result<()>) -> Result<()> {
     let file = std::fs::File::open(path)?;
     let mut zip =
         zip::ZipArchive::new(file).map_err(|e| Error::Archive(format!("{}: {e}", path.display())))?;
-    let mut out = Vec::new();
+    // A line can run on from one entry into the next, as it would in the
+    // entries joined.
+    let mut partial = Vec::new();
     for i in 0..zip.len() {
-        let mut entry = zip.by_index(i).map_err(|e| Error::Archive(format!("{}: {e}", path.display())))?;
-        if entry.name().ends_with(".txt") {
-            entry.read_to_end(&mut out)?;
+        let entry = zip.by_index(i).map_err(|e| Error::Archive(format!("{}: {e}", path.display())))?;
+        if !entry.name().ends_with(".txt") {
+            continue;
+        }
+        let mut reader = std::io::BufReader::with_capacity(1 << 16, entry);
+        loop {
+            let n = reader.read_until(b'\n', &mut partial)?;
+            if n == 0 {
+                break;
+            }
+            if partial.last() == Some(&b'\n') {
+                partial.pop();
+                line(&partial)?;
+                partial.clear();
+            }
         }
     }
-    Ok(out)
+    line(&partial)
 }
 
 /// Reads an archive file's games, replaying them on up to `threads`
 /// threads.
 pub fn read_file(path: &Path, threads: usize) -> Result<Vec<GameData>> {
-    let bytes = read_zip(path)?;
-    let text = String::from_utf8_lossy(&bytes);
-    let mut lines = text.split('\n').map(|l| l.trim_end_matches('\r'));
-    let header = lines.next().unwrap_or("");
-    let columns: HashMap<String, usize> =
-        header.split('\t').enumerate().map(|(i, c)| (c.trim().to_string(), i)).collect();
-    if !columns.contains_key("id") || !columns.contains_key("movelist") {
-        return Err(Error::Archive(format!("{}: no id and movelist columns", path.display())));
-    }
-    let rows: Vec<&str> = lines.filter(|l| !l.trim().is_empty()).collect();
+    let mut all = Vec::new();
+    read_file_batches(path, threads, |games| {
+        all.extend(games);
+        Ok(())
+    })?;
+    Ok(all)
+}
+
+/// Reads an archive file's games in batches of up to [`BATCH_ROWS`] rows
+/// or [`BATCH_BYTES`] of text,
+/// in the file's order, replaying each batch on up to `threads` threads
+/// and passing its games to `batch`.
+pub fn read_file_batches(
+    path: &Path,
+    threads: usize,
+    mut batch: impl FnMut(Vec<GameData>) -> Result<()>,
+) -> Result<()> {
     let threads = threads.clamp(1, 8);
-    let chunk = rows.len().div_ceil(threads).max(1);
-    let games = std::thread::scope(|s| {
-        let handles: Vec<_> = rows
-            .chunks(chunk)
-            .map(|part| {
-                let columns = &columns;
-                s.spawn(move || {
-                    part.iter()
-                        .filter_map(|line| {
-                            game_from_row(&Row { columns, fields: line.split('\t').collect() })
-                        })
-                        .collect::<Vec<_>>()
+    let mut columns: Option<HashMap<String, usize>> = None;
+    let mut rows: Vec<String> = Vec::with_capacity(BATCH_ROWS);
+    let mut bytes_held = 0usize;
+    let replay = |columns: &HashMap<String, usize>, rows: &[String]| -> Vec<GameData> {
+        let chunk = rows.len().div_ceil(threads).max(1);
+        std::thread::scope(|s| {
+            let handles: Vec<_> = rows
+                .chunks(chunk)
+                .map(|part| {
+                    s.spawn(move || {
+                        part.iter()
+                            .filter_map(|line| {
+                                game_from_row(&Row { columns, fields: line.split('\t').collect() })
+                            })
+                            .collect::<Vec<_>>()
+                    })
                 })
-            })
-            .collect();
-        handles.into_iter().flat_map(|h| h.join().expect("a replay thread")).collect()
-    });
-    Ok(games)
+                .collect();
+            handles.into_iter().flat_map(|h| h.join().expect("a replay thread")).collect()
+        })
+    };
+    zip_lines(path, |bytes| {
+        let text = String::from_utf8_lossy(bytes);
+        let line = text.trim_end_matches('\r');
+        let Some(cols) = &columns else {
+            let header: HashMap<String, usize> =
+                line.split('\t').enumerate().map(|(i, c)| (c.trim().to_string(), i)).collect();
+            if !header.contains_key("id") || !header.contains_key("movelist") {
+                return Err(Error::Archive(format!("{}: no id and movelist columns", path.display())));
+            }
+            columns = Some(header);
+            return Ok(());
+        };
+        if line.trim().is_empty() {
+            return Ok(());
+        }
+        bytes_held += line.len();
+        rows.push(line.to_string());
+        if rows.len() == BATCH_ROWS || bytes_held >= BATCH_BYTES {
+            batch(replay(cols, &rows))?;
+            rows.clear();
+            bytes_held = 0;
+        }
+        Ok(())
+    })?;
+    match &columns {
+        Some(cols) if !rows.is_empty() => batch(replay(cols, &rows)),
+        Some(_) => Ok(()),
+        None => Err(Error::Archive(format!("{}: no id and movelist columns", path.display()))),
+    }
 }
 
 fn file_stamp(path: &Path) -> Result<(i64, i64)> {
@@ -300,22 +361,26 @@ impl Database {
                 report.skipped_files += 1;
                 continue;
             }
-            let games = read_file(path, threads)?;
             let tx = self.writable()?.transaction()?;
-            for g in &games {
-                game::save(&tx, g, &mut cache, game::SaveMode::Source)?;
-                report.replay_errors += usize::from(g.replay_error.is_some());
-            }
+            let mut count = 0usize;
+            read_file_batches(path, threads, |games| {
+                for g in &games {
+                    game::save(&tx, g, &mut cache, game::SaveMode::Source)?;
+                    report.replay_errors += usize::from(g.replay_error.is_some());
+                }
+                count += games.len();
+                Ok(())
+            })?;
             tx.execute(
                 "INSERT INTO archive_files (name, size, mtime, games, imported_at) VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT (name) DO UPDATE SET size = excluded.size, mtime = excluded.mtime,
                  games = excluded.games, imported_at = excluded.imported_at",
-                (&name, size, mtime, games.len() as i64, now()),
+                (&name, size, mtime, count as i64, now()),
             )?;
             tx.commit()?;
             report.files += 1;
-            report.games += games.len();
-            progress(path, games.len());
+            report.games += count;
+            progress(path, count);
         }
         Ok(report)
     }

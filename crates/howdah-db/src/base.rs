@@ -425,6 +425,9 @@ pub fn pack(db: &Path, out: &Path, threads: u32, since: Option<i64>, at: i64) ->
     {
         let mut input = BufReader::new(File::open(db)?);
         let mut enc = zstd::Encoder::new(BufWriter::new(File::create(out)?), 22)?;
+        // Without the size, level 22 sets up for a large input: some
+        // 670 MB even for a delta of under a megabyte.
+        enc.set_pledged_src_size(Some(unpacked_size))?;
         enc.long_distance_matching(true)?;
         enc.window_log(WINDOW_LOG)?;
         enc.multithread(threads.clamp(1, 8))?;
