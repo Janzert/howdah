@@ -230,13 +230,14 @@
             {#if oddsText(test) || decideText(test)}
               <dt>Outcome</dt>
               <dd>
-                {#if oddsText(test)}<span title="How often each ending came up in the simulations"
+                {#if oddsText(test)}<span
+                    title="Simulated from the results so far, with a prior for how much a change usually moves strength"
                     >{oddsText(test)}</span
                   >{/if}
                 {#if decideText(test)}
                   <span
                     class="aside"
-                    title="The chance the LLR reaches a bound before the pair limit, which the undecided cutoff watches"
+                    title="A quick estimate from the current score with no prior, which the undecided cutoff checks after every game. It runs higher than the simulated pass and fail."
                     >{decideText(test)}</span
                   >
                 {/if}

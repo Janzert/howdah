@@ -107,14 +107,20 @@ describe('tests', () => {
 
   it('words the chance of deciding in time', () => {
     expect(decideText(view())).toBeNull();
-    expect(decideText(view({ maxPairs: 3000, decideChance: 0.623 }))).toBe('62% chance to decide within 3000 pairs');
-    expect(decideText(view({ maxPairs: 3000, decideChance: 0.0412 }))).toBe('4.1% chance to decide within 3000 pairs');
+    expect(decideText(view({ maxPairs: 3000, decideChance: 0.623 }))).toBe(
+      'From the current score: 62% chance to decide within 3000 pairs',
+    );
+    expect(decideText(view({ maxPairs: 3000, decideChance: 0.0412 }))).toBe(
+      'From the current score: 4.1% chance to decide within 3000 pairs',
+    );
     expect(decideText(view({ maxPairs: 3000, decideChance: 0.00001 }))).toBe(
-      '<0.1% chance to decide within 3000 pairs',
+      'From the current score: <0.1% chance to decide within 3000 pairs',
     );
     expect(decideText(view({ maxPairs: 3000, decideChance: 0.5, status: 'finished' }))).toBeNull();
     const cut = view({ maxPairs: 3000, decideChance: 0.2, sprt: { elo0: 0, elo1: 10, undecidedBelow: 0.05 } });
-    expect(decideText(cut)).toBe('20% chance to decide within 3000 pairs (stops under 5%)');
+    expect(decideText(cut)).toBe(
+      'Cutoff rule, from the current score: 20% chance to decide within 3000 pairs (stops under 5%)',
+    );
   });
 
   it('reads and fills a cutoff field in percent', () => {
@@ -263,7 +269,7 @@ describe('detailsText', () => {
       '12–9 in 21 games (10 pairs)',
       'Elo +70.4 [-20.0, +170.0]',
       'LLR 0.00 (-2.94, 2.94) for Elo [0, 10]',
-      '62% chance to decide within 3000 pairs',
+      'From the current score: 62% chance to decide within 3000 pairs',
     ]);
     const projection = {
       pass: 0.5,
@@ -282,7 +288,10 @@ describe('detailsText', () => {
       detailsText(view({ projection, maxPairs: 3000, decideChance: 0.623 }))
         .split('\n')
         .slice(-2),
-    ).toEqual(['Ends in about 20 games (10–30): pass 50%, fail 50%', '62% chance to decide within 3000 pairs']);
+    ).toEqual([
+      'Ends in about 20 games (10–30): pass 50%, fail 50%',
+      'From the current score: 62% chance to decide within 3000 pairs',
+    ]);
   });
 });
 

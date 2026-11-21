@@ -57,12 +57,18 @@ function pct(c: number): string {
 }
 
 /** The chance the SPRT still decides before the pair limit, while it's
- * running: `62% chance to decide within 3000 pairs`, and where the test
- * stops undecided if it does: `(stops under 5%)`. */
+ * running, by the quick estimate the undecided cutoff watches
+ * (`decide_chance`: the current score alone, no prior). It runs higher
+ * than the projection's pass and fail, so it says which it is: `Cutoff
+ * rule, from the current score: 62% chance to decide within 3000 pairs
+ * (stops under 5%)`, or without a cutoff `From the current score: …`. */
 export function decideText(t: TestView): string | null {
   if (t.decideChance == null || t.maxPairs == null || t.status === 'finished') return null;
   const cutoff = t.sprt?.undecidedBelow;
-  return `${pct(t.decideChance)} chance to decide within ${t.maxPairs} pairs${cutoff != null ? ` (stops under ${pct(cutoff)})` : ''}`;
+  const chance = `${pct(t.decideChance)} chance to decide within ${t.maxPairs} pairs`;
+  return cutoff != null
+    ? `Cutoff rule, from the current score: ${chance} (stops under ${pct(cutoff)})`
+    : `From the current score: ${chance}`;
 }
 
 /** A count of games to two significant figures (`1843` → `1800`), as
