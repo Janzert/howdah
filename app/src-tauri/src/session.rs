@@ -2099,8 +2099,8 @@ impl Session {
 
     /// Starts a run of analysis over the main line with `budget` in all,
     /// or until stopped (`None`) (`sweep.rs`): a quick pass, then more search where it's most likely
-    /// to change the evals or the marks. Setups are left out (their evals
-    /// say little), and time already spent on a position counts, so a run
+    /// to change the evals or the marks. Setups get their quick look but
+    /// aren't refined (they get no marks), and time already spent on a position counts, so a run
     /// started again goes on refining. In a game in progress it follows
     /// the new moves, each adding its own allowance.
     pub fn start_sweep(&mut self, budget: Option<Duration>) -> Result<(), ApiError> {
@@ -2184,14 +2184,14 @@ impl Session {
                 let stored = self.shown_eval(n);
                 let share = match node.result() {
                     Some(r) if node.is_terminal() => Some(f64::from(u8::from(r.winner == Color::Gold))),
-                    _ if setup => None,
                     _ => stored.and_then(|l| l.eval).map(gold_share),
                 };
                 let played = line.get(i + 1).and_then(|&c| self.tree[c].mv()).map(Move::notation);
                 let first = stored.and_then(|l| l.pv.first());
                 sweep::Entry {
                     node: n,
-                    searchable: !node.is_terminal() && !setup,
+                    searchable: !node.is_terminal(),
+                    setup,
                     share,
                     gold_to_move: node.position().side_to_move() == Color::Gold,
                     next_is_choice: played.zip(first).is_some_and(|(p, t)| same_turn(&t.notation, &p)),
@@ -2363,7 +2363,7 @@ impl Session {
 
     /// Nodes whose positions haven't been looked up in the database yet,
     /// with their positions' hashes; they count as looked up from now on.
-    /// Setups are left out, as analysis leaves them out. None while
+    /// None while
     /// analysis isn't allowed (the user plays an online game): earlier
     /// analysis of a position must not show in a game being played. They
     /// are looked up once the game is over.
@@ -2375,7 +2375,7 @@ impl Session {
         let mut stack = vec![GameTree::ROOT];
         while let Some(n) = stack.pop() {
             stack.extend(self.tree[n].children().iter().copied());
-            if self.tree.setup_due(n) || !self.evals_looked_up.insert(n) {
+            if !self.evals_looked_up.insert(n) {
                 continue;
             }
             out.push((n, self.tree[n].position().hash()));
@@ -5454,27 +5454,30 @@ mod tests {
     }
 
     #[test]
-    fn a_sweep_goes_over_the_main_line_after_the_setups() {
+    fn a_sweep_goes_over_the_main_line_setups_included() {
         let mut s = sample_to_sweep();
         let line: Vec<NodeId> = s.tree.main_line();
         assert!(line.len() >= 4, "the game has moves after the setups");
         assert!(s.start_sweep(Some(Duration::from_secs(600))).is_ok());
         let v = s.view().sweep.unwrap();
-        assert_eq!((v.phase, v.done, v.total, v.live), (SweepPhase::Quick, 0, line.len() - 2, false));
+        assert_eq!((v.phase, v.done, v.total, v.live), (SweepPhase::Quick, 0, line.len(), false));
         assert_eq!(v.remaining_ms, Some(600_000));
         // It doesn't follow the board.
-        s.goto(1).unwrap();
+        s.goto(3).unwrap();
         let t = s.analysis_target().unwrap();
         let quick = t.time.expect("a timed search");
-        assert_eq!(t.node, line[2]);
-        s.sweep_done(s.generation() + 1, line[2], quick, false);
+        assert_eq!(t.node, line[0], "gold's setup");
+        s.sweep_done(s.generation() + 1, line[0], quick, false);
         assert_eq!(s.view().sweep.unwrap().done, 0, "an old game's");
-        s.sweep_done(s.generation(), line[2], quick, false);
+        s.sweep_done(s.generation(), line[0], quick, false);
         assert_eq!(s.view().sweep.unwrap().done, 1);
-        assert_eq!(s.analysis_target().unwrap().node, line[3]);
+        assert_eq!(s.analysis_target().unwrap().node, line[1], "silver's setup");
+        // An engine that answers a setup at once (Sharp) settles it.
+        s.sweep_done(s.generation(), line[1], Duration::from_millis(5), true);
+        assert_eq!(s.analysis_target().unwrap().node, line[2]);
         s.stop_sweep();
         let t = s.analysis_target().unwrap();
-        assert_eq!((t.node, t.time), (line[1], None), "back to the shown node");
+        assert_eq!((t.node, t.time), (line[3], None), "back to the shown node");
     }
 
     #[test]
@@ -5493,14 +5496,19 @@ mod tests {
     fn a_sweep_skips_what_was_searched_for_long_enough() {
         let mut s = sample_to_sweep();
         let line = s.tree.main_line();
-        let searched = |ms| AnalysisLine {
-            node: line[2],
+        let searched_at = |node, ms| AnalysisLine {
+            node,
             depth: Some("9".into()),
             eval: Some(Eval::CentiRabbits { value: 20, chance: None }),
             pv: vec![],
             nodes: None,
             time_ms: Some(ms),
         };
+        let searched = |ms| searched_at(line[2], ms);
+        // The setups were searched long enough already.
+        for node in [line[0], line[1]] {
+            s.store_analysis(s.generation(), "e", &searched_at(node, 2000));
+        }
         // A budget giving the quick pass a second a position.
         s.start_sweep(Some(Duration::from_secs(1))).unwrap();
         let budget = Duration::from_secs(10 * s.view().sweep.unwrap().total as u64);
@@ -5575,7 +5583,7 @@ mod tests {
         let t = s.analysis_target().unwrap();
         assert_eq!((t.node, t.time), (live, None));
         let v = s.view().sweep.unwrap();
-        assert_eq!((v.phase, v.done, v.total), (SweepPhase::Following, 3, 3));
+        assert_eq!((v.phase, v.done, v.total), (SweepPhase::Following, 5, 5));
         let before = v.remaining_ms;
         s.goto(1).unwrap();
         assert_eq!(s.analysis_target().unwrap().node, live, "not the shown node");

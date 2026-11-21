@@ -25,6 +25,10 @@ young).
 - arimaa.com's games name the server as their site, `arimaa.com`, in
   place of the archive's "Over the Net", which every game had. Games
   already in the database are updated when it opens.
+- Analyse game looks at the setups too, so an engine that scores a
+  setup (Clew) gives the setups an eval on the move list and the eval
+  graph. Engines that don't (Sharp, OpFor) answer at once, so it costs
+  nothing; setups still get no move marks.
 
 ### Fixed
 

@@ -828,7 +828,7 @@ plans the engine test and tournament runner.
     `position_data` of kind `eval` (`StoredEval`: compact JSON with its
     fields in a fixed order; the PV in notation, checked again with
     `controller::validate_pv` on reading), and reads the database for
-    nodes not looked up yet (`take_eval_lookups`, setups left out) into
+    nodes not looked up yet (`take_eval_lookups`) into
     `Session::merge_stored_eval`, sending `game://changed` when that
     adds something. Lines are kept under the engine's author
     (`engine_author`: its `id name` and `id version`, or the installed

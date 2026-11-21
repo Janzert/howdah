@@ -339,9 +339,12 @@ set time; since 2026-11-14 it takes a time for the whole game
   line still shows that line. After the run, analysis goes back to the
   shown node.
 - **Which positions.** `Session::start_sweep` takes the main line as it
-  stands (up to the live node in a match), without setups (their evals
-  say little) and terminal positions. Time already spent on a position
-  counts, so a run started again goes on from there. Moves added later
+  stands (up to the live node in a match), without terminal positions.
+  Setups get their quick look, for an engine that scores them (Clew
+  does; Sharp answers at once with no score, which settles them), but
+  the moves from them aren't refined, since setups get no marks. Time
+  already spent on a position counts, so a run started again goes on
+  from there. Moves added later
   aren't in the run, except a game in progress's new moves; moves deleted
   drop out of it.
 - **A position's time** starts when the engine is up. When it's over the

@@ -36,8 +36,11 @@ pub const UNTIL_STOPPED_QUICK: Duration = Duration::from_millis(500);
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
     pub node: NodeId,
-    /// Whether the run searches it (not a setup or a result on the board).
+    /// Whether the run searches it (not a result on the board).
     pub searchable: bool,
+    /// Whether a setup is due here: the move from it is a setup, which
+    /// gets no mark, so it gives no reason to search more.
+    pub setup: bool,
     /// Gold's share of the eval bar here, if known.
     pub share: Option<f64>,
     /// Whether gold is to move here.
@@ -357,7 +360,7 @@ pub fn priorities(
             continue;
         };
         let (x, y) = (here - before, here - after);
-        if x * y > 0.0 && entries[i].searchable {
+        if x * y > 0.0 && entries[i].searchable && !entries[i - 1].setup {
             let near = closeness(here).max(closeness(before)).max(closeness(after));
             let p = x.abs().min(y.abs()) * near;
             out.push((i, p / cost(&entries[i])));
@@ -388,6 +391,9 @@ pub fn unsettled(
 /// choice; weighted by how close the game is.
 fn move_signal(entries: &[Entry], i: usize) -> Option<f64> {
     let (a, b) = (&entries[i], entries.get(i + 1)?);
+    if a.setup {
+        return None;
+    }
     let (sa, sb) = (a.share?, b.share?);
     let drop = if a.gold_to_move { sa - sb } else { sb - sa };
     let signal = if a.next_is_choice {
@@ -421,12 +427,34 @@ mod tests {
             .map(|(i, (node, &s))| Entry {
                 node,
                 searchable: true,
+                setup: false,
                 share: Some(s),
                 gold_to_move: i % 2 == 0,
                 next_is_choice: true,
                 searched: Duration::ZERO,
             })
             .collect()
+    }
+
+    #[test]
+    fn a_setup_move_gives_no_reason_to_refine() {
+        // Swings from each setup and a spike right after them.
+        let mut es = entries(&[0.5, 0.9, 0.2, 0.2, 0.2]);
+        let quick = Duration::from_secs(1);
+        let at = |es: &[Entry]| {
+            let mut v: Vec<usize> = priorities(es, |e| e.searched, quick)
+                .into_iter()
+                .filter(|&(_, p)| p >= MIN_PRIORITY)
+                .map(|(i, _)| i)
+                .collect();
+            v.sort();
+            v.dedup();
+            v
+        };
+        assert!(at(&es).contains(&0), "as moves, they would be refined");
+        es[0].setup = true;
+        es[1].setup = true;
+        assert_eq!(at(&es), Vec::<usize>::new(), "not as setups");
     }
 
     fn quick_pass(run: &mut Run, es: &[Entry]) {
