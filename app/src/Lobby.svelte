@@ -11,7 +11,7 @@
   // (docs/TOURNAMENTS.md). Notifications about arimaa.com (invitations,
   // postal moves due) live here, so they come once, also while it's
   // hidden.
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { analysisEngine } from './lib/analysis';
   import { type Api, api, apiFor, errorMessage } from './lib/api';
   import { setAppearance, setChatFontSize } from './lib/appearance';
@@ -36,6 +36,7 @@
   import GameroomScreen from './lib/gameroom/GameroomScreen.svelte';
   import NewGameroomGameDialog from './lib/gameroom/NewGameDialog.svelte';
   import { chatroom } from './lib/gameroom/chatroom.svelte';
+  import { livePreview } from './lib/gameroom/livePreview.svelte';
   import { playerPages } from './lib/gameroom/player.svelte';
   import {
     GAMEROOM_PANELS,
@@ -224,6 +225,20 @@
   $effect(() => setVolume(settings.volume));
   $effect(() => update.follow(settings.checkForUpdates));
 
+  // The live game beside the chat goes when the user leaves the room or
+  // logs out.
+  $effect(() => {
+    const out = (chatroom.view?.state ?? 'out') === 'out' || gameroom.user === null;
+    if (out && livePreview.gid) untrack(() => void livePreview.close());
+  });
+  // A finished game goes once arimaa.com's list no longer has it.
+  $effect(() => {
+    const gid = livePreview.gid;
+    const live = gameroom.games?.live;
+    if (gid && livePreview.view?.result && live && !live.some((g) => g.gid === gid))
+      untrack(() => void livePreview.close());
+  });
+
   // Clocks tick while any game's runs.
   $effect(() => {
     if (!Object.values(games.views).some((v) => v.view.clock?.running)) return;
@@ -318,6 +333,18 @@
     what?: string,
   ): Promise<string | null> {
     const id = game ? await api.gameroomGameSession(game.gid).catch(() => null) : null;
+    if (id != null && id === livePreview.ownSession) {
+      // Shown small beside the chat: its session becomes the board.
+      try {
+        if (game?.play) await start(apiFor(id));
+        livePreview.release(id);
+        if (settings.boardsInWindows) await openWindowFor(id);
+        else await api.setSessionDocked(id, true);
+        return null;
+      } catch (e) {
+        return errorMessage(e);
+      }
+    }
     if (id == null) {
       // The board shows at once and waits for arimaa.com there.
       const loading =
@@ -457,6 +484,7 @@
     // The store passes on the lobby poll's lists (`lobbyGames`).
     const stopGameroom = gameroom.start(lobbyGames);
     const stopChatroom = chatroom.start();
+    livePreview.start();
     const stopFrames = serveFrames(
       () => games.docked.filter((id) => frames[id]).map((id) => ({ session: id, frame: frames[id] })),
       frameRequest,
@@ -527,10 +555,11 @@
     }
   }
 
-  /** The open boards, those waiting on the user's move first. */
+  /** The open boards, those waiting on the user's move first (not the
+   * live game shown small beside the chat, which has no board). */
   const listed = $derived(
     games.ids
-      .filter((id) => games.views[id])
+      .filter((id) => games.views[id] && id !== livePreview.ownSession)
       .map((id) => listWindow(id, games.views[id], games.watches[id], now, boardsLoading[id] ?? null))
       .sort((a, b) => Number(b.yourMove) - Number(a.yourMove)),
   );

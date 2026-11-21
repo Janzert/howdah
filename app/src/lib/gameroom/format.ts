@@ -28,6 +28,14 @@ export function resultText(result: GameResult | null): string | null {
   return result ? `${result.winner === 'gold' ? 'Gold' : 'Silver'} won by ${reasons[result.reason]}` : null;
 }
 
+/** "12s", the move being played in a live game: after `plies` turns
+ * from the start (setups included) when the game is followed, which is
+ * newer, or else as the list says. */
+export function liveMoveLabel(g: LiveGameView, plies?: number): string | null {
+  if (plies != null) return plies % 2 === 0 ? `${plies / 2 + 1}g` : `${(plies + 1) / 2}s`;
+  return g.moveNumber != null && g.turn ? `${g.moveNumber}${g.turn === 'gold' ? 'g' : 's'}` : null;
+}
+
 /** "2m/5m/100/0/30m · rated · postal" */
 export function gameMeta(g: LiveGameView): string {
   return join([g.timeControl, g.rated && 'rated', g.postal && 'postal']);

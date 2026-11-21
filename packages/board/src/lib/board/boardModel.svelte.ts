@@ -160,17 +160,22 @@ export class BoardModel {
         if (!this.animating) this.refreshFlags(final);
         return;
       }
-      this.generation++;
-      this.dropped = null;
-      this.queue = [];
-      this.animating = false;
-      this.resetSpeed();
-      this.snap(final);
+      this.jump(final);
       return;
     }
     this.target = final;
     this.queue.push({ final, anim, hooks, budgetMs });
     if (!this.animating) this.drain();
+  }
+
+  /** Cancels any animation and shows `final` at once. */
+  jump(final: PieceView[]) {
+    this.generation++;
+    this.dropped = null;
+    this.queue = [];
+    this.animating = false;
+    this.resetSpeed();
+    this.snap(final);
   }
 
   /**

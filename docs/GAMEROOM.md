@@ -202,6 +202,26 @@ architecture. Decided and checked against the live server in October 2026.
     name, or the lobby's bot flag) and says why in the panel. An event
     game is one whose `event` isn't "Casual game". It does so once per
     game, so entering again mid-game is the user's call.
+  - **Live games beside the room.** Asked for by a user who kept a
+    game beside the room in a browser (2026-11-21). Above the room's log
+    is a line per game being played, from the lobby's lists (players,
+    ratings, the move, time control, rated), so it costs no requests of
+    its own; with no games, one quiet line says so. There are seldom
+    many: over the 180 days to 2026-11-21 no game was being played 84%
+    of the time, one 14%, two 1.4%, and never more than four. A row's
+    board button shows that game small beside the log (the app's theme,
+    the players with their clocks, how it stands), one game at a time,
+    its moves animated as on a board (while the lobby is hidden it jumps
+    to the new position instead). Opening it keeps the log's bottom edge
+    in place.
+    It's followed on a session of its own with no board, so it takes a
+    viewer seat as watching does; a game already on a board is shown
+    from that board's session instead, with no seat of its own. Watch
+    makes the shown game's session the board (the same seat). The game
+    goes when hidden, when the user leaves the room or logs out, and
+    once it has ended and left the lobby's list. arimaa.com's lobby
+    thumbnails aren't used: they're small, likely not current, and not
+    in the app's theme.
 - **Announcements.** `state`'s `announce` list gives each
   announcement's HTML and `modified`, the time of its last edit. The
   gameroom keeps them for years (in 2026 the oldest was from 2018), so

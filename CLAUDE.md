@@ -1179,8 +1179,20 @@ plans the engine test and tournament runner.
     pages behind the gameroom's Referer gate), and
     `darkMode.svelte.ts` follows the appearance for colors worked out in
     code.
-    `ChatRoomTab` is the chat room (store in `chatroom.svelte.ts`:
-    the backend's view, unread count for the sidebar's badge, the earlier
+    `ChatRoomTab` is the chat room, with `LiveGames` above its log
+    (the lobby lists' live games, a line each, with the move,
+    `liveMoveLabel`) and `LiveGameBoard` beside it: one live game shown
+    small (`MiniBoard` given the store's own `BoardModel`, so moves
+    slide as on a board, jumping instead while the lobby is hidden;
+    players and clocks), from `livePreview.svelte.ts`,
+    which follows it on a session of its own with no board (or a board's
+    session already on that game); the lobby leaves that session out of
+    its boards (`ownSession`), Watch hands it over as the board
+    (`release`), and it's closed when hidden, on leaving the room or
+    logging out, and once the game has ended and left the list; a lobby
+    that reloads closes the one it left (`chat.previewSession`). The
+    chat room's store is `chatroom.svelte.ts` (the
+    backend's view, unread count for the sidebar's badge, the earlier
     log (`older`, `loadEarlier`, keeping what the room drops once it's
     shown), `scrollTop` and `newBelow` for the log (the archive's store
     keeps its `scrollTop` too, since panels unmount), the message being

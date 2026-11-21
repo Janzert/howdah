@@ -15,6 +15,12 @@ goldRating: string | null, silverRating: string | null,
  */
 goldId: string | null, silverId: string | null, timeControl: string | null, rated: boolean, postal: boolean, 
 /**
- * The side to move, where the list says (the user's games).
+ * The side to move, where the list says (the user's games, the live
+ * games).
  */
-turn: Color | null, };
+turn: Color | null, 
+/**
+ * The number of the move being played, where the list says (the live
+ * games): 12 with silver to move is 12s.
+ */
+moveNumber: number | null, };

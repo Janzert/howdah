@@ -77,7 +77,7 @@
                   silverId={g.silverId}
                 />
               </span>
-              <span class="meta">{gameMeta({ ...g, postal: false, turn: null })}</span>
+              <span class="meta">{gameMeta({ ...g, postal: false, turn: null, moveNumber: null })}</span>
             </span>
             <button
               class="open"

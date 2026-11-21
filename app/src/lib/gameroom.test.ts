@@ -27,6 +27,7 @@ function game(gold: string | null, silver: string | null, turn: LiveGameView['tu
     rated: false,
     postal: true,
     turn,
+    moveNumber: null,
   };
 }
 

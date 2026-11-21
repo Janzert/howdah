@@ -908,6 +908,7 @@ fn game_view(g: GameInfo) -> LiveGameView {
         rated: g.rated,
         postal: g.postal,
         turn: g.turn,
+        move_number: g.move_number,
     }
 }
 

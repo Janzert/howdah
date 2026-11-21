@@ -2,7 +2,9 @@
   // The gameroom's chat room: Enter (public: the room and its archive show
   // who comes and goes), the log in the room's formatting, who's there, a
   // message box with the user's color, a preview of the message as the
-  // room will show it, faces and pieces to put in it, and Leave.
+  // room will show it, faces and pieces to put in it, and Leave. Above
+  // the log, the games being played (`LiveGames`), and beside it one of
+  // them shown small (`LiveGameBoard`).
   import { tick, untrack } from 'svelte';
   import { api } from '../api';
   import type { ChatEventView } from '../bindings/ChatEventView';
@@ -15,6 +17,8 @@
   import { findTheme } from '@howdah/board/theme';
   import Icon from '../Icon.svelte';
   import ChatLine from './ChatLine.svelte';
+  import LiveGameBoard from './LiveGameBoard.svelte';
+  import LiveGames from './LiveGames.svelte';
   import { chatroom } from './chatroom.svelte';
   import { darkMode } from './darkMode.svelte';
   import { gameroom } from './store.svelte';
@@ -81,6 +85,7 @@
       log.scrollTop = log.scrollHeight;
       untrack(() => chatroom.readToEnd());
     }
+    measure();
     if (!document.hidden) chatroom.markSeen();
   });
 
@@ -88,20 +93,24 @@
   $effect(() => {
     const top = untrack(() => chatroom.scrollTop);
     if (log && top != null) log.scrollTop = lastTop = top;
+    measure();
   });
 
-  // The log changing height (the preview taking room from it, the window)
-  // keeps its bottom edge, where the lines being answered are.
+  // The log changing size keeps its bottom edge, where the lines being
+  // answered are: the preview taking room from it (narrower, so its lines
+  // wrap and it grows taller inside), the window. `fromEnd` is how far the
+  // view was from the end before the change, kept as it scrolls and as
+  // lines go in.
+  let fromEnd = 0;
+  const measure = () => {
+    if (log) fromEnd = Math.max(0, log.scrollHeight - log.scrollTop - log.clientHeight);
+  };
   $effect(() => {
     const el = log;
     if (!el) return;
-    let height = el.clientHeight;
     const observer = new ResizeObserver(() => {
-      // Growing at the end, the browser has already moved it.
-      const grown = el.clientHeight > height && el.scrollHeight - el.scrollTop - el.clientHeight < 1;
-      if (!grown) el.scrollTop += height - el.clientHeight;
+      el.scrollTop = el.scrollHeight - el.clientHeight - fromEnd;
       lastTop = el.scrollTop;
-      height = el.clientHeight;
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -119,6 +128,7 @@
     if (chatroom.added === added) return;
     added = chatroom.added;
     if (log) log.scrollTop = log.scrollHeight - fromBottom;
+    measure();
   });
 
   /** Scrolling up near the top loads what's earlier; only the user's
@@ -128,6 +138,7 @@
     if (!log) return;
     const up = log.scrollTop < lastTop;
     lastTop = log.scrollTop;
+    measure();
     if (atEnd(log)) chatroom.readToEnd();
     else chatroom.scrollTop = log.scrollTop;
     if (up && log.scrollTop < LOAD_WITHIN) void chatroom.loadEarlier();
@@ -264,6 +275,7 @@
       {#if chatroom.error}<p class="error" role="alert">{chatroom.error}</p>{/if}
     </section>
   {:else}
+    <LiveGames />
     <div class="bar">
       <ul class="users" aria-label="In the chat room">
         {#each view?.users ?? [] as u (u)}
@@ -289,36 +301,39 @@
       >
     </div>
     {#if view?.note}<p class="note" role="status">{view.note}</p>{/if}
-    <div class="log-box">
-      <div class="log" bind:this={log} onscroll={scrolled}>
-        <div class="earlier">
-          {#if chatroom.atStart}
-            <span>The start of the room's log.</span>
-          {:else}
-            {#if chatroom.quietTo != null}<span>Nothing said back to {quietDate(chatroom.quietTo)}.</span>{/if}
-            <button onclick={() => chatroom.loadEarlier()} disabled={chatroom.earlierBusy}>
-              {chatroom.earlierBusy ? 'Loading…' : 'Load earlier'}
-            </button>
-          {/if}
-          {#if chatroom.earlierError}<span class="error" role="alert">{chatroom.earlierError}</span>{/if}
-        </div>
-        {#each chatroom.older as e (e.id)}
-          <ChatLine event={e} time={roomTime} />
-        {/each}
-        <!-- Apart, so only new lines are announced. -->
-        <div role="log" aria-label="Chat room" aria-live="polite">
-          {#each view?.events ?? [] as e (e.id)}
+    <div class="middle">
+      <div class="log-box">
+        <div class="log" bind:this={log} onscroll={scrolled}>
+          <div class="earlier">
+            {#if chatroom.atStart}
+              <span>The start of the room's log.</span>
+            {:else}
+              {#if chatroom.quietTo != null}<span>Nothing said back to {quietDate(chatroom.quietTo)}.</span>{/if}
+              <button onclick={() => chatroom.loadEarlier()} disabled={chatroom.earlierBusy}>
+                {chatroom.earlierBusy ? 'Loading…' : 'Load earlier'}
+              </button>
+            {/if}
+            {#if chatroom.earlierError}<span class="error" role="alert">{chatroom.earlierError}</span>{/if}
+          </div>
+          {#each chatroom.older as e (e.id)}
             <ChatLine event={e} time={roomTime} />
-          {:else}
-            <p class="empty">Nothing said lately.</p>
           {/each}
+          <!-- Apart, so only new lines are announced. -->
+          <div role="log" aria-label="Chat room" aria-live="polite">
+            {#each view?.events ?? [] as e (e.id)}
+              <ChatLine event={e} time={roomTime} />
+            {:else}
+              <p class="empty">Nothing said lately.</p>
+            {/each}
+          </div>
         </div>
+        {#if chatroom.newBelow > 0}
+          <button class="new-below primary" onclick={toEnd}>
+            ↓ {chatroom.newBelow} new message{chatroom.newBelow === 1 ? '' : 's'}
+          </button>
+        {/if}
       </div>
-      {#if chatroom.newBelow > 0}
-        <button class="new-below primary" onclick={toEnd}>
-          ↓ {chatroom.newBelow} new message{chatroom.newBelow === 1 ? '' : 's'}
-        </button>
-      {/if}
+      <LiveGameBoard />
     </div>
     {#if preview}
       <div class="preview" aria-label="Preview of your message">
@@ -561,6 +576,13 @@
   }
   .users li.me {
     font-weight: 600;
+  }
+  /* The log, with the live game shown small beside it. */
+  .middle {
+    flex: 1;
+    display: flex;
+    gap: 10px;
+    min-height: 0;
   }
   .log-box {
     position: relative;

@@ -1045,8 +1045,12 @@ pub struct LiveGameView {
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
-    /// The side to move, where the list says (the user's games).
+    /// The side to move, where the list says (the user's games, the live
+    /// games).
     pub turn: Option<Color>,
+    /// The number of the move being played, where the list says (the live
+    /// games): 12 with silver to move is 12s.
+    pub move_number: Option<u32>,
 }
 
 /// A postal game being played on arimaa.com, from the gameroom's postal

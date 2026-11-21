@@ -504,8 +504,13 @@ pub struct GameInfo {
     pub time_control: Option<String>,
     pub rated: bool,
     pub postal: bool,
-    /// The side to move, where the list says (`mygames` does).
+    /// The side to move, where the list says (`mygames` and `livegames`
+    /// do).
     pub turn: Option<Color>,
+    /// The number of the move being played (`5` while 5s is to move),
+    /// where the list says (`livegames`' `plycount`, which counts moves
+    /// per side as the archive's does).
+    pub move_number: Option<u32>,
 }
 
 impl GameInfo {
@@ -520,6 +525,7 @@ impl GameInfo {
             rated: r.flag("rated"),
             postal: r.flag("postal"),
             turn: r.str("turn").as_deref().and_then(crate::state::side_from_letter),
+            move_number: r.int("plycount").and_then(|n| u32::try_from(n).ok()),
         })
     }
 }
@@ -1593,13 +1599,14 @@ mod tests {
                            {"id":"8","wusername":"","busername":"them","timecontrol":"1m/2m","rated":"1","schts":"0"},
                            {"id":"9","wusername":"later","busername":"","schts":"5000"}],
               "livegames":[{"id":"6","wusername":"a","busername":"b","wrating":"2658","brating":"1759",
-                            "wplayerid":"63421","bplayerid":"13600"}]}"#,
+                            "wplayerid":"63421","bplayerid":"13600","plycount":"12","turn":"b"}]}"#,
         )
         .unwrap();
         let games = LobbyGames::from_state(&r);
         assert_eq!(games.live.len(), 1);
         assert_eq!(games.live[0].ratings, [Some("2658".into()), Some("1759".into())]);
         assert_eq!(games.live[0].player_ids, [Some("63421".into()), Some("13600".into())]);
+        assert_eq!((games.live[0].move_number, games.live[0].turn), (Some(12), Some(Color::Silver)));
         assert_eq!(games.mine.len(), 1);
         assert_eq!(games.mine[0].players, [Some("me".into()), None]);
         assert_eq!(games.user_id.as_deref(), Some("21"));

@@ -7,6 +7,14 @@ young).
 
 ## [Unreleased]
 
+### Added
+
+- The chat room lists the games being played on arimaa.com above its
+  log, with the move each is at, and any one of them can be shown on a
+  small board beside the log: the players, their clocks and the
+  position, its moves animated as they're played, with Watch to open it
+  on a full board.
+
 ## [0.8.0] - 2026-11-20
 
 ### Added
