@@ -2477,6 +2477,7 @@ impl Session {
             return Err(ApiError::state("no moves to mark"));
         }
         let mut tree = self.tree.clone();
+        let mut firsts = Vec::new();
         for (node, glyph, line) in marks {
             tree.annotation_mut(node).map_err(ApiError::illegal)?.set_glyph(glyph);
             let parent = line.node;
@@ -2497,9 +2498,47 @@ impl Session {
             if at != first {
                 self.collapsed.insert(first);
             }
+            firsts.push(first);
         }
         self.tree = tree;
+        for first in firsts {
+            self.carry_eval(first);
+        }
         Ok(())
+    }
+
+    /// Gives `node` the line each engine found for its parent when the
+    /// line starts with `node`'s move: its eval, and the rest of its PV,
+    /// as if `node` had been searched (an engine's line from a PV chip, or
+    /// a mark's variation). Kept like any other line, so a search of
+    /// `node` with more time replaces it. Nothing for a node that ends the
+    /// game, which isn't searched.
+    fn carry_eval(&mut self, node: NodeId) {
+        let Some(parent) = self.tree[node].parent() else { return };
+        let Some(played) = self.tree[node].mv().map(Move::notation) else { return };
+        if self.tree[node].is_terminal() {
+            return;
+        }
+        let mover = self.tree[parent].position().side_to_move();
+        for (engine, evals) in &mut self.evals {
+            let Some(line) = evals.get(&parent) else { continue };
+            if !line.pv.first().is_some_and(|t| same_turn(&t.notation, &played)) {
+                continue;
+            }
+            let eval = line.eval.map(|e| match e {
+                // The winner's next turn is one later once it has moved.
+                Eval::Decided { winner, turns } if winner == mover => {
+                    Eval::Decided { winner, turns: turns.map(|t| t.saturating_sub(1).max(1)) }
+                }
+                e => e,
+            });
+            let carried = AnalysisLine { node, eval, pv: line.pv[1..].to_vec(), ..line.clone() };
+            if evals.get(&node).is_some_and(|old| !more_search(&carried, old)) {
+                continue;
+            }
+            evals.insert(node, carried);
+            self.evals_unsaved.insert((engine.clone(), node));
+        }
     }
 
     /// Adds `moves` (in notation) as a line from `from`, reusing moves that
@@ -2515,13 +2554,18 @@ impl Session {
         }
         let mut tree = self.tree.clone();
         let mut at = from;
+        let mut first = None;
         for m in moves {
             if self.matchup.is_some() && tree.setup_due(at) {
                 return Err(ApiError::state("a setup can't be planned during a match"));
             }
             at = tree.add_notation(at, m).map_err(|e| ApiError::illegal(format!("{m}: {e}")))?;
+            first.get_or_insert(at);
         }
         self.tree = tree;
+        if let Some(first) = first {
+            self.carry_eval(first);
+        }
         let shown = self.cursor_node();
         let had_turn = self.turn.take().is_some();
         self.show(at);
@@ -5704,6 +5748,68 @@ mod tests {
         assert_eq!(alt.intro.as_deref(), Some("E +0.00"));
         assert_eq!(s.tree.main_line(), line, "the main line stays");
         assert!(s.annotate_game().is_err(), "nothing left to mark");
+    }
+
+    #[test]
+    fn a_line_added_from_the_engines_pv_keeps_its_eval_on_its_first_move() {
+        let mut s = judged(0, -400, "Md2n");
+        let line = s.tree.main_line();
+        let pv = |turns: &[&str]| -> Vec<PvTurn> {
+            turns.iter().map(|t| PvTurn { label: "".into(), notation: t.to_string(), steps: None }).collect()
+        };
+        let searched = AnalysisLine {
+            eval: Some(Eval::CentiRabbits { value: 25, chance: Some(530) }),
+            pv: pv(&["Md2n", "ee7s", "Ee2n"]),
+            ..s.evals["e"][&line[2]].clone()
+        };
+        s.set_engine_author("e", "E 1".into());
+        s.store_analysis(s.generation(), "e", &searched);
+        s.take_unsaved_evals();
+        s.add_line(line[2], &strings(&["Md2n", "ee7s"])).unwrap();
+        let first = s.tree[line[2]].children()[1];
+        let carried = s.evals["e"][&first].clone();
+        assert_eq!(carried.eval, searched.eval);
+        assert_eq!(carried.pv, pv(&["ee7s", "Ee2n"]));
+        assert_eq!(carried.time_ms, searched.time_ms);
+        let shown = s.view().tree.into_iter().find(|m| m.id == first).unwrap();
+        assert_eq!(shown.eval, searched.eval, "shown in the move list");
+        let second = s.tree[first].children()[0];
+        assert!(!s.evals["e"].contains_key(&second), "only the first move");
+        assert_eq!(s.take_unsaved_evals().len(), 1, "saved with the game's evals");
+
+        // A search of the move itself with more time stays.
+        let longer = AnalysisLine { node: first, time_ms: Some(5000), ..carried.clone() };
+        s.store_analysis(s.generation(), "e", &longer);
+        s.add_line(line[2], &strings(&["Md2n"])).unwrap();
+        assert_eq!(s.evals["e"][&first].time_ms, Some(5000));
+
+        // A move other than the engine's gets nothing.
+        s.add_line(line[2], &strings(&["Cc2n"])).unwrap();
+        let other = s.tree[line[2]].children()[2];
+        assert!(!s.evals["e"].contains_key(&other));
+    }
+
+    #[test]
+    fn a_proven_win_carried_to_the_winners_move_is_a_turn_nearer() {
+        let mut s = judged(0, -400, "Md2n");
+        let line = s.tree.main_line();
+        let win = AnalysisLine {
+            eval: Some(Eval::Decided { winner: Color::Gold, turns: Some(3) }),
+            ..s.evals["e"][&line[2]].clone()
+        };
+        s.store_analysis(s.generation(), "e", &win);
+        s.add_line(line[2], &strings(&["Md2n"])).unwrap();
+        let first = s.tree[line[2]].children()[1];
+        assert_eq!(s.evals["e"][&first].eval, Some(Eval::Decided { winner: Color::Gold, turns: Some(2) }));
+    }
+
+    #[test]
+    fn annotating_gives_the_engines_line_its_eval() {
+        let mut s = judged(0, -400, "Md2n");
+        s.annotate_game().unwrap();
+        let line = s.tree.main_line();
+        let alt = s.tree[line[2]].children()[1];
+        assert_eq!(s.evals["e"][&alt].eval, Some(Eval::CentiRabbits { value: 0, chance: None }));
     }
 
     #[test]

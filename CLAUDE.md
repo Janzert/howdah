@@ -581,7 +581,11 @@ plans the engine test and tournament runner.
       `analysis://update` (`AnalysisView`) at most every 100 ms. The
       session keeps each engine's line per node (`store_analysis`), shown as
       `SessionView.storedAnalysis` on return. `add_line` adds a PV as a
-      variation (a plan in a match); `preview_line` is the hover preview.
+      variation (a plan in a match), and its first move takes the
+      engine's line from its parent when that starts with the move
+      (`carry_eval`: the PV less its first turn, kept like any line;
+      `annotate_game`'s variations too); `preview_line` is the hover
+      preview.
       Analyse game (`start_sweep`, a budget in all or `None` until
       stopped, which deepens everything once settled; `Session`'s `sweep`,
       a `sweep::Run`) gives each main line position a quick look, then

@@ -22,6 +22,11 @@ young).
 
 ### Changed
 
+- A line added from the engine's PV (a click on one of its moves in the
+  Analysis panel), and the engine's line beside a mark from Analyse
+  game, has the engine's eval on its first move in the move list, as
+  the analysed moves of the game have, and keeps it with the game's
+  evals.
 - arimaa.com's games name the server as their site, `arimaa.com`, in
   place of the archive's "Over the Net", which every game had. Games
   already in the database are updated when it opens.
