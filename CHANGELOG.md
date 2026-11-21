@@ -182,6 +182,9 @@ young).
   Games played here, measured to the millisecond, add it to the
   millisecond, so a fast game no longer gains up to half a second a
   move from the rounding.
+- New sounds for an invitation (also a takeback request and a postal
+  move due), a short two-note chime in place of a click too brief to
+  notice, and for a chat line, a louder click that's easier to hear.
 - Building Howdah needs Rust 1.100 or later. Tauri is 2.12.7.
 
 ### Fixed

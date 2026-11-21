@@ -5,11 +5,11 @@ made from samples in Kenney's audio packs (kenney.nl), released under
 CC0 1.0 (public domain dedication):
 
 - Interface Sounds: `error_004` (illegal), `confirmation_001` (yourTurn),
-  `maximize_001` (join), `minimize_001` (leave), `switch_006` (chat) and
-  `bong_001` (notification)
+  `maximize_001` (join), `minimize_001` (leave) and `question_002`
+  (notification)
 - Casino Audio: `chips-stack-4` and `chips-stack-1` (setupDone)
 - Music Jingles: `jingles_STEEL10` (gameStart) and `jingles_SAX07` (loss)
-- UI Audio: `switch8` (tick)
+- UI Audio: `switch8` (tick) and `switch9` (chat)
 - Digital Audio: `phaserDown1` (timeout)
 
 The win sound is a synthesized brass fanfare, using no samples.

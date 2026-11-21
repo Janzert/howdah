@@ -231,11 +231,11 @@
   },
   "notification": {
    "a": {
-    "file": "bong_001.ogg",
+    "file": "question_002.ogg",
     "offsetMs": 0,
     "lengthMs": 4000,
     "rate": 1,
-    "levelDb": -8,
+    "levelDb": -6,
     "highpass": 20,
     "lowpass": 16000,
     "fadeInMs": 0,
@@ -244,7 +244,7 @@
     "reverse": false
    },
    "b": {
-    "file": "bong_001.ogg",
+    "file": "question_002.ogg",
     "offsetMs": 0,
     "lengthMs": 4000,
     "rate": 1,
@@ -403,11 +403,11 @@
   },
   "chat": {
    "a": {
-    "file": "switch_006.ogg",
+    "file": "switch9.ogg",
     "offsetMs": 0,
     "lengthMs": 4000,
     "rate": 1,
-    "levelDb": -16,
+    "levelDb": -8,
     "highpass": 20,
     "lowpass": 16000,
     "fadeInMs": 0,
@@ -416,7 +416,7 @@
     "reverse": false
    },
    "b": {
-    "file": "pluck_001.ogg",
+    "file": "switch9.ogg",
     "offsetMs": 0,
     "lengthMs": 4000,
     "rate": 1,
