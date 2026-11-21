@@ -212,7 +212,7 @@
   async function copy(text: string | undefined) {
     if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await api.copyText(text);
     } catch (e) {
       error = errorMessage(e);
     }

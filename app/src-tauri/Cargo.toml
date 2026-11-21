@@ -39,6 +39,7 @@ flate2 = "1.1.10"
 tar = "0.4.46"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 open = "5"
+arboard = { version = "3.7.0", default-features = false }
 
 # For matching GTK's own widgets to the appearance (commands.rs); the
 # version Tauri uses.

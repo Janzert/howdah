@@ -1512,6 +1512,9 @@ plans the engine test and tournament runner.
 - **The frontend never decides legality.** It renders state and sends intents.
   Drag hints come from `legal_targets` and `plan_route`, but `try_route`
   (or `try_step`) is authoritative.
+- Copy to the clipboard with `api.copyText` (the backend's `copy_text`,
+  arboard), never `navigator.clipboard`: WebKitGTK refuses its writes
+  at times, even from a click.
 - Event names are `domain://event`.
   The dev bridge's frontend (`devBridge.ts`) forwards a fixed list of
   event names; add new ones there. Analysis uses an event

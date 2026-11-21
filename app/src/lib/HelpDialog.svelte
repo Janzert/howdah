@@ -17,7 +17,7 @@
     if (panel) api.appVersion().then((v) => (version = v));
   });
   const copyVersion = async () => {
-    await navigator.clipboard.writeText(`Howdah ${version}`);
+    await api.copyText(`Howdah ${version}`);
     copied = true;
   };
 

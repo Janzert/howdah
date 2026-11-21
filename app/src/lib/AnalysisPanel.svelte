@@ -113,6 +113,20 @@
   const PREVIEW_HEIGHT = 250;
   let panel: HTMLElement;
 
+  // Adding a line shows its end, and the chip under the pointer may go
+  // without a mouseleave: the preview goes with the shown move.
+  const shown = $derived(`${view.cursor}|${view.tree.length}`);
+  $effect(() => {
+    void shown;
+    hovered = null;
+  });
+
+  /** Adds a line up to `index` (a chip's click), closing the preview. */
+  function add(l: AnalysisLine, index: number) {
+    hovered = null;
+    onAdd(l, index);
+  }
+
   async function hover(l: AnalysisLine | null, index: number, chip: HTMLElement) {
     if (!l) return;
     // Beside the chip, but kept inside the window.
@@ -187,7 +201,7 @@
             <button
               class="chip"
               title="The engine's choice instead: add the line up to here"
-              onclick={() => onAdd(before, i)}
+              onclick={() => add(before, i)}
               onmouseenter={(e) => hover(before, i, e.currentTarget)}
               onmouseleave={() => (hovered = null)}
               onfocus={(e) => hover(before, i, e.currentTarget)}
@@ -214,7 +228,7 @@
         <button
           class="chip"
           title="Add the line up to here"
-          onclick={() => onAdd(pvLine, i)}
+          onclick={() => add(pvLine, i)}
           onmouseenter={(e) => hover(pvLine, i, e.currentTarget)}
           onmouseleave={() => (hovered = null)}
           onfocus={(e) => hover(pvLine, i, e.currentTarget)}

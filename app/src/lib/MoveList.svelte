@@ -248,10 +248,8 @@
       Delete from here
     </button>
     <hr />
-    <button role="menuitem" onclick={() => act(() => navigator.clipboard.writeText(m.notation))}>Copy move</button>
-    <button role="menuitem" onclick={() => act(() => navigator.clipboard.writeText(lineTo(m)))}>
-      Copy moves to here
-    </button>
+    <button role="menuitem" onclick={() => act(() => api.copyText(`${m.label} ${m.notation}`))}>Copy move</button>
+    <button role="menuitem" onclick={() => act(() => api.copyText(lineTo(m)))}>Copy moves to here</button>
   </div>
 {/if}
 

@@ -277,6 +277,9 @@ function makeApi(sid: () => SessionId | null) {
     updateChecks: () => invoke<boolean>('update_checks'),
     checkForUpdate: () => invoke<UpdateView | null>('check_for_update'),
     openUrl: (url: string) => invoke<void>('open_url', { url }),
+    /** Puts text on the system clipboard (through the backend: WebKitGTK's
+     * `navigator.clipboard` refuses writes at times). */
+    copyText: (text: string) => invoke<void>('copy_text', { text }),
     /** The gameroom's chat room as it stands; changes come as
      * `chatroom://changed`. */
     chatroomState: () => invoke<ChatRoomView>('chatroom_state'),

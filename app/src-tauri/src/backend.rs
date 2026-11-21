@@ -179,6 +179,9 @@ pub struct Backend {
     library: Arc<Library>,
     /// Installing the base game database.
     base: crate::base::Base,
+    /// The system clipboard, opened at the first copy and kept: on Linux
+    /// what was copied is served from it.
+    clipboard: Mutex<Option<arboard::Clipboard>>,
     events: Events,
 }
 
@@ -203,6 +206,7 @@ impl Backend {
             following: tokio::sync::Mutex::new(()),
             library: Arc::new(Library::open(None)),
             base: crate::base::Base::default(),
+            clipboard: Mutex::new(None),
             events,
         }
     }
@@ -849,6 +853,18 @@ impl Backend {
             return Err(ApiError::state("only web pages can be opened"));
         }
         open::that_detached(url).map_err(|e| ApiError::state(format!("couldn't open {url}: {e}")))
+    }
+
+    /// Puts text on the system clipboard. The webview's own clipboard
+    /// (`navigator.clipboard`) refuses writes in WebKitGTK at times, even
+    /// from a click.
+    pub fn copy_text(&self, text: &str) -> Result<(), ApiError> {
+        let failed = |e: arboard::Error| ApiError::state(format!("couldn't copy: {e}"));
+        let mut clipboard = self.clipboard.lock().unwrap();
+        if clipboard.is_none() {
+            *clipboard = Some(arboard::Clipboard::new().map_err(failed)?);
+        }
+        clipboard.as_mut().unwrap().set_text(text).map_err(failed)
     }
 
     /// The gameroom's chat room as it stands (see `chatroom.rs`).
@@ -1679,6 +1695,7 @@ impl Backend {
             "update_checks" => ok(self.update_checks()),
             "check_for_update" => ok(self.check_for_update().await?),
             "open_url" => ok(self.open_url(&arg::<String>(args, "url")?)?),
+            "copy_text" => ok(self.copy_text(&arg::<String>(args, "text")?)?),
             "chatroom_state" => ok(self.chatroom_state()),
             "chat_archive_month" => ok(self.chat_archive_month(arg(args, "year")?, arg(args, "month")?)?),
             "chat_archive_earlier" => {

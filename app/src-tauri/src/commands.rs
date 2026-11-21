@@ -466,6 +466,11 @@ pub fn open_url(state: State<Backend>, url: String) -> Result<(), ApiError> {
 }
 
 #[tauri::command]
+pub fn copy_text(state: State<Backend>, text: String) -> Result<(), ApiError> {
+    state.copy_text(&text)
+}
+
+#[tauri::command]
 pub fn chat_archive_month(
     state: State<Backend>,
     year: i32,

@@ -15,6 +15,13 @@ young).
   position, its moves animated as they're played, with Watch to open it
   on a full board.
 
+### Fixed
+
+- Copying (a move, the moves to it, a record, a position, a chat link
+  or the version) no longer fails on Linux with "NotAllowedError".
+- The board preview of an engine line's move closes when the move is
+  clicked to add the line.
+
 ## [0.8.0] - 2026-11-20
 
 ### Added

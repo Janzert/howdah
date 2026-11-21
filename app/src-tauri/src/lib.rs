@@ -184,6 +184,7 @@ pub fn run() {
             commands::update_checks,
             commands::check_for_update,
             commands::open_url,
+            commands::copy_text,
             commands::chatroom_state,
             commands::chat_archive_month,
             commands::chat_archive_day,

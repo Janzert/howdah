@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { api } from './api';
 
   let {
     initial,
@@ -44,7 +45,7 @@
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(text);
+      await api.copyText(text);
       copied = true;
     } catch {
       error = 'Clipboard not available; select the text and copy it instead.';

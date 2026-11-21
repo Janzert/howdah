@@ -133,7 +133,7 @@
 {#if menu}
   {@const url = menu.url}
   <div class="menu" role="menu" style="left: {menu.x}px; top: {menu.y}px">
-    <button role="menuitem" onclick={() => navigator.clipboard.writeText(url)}>Copy link</button>
+    <button role="menuitem" onclick={() => api.copyText(url)}>Copy link</button>
     {#if browserCanOpen(url)}
       <button role="menuitem" onclick={() => api.openUrl(url).catch(() => {})}>Open in browser</button>
     {/if}

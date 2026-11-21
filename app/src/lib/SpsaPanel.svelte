@@ -95,7 +95,7 @@
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(optionsText(params));
+      await api.copyText(optionsText(params));
       copied = true;
       setTimeout(() => (copied = false), 1500);
     } catch (e) {
