@@ -660,6 +660,26 @@ mod tests {
             })
             .unwrap();
         assert_eq!(left, 0);
+
+        // Saved without its moves, the game keeps only what's on its start.
+        bob.connection()
+            .execute(
+                "INSERT INTO annotations (game, node, kind, author, origin, created_at, modified_at, payload)
+                 SELECT game, node, 'comment', 'Ann', origin, 0, 0, CAST('Ann at ' || node AS BLOB)
+                 FROM (SELECT ?1 AS game, origin FROM annotations WHERE game = ?1 LIMIT 1),
+                      (SELECT 0 AS node UNION SELECT 2 UNION SELECT -1)",
+                [b],
+            )
+            .unwrap();
+        let mut game = bob.load(b).unwrap();
+        game.tree = None;
+        bob.save(&game).unwrap();
+        let mut q = bob
+            .connection()
+            .prepare("SELECT node FROM annotations WHERE game = ?1 AND author = 'Ann'")
+            .unwrap();
+        let left: Vec<i64> = q.query_map([b], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        assert_eq!(left, vec![0]);
     }
 
     #[test]

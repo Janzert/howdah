@@ -631,9 +631,6 @@ pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache, mode
                 insert.execute(params![id, vid, parent, ord, bytes])?;
             }
         }
-        if let Some(old) = &old_tree {
-            renumber_others(tx, id, old, e, (start_ply, board.as_deref()))?;
-        }
         let main_moves: HashSet<NodeId> = e.main[1..].iter().copied().collect();
         let mut times = vec![None; e.main.len() - 1];
         let mut nodes: Vec<(&NodeId, &i64)> = e.refs.iter().collect();
@@ -661,6 +658,9 @@ pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache, mode
         if times.iter().any(Option::is_some) {
             notes.push((0, "times", codec::encode_times(&times)));
         }
+    }
+    if let Some(old) = &old_tree {
+        renumber_others(tx, id, old, encoded.as_ref(), (start_ply, board.as_deref()))?;
     }
     if let Some(chat) = &g.chat {
         notes.push((0, "chat", chat.clone().into_bytes()));
@@ -703,17 +703,20 @@ impl StoredTree {
 /// written afresh) from the stored tree's node references to the new
 /// ones', matching nodes by their moves from the start, since variations
 /// are numbered afresh on every save. Those on a node the new tree lacks
-/// go with it.
+/// go with it, as do all but the start's when the game is saved without
+/// its moves (`new` is `None`).
 fn renumber_others(
     tx: &Transaction,
     game: i64,
     old: &StoredTree,
-    new: &Encoded,
+    new: Option<&Encoded>,
     (start_ply, board): (usize, Option<&str>),
 ) -> Result<()> {
     // The old references and the new, by node.
     let mut map: HashMap<i64, i64> = HashMap::from([(0, 0)]);
-    if (old.start_ply, old.board.as_deref()) == (start_ply, board) {
+    if let Some(new) = new
+        && (old.start_ply, old.board.as_deref()) == (start_ply, board)
+    {
         let mut edges: HashMap<(i64, &[u8]), i64> = HashMap::new();
         let new_main = codec::split_line(&new.moves, start_ply).map_err(|e| Error::Moves(game, e))?;
         for (i, mv) in new_main.into_iter().enumerate() {
