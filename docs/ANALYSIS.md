@@ -201,7 +201,7 @@ pub enum Score {
 
 - **Gold's side, everywhere.** Engines report from the mover's side; the
   controller flips silver-to-move scores. The eval bar, the panel and a
-  future `%eval` (which `VARIATIONS.md` already defines from gold's side)
+  `%eval` the Record dialog can export (`VARIATIONS.md`, from gold's side)
   then all agree. The match engine panel keeps showing each engine's own
   view, which reads naturally there.
 - **The PV is validated** turn by turn from the target position with
@@ -323,7 +323,6 @@ These aren't in the first version, but the design above leaves room:
   runs" under "Whole-game analysis"), and a run that uses a
   second engine so the shown position stays analysed. Caching by position
   hash (across transpositions and games) belongs with the game database.
-- **`%eval` in records**, from `evals`, as an export option.
 - **A CPU budget:** stop after N seconds or at a depth (a setting), for
   laptops on battery.
 

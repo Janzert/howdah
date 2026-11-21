@@ -178,6 +178,12 @@ analysisOptions: Array<EngineOption>,
  */
 analysisAllowed: boolean, 
 /**
+ * Whether the record can carry evals (`[%eval]`) and gold's win
+ * chances (`[%win]`): the shown engine has some, or the game's
+ * comments do. The Record dialog offers each only then.
+ */
+recordEvals: boolean, recordChances: boolean, 
+/**
  * In a server's game, the side to move when its every move would be a
  * third repetition: it can't move, but the server may not end the
  * game (Howdah doesn't, there; the side's clock runs out instead).

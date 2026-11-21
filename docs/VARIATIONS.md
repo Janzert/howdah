@@ -457,8 +457,21 @@ names: records say Gold and Silver, as the game does.
 - **Commands** used from the start: `%clk` (the mover's reserve after the
   move) and `%emt` (time used for the move), so match records keep the
   clocks, as arimaa.com's `timeused` does; `%cal`/`%csl` for the board
-  annotations; and later `%eval` for analysis results, in centi-rabbits
-  from gold's point of view.
+  annotations; and `%eval` for analysis results, from gold's point of
+  view: rabbits with two decimals (`[%eval -1.20]`, the PGN supplement's
+  pawns), or `#N`/`#-N` for a proven win for gold/silver in `N` of the
+  winner's turns (`#`/`#-` when the engine didn't say); and `%win`,
+  our own, for gold's chance of winning in percent with one decimal
+  (`[%win 62.3]`), when the engine gives one, `100.0`/`0.0` for a
+  proven win. Chess has no agreed command for Lc0's win/draw/loss and
+  Go's SGF none for a winrate, and Arimaa has no draws, so one number
+  does. `%eval` stays on its one scale so evals from engines with and
+  without a chance compare. The Record dialog's "Evals" and "Win %"
+  options write the shown engine's, either or both (built 2026-11-21).
+  Nothing reads them back into analysis yet: a loaded record keeps them
+  as comment commands, so the options decide what goes out. Unticked,
+  the record has none, even those in the comments; ticked, the engine's
+  value replaces a stored one, which is kept where the engine has none.
 - **`takeback`** lines (arimaa.com) are read by stepping back one move,
   and the move that was taken back is kept as a variation instead of
   being thrown away.

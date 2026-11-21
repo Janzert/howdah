@@ -161,8 +161,11 @@ function makeApi(sid: () => SessionId | null) {
     puzzleAnswer: () => invoke<void>('puzzle_answer', { session: sid() }),
     /** Back to the position the solver's next move is expected from. */
     puzzleRetry: () => invoke<void>('puzzle_retry', { session: sid() }),
-    /** The game as a record: in full, or only its main line as a plain record. */
-    exportGame: (mainLineOnly = false) => invoke<string>('export_game', { session: sid(), mainLineOnly }),
+    /** The game as a record: in full, or only its main line as a plain record.
+     * Each move the shown engine analysed gets its eval as `[%eval]` with
+     * `evals`, and gold's chance of winning as `[%win]` with `chances`. */
+    exportGame: (mainLineOnly = false, evals = false, chances = false) =>
+      invoke<string>('export_game', { session: sid(), mainLineOnly, evals, chances }),
     gotoPly: (ply: number) => invoke<void>('goto_ply', { session: sid(), ply }),
     /** Shows the live position of a match (the end of the line in free play). */
     gotoLive: () => invoke<void>('goto_live', { session: sid() }),

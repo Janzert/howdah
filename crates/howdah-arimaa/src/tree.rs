@@ -153,6 +153,18 @@ impl Annotation {
         self.comment = join_commands(&text, &commands);
     }
 
+    /// Removes command `name` from the comment, keeping the rest. A comment
+    /// left empty is removed.
+    pub fn remove_command(&mut self, name: &str) {
+        let Some(comment) = self.comment.as_deref() else { return };
+        let (text, mut commands) = split_commands(comment);
+        let before = commands.len();
+        commands.retain(|(n, _)| n != name);
+        if commands.len() != before {
+            self.comment = join_commands(&text, &commands);
+        }
+    }
+
     /// The time the move took, from its `%emt` command (`0:00:12`;
     /// `m:ss`, plain seconds and decimals also read).
     pub fn elapsed(&self) -> Option<Duration> {
@@ -434,6 +446,11 @@ impl GameTree {
 
     pub fn contains(&self, id: NodeId) -> bool {
         self.node(id).is_some()
+    }
+
+    /// Every node's id, the root's first, in no particular order after it.
+    pub fn node_ids(&self) -> impl Iterator<Item = NodeId> + '_ {
+        (self.nodes.iter().enumerate()).filter(|(_, n)| n.is_some()).map(|(i, _)| NodeId(i as u32))
     }
 
     /// Number of nodes, including the root.
@@ -1043,6 +1060,30 @@ mod tests {
         let mut plain = Annotation::default();
         plain.set_comment_text("  ");
         assert_eq!(plain.comment, None);
+
+        let mut b =
+            Annotation { comment: Some("Sharp. [%eval 1.20] [%emt 0:00:05]".into()), ..Default::default() };
+        b.remove_command("cal");
+        assert_eq!(b.comment.as_deref(), Some("Sharp. [%eval 1.20] [%emt 0:00:05]"), "nothing to remove");
+        b.remove_command("eval");
+        assert_eq!(b.comment.as_deref(), Some("Sharp. [%emt 0:00:05]"));
+        b.set_comment_text("");
+        b.remove_command("emt");
+        assert_eq!(b.comment, None, "nothing left");
+    }
+
+    #[test]
+    fn node_ids_skip_deleted_nodes() {
+        let mut tree = GameTree::new();
+        let gold = tree
+            .add_notation(GameTree::ROOT, "Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha2 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2")
+            .unwrap();
+        let other = tree
+            .add_notation(GameTree::ROOT, "Ra2 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Ha1 Db2 Cc2 Md2 Ee2 Cf2 Dg2 Hh2")
+            .unwrap();
+        assert_eq!(tree.node_ids().collect::<Vec<_>>(), [GameTree::ROOT, gold, other]);
+        tree.delete(other).unwrap();
+        assert_eq!(tree.node_ids().collect::<Vec<_>>(), [GameTree::ROOT, gold]);
     }
 
     #[test]

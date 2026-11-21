@@ -1304,7 +1304,14 @@ plans the engine test and tournament runner.
     the request), and otherwise, as for a record from a file, only on
     Show.
   - `RecordDialog.svelte` exports the full record or, with "Main line
-    only", a plain record (`export_game(mainLineOnly)`); without
+    only", a plain record (`export_game(mainLineOnly)`), and with
+    "Evals" and "Win %" (offered from `SessionView.recordEvals`/
+    `recordChances`: the shown engine's or the comments') the shown
+    engine's evals as `[%eval]` and win chances as `[%win]`
+    (`Session::export_record`, `eval_command`, `win_command`; unticked,
+    those commands are left out even from the comments). Copy is its
+    main button, and Load waits for an edit, since loading the export
+    back would only put the commands into the game's comments; without
     `onExport` it only opens one (the lobby's Open record).
   - `lib/events.ts`: typed `on()`. It drops events from other sessions;
     `onEvery()` (the lobby's) passes every session's, with its id.

@@ -340,6 +340,30 @@ fn gold_share(eval: Eval) -> f64 {
 /// winning when the engine gave one (`Gold 63%`), otherwise rabbits
 /// (`+0.35`), or who has a proven win and in how many of its turns
 /// (`Gold wins in 2`).
+/// An eval as a record's `[%eval]` arguments, from gold's side as the PGN
+/// supplement writes them: rabbits with two decimals (`0.35`, `-1.20`), or
+/// `#N` for a proven win in `N` of the winner's turns (`#-N` for silver;
+/// `#` and `#-` when the engine didn't say how soon).
+fn eval_command(eval: Eval) -> String {
+    match eval {
+        Eval::CentiRabbits { value, .. } => format!("{:.2}", f64::from(value) / 100.0),
+        Eval::Decided { winner, turns } => {
+            let sign = if winner == Color::Gold { "" } else { "-" };
+            format!("#{sign}{}", turns.map_or_else(String::new, |n| n.to_string()))
+        }
+    }
+}
+
+/// Gold's chance of winning as a record's `[%win]` arguments, in percent
+/// with one decimal (`62.3`), when the engine gave one (`info winrate`); a
+/// proven win is `100.0` or `0.0`.
+fn win_command(eval: Eval) -> Option<String> {
+    match eval {
+        Eval::CentiRabbits { chance, .. } => chance.map(|c| format!("{:.1}", f64::from(c) / 10.0)),
+        Eval::Decided { winner, .. } => Some(if winner == Color::Gold { "100.0" } else { "0.0" }.into()),
+    }
+}
+
 fn format_eval(eval: Eval) -> String {
     match eval {
         Eval::Decided { winner, turns } => {
@@ -1875,10 +1899,78 @@ impl Session {
     /// comments or tags (or `main_line_only` is set), otherwise the full
     /// record with variations.
     pub fn export(&self, main_line_only: bool) -> String {
-        if main_line_only || (self.tags.is_empty() && self.tree.is_plain()) {
+        self.export_record(main_line_only, false, false)
+    }
+
+    /// The game as a record, as [`Session::export`] writes it, with what the
+    /// shown engine found about each move it analysed in the move's comment:
+    /// with `evals` its eval as `[%eval]` (see [`eval_command`]), with
+    /// `chances` gold's chance of winning as `[%win]` (see [`win_command`]).
+    /// The flags decide what the record has: a command the game's comments
+    /// already hold (from a record loaded earlier) is kept only when its
+    /// flag is on, and the engine's value replaces it. A main-line-only
+    /// record has no comments, so it has neither.
+    pub fn export_record(&self, main_line_only: bool, evals: bool, chances: bool) -> String {
+        if main_line_only {
             return self.tree.main_game().to_record();
         }
-        GameRecord { tags: self.tags.clone(), tree: self.tree.clone() }.to_record()
+        let mut tree = self.tree.clone();
+        let ids: Vec<NodeId> = self.tree.node_ids().collect();
+        for &id in &ids {
+            let Ok(a) = tree.annotation_mut(id) else { continue };
+            if !evals {
+                a.remove_command("eval");
+            }
+            if !chances {
+                a.remove_command("win");
+            }
+        }
+        if let Some(lines) = self.shown_evals().filter(|_| evals || chances) {
+            for (&id, line) in lines {
+                if id == GameTree::ROOT || !self.tree.contains(id) {
+                    continue;
+                }
+                let Some(eval) = line.eval else { continue };
+                let Ok(a) = tree.annotation_mut(id) else { continue };
+                if evals {
+                    a.set_command("eval", &eval_command(eval));
+                }
+                if let Some(win) = win_command(eval).filter(|_| chances) {
+                    a.set_command("win", &win);
+                }
+            }
+        }
+        if self.tags.is_empty() && tree.is_plain() {
+            return tree.main_game().to_record();
+        }
+        GameRecord { tags: self.tags.clone(), tree }.to_record()
+    }
+
+    /// The shown engine's lines by node; none while analysis isn't allowed.
+    fn shown_evals(&self) -> Option<&HashMap<NodeId, AnalysisLine>> {
+        if !self.analysis_allowed() {
+            return None;
+        }
+        self.evals.get(self.evals_engine.as_ref()?)
+    }
+
+    /// What the record could carry, for the Record dialog's options: evals
+    /// (`[%eval]`) and win chances (`[%win]`), from the shown engine or from
+    /// the game's own comments.
+    fn record_analysis(&self) -> (bool, bool) {
+        let lines = self.shown_evals().into_iter().flat_map(|l| l.values());
+        let engine = lines.filter(|l| l.node != GameTree::ROOT).filter_map(|l| l.eval);
+        let (mut evals, mut chances) = (false, false);
+        for eval in engine {
+            evals = true;
+            chances |= matches!(eval, Eval::CentiRabbits { chance: Some(_), .. });
+        }
+        for id in self.tree.node_ids().filter(|&id| id != GameTree::ROOT) {
+            let a = self.tree[id].annotation();
+            evals |= a.command("eval").is_some();
+            chances |= a.command("win").is_some();
+        }
+        (evals, chances)
     }
 
     /// Shows the live position of a match (or the end of the line in free
@@ -2319,10 +2411,7 @@ impl Session {
     /// The line the shown engine has for `node`; none while analysis isn't
     /// allowed (a game the user plays online shows no evals).
     fn shown_eval(&self, node: NodeId) -> Option<&AnalysisLine> {
-        if !self.analysis_allowed() {
-            return None;
-        }
-        self.evals.get(self.evals_engine.as_ref()?)?.get(&node)
+        self.shown_evals()?.get(&node)
     }
 
     /// Whether `node` already has `turn` as one of its moves.
@@ -3039,6 +3128,7 @@ impl Session {
     }
 
     pub fn view(&self) -> SessionView {
+        let (record_evals, record_chances) = self.record_analysis();
         let moves = self
             .game
             .moves()
@@ -3142,6 +3232,8 @@ impl Session {
             puzzle: self.puzzle_view(),
             analysis_options: self.analysis.as_ref().map(|a| a.options.clone()).unwrap_or_default(),
             analysis_allowed: self.analysis_allowed(),
+            record_evals,
+            record_chances,
             stuck: self.stuck(),
             stored_analysis: self.shown_eval(self.cursor_node()).cloned(),
             prior_analysis: self.prior_analysis(),
@@ -5604,6 +5696,80 @@ mod tests {
         assert_eq!(alt.intro.as_deref(), Some("E +0.00"));
         assert_eq!(s.tree.main_line(), line, "the main line stays");
         assert!(s.annotate_game().is_err(), "nothing left to mark");
+    }
+
+    #[test]
+    fn evals_and_win_chances_go_in_the_record_only_when_asked() {
+        let mut s = judged(35, -120, "Md2n");
+        let line = s.tree.main_line();
+        let with = |node, eval| AnalysisLine { node, eval: Some(eval), ..s.evals["e"][&line[3]].clone() };
+        let chance = with(line[3], Eval::CentiRabbits { value: -120, chance: Some(377) });
+        let proven = with(line[4], Eval::Decided { winner: Color::Silver, turns: Some(3) });
+        s.store_analysis(s.generation(), "e", &chance);
+        s.store_analysis(s.generation(), "e", &proven);
+        assert!(!s.export(false).contains("[%"));
+        let lines_of = |record: &str, n: NodeId| {
+            let label = s.tree.label_of(n).unwrap();
+            let line = record.lines().find(|l| l.starts_with(&format!("{label} "))).unwrap();
+            line[line.find('{').unwrap_or(line.len())..].to_string()
+        };
+        let both = s.export_record(false, true, true);
+        assert_eq!(lines_of(&both, line[2]), "{[%eval 0.35]}", "no chance given: no %win");
+        assert_eq!(lines_of(&both, line[3]), "{[%eval -1.20] [%win 37.7]}");
+        assert_eq!(lines_of(&both, line[4]), "{[%eval #-3] [%win 0.0]}");
+        assert_eq!(lines_of(&both, line[5]), "", "not analysed");
+        let evals = s.export_record(false, true, false);
+        assert_eq!(lines_of(&evals, line[3]), "{[%eval -1.20]}");
+        let chances = s.export_record(false, false, true);
+        assert_eq!(lines_of(&chances, line[2]), "");
+        assert_eq!(lines_of(&chances, line[3]), "{[%win 37.7]}");
+        assert!(!s.export_record(true, true, true).contains("[%"), "a plain record has no comments");
+        assert!(s.tree[line[3]].annotation().comment.is_none(), "the game itself is unchanged");
+    }
+
+    #[test]
+    fn evals_already_in_the_comments_go_out_only_when_asked() {
+        // A record exported with evals and loaded back has them in its
+        // comments; unticked, the export leaves them out.
+        let mut s = judged(35, -120, "Md2n");
+        let line = s.tree.main_line();
+        let stored = "Sharp. [%eval 9.99] [%win 99.0] [%emt 0:00:05]";
+        for n in [line[3], line[5]] {
+            s.tree.annotation_mut(n).unwrap().comment = Some(stored.into());
+        }
+        let comment = |record: &str, n: NodeId| {
+            let label = s.tree.label_of(n).unwrap();
+            let line = record.lines().find(|l| l.starts_with(&format!("{label} "))).unwrap();
+            line[line.find('{').unwrap_or(line.len())..].to_string()
+        };
+        let neither = s.export_record(false, false, false);
+        assert!(!neither.contains("%eval") && !neither.contains("%win"), "{neither}");
+        assert_eq!(comment(&neither, line[3]), "{Sharp. [%emt 0:00:05]}");
+        assert_eq!(s.export(false), neither);
+        let evals = s.export_record(false, true, false);
+        assert_eq!(
+            comment(&evals, line[3]),
+            "{Sharp. [%eval -1.20] [%emt 0:00:05]}",
+            "the engine's replaces it"
+        );
+        assert_eq!(
+            comment(&evals, line[5]),
+            "{Sharp. [%eval 9.99] [%emt 0:00:05]}",
+            "kept where the engine has none"
+        );
+        let chances = s.export_record(false, false, true);
+        assert_eq!(comment(&chances, line[5]), "{Sharp. [%win 99.0] [%emt 0:00:05]}");
+        let v = s.view();
+        assert!(v.record_evals && v.record_chances, "the comments' commands are offered");
+        assert_eq!(s.tree[line[3]].annotation().comment.as_deref(), Some(stored), "the game is unchanged");
+    }
+
+    #[test]
+    fn the_record_offers_what_analysis_found() {
+        let s = sample_to_sweep();
+        assert!(!s.view().record_evals && !s.view().record_chances);
+        let s = judged(35, -120, "Md2n");
+        assert!(s.view().record_evals && !s.view().record_chances, "no chances from this engine");
     }
 
     #[test]

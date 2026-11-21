@@ -9,6 +9,11 @@ young).
 
 ### Added
 
+- The game record can carry the engine's analysis: the Record dialog's
+  "Evals" option writes each analysed move's eval in its comment as
+  `[%eval]`, from gold's side, as chess's PGN tools write them, and
+  "Win %" gold's chance of winning as `[%win]`, for engines that give
+  one.
 - The chat room lists the games being played on arimaa.com above its
   log, with the move each is at, and any one of them can be shown on a
   small board beside the log: the players, their clocks and the

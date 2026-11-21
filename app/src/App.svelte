@@ -1206,7 +1206,9 @@
 {#if record != null}
   <RecordDialog
     initial={record}
-    onExport={(mainLineOnly) => api.exportGame(mainLineOnly)}
+    hasEvals={view?.recordEvals ?? false}
+    hasChances={view?.recordChances ?? false}
+    onExport={(mainLineOnly, evals, chances) => api.exportGame(mainLineOnly, evals, chances)}
     onLoad={loadRecord}
     onClose={() => (record = null)}
   />

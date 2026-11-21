@@ -340,6 +340,11 @@ pub struct SessionView {
     /// Whether analysis may be turned on (not while the user plays an
     /// online game).
     pub analysis_allowed: bool,
+    /// Whether the record can carry evals (`[%eval]`) and gold's win
+    /// chances (`[%win]`): the shown engine has some, or the game's
+    /// comments do. The Record dialog offers each only then.
+    pub record_evals: bool,
+    pub record_chances: bool,
     /// In a server's game, the side to move when its every move would be a
     /// third repetition: it can't move, but the server may not end the
     /// game (Howdah doesn't, there; the side's clock runs out instead).

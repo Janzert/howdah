@@ -100,8 +100,10 @@ pub fn export_game(
     state: State<Backend>,
     session: SessionId,
     main_line_only: bool,
+    evals: Option<bool>,
+    chances: Option<bool>,
 ) -> Result<String, ApiError> {
-    state.export_game(session, main_line_only)
+    state.export_game(session, main_line_only, evals.unwrap_or(false), chances.unwrap_or(false))
 }
 
 #[tauri::command]

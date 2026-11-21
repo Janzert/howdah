@@ -386,8 +386,14 @@ impl Backend {
         self.mutate(id, |s| s.load(record).map(|_| Vec::new()))
     }
 
-    pub fn export_game(&self, id: SessionId, main_line_only: bool) -> Result<String, ApiError> {
-        self.read(id, |s| s.export(main_line_only))
+    pub fn export_game(
+        &self,
+        id: SessionId,
+        main_line_only: bool,
+        evals: bool,
+        chances: bool,
+    ) -> Result<String, ApiError> {
+        self.read(id, |s| s.export_record(main_line_only, evals, chances))
     }
 
     pub fn goto_ply(&self, id: SessionId, ply: usize) -> Result<(), ApiError> {
@@ -1600,7 +1606,12 @@ impl Backend {
             "check_position" => ok(check_position(&arg(args, "position")?)?),
             "edit_position" => ok(edit_position(&arg(args, "position")?, &arg::<String>(args, "text")?)?),
             "default_position" => ok(default_position()),
-            "export_game" => ok(self.export_game(sid()?, arg(args, "mainLineOnly")?)?),
+            "export_game" => ok(self.export_game(
+                sid()?,
+                arg(args, "mainLineOnly")?,
+                arg::<Option<bool>>(args, "evals")?.unwrap_or(false),
+                arg::<Option<bool>>(args, "chances")?.unwrap_or(false),
+            )?),
             "goto_ply" => ok(self.goto_ply(sid()?, arg(args, "ply")?)?),
             "goto_live" => ok(self.goto_live(sid()?)?),
             "goto_node" => ok(self.goto_node(sid()?, arg(args, "node")?)?),
