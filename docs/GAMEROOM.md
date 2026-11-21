@@ -211,7 +211,9 @@ architecture. Decided and checked against the live server in October 2026.
     can leave that number behind for many moves (seen 2026-11-21: a
     fresh `state` still said 9s with the game at 19g), so a game shown
     beside the room or open on a board takes its move from that
-    session's latest move instead. There are seldom
+    session's latest move instead, and once that closes, the later of
+    the list's move and the last one it saw (kept while the game is in
+    the list), so the move doesn't go back. There are seldom
     many: over the 180 days to 2026-11-21 no game was being played 84%
     of the time, one 14%, two 1.4%, and never more than four. A row's
     board button shows that game small beside the log (the app's theme,

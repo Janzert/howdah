@@ -13,12 +13,14 @@
 
   /** The move being played, from the game shown beside the chat or a
    * board following it when there is one (newer than the list, whose
-   * move numbers arimaa.com can leave behind). */
+   * move numbers arimaa.com can leave behind), or else the later of the
+   * list's and the one last seen that way, so closing it doesn't go back. */
   function moveLabel(g: LiveGameView): string | null {
     const preview = livePreview.gid === g.gid ? livePreview.view : null;
     const views = [...(preview ? [preview] : []), ...gameroom.boardViews(g.gid)].filter((v) => !v.result);
     const plies = views.map((v) => (v.liveMove ? (pliesThrough(v.liveMove) ?? v.moves.length) : v.moves.length));
-    return liveMoveLabel(g, plies.length ? Math.max(...plies) : undefined);
+    const followed = plies.length ? Math.max(...plies) : undefined;
+    return liveMoveLabel(g, followed, gameroom.seenPlies(g.gid, followed));
   }
 </script>
 

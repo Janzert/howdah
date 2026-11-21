@@ -30,10 +30,18 @@ export function resultText(result: GameResult | null): string | null {
 
 /** "12s", the move being played in a live game: after `plies` turns
  * from the start (setups included) when the game is followed, which is
- * newer, or else as the list says. */
-export function liveMoveLabel(g: LiveGameView, plies?: number): string | null {
-  if (plies != null) return plies % 2 === 0 ? `${plies / 2 + 1}g` : `${(plies + 1) / 2}s`;
-  return g.moveNumber != null && g.turn ? `${g.moveNumber}${g.turn === 'gold' ? 'g' : 's'}` : null;
+ * newer; otherwise the later of the list's move and `seen`, the turns
+ * last seen played while it was followed (the list can lag behind). */
+export function liveMoveLabel(g: LiveGameView, plies?: number, seen?: number): string | null {
+  const n = plies ?? Math.max(seen ?? -1, listPlies(g) ?? -1);
+  if (n < 0) return null;
+  return n % 2 === 0 ? `${n / 2 + 1}g` : `${(n + 1) / 2}s`;
+}
+
+/** The turns played before the move the list says is being played. */
+export function listPlies(g: LiveGameView): number | null {
+  if (g.moveNumber == null || !g.turn) return null;
+  return g.turn === 'gold' ? 2 * (g.moveNumber - 1) : 2 * g.moveNumber - 1;
 }
 
 /** The turns played from the start (setups included) up to and

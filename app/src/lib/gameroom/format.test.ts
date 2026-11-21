@@ -33,6 +33,15 @@ describe('liveMoveLabel', () => {
   });
 });
 
+describe('liveMoveLabel with a move seen before', () => {
+  it('takes the later of the list and what was seen', () => {
+    expect(liveMoveLabel(game(9, 'silver'), undefined, 37)).toBe('19s');
+    expect(liveMoveLabel(game(20, 'gold'), undefined, 37)).toBe('20g');
+    expect(liveMoveLabel(game(null, null), undefined, 3)).toBe('2s');
+    expect(liveMoveLabel(game(9, 'silver'), 10, 37)).toBe('6g');
+  });
+});
+
 describe('pliesThrough', () => {
   it('counts the turns up to and including a labelled move', () => {
     expect(pliesThrough('1g Ra1 Rb1')).toBe(1);

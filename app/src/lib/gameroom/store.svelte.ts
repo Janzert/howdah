@@ -221,6 +221,17 @@ class GameroomStore {
     });
   }
 
+  /** The turns last seen played in each live game a board or the chat's
+   * preview followed, kept while the game is in the list. */
+  #seenPlies = new Map<string, number>();
+
+  /** Notes `followed`, the turns played in game `gid` as a session
+   * following it has them, if any; returns the last noted. */
+  seenPlies(gid: string, followed?: number): number | undefined {
+    if (followed != null) this.#seenPlies.set(gid, followed);
+    return this.#seenPlies.get(gid);
+  }
+
   /** How `show` opens a panel (the lobby's sidebar). */
   setNavigator(navigate: (panel: GameroomTab) => void) {
     this.#navigate = navigate;
@@ -273,6 +284,8 @@ class GameroomStore {
         g.online.map((p) => [p.username, known.has(p.username) ? known.get(p.username)! : p.idle]),
       );
     }
+    const live = new Set(g.live.map((l) => l.gid));
+    for (const gid of this.#seenPlies.keys()) if (!live.has(gid)) this.#seenPlies.delete(gid);
     this.games = g;
     this.updatedAt = performance.now();
     this.#onGames?.(g);

@@ -1188,7 +1188,8 @@ plans the engine test and tournament runner.
     `liveMoveLabel`: from the preview's or a board's session when one
     follows the game, `gameroom.boardViews` over the lobby's
     `OpenGames` given by `setBoards`, since arimaa.com's `plycount`
-    lags) and `LiveGameBoard` beside it: one live game shown
+    lags; once none does, the later of the list's and the last seen,
+    `gameroom.seenPlies`) and `LiveGameBoard` beside it: one live game shown
     small (`MiniBoard` given the store's own `BoardModel`, so moves
     slide as on a board, jumping instead while the lobby is hidden;
     players and clocks), from `livePreview.svelte.ts`,
