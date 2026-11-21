@@ -3,14 +3,30 @@
 [![CI](https://github.com/Janzert/howdah/actions/workflows/ci.yml/badge.svg)](https://github.com/Janzert/howdah/actions/workflows/ci.yml)
 
 Howdah is a desktop app for playing and studying
-[Arimaa](https://en.wikipedia.org/wiki/Arimaa). Play against engines on
-your own computer, analyse positions, keep annotated game records, and
-play, watch and chat on [arimaa.com](http://arimaa.com/). It runs on
-Windows, Linux and macOS.
+[Arimaa](https://en.wikipedia.org/wiki/Arimaa). Play, watch and chat on
+[arimaa.com](http://arimaa.com/), play against engines on your own
+computer, analyse games and positions, and search arimaa.com's whole
+game archive offline. It runs on Windows, Linux and macOS.
 
-![Howdah's main window: a sidebar listing two open games, and one of them on its board with Sharp analysing it, showing the engine's best line drawn as arrows, the evaluation bar, the move list and the analysis panel](docs/images/screenshot.png)
+![Howdah's main window: a sidebar listing two open boards, and one of them showing a game analysed move by move, with the engine's marks and better lines in the move list, its best line drawn as arrows on the board, the evaluation bar beside it and the evaluation graph under it](docs/images/screenshot.png)
 
 ## Features
+
+**arimaa.com**
+
+- Play in the gameroom: create and join games, rated or unrated, live
+  or postal, with invitations, chat and takebacks. See who's online and
+  invite them, or start a game with one of the server's bots.
+- Watch live games, or open finished ones with the comments people left
+  on them.
+- Players' pages: their rating through the years, their games and how
+  they ended, and their record against each opponent.
+- The gameroom's chat room and its archive, and its announcements.
+- Solve arimaa.com's puzzles.
+- Games carry on through network drops and the computer sleeping, and
+  you can return to a game in progress.
+
+![A player's page on arimaa.com: rating, record and streak, the rating chart since the account joined, and its games by how they ended](docs/images/player-page.png)
 
 **Play and review**
 
@@ -21,15 +37,50 @@ Windows, Linux and macOS.
   marked.
 - A move tree with variations, comments and move glyphs. Try a line
   anywhere in a game, and it's kept as a variation.
-- Load and copy game records in the PGN-style Arimaa format, including
-  games from the arimaa.com archive. Going through a timed game shows
-  the clocks at each move.
+- Load and copy game records in the PGN-style Arimaa format. Going
+  through a timed game shows the clocks at each move.
 - Several games at once: each has a board in the main window, which can
   pop out into a window of its own and dock back.
-- A position editor: set up any position, then analyse it or play from
-  it.
-- Clocks and time controls, sounds, board and piece themes, and light
-  and dark colors.
+- A position editor: set up any position, then analyse it, play from it
+  or search for it.
+- Clocks and time controls (fractions of a second too), sounds, board
+  and piece themes, and light and dark colors.
+
+**Analysis**
+
+- An engine searches the position on the board as you move through a
+  game, showing its evaluation (and its chance of winning, when it gives
+  one), its best line drawn on the board, and its output. Click a line to
+  add it to the game as a variation.
+- *Analyse game* goes over a whole game in the time you give it, or until
+  stopped. It marks the doubtful moves and the mistakes with the line the
+  engine prefers, and draws the evaluation through the game as a graph
+  under the board; click the graph to go to a move.
+- What an engine finds is kept by position, so it shows again in any
+  game reaching that position without the engine running.
+
+**Game database**
+
+- Every game you play, watch, open or analyse is kept, with its
+  variations, comments and analysis, and can be found again by player
+  (under any name they've had), opponent, side, result, ending, date,
+  rated or not, and where it came from.
+- arimaa.com's whole game archive (over 425,000 games) is one download
+  from the Games panel, with small updates for the games added since. Its
+  games then open at once, offline.
+- A setup explorer: the setups gold and silver play, silver's replies to
+  a setup, and the moves after them, each with how often it was played,
+  how it scored, and what the players' ratings predicted.
+- The board's Explorer: the moves played next from the position on the
+  board, and the games that reached it.
+- Position search, for an exact position or a pattern of pieces.
+- Export games to share them, with or without your variations, comments,
+  analysis and chat, and import someone else's: what you both added is
+  joined.
+
+![The Games panel's setup explorer: silver's replies to gold's most played setup in rated games, each drawn as it stood, with the number of games, gold's score, the score the ratings predicted, the average rating and when it was last played](docs/images/setup-explorer.png)
+
+![A board with its Explorer open after the setups of a 2024 World Championship game: the first moves gold played from that position in 3,939 games, with their scores, and Sharp analysing it below](docs/images/explorer.png)
 
 **Engines**
 
@@ -41,29 +92,18 @@ Windows, Linux and macOS.
   by its program path or a manifest.
 - Set an engine's options for every game, for one game, or for analysis.
 
-**Analysis**
-
-- An engine searches the position on the board as you move through a
-  game, showing its evaluation, its best line on the board, and its
-  output. Click a line to add it to the game as a variation.
-
 **Engine tests**
 
 - For engine developers: play two engines against each other in many
   games, several at once, until an SPRT decides whether a change is
-  better. Tests queue up and carry on after a restart, and each game can
-  be followed live. `howdah-tourney` does the same from the command line.
+  better, with a chart of how the test is going and how its games ended.
+- Rate a pool of engines against each other, or tune an engine's options
+  with SPSA. Games can start from a set of positions, and engines can
+  ponder.
+- Tests queue up and carry on after a restart, and each game can be
+  followed live. `howdah-tourney` does the same from the command line.
 
-**arimaa.com**
-
-- Log in to the gameroom to watch live games or open finished ones.
-- Play: create and join games, rated or unrated, live or postal, with
-  invitations, chat and takebacks. See who's online and invite them, or
-  start a game with one of the server's bots.
-- The gameroom's chat room and its archive, and its announcements.
-- Solve arimaa.com's puzzles.
-- Games carry on through network drops and the computer sleeping, and
-  you can return to a game in progress.
+![An engine test: Sharp with two threads against Sharp with one, its SPRT chart of the observed Elo between the pass and fail bounds, and its games](docs/images/engine-test.png)
 
 ## Install
 
@@ -96,7 +136,8 @@ first time you start Howdah:
 The release's `SHA256SUMS` file lists each download's SHA-256 digest if
 you'd like to check it.
 
-Howdah doesn't update itself. The [releases page](https://github.com/Janzert/howdah/releases)
+Howdah doesn't update itself, but it says on Home when a new version is
+out (Settings can turn that off). The [releases page](https://github.com/Janzert/howdah/releases)
 has new versions, and [CHANGELOG.md](CHANGELOG.md) what changed.
 
 ### Troubleshooting
@@ -110,15 +151,21 @@ has new versions, and [CHANGELOG.md](CHANGELOG.md) what changed.
 
 ## Getting started
 
+- **arimaa.com:** click *arimaa.com* in the sidebar and log in with your
+  gameroom account to play, watch, chat or start games.
 - **Play an engine:** install Sharp and OpFor from *Home* (or from
   *Engines*), then start a *New game* with an engine on one side.
 - **Analyse:** on a board, turn on *Analysis* and pick an engine. It
   follows the position as you step through the game. *Analysis board*
-  on *Home* starts from an empty one.
-- **arimaa.com:** click *arimaa.com* in the sidebar and log in with your
-  gameroom account to play, watch, chat or start games.
+  on *Home* starts from an empty one, and *Analyse game* beside the
+  engine goes over the whole game.
+- **Game archive:** *Games* in the sidebar offers arimaa.com's game
+  archive as one download. Its *Setups* view is the setup explorer, and
+  a board's *Explorer* (under the move list) shows the moves played from
+  its position.
 - **Records:** *Open record* on *Home* loads a game pasted in or opened
-  from a file, and a board's *Record* gives its game's record to copy.
+  from a file, and *Record* in a board's `⋯` menu gives its game's
+  record to copy.
 - Press `?` for the keyboard shortcuts.
 
 ## Building from source
@@ -190,13 +237,17 @@ CI runs these on Linux, Windows and macOS and builds the installers.
   game records. Pure Rust with no UI dependencies.
 - `crates/howdah-aei`: an async AEI controller and engine-vs-engine matches.
 - `crates/howdah-gameroom`: the arimaa.com gameroom client.
+- `crates/howdah-db`: the game database (SQLite), its archive import,
+  the setup explorer and position search, and sharing games.
 - `crates/howdah-render`: draws a position as a PNG or JPEG with the
   classic themes (`cargo run -p howdah-render -- POSITION OUT.png`).
 - `crates/howdah-tourney`: the engine test runner and its daemon.
+- `packages/board`: the board, player bars, themes and sounds, as Svelte
+  components shared with other sites.
 - `app/`: the Tauri application. `src-tauri/` is the Rust shell and `src/`
   is the Svelte frontend.
-- `docs/`: design notes (analysis, variations, engines, the gameroom,
-  result codes, engine tests and tournaments).
+- `docs/`: design notes (analysis, variations, engines, the gameroom, the
+  game database, windows, result codes, engine tests and tournaments).
 
 ## Acknowledgements
 
