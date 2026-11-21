@@ -13,6 +13,7 @@ import type { SessionUpdate } from '../bindings/SessionUpdate';
 import type { SessionView } from '../bindings/SessionView';
 import type { WatchView } from '../bindings/WatchView';
 import { onEvery } from '../events';
+import { gameroom } from './store.svelte';
 
 /** Where the preview's own session is noted, so a lobby that reloads (the
  * browser preview) closes the one it left behind. */
@@ -45,6 +46,9 @@ class LivePreview {
   error = $state<string | null>(null);
 
   #started = false;
+  /** Whether `view` came from the current session (not one kept from the
+   * board it was shown from before). */
+  #fresh = false;
   /** Bumped by every expand and close, so a slow open that's been
    * overtaken closes what it opened. */
   #generation = 0;
@@ -77,8 +81,13 @@ class LivePreview {
       if (id != null && id === this.session) this.watch = w;
     });
     void onEvery('sessions://changed', (s) => {
-      // A board showing it closed (or the preview's session went).
-      if (this.session != null && !s.sessions.includes(this.session)) this.#forget();
+      if (this.session == null || s.sessions.includes(this.session)) return;
+      // The board it was shown from closed: a game still being played
+      // goes on here on a session of its own, the position kept meanwhile.
+      const gid = this.gid;
+      const live = gameroom.games?.live.some((g) => g.gid === gid) ?? true;
+      if (gid && !this.owned && !this.view?.result && live) void this.#open(gid, true);
+      else this.#forget();
     });
   }
 
@@ -86,15 +95,27 @@ class LivePreview {
   async toggle(gid: string) {
     if (this.gid === gid) return this.close();
     await this.close();
+    await this.#open(gid, false);
+  }
+
+  /** Follows game `gid`: from a board's session showing it, or else on
+   * one of its own. `keep` leaves the position shown until the new
+   * session's arrives. */
+  async #open(gid: string, keep: boolean) {
     const generation = ++this.#generation;
     this.gid = gid;
+    this.session = null;
+    this.owned = false;
+    this.watch = null;
+    this.#fresh = false;
+    if (!keep) this.view = null;
     this.opening = true;
     this.error = null;
     try {
       const existing = await api.gameroomGameSession(gid).catch(() => null);
       if (generation !== this.#generation) return;
       if (existing != null) {
-        await this.#show(existing, false);
+        await this.#show(existing, false, keep);
         return;
       }
       const id = await api.openSession();
@@ -107,7 +128,7 @@ class LivePreview {
       note(id);
       await apiFor(id).openGameroomGame(gid);
       if (generation !== this.#generation) return;
-      await this.#show(id, true);
+      await this.#show(id, true, keep);
     } catch (e) {
       if (generation !== this.#generation) return;
       this.error = errorMessage(e);
@@ -120,14 +141,15 @@ class LivePreview {
     }
   }
 
-  async #show(id: SessionId, owned: boolean) {
+  async #show(id: SessionId, owned: boolean, kept: boolean) {
     this.session = id;
     this.owned = owned;
     const a = apiFor(id);
     const [view, watch] = await Promise.all([a.getState(), a.watchStatus()]);
     if (this.session !== id) return;
-    // An event may have brought a newer view meanwhile.
-    if (!this.view) {
+    // An event may have brought a newer view meanwhile; a kept one is the
+    // old session's.
+    if (!this.view || (kept && !this.#fresh)) {
       this.view = view;
       this.at = performance.now();
       this.model.jump(view.position.pieces);
@@ -136,7 +158,8 @@ class LivePreview {
   }
 
   #update(u: SessionUpdate) {
-    const first = this.view == null;
+    const first = this.view == null || !this.#fresh;
+    this.#fresh = true;
     this.view = u.view;
     this.at = performance.now();
     const pieces = u.view.position.pieces;
@@ -168,6 +191,7 @@ class LivePreview {
     this.owned = false;
     this.view = null;
     this.watch = null;
+    this.#fresh = false;
     this.opening = false;
     this.error = null;
   }

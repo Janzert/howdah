@@ -216,8 +216,9 @@ architecture. Decided and checked against the live server in October 2026.
     in place.
     It's followed on a session of its own with no board, so it takes a
     viewer seat as watching does; a game already on a board is shown
-    from that board's session instead, with no seat of its own. Watch
-    makes the shown game's session the board (the same seat). The game
+    from that board's session instead, with no seat of its own, and goes
+    on with its own seat if that board closes while the game is still
+    on. Watch makes the shown game's session the board (the same seat). The game
     goes when hidden, when the user leaves the room or logs out, and
     once it has ended and left the lobby's list. arimaa.com's lobby
     thumbnails aren't used: they're small, likely not current, and not

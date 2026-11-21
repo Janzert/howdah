@@ -1186,7 +1186,8 @@ plans the engine test and tournament runner.
     slide as on a board, jumping instead while the lobby is hidden;
     players and clocks), from `livePreview.svelte.ts`,
     which follows it on a session of its own with no board (or a board's
-    session already on that game); the lobby leaves that session out of
+    session already on that game, until that board closes: then on its
+    own again, the position kept meanwhile); the lobby leaves that session out of
     its boards (`ownSession`), Watch hands it over as the board
     (`release`), and it's closed when hidden, on leaving the room or
     logging out, and once the game has ended and left the list; a lobby
