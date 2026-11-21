@@ -481,6 +481,7 @@
     const stopTourney = tourney.start();
     gameroom.setOpener(openGameroom);
     gameroom.setNavigator(openGameroomPanel);
+    gameroom.setBoards(games);
     // The store passes on the lobby poll's lists (`lobbyGames`).
     const stopGameroom = gameroom.start(lobbyGames);
     const stopChatroom = chatroom.start();

@@ -36,6 +36,15 @@ export function liveMoveLabel(g: LiveGameView, plies?: number): string | null {
   return g.moveNumber != null && g.turn ? `${g.moveNumber}${g.turn === 'gold' ? 'g' : 's'}` : null;
 }
 
+/** The turns played from the start (setups included) up to and
+ * including the move labelled `label` ("19g Ed4n …" or "19g"): 37. */
+export function pliesThrough(label: string): number | null {
+  const m = /^(\d+)([gswb])\b/.exec(label);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return m[2] === 'g' || m[2] === 'w' ? 2 * n - 1 : 2 * n;
+}
+
 /** "2m/5m/100/0/30m · rated · postal" */
 export function gameMeta(g: LiveGameView): string {
   return join([g.timeControl, g.rated && 'rated', g.postal && 'postal']);

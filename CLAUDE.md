@@ -1181,7 +1181,10 @@ plans the engine test and tournament runner.
     code.
     `ChatRoomTab` is the chat room, with `LiveGames` above its log
     (the lobby lists' live games, a line each, with the move,
-    `liveMoveLabel`) and `LiveGameBoard` beside it: one live game shown
+    `liveMoveLabel`: from the preview's or a board's session when one
+    follows the game, `gameroom.boardViews` over the lobby's
+    `OpenGames` given by `setBoards`, since arimaa.com's `plycount`
+    lags) and `LiveGameBoard` beside it: one live game shown
     small (`MiniBoard` given the store's own `BoardModel`, so moves
     slide as on a board, jumping instead while the lobby is hidden;
     players and clocks), from `livePreview.svelte.ts`,

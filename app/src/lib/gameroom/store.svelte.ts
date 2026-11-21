@@ -13,8 +13,10 @@ import type { LiveGameView } from '../bindings/LiveGameView';
 import type { PastGameView } from '../bindings/PastGameView';
 import type { PlayerMatchView } from '../bindings/PlayerMatchView';
 import type { PostalGameView } from '../bindings/PostalGameView';
+import type { SessionId } from '../bindings/SessionId';
 import type { ServerBotView } from '../bindings/ServerBotView';
 import type { ServerBotsView } from '../bindings/ServerBotsView';
+import type { SessionView } from '../bindings/SessionView';
 import { on } from '../events';
 import { announcementKey, mySide, myTurn, splitAnnouncements } from '../gameroom';
 
@@ -68,6 +70,13 @@ export type Opener = (
   game?: { gid: string; play: boolean; comments?: number },
   loading?: string,
 ) => Promise<string | null>;
+
+/** The open boards' views and followed games, by session (the lobby's
+ * `OpenGames`). */
+export interface Boards {
+  views: Record<SessionId, { view: SessionView }>;
+  watches: Record<SessionId, { gid: string }>;
+}
 
 /** What the New game dialog asks for. */
 export interface NewGameSpec {
@@ -192,6 +201,24 @@ class GameroomStore {
 
   setOpener(opener: Opener) {
     this.#opener = opener;
+  }
+
+  /** The lobby's open boards (`OpenGames`), for the moves of the live
+   * games they follow. */
+  boards = $state.raw<Boards | null>(null);
+
+  setBoards(boards: Boards) {
+    this.boards = boards;
+  }
+
+  /** The views of the boards following arimaa.com game `gid`. */
+  boardViews(gid: string): SessionView[] {
+    const b = this.boards;
+    if (!b) return [];
+    return Object.entries(b.watches).flatMap(([id, w]) => {
+      const v = w.gid === gid ? b.views[Number(id)] : undefined;
+      return v ? [v.view] : [];
+    });
   }
 
   /** How `show` opens a panel (the lobby's sidebar). */

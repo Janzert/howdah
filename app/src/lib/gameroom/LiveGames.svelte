@@ -4,18 +4,21 @@
   // shows one small beside the log (`livePreview`), Watch on a board.
   import type { LiveGameView } from '../bindings/LiveGameView';
   import Icon from '../Icon.svelte';
-  import { gameMeta, liveMoveLabel } from './format';
+  import { gameMeta, liveMoveLabel, pliesThrough } from './format';
   import { livePreview } from './livePreview.svelte';
   import Matchup from './Matchup.svelte';
   import { gameroom } from './store.svelte';
 
   const live = $derived(gameroom.games?.live ?? []);
 
-  /** The move being played, from the game shown beside the chat when
-   * it's this one (newer than the list). */
+  /** The move being played, from the game shown beside the chat or a
+   * board following it when there is one (newer than the list, whose
+   * move numbers arimaa.com can leave behind). */
   function moveLabel(g: LiveGameView): string | null {
-    const view = livePreview.gid === g.gid ? livePreview.view : null;
-    return liveMoveLabel(g, view && !view.result ? view.moves.length : undefined);
+    const preview = livePreview.gid === g.gid ? livePreview.view : null;
+    const views = [...(preview ? [preview] : []), ...gameroom.boardViews(g.gid)].filter((v) => !v.result);
+    const plies = views.map((v) => (v.liveMove ? (pliesThrough(v.liveMove) ?? v.moves.length) : v.moves.length));
+    return liveMoveLabel(g, plies.length ? Math.max(...plies) : undefined);
   }
 </script>
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveGameView } from '../bindings/LiveGameView';
-import { liveMoveLabel } from './format';
+import { liveMoveLabel, pliesThrough } from './format';
 
 const game = (moveNumber: number | null, turn: LiveGameView['turn']): LiveGameView => ({
   gid: '1',
@@ -30,5 +30,16 @@ describe('liveMoveLabel', () => {
     expect(liveMoveLabel(game(28, 'silver'), 1)).toBe('1s');
     expect(liveMoveLabel(game(28, 'silver'), 2)).toBe('2g');
     expect(liveMoveLabel(game(28, 'silver'), 57)).toBe('29s');
+  });
+});
+
+describe('pliesThrough', () => {
+  it('counts the turns up to and including a labelled move', () => {
+    expect(pliesThrough('1g Ra1 Rb1')).toBe(1);
+    expect(pliesThrough('1s')).toBe(2);
+    expect(pliesThrough('19g Ed4n Ed5n')).toBe(37);
+    expect(liveMoveLabel(game(9, 'silver'), pliesThrough('19g Ed4n')!)).toBe('19s');
+    expect(pliesThrough('3b')).toBe(6);
+    expect(pliesThrough('pass')).toBeNull();
   });
 });

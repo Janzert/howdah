@@ -206,7 +206,12 @@ architecture. Decided and checked against the live server in October 2026.
     game beside the room in a browser (2026-11-21). Above the room's log
     is a line per game being played, from the lobby's lists (players,
     ratings, the move, time control, rated), so it costs no requests of
-    its own; with no games, one quiet line says so. There are seldom
+    its own; with no games, one quiet line says so. The move is the
+    list's `plycount` only for a game nothing here follows: arimaa.com
+    can leave that number behind for many moves (seen 2026-11-21: a
+    fresh `state` still said 9s with the game at 19g), so a game shown
+    beside the room or open on a board takes its move from that
+    session's latest move instead. There are seldom
     many: over the 180 days to 2026-11-21 no game was being played 84%
     of the time, one 14%, two 1.4%, and never more than four. A row's
     board button shows that game small beside the log (the app's theme,
