@@ -92,7 +92,8 @@
                   <span class="name">{i.opponent ?? '?'}</span>
                   {#if i.opponentRating}<span class="rating">{i.opponentRating}</span>{/if}
                 </span>
-                <span class="meta">{invitationMeta(i)}{i.message ? ` · “${i.message}”` : ''}</span>
+                <span class="meta">{invitationMeta(i)}</span>
+                {#if i.message}<span class="invite-message">“{i.message}”</span>{/if}
               </span>
               {#if declining === inviteKey(i)}
                 <form
@@ -351,6 +352,12 @@
   }
   .more {
     margin-top: 8px;
+  }
+  /* The inviter's message, on its own line and wrapped, never cut off. */
+  .invite-message {
+    font-size: 13px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   li.declining {
     flex-wrap: wrap;
