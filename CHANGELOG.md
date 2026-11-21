@@ -7,12 +7,10 @@ young).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-20
+
 ### Added
 
-- Engines are told how long their setup gets, with AEI's new `tcsetup`
-  option: arimaa.com's minute in games with a person, an engine test's
-  `setup_minimum`, or 0 (the plain move time). Engines that don't know
-  it, Sharp and OpFor among them, log a warning and play on.
 - A game database: every game on a board is saved as it changes
   (played, watched, opened from a record, or analysed; not puzzles or
   engine tests' games), in `games.db` in the app's data directory. A
@@ -25,11 +23,51 @@ young).
 - The Games panel offers arimaa.com's whole game archive (425,129
   games through 2026-10-11) as one download of about 143 MB, merged
   into the games already there. Games added to the archive later come
-  as small updates holding only the new ones.
+  as small updates holding only the new ones. Howdah looks for updates
+  at most once a day; the panel's refresh button looks at once.
+- A setup explorer, the Games panel's Setups view: gold's setups,
+  silver's, or silver's replies to one gold setup, over the games the
+  list's filter lets through, each with its games, gold's score beside
+  what the ratings predicted, the average rating of the side playing it
+  and when it was last played. A setup and its mirror image count as
+  one. A row's Games narrows the list to that setup or pair, and a
+  silver reply goes on into the moves played after it, move by move.
+- The board's Explorer, under the comment box: the moves played next
+  from the shown position in the database's games, with how each went.
+  A move plays as a variation, and the games reaching the position open
+  on a new board at that point. It's off during an online game you're
+  playing.
+- Position search: the Games panel can list the games reaching a
+  position, exactly or by a pattern of pieces on squares, set in the
+  position editor (Find position, Find these pieces).
+- Sharing games: the Games panel's Export… writes the list's games to
+  a file, with variations, comments, move times, evals and (if chosen)
+  chat, under an author name you give. Import… takes such a file or a
+  record file, joining variations, comments and evals into games
+  already there. Sources… lists where the database's contents came
+  from, filters the list by one, and removes what one brought.
 - Analysis is kept: what an engine finds about a position is saved in
   the game database by position, so it shows again in any game that
   reaches that position, without the engine running. Each engine
   version's analysis is kept apart.
+- The engine panel shows an engine's chance of winning when it gives one
+  (`win 63%`), with its eval in rabbits on hover, and a forced result as
+  `win in 2` or `loss in 2`.
+- A proven win says how many of the winner's turns it takes, when the
+  engine gives the count (`info proven`, or Sharp's search log):
+  `Gold wins in 2` in the analysis panel and comments, `W2` or `L2` in
+  the move list.
+- Marked moves in the move list show the engine's better line under
+  them, and the analysis panel shows what the engine would have played
+  from the position before the shown move, from the analysis already
+  done.
+- Engines are told how long their setup gets, with AEI's new `tcsetup`
+  option: arimaa.com's minute in games with a person, an engine test's
+  `setup_minimum`, or 0 (the plain move time). Engines that don't know
+  it, Sharp and OpFor among them, log a warning and play on.
+- Engine tests and matches can let an engine ponder (`ponder = true`
+  on a test's engine): it searches through the opponent's turn, and the
+  opponent's move ends the search.
 - Engine tests can start their games from positions reached by play
   (`[positions]` in a test's spec: a file with each position's moves
   from the start, sent to the engines as moves). Each position is
@@ -47,9 +85,16 @@ young).
 - The Players tab can find any arimaa.com player, not just those
   online, and open their page (an exact username opens it at once).
   Finished games' player search offers each player's page too.
+- The gameroom's game lists (live, yours, open, recent, past and
+  postal) show the players' ratings, and a player's name opens their
+  page. Past games show the ratings from before each game where the
+  game database or the player's rating history has them.
 - A finished arimaa.com game shows the comments people left on it,
   below the board. The lists of a player's games and of recent games
   say how many comments a game has.
+- Others' messages in the gameroom's chat room play the chat sound. A
+  button in the room's bar mutes it, as does "Chat room messages" in
+  Settings.
 - Times of day (the chat room's and its archive's, when a game ended, a
   player's local time) follow the system's 12- or 24-hour clock: the
   desktop's clock setting on Cinnamon, GNOME, Unity and Budgie and
@@ -59,12 +104,33 @@ young).
 
 ### Changed
 
+- Analyse game takes a time for the whole game instead of a time a
+  position. It gives every position a quick look, then spends the rest
+  where the evals or the marks are least settled, so the marks most
+  likely to change get the most search. On a game being played it
+  follows the new moves. Marks that more search may still change show
+  lighter, and clicking the eval graph has that move searched next.
+  "Until stopped", now the default, keeps going with no time limit,
+  deepening the whole game once every mark has settled.
+- The board's side panel is slimmer: the eval graph sits under the
+  board, Analyse game in the analysis header, and the tools and window
+  buttons are one row with a menu (Record, Position editor, Pass, Lobby,
+  Dock or Pop out). Next game shows only when there is one, and the
+  turn's buttons sit beside the bottom player bar only while a turn or
+  setup is being entered.
+- The eval bar shows a hatched, empty state while the shown position
+  has no eval yet, instead of an even game, and the first eval grows
+  from the previous move's.
+- In the gameroom's game lists, only a row's Watch or Open button opens
+  its game; the player names open their pages.
+- A bot's player page labels the name in its profile as Author, since
+  that's the name a bot's profile gives.
+- In an engine game, the side panel lists the engines in the board's
+  order, the side at the top first, instead of always gold first.
 - The low-time ticks wait until half of the turn is gone, so a short
   turn (under a minute) no longer ticks from its start: a 7-second turn
   starts ticking at 3.5 seconds left. Turns of a minute or more tick as
   before.
-- In an engine game, the side panel lists the engines in the board's
-  order, the side at the top first, instead of always gold first.
 - A time control of two fields (`2/2`, `0:30/3`) adds nothing to the
   reserve, as arimaa.com reads it: its game logs show no time added in
   those games. Howdah used to add all of the unused move time. A time
@@ -77,23 +143,24 @@ young).
   Games played here, measured to the millisecond, add it to the
   millisecond, so a fast game no longer gains up to half a second a
   move from the rounding.
+- Building Howdah needs Rust 1.100 or later. Tauri is 2.12.7.
 
-- The engine panel shows an engine's chance of winning when it gives one
-  (`win 63%`), with its eval in rabbits on hover, and a forced result as
-  `win in 2` or `loss in 2`.
-- A proven win says how many of the winner's turns it takes, when the
-  engine gives the count (`info proven`, or Sharp's search log):
-  `Gold wins in 2` in the analysis panel and comments, `W2` or `L2` in
-  the move list.
+### Fixed
 
-- Analyse game takes a time for the whole game instead of a time a
-  position. It gives every position a quick look, then spends the rest
-  where the evals or the marks are least settled, so the marks most
-  likely to change get the most search. On a game being played it
-  follows the new moves. Marks that more search may still change show
-  lighter, and clicking the eval graph has that move searched next.
-  "Until stopped" keeps going with no time limit, deepening the whole
-  game once every mark has settled.
+- Analyse game no longer leaves positions without an eval when the
+  engine gives its line only on being stopped, as OpFor often does in a
+  short search: it waits for the engine's answer to `stop` (up to two
+  seconds) before moving on, and searches a position left without an
+  eval again.
+- The chat room's lines from yesterday get their date after midnight,
+  instead of looking like today's until the next message arrived.
+- An SPRT test's chart draws its pass and fail curves with the test's
+  own pair variance, so a test short of its bound no longer looks past
+  the pass line.
+- The analysis panel's engine row and Analyse game stay put at the
+  panel's bottom while the engine's line changes length, instead of
+  moving under the pointer.
+- The menu button's dots no longer look greyed out.
 
 ## [0.7.1] - 2026-11-13
 
@@ -643,7 +710,8 @@ Gatekeeper.
 - Keeps playing through network drops and sleep, and resumes games in
   progress.
 
-[Unreleased]: https://github.com/Janzert/howdah/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Janzert/howdah/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Janzert/howdah/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Janzert/howdah/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Janzert/howdah/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Janzert/howdah/compare/v0.6.0...v0.6.1
