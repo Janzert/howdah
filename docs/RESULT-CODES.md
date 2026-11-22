@@ -47,6 +47,9 @@ Notes:
 - `a` and `u` have no winner, and `n` (and the odd `s`) can be draws, so
   `GameResult`, which always has a winner, can't represent them yet.
   Importing old games needs that (see `VARIATIONS.md`, open questions).
+  The gameroom also sends `ua` live, for a game whose opponent never
+  joined (2026-11-21); the app ends the match there without a result
+  (`Session::abandon_remote`).
 - `s` is decided by score. For games from 2008.07.01 on, the rule on
   arimaa.com's match rules page
   (<http://arimaa.com/arimaa/learn/matchRules.html>) is the one in use:

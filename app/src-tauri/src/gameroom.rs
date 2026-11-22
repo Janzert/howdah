@@ -1285,6 +1285,13 @@ enum Outcome {
     Failed(String),
 }
 
+/// Whether a result code has no winner: an unknown winner (`u`) or an
+/// abandoned game (`a`; see `docs/RESULT-CODES.md`).
+fn no_winner(code: &str) -> bool {
+    let mut chars = code.chars();
+    chars.next() == Some('u') || chars.next() == Some('a')
+}
+
 /// What a server state did to the session.
 struct Applied {
     /// The animation for a single new move.
@@ -1340,6 +1347,15 @@ fn apply(s: &mut Session, generation: u64, state: &GameState) -> Applied {
                     s.set_tag("GameId", id);
                 }
             }
+            // No winner: `ua`, a game abandoned (one the opponent never
+            // joined, for one). The tree can't hold that, so the match
+            // just stops.
+            (None, Some(code)) if no_winner(code) => {
+                outcome = match s.abandon_remote(generation) {
+                    Ok(()) => Outcome::Ended,
+                    Err(e) => Outcome::Failed(e.message),
+                };
+            }
             (None, Some(code)) => {
                 outcome =
                     Outcome::Failed(format!("the game ended with a result this client can't read: {code:?}"));
@@ -1384,6 +1400,11 @@ fn update(target: &Target, generation: u64, state: &GameState, view: &Mutex<Watc
         Outcome::Ended => {
             v.state = WatchState::Ended;
             v.detail = None;
+            if state.result.is_none() {
+                // Abandoned: the match has stopped, and the table with it.
+                v.detail = Some("the game ended without a winner (abandoned)".into());
+                v.chat_open = false;
+            }
             v.finished_id = state.finished_id.clone();
             Next::Stop
         }
@@ -2002,6 +2023,9 @@ async fn find_id(
     generation: u64,
     view: &Mutex<WatchView>,
 ) -> Option<String> {
+    if lock(&target.session).generation() != generation {
+        return None;
+    }
     let gid = {
         let v = lock(view);
         if v.state != WatchState::Ended {
@@ -2301,6 +2325,19 @@ mod tests {
         assert!(s.export(false).contains("[GameId \"671437\"]"), "{}", s.export(false));
         let result = GameResult { winner: Color::Silver, reason: WinReason::Timeout };
         assert_eq!(s.view().result, Some(result));
+    }
+
+    #[test]
+    fn an_abandoned_game_ends_without_a_result() {
+        let mut s = Session::new();
+        let waiting = state("", "role=w\n");
+        start(&mut s, &waiting);
+        let g = s.generation();
+        assert_eq!(apply(&mut s, g, &waiting).outcome, Outcome::Playing);
+        let abandoned = state("", "role=w\nresult=u\nreason=a\n");
+        assert_eq!(apply(&mut s, g, &abandoned).outcome, Outcome::Ended);
+        assert_eq!(s.view().result, None);
+        assert!(s.analysis_allowed(), "the user didn't leave a game being played");
     }
 
     #[test]

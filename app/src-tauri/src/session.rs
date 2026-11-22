@@ -1664,6 +1664,20 @@ impl Session {
         Ok(())
     }
 
+    /// Ends a game with a remote side that the server ended without a
+    /// winner (abandoned): the result can't go in the tree, so the match
+    /// stops, as [`Session::end_match`] stops it, but the user hasn't left
+    /// a game being played.
+    pub fn abandon_remote(&mut self, generation: u64) -> Result<(), ApiError> {
+        if generation != self.generation || !self.server_game() {
+            return Err(ApiError::state("no game with a remote player"));
+        }
+        self.matchup = None;
+        self.generation += 1;
+        self.refresh();
+        Ok(())
+    }
+
     /// Plays the moves an ended game with a remote side is missing, from
     /// its full list (`moves`, a finished game's record), and ends it again
     /// with the same result. The server can report a game's result before
