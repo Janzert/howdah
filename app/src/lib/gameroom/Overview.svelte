@@ -259,11 +259,14 @@
               class="chip"
               class:me={p.username === gameroom.user}
               class:invitable={gameroom.invitable.has(p.username)}
+              class:bot={p.bot}
             >
-              <button class="chip-name" onclick={() => showPlayerPage(p)} title="{p.username}'s page">
-                {p.username}{#if p.rating}<span class="rating">{p.rating}</span>{/if}{#if p.bot}<span class="tag"
-                    >bot</span
-                  >{/if}
+              <button
+                class="chip-name"
+                onclick={() => showPlayerPage(p)}
+                title="{p.username}'s page{p.bot ? ' (bot)' : ''}"
+              >
+                {p.username}{#if p.rating}<span class="rating">{p.rating}</span>{/if}
               </button>
               {#if gameroom.invitable.has(p.username)}
                 <button
@@ -411,6 +414,14 @@
   .chip.invitable {
     color: var(--text);
     border-color: var(--accent);
+  }
+  /* Bots are told apart by shade rather than a tag: their names already
+   * start with bot_. */
+  .chip.bot {
+    background: var(--hover);
+  }
+  .chip.bot .chip-name {
+    color: var(--muted);
   }
   .more-chip {
     font-size: 12px;

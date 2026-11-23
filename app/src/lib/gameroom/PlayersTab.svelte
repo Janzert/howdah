@@ -41,12 +41,14 @@
           <li>
             <span class="row-text">
               <span class="row-line">
-                <button class="link name" onclick={() => showPlayerPage(p)} title="{p.username}'s page"
-                  >{p.username}</button
+                <button
+                  class="link name"
+                  class:bot={p.bot}
+                  onclick={() => showPlayerPage(p)}
+                  title="{p.username}'s page{p.bot ? ' (bot)' : ''}">{p.username}</button
                 >
                 {#if p.title}<span class="tag">{p.title}</span>{/if}
                 {#if p.rating}<span class="rating">{p.rating}</span>{/if}
-                {#if p.bot}<span class="tag">bot</span>{/if}
                 {#if me}<span class="tag">you</span>{/if}
                 {#if p.busy && !me}<span class="tag">playing</span>{/if}
               </span>
@@ -115,6 +117,11 @@
   .name {
     font-size: inherit;
     font-weight: 600;
+  }
+  /* Bots are told apart by shade rather than a tag: their names already
+   * start with bot_. */
+  .name.bot {
+    color: var(--muted);
   }
   .card-head input {
     width: 14em;
