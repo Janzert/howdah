@@ -45,6 +45,9 @@ young).
   or the version) no longer fails on Linux with "NotAllowedError".
 - The board preview of an engine line's move closes when the move is
   clicked to add the line.
+- In the arimaa.com game lists, a short player name beside a long one
+  is no longer cut to a few letters: only a name too long for its half
+  of the row is shortened.
 
 ## [0.8.0] - 2026-11-20
 

@@ -90,7 +90,15 @@
   white-space: nowrap;
 }
 
+/* Both names start from equal shares of the row; a name that fits in
+ * its share stops at its own width and leaves the rest to the other, so
+ * only a name too long for half the room is cut. (Shrinking from their
+ * full widths cut both by the same fraction, leaving a short name as
+ * little more than its ellipsis.) */
 .lobby .row-line .name {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: max-content;
   overflow: hidden;
   text-overflow: ellipsis;
 }
