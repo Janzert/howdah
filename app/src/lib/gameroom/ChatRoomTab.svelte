@@ -96,23 +96,27 @@
     measure();
   });
 
-  // The log changing size keeps its bottom edge, where the lines being
-  // answered are: the preview taking room from it (narrower, so its lines
-  // wrap and it grows taller inside), the window. `fromEnd` is how far the
-  // view was from the end before the change, kept as it scrolls and as
-  // lines go in.
+  // The log or its lines changing size keep its bottom edge, where the
+  // lines being answered are: the preview taking room from it (narrower,
+  // so its lines wrap and it grows taller inside), the window, lines
+  // rewritten in place (yesterday's getting their date at midnight, a
+  // spoiler shown). `fromEnd` is how far the view was from the end before
+  // the change, kept as it scrolls and as lines go in, so lines added at
+  // either end (measured by their effects first) don't move it.
   let fromEnd = 0;
   const measure = () => {
     if (log) fromEnd = Math.max(0, log.scrollHeight - log.scrollTop - log.clientHeight);
   };
+  let lines: HTMLElement | undefined = $state();
   $effect(() => {
     const el = log;
-    if (!el) return;
+    if (!el || !lines) return;
     const observer = new ResizeObserver(() => {
       el.scrollTop = el.scrollHeight - el.clientHeight - fromEnd;
       lastTop = el.scrollTop;
     });
     observer.observe(el);
+    observer.observe(lines);
     return () => observer.disconnect();
   });
 
@@ -304,27 +308,29 @@
     <div class="middle">
       <div class="log-box">
         <div class="log" bind:this={log} onscroll={scrolled}>
-          <div class="earlier">
-            {#if chatroom.atStart}
-              <span>The start of the room's log.</span>
-            {:else}
-              {#if chatroom.quietTo != null}<span>Nothing said back to {quietDate(chatroom.quietTo)}.</span>{/if}
-              <button onclick={() => chatroom.loadEarlier()} disabled={chatroom.earlierBusy}>
-                {chatroom.earlierBusy ? 'Loading…' : 'Load earlier'}
-              </button>
-            {/if}
-            {#if chatroom.earlierError}<span class="error" role="alert">{chatroom.earlierError}</span>{/if}
-          </div>
-          {#each chatroom.older as e (e.id)}
-            <ChatLine event={e} time={roomTime} />
-          {/each}
-          <!-- Apart, so only new lines are announced. -->
-          <div role="log" aria-label="Chat room" aria-live="polite">
-            {#each view?.events ?? [] as e (e.id)}
+          <div bind:this={lines}>
+            <div class="earlier">
+              {#if chatroom.atStart}
+                <span>The start of the room's log.</span>
+              {:else}
+                {#if chatroom.quietTo != null}<span>Nothing said back to {quietDate(chatroom.quietTo)}.</span>{/if}
+                <button onclick={() => chatroom.loadEarlier()} disabled={chatroom.earlierBusy}>
+                  {chatroom.earlierBusy ? 'Loading…' : 'Load earlier'}
+                </button>
+              {/if}
+              {#if chatroom.earlierError}<span class="error" role="alert">{chatroom.earlierError}</span>{/if}
+            </div>
+            {#each chatroom.older as e (e.id)}
               <ChatLine event={e} time={roomTime} />
-            {:else}
-              <p class="empty">Nothing said lately.</p>
             {/each}
+            <!-- Apart, so only new lines are announced. -->
+            <div role="log" aria-label="Chat room" aria-live="polite">
+              {#each view?.events ?? [] as e (e.id)}
+                <ChatLine event={e} time={roomTime} />
+              {:else}
+                <p class="empty">Nothing said lately.</p>
+              {/each}
+            </div>
           </div>
         </div>
         {#if chatroom.newBelow > 0}
