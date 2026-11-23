@@ -96,25 +96,54 @@
     measure();
   });
 
-  // The log or its lines changing size keep its bottom edge, where the
-  // lines being answered are: the preview taking room from it (narrower,
-  // so its lines wrap and it grows taller inside), the window, lines
-  // rewritten in place (yesterday's getting their date at midnight, a
-  // spoiler shown). `fromEnd` is how far the view was from the end before
-  // the change, kept as it scrolls and as lines go in, so lines added at
-  // either end (measured by their effects first) don't move it.
+  // The log keeps the line at its bottom edge in place, since the lines
+  // being answered are there, through anything that changes its size or
+  // its lines' (the preview taking room from it, the window, a narrower
+  // log wrapping its lines, yesterday's lines getting their date at
+  // midnight, a spoiler shown); at the end, it stays at the end. A
+  // distance from the end wouldn't do, as the lines below the view wrap
+  // too. `anchor` (null at the end) is taken as the log scrolls and as
+  // lines go in, from a layout already put right; `fromEnd` is for when
+  // its line has gone.
+  let anchor: { line: Element; offset: number } | null = null;
   let fromEnd = 0;
+  /** The log's sizes as of `anchor`; others mean its layout has moved
+   * and the view hasn't been put back yet. */
+  let known = '';
+  const sizes = (el: HTMLElement) => `${el.scrollHeight} ${el.clientWidth} ${el.clientHeight}`;
+  const viewBottom = (el: HTMLElement) => el.getBoundingClientRect().top + el.clientTop + el.clientHeight;
   const measure = () => {
-    if (log) fromEnd = Math.max(0, log.scrollHeight - log.scrollTop - log.clientHeight);
+    const el = log;
+    if (!el || !lines) return;
+    known = sizes(el);
+    fromEnd = Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
+    anchor = null;
+    if (fromEnd <= 1) return;
+    // The last line starting above the bottom edge.
+    const bottom = viewBottom(el);
+    const all = lines.querySelectorAll('.line');
+    let [lo, hi, found] = [0, all.length - 1, -1];
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (all[mid].getBoundingClientRect().top < bottom) [found, lo] = [mid, mid + 1];
+      else hi = mid - 1;
+    }
+    if (found >= 0) anchor = { line: all[found], offset: all[found].getBoundingClientRect().bottom - bottom };
+  };
+  const restore = () => {
+    const el = log;
+    if (!el) return;
+    if (anchor?.line.isConnected)
+      el.scrollTop += anchor.line.getBoundingClientRect().bottom - viewBottom(el) - anchor.offset;
+    else el.scrollTop = el.scrollHeight - el.clientHeight - fromEnd;
+    lastTop = el.scrollTop;
+    known = sizes(el);
   };
   let lines: HTMLElement | undefined = $state();
   $effect(() => {
     const el = log;
     if (!el || !lines) return;
-    const observer = new ResizeObserver(() => {
-      el.scrollTop = el.scrollHeight - el.clientHeight - fromEnd;
-      lastTop = el.scrollTop;
-    });
+    const observer = new ResizeObserver(restore);
     observer.observe(el);
     observer.observe(lines);
     return () => observer.disconnect();
@@ -140,6 +169,10 @@
   let lastTop = 0;
   function scrolled() {
     if (!log) return;
+    // A scroll from the layout moving (lines rewrapped, the end clamped)
+    // can come before the observer: the view goes back first, rather than
+    // the anchor being taken from where the move left it.
+    if (sizes(log) !== known) restore();
     const up = log.scrollTop < lastTop;
     lastTop = log.scrollTop;
     measure();
