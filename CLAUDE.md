@@ -1173,7 +1173,11 @@ plans the engine test and tournament runner.
     with rated/unrated/all rows; a row's name or count shows those
     games, the only filter, `lib/playerGames.ts`, with nothing more
     asked of the server) or Record by opponent (fetched when first shown, filters,
-    each opponent's page and the games against them).
+    each opponent's page and the games against them; sortable by any
+    column, `lib/recordSort.ts`, with a Rating column, the rating before
+    the opponent's newest game in the game database, only when it holds
+    the whole archive: `Library::arimaa_player_ratings` checks for an
+    installed base or imported archive files).
     `ChatArchiveTab` is the chat archive, which needs no login
     (`NO_LOGIN_PANELS`, `GameroomFrame`'s `noLogin`; logged out, the login
     form links to it): a month calendar (each day's messages and people,

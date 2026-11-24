@@ -1030,7 +1030,30 @@ impl Backend {
         rated: Option<bool>,
         bots: Option<bool>,
     ) -> Result<PlayerRecordView, ApiError> {
-        self.gameroom.player_record(player_id, RecordFilter { rated, bots }).await
+        let record = self.gameroom.player_record(player_id, RecordFilter { rated, bots }).await?;
+        Ok(self.rate_opponents(record).await)
+    }
+
+    /// Fills in the opponents' ratings from the game database, when it
+    /// has the whole archive (`Library::arimaa_player_ratings`).
+    async fn rate_opponents(&self, mut record: PlayerRecordView) -> PlayerRecordView {
+        let library = self.library.clone();
+        let ids: Vec<String> = record.opponents.iter().filter_map(|o| o.opponent_id.clone()).collect();
+        let found = tauri::async_runtime::spawn_blocking(move || {
+            library.arimaa_player_ratings(&ids.iter().map(String::as_str).collect::<Vec<_>>())
+        })
+        .await
+        .ok()
+        .flatten();
+        let Some(found) = found else { return record };
+        record.ratings = true;
+        for o in &mut record.opponents {
+            if let Some(&(rating, at)) = o.opponent_id.as_ref().and_then(|id| found.get(id)) {
+                o.rating = Some(rating);
+                o.rating_at = at;
+            }
+        }
+        record
     }
 
     /// An arimaa.com player's games against another, newest first.

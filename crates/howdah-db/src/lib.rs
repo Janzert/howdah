@@ -238,6 +238,44 @@ impl Database {
         Ok(ratings)
     }
 
+    /// Each player's rating before their newest game here that gives it,
+    /// with that game's time (its end, else its start; Unix seconds), by
+    /// the player's id on `site`. Players not here, or with no rated
+    /// game, are left out. It's only as new as the database's games, so
+    /// without an archive it can be years old.
+    pub fn latest_ratings(
+        &self,
+        site: &str,
+        site_ids: &[&str],
+    ) -> Result<HashMap<String, (i64, Option<i64>)>> {
+        let mut player =
+            self.conn.prepare_cached("SELECT id FROM players WHERE site = ?1 AND site_id = ?2")?;
+        let mut newest = self.conn.prepare_cached(
+            "SELECT rating, ts FROM ( \
+             SELECT gold_rating AS rating, coalesce(end_ts, start_ts) AS ts FROM games \
+             WHERE gold = ?1 AND gold_rating IS NOT NULL \
+             UNION ALL \
+             SELECT silver_rating, coalesce(end_ts, start_ts) FROM games \
+             WHERE silver = ?1 AND silver_rating IS NOT NULL) \
+             ORDER BY ts DESC LIMIT 1",
+        )?;
+        let mut ratings = HashMap::new();
+        for &sid in site_ids {
+            let Some(id): Option<i64> = player.query_row((site, sid), |r| r.get(0)).optional()? else {
+                continue;
+            };
+            if let Some(found) = newest.query_row([id], |r| Ok((r.get(0)?, r.get(1)?))).optional()? {
+                ratings.insert(sid.to_string(), found);
+            }
+        }
+        Ok(ratings)
+    }
+
+    /// Whether archive files have been imported (`import_archive`).
+    pub fn has_imported_archive(&self) -> Result<bool> {
+        Ok(self.conn.query_row("SELECT EXISTS (SELECT 1 FROM archive_files)", [], |r| r.get(0))?)
+    }
+
     /// The game with a `gid`.
     pub fn find_gid(&self, gid: &[u8; 16]) -> Result<Option<i64>> {
         Ok(self

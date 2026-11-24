@@ -12,4 +12,10 @@ opponentId: string | null, opponent: string | null, all: TallyView,
 /**
  * The games the player played as gold and as silver.
  */
-gold: TallyView, silver: TallyView, };
+gold: TallyView, silver: TallyView, 
+/**
+ * The opponent's rating before their newest game in the game
+ * database, and when that game was (Unix seconds); only when
+ * `PlayerRecordView.ratings`.
+ */
+rating: number | null, ratingAt: number | null, };

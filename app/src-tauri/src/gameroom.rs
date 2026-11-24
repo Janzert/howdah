@@ -789,6 +789,7 @@ impl Gameroom {
         Ok(PlayerRecordView {
             totals: totals.map(record_line_view),
             opponents: opponents.into_iter().map(record_line_view).collect(),
+            ratings: false,
         })
     }
 
@@ -947,6 +948,8 @@ fn record_line_view(line: RecordLine) -> RecordLineView {
         all: tally(line.all),
         gold: tally(line.gold),
         silver: tally(line.silver),
+        rating: None,
+        rating_at: None,
     }
 }
 

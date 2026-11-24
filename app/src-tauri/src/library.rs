@@ -482,6 +482,20 @@ impl Library {
         self.try_with(|db| db.delete(id))
     }
 
+    /// The arimaa.com players' ratings before their newest game here,
+    /// with its time, by player id; `None` unless the database has the
+    /// whole archive (the base, or archive files imported), since a few
+    /// games fetched one by one would give ratings of any age.
+    pub fn arimaa_player_ratings(&self, ids: &[&str]) -> Option<HashMap<String, (i64, Option<i64>)>> {
+        self.with("reading ratings", |db| {
+            if db.meta(crate::base::BASE_AT)?.is_none() && !db.has_imported_archive()? {
+                return Ok(None);
+            }
+            db.latest_ratings(ARIMAA_COM, ids).map(Some)
+        })
+        .flatten()
+    }
+
     /// Gold's and silver's ratings before the arimaa.com games with these
     /// permanent ids, for those here with a rating.
     pub fn arimaa_ratings(&self, gids: &[&str]) -> HashMap<String, [Option<i64>; 2]> {
@@ -757,6 +771,28 @@ impl StoredEval {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn player_ratings_only_with_the_archive() {
+        let library = Library::in_memory();
+        let mut game = GameData::new();
+        game.source = Some(howdah_db::SourceKey::arimaa_com("5"));
+        game.gid = howdah_db::gid_for(game.source.as_ref().unwrap());
+        game.tree = None;
+        game.players[0] = howdah_db::PlayerInfo {
+            name: Some("alice".into()),
+            site_id: Some("7".into()),
+            rating: Some(1500),
+            ..Default::default()
+        };
+        library.with("save", |db| db.save(&game)).unwrap();
+        // A game viewed on its own says little about alice's rating now.
+        assert_eq!(library.arimaa_player_ratings(&["7"]), None);
+        library.with("mark", |db| db.set_meta(crate::base::BASE_AT, "1")).unwrap();
+        let found = library.arimaa_player_ratings(&["7", "8"]).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found["7"], (1500, None));
+    }
 
     #[test]
     fn saves_a_session_once_per_change() {

@@ -1235,6 +1235,13 @@ pub struct RecordLineView {
     /// The games the player played as gold and as silver.
     pub gold: TallyView,
     pub silver: TallyView,
+    /// The opponent's rating before their newest game in the game
+    /// database, and when that game was (Unix seconds); only when
+    /// `PlayerRecordView.ratings`.
+    #[ts(type = "number | null")]
+    pub rating: Option<i64>,
+    #[ts(type = "number | null")]
+    pub rating_at: Option<i64>,
 }
 
 /// A player's record by opponent.
@@ -1245,6 +1252,9 @@ pub struct PlayerRecordView {
     pub totals: Option<RecordLineView>,
     /// Most games first.
     pub opponents: Vec<RecordLineView>,
+    /// Whether the opponents' ratings were looked up: the game database
+    /// has the whole archive, so its newest games are theirs.
+    pub ratings: bool,
 }
 
 /// A bot arimaa.com runs, which anyone can start a game against.

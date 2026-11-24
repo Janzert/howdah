@@ -10,6 +10,7 @@
   import type { RecordLineView } from '../bindings/RecordLineView';
   import type { TallyView } from '../bindings/TallyView';
   import type { WinReason } from '../bindings/WinReason';
+  import { DEFAULT_SORT, nextSort, type RecordKey, type RecordSort, sortRecord } from '../recordSort';
   import { endingStats, filterGames, type GamesFilter, isFiltered, NO_FILTER, sameFilter, tally } from '../playerGames';
   import { reasonText } from './format';
 
@@ -68,11 +69,26 @@
   const RECORD_SHOWN = 30;
   let recordAll = $state(false);
   let recordWords = $state('');
+  let recordSort = $state<RecordSort>(DEFAULT_SORT);
   const recordRows = $derived.by((): RecordLineView[] => {
     const rows = page.record.value?.opponents ?? [];
     const words = recordWords.trim().toLowerCase();
-    return words ? rows.filter((r) => r.opponent?.toLowerCase().includes(words)) : rows;
+    return sortRecord(words ? rows.filter((r) => r.opponent?.toLowerCase().includes(words)) : rows, recordSort);
   });
+  /** The rating column, when the game database has the whole archive
+   * to take the opponents' ratings from (the backend says), and it had
+   * some. */
+  const showRatings = $derived(
+    !!page.record.value?.ratings && page.record.value.opponents.some((r) => r.rating != null),
+  );
+  const ariaSort = (key: RecordKey) =>
+    recordSort.key === key ? (recordSort.descending ? 'descending' : 'ascending') : undefined;
+  const ratingTitle = (r: RecordLineView) =>
+    r.rating == null
+      ? 'No rated game in the game database'
+      : `Rating before their last game in the game database${
+          r.ratingAt != null ? `, ${new Date(r.ratingAt * 1000).toLocaleDateString()}` : ''
+        }`;
   const recordShown = $derived(recordAll || recordWords.trim() ? recordRows : recordRows.slice(0, RECORD_SHOWN));
 
   const ratedChoices: [boolean | null, string][] = [
@@ -347,21 +363,41 @@
       {#if !totals || totals.all.games === 0}
         <p class="empty">No games.</p>
       {:else}
+        {#snippet sortable(key: RecordKey, label: string, cls = 'num', dot: 'gold' | 'silver' | null = null)}
+          {@const arrow = recordSort.key === key ? (recordSort.descending ? '▼' : '▲') : ''}
+          <th scope="col" class={cls} aria-sort={ariaSort(key)}>
+            <button
+              class="sort"
+              class:on={recordSort.key === key}
+              onclick={() => (recordSort = nextSort(recordSort, key))}
+              title="Sort by {label.toLowerCase()}"
+            >
+              <!-- The arrow sits on the side away from the column's
+                   alignment, so the label lines up with the cells. -->
+              {#if cls.includes('num')}<span class="arrow" aria-hidden="true">{arrow}</span>{/if}
+              {#if dot}<span class="dot {dot}"></span>{/if}
+              {label}
+              {#if !cls.includes('num')}<span class="arrow" aria-hidden="true">{arrow}</span>{/if}
+            </button>
+          </th>
+        {/snippet}
         <table class="record">
           <thead>
             <tr>
-              <th scope="col">Opponent</th>
-              <th scope="col" class="num">Games</th>
-              <th scope="col" class="num">Won–lost</th>
-              <th scope="col" class="num">Score</th>
-              <th scope="col" class="num side"><span class="dot gold"></span> As gold</th>
-              <th scope="col" class="num side"><span class="dot silver"></span> As silver</th>
+              {@render sortable('opponent', 'Opponent', '')}
+              {#if showRatings}{@render sortable('rating', 'Rating')}{/if}
+              {@render sortable('games', 'Games')}
+              {@render sortable('wl', 'Won–lost')}
+              {@render sortable('score', 'Score')}
+              {@render sortable('gold', 'As gold', 'num side', 'gold')}
+              {@render sortable('silver', 'As silver', 'num side', 'silver')}
               <th scope="col"><span class="sr-only">Games against</span></th>
             </tr>
           </thead>
           <tbody>
             <tr class="totals">
               <th scope="row">{plural(part.value.opponents.length, 'opponent')}</th>
+              {#if showRatings}<td></td>{/if}
               <td class="num">{totals.all.games}</td>
               <td class="num">{wl(totals.all)}</td>
               <td class="num">{pct(totals.all)}</td>
@@ -379,6 +415,7 @@
                     title="{r.opponent}'s page">{r.opponent}</button
                   >
                 </th>
+                {#if showRatings}<td class="num" title={ratingTitle(r)}>{r.rating ?? '–'}</td>{/if}
                 <td class="num">{r.all.games}</td>
                 <td class="num">{wl(r.all)}</td>
                 <td class="num">{pct(r.all)}</td>
@@ -395,7 +432,7 @@
               </tr>
               {#if open}
                 <tr class="against">
-                  <td colspan="7">
+                  <td colspan={showRatings ? 8 : 7}>
                     {#if page.against.loading}
                       <p class="empty">Loading…</p>
                     {:else if page.against.error}
@@ -511,6 +548,30 @@
     font-size: 12px;
     color: var(--muted);
     font-weight: 600;
+  }
+  .record thead .sort {
+    all: unset;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .record thead .sort:hover,
+  .record thead .sort.on {
+    color: var(--text);
+  }
+  .record thead .sort:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .record thead .dot {
+    display: inline-block;
+    vertical-align: -1px;
+    margin-right: 2px;
+  }
+  .record thead .arrow {
+    display: inline-block;
+    width: 1em;
+    font-size: 9px;
+    text-align: center;
   }
   .record .num {
     text-align: right;

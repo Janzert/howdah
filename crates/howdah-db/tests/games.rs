@@ -242,3 +242,37 @@ fn ratings_by_source_key() {
     assert_eq!(found["1"], [Some(1800), Some(1650)]);
     assert_eq!(found["2"], [None, Some(1500)]);
 }
+
+#[test]
+fn latest_ratings_by_player() {
+    let mut db = Database::open_in_memory().unwrap();
+    let player = |name: &str, id: &str, rating: Option<i64>| PlayerInfo {
+        name: Some(name.into()),
+        site_id: Some(id.into()),
+        rating,
+        ..PlayerInfo::default()
+    };
+    // (game, gold, silver, end): 7 is newest as silver in game 3, and
+    // game 4, newer, has no rating for them.
+    let games = [
+        ("1", player("alice", "7", Some(1500)), player("bob", "8", Some(1600)), Some(100)),
+        ("2", player("bob", "8", Some(1620)), player("alice", "7", Some(1510)), Some(300)),
+        ("3", player("carol", "9", Some(1400)), player("alice", "7", Some(1530)), Some(200)),
+        ("4", player("alice", "7", None), player("carol", "9", None), Some(400)),
+    ];
+    for (id, gold, silver, end) in games {
+        let mut data = GameData::new();
+        data.source = Some(SourceKey::arimaa_com(id));
+        data.gid = gid_for(data.source.as_ref().unwrap());
+        data.tree = None;
+        data.players = [gold, silver];
+        data.end_ts = end;
+        db.save(&data).unwrap();
+    }
+    let found = db.latest_ratings("arimaa.com", &["7", "8", "9", "10"]).unwrap();
+    assert_eq!(found.len(), 3);
+    assert_eq!(found["7"], (1510, Some(300)));
+    assert_eq!(found["8"], (1620, Some(300)));
+    assert_eq!(found["9"], (1400, Some(200)));
+    assert!(!db.has_imported_archive().unwrap());
+}

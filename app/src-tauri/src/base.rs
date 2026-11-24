@@ -57,7 +57,7 @@ const MANIFEST_FROM: &str = "base_manifest_url";
 
 /// The `meta` keys the installed base is recorded under: the time
 /// reached (the `at` of the last pack merged), and its games and date.
-const BASE_AT: &str = "base_at";
+pub(crate) const BASE_AT: &str = "base_at";
 const BASE_GAMES: &str = "base_games";
 const BASE_THROUGH: &str = "base_through";
 

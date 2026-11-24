@@ -8,4 +8,9 @@ export type PlayerRecordView = { totals: RecordLineView | null,
 /**
  * Most games first.
  */
-opponents: Array<RecordLineView>, };
+opponents: Array<RecordLineView>, 
+/**
+ * Whether the opponents' ratings were looked up: the game database
+ * has the whole archive, so its newest games are theirs.
+ */
+ratings: boolean, };
