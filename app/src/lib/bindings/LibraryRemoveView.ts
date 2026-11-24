@@ -8,4 +8,8 @@ export type LibraryRemoveView = { games: number,
  * Its games kept, since they have the user's (or another source's)
  * annotations.
  */
-gamesKept: number, annotations: number, evals: number, };
+gamesKept: number, annotations: number, 
+/**
+ * Moves of its lines removed from games kept here.
+ */
+moves: number, evals: number, };

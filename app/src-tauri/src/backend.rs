@@ -1448,7 +1448,21 @@ impl Backend {
     /// game database. Runs on a blocking thread.
     /// Boards showing a game the import joined into take the joined game
     /// in, or their next save would write over what it added.
-    pub async fn library_import(&self, path: String) -> Result<crate::dto::LibraryImportView, ApiError> {
+    /// `earlier` (`replace`, `keep`, or none to ask) says what to do with
+    /// lines a game here already has from the file's source, such as an
+    /// earlier analysis by the same engine: asked, nothing is imported if
+    /// there are any, and the view lists them (`undecided`).
+    pub async fn library_import(
+        &self,
+        path: String,
+        earlier: Option<String>,
+    ) -> Result<crate::dto::LibraryImportView, ApiError> {
+        let how = match earlier.as_deref() {
+            None | Some("ask") => howdah_db::EarlierLines::Ask,
+            Some("keep") => howdah_db::EarlierLines::Keep,
+            Some("replace") => howdah_db::EarlierLines::Replace,
+            Some(other) => return Err(ApiError::state(format!("unknown choice for earlier lines: {other}"))),
+        };
         let library = self.library.clone();
         let handles: Vec<Arc<SessionHandle>> = self.sessions().values().cloned().collect();
         let (view, joined) = tauri::async_runtime::spawn_blocking(move || {
@@ -1456,15 +1470,26 @@ impl Backend {
             for h in &handles {
                 library::save_session(&library, &h.session, &h.saved);
             }
-            library.import(std::path::Path::new(&path))
+            library.import(std::path::Path::new(&path), how)
         })
         .await
         .map_err(|e| ApiError::state(format!("the import stopped: {e}")))??;
+        let replaced: std::collections::HashSet<i64> = if how == howdah_db::EarlierLines::Replace {
+            view.earlier.iter().map(|e| e.game).collect()
+        } else {
+            Default::default()
+        };
         let handles: Vec<Arc<SessionHandle>> = self.sessions().values().cloned().collect();
         for (id, record) in &joined {
             for h in &handles {
+                // A board unchanged since its save takes the stored game as
+                // it is (newer comments, removed lines); one edited since
+                // only takes in what was added.
+                let saved =
+                    h.saved.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|(_, r)| r.clone());
                 let mut s = h.lock();
-                if s.join_stored(*id, &record.tree) {
+                let edited = saved.is_none() || s.saveable() != saved;
+                if s.take_stored(*id, &record.tree, !edited, replaced.contains(id)) {
                     emit_session(&h.events, &s, Vec::new(), None);
                 }
             }
@@ -1904,7 +1929,7 @@ impl Backend {
                 .await?),
             "delete_library_game" => ok(self.delete_library_game(arg(args, "game")?)?),
             "library_export" => ok(self.library_export(arg(args, "spec")?, arg(args, "path")?).await?),
-            "library_import" => ok(self.library_import(arg(args, "path")?).await?),
+            "library_import" => ok(self.library_import(arg(args, "path")?, arg(args, "earlier")?).await?),
             "library_sources" => ok(self.library_sources().await?),
             "library_remove_source" => ok(self.library_remove_source(arg(args, "source")?).await?),
             "library_eval_engines" => ok(self.library_eval_engines()?),
@@ -2153,7 +2178,7 @@ pub(crate) mod tests {
         let shared = game.replace("2s ed7s", "2s ed7s {Hm.} (2s dh7s)");
         std::fs::write(&file, shared).unwrap();
         recorder.0.lock().unwrap().clear();
-        let view = runtime().block_on(b.library_import(file.display().to_string())).unwrap();
+        let view = runtime().block_on(b.library_import(file.display().to_string(), None)).unwrap();
         assert_eq!((view.games_kept, view.moves_added, view.annotations_added), (1, 1, 1));
         assert!(
             recorder.0.lock().unwrap().iter().any(|(name, _)| name == GAME_CHANGED),
@@ -2168,6 +2193,59 @@ pub(crate) mod tests {
         assert!(stored.contains("(\n2s dh7s\n)"), "the joined variation stays: {stored}");
         assert!(stored.contains("Hm."), "the joined comment stays: {stored}");
         assert!(stored.contains("Mine."), "and the board's edit is saved: {stored}");
+    }
+
+    /// A newer analysis by the same engine of a game a board shows: the
+    /// import asks first, and replacing changes the board too, so its
+    /// next save doesn't bring the earlier line or comment back.
+    #[test]
+    fn a_board_follows_a_newer_analysis_replacing_the_earlier() {
+        let tmp = tempfile::tempdir().unwrap();
+        let b = backend(Arc::new(NullSink)).with_library(Some(tmp.path().join("games.db")));
+        let game = "[Gold \"a\"]\n[Silver \"b\"]\n\
+             1g Ra1 Rb1 Rc1 Rd1 Re1 Rf1 Rg1 Rh1 Da2 Hb2 Cc2 Ed2 Me2 Hf2 Cg2 Dh2\n\
+             1s ra8 rb8 rc8 rd8 re8 rf8 rg8 rh8 da7 hb7 cc7 ed7 me7 hf7 cg7 dh7\n2g Ed2n\n2s ed7s\n";
+        let id = b.open_session();
+        b.load_game(id, game).unwrap();
+        let h = b.handle(id).unwrap();
+        library::save_session(&b.library, &h.session, &h.saved);
+        let db_id = h.lock().db_id().expect("saved");
+        let analysis = |comment: &str, line: &str| {
+            format!(
+                "[Annotator \"Sharp\"]\n{}",
+                game.replace("2s ed7s", &format!("2s ed7s {{{comment}}} ({{{comment} line}} {line})"))
+            )
+        };
+        let import = |text: String, earlier: Option<&str>| {
+            let file = tmp.path().join("analysis.txt");
+            std::fs::write(&file, text).unwrap();
+            runtime()
+                .block_on(b.library_import(file.display().to_string(), earlier.map(str::to_string)))
+                .unwrap()
+        };
+        let first = import(analysis("Sharp 51%", "2s dh7s"), None);
+        assert!(!first.undecided);
+        library::save_session(&b.library, &h.session, &h.saved);
+
+        let asked = import(analysis("Sharp 53%", "2s hb7s"), None);
+        assert!(asked.undecided);
+        assert_eq!(asked.earlier.len(), 1);
+        assert_eq!((asked.earlier[0].game, asked.earlier[0].source.as_str()), (db_id, "Sharp"));
+        let done = import(analysis("Sharp 53%", "2s hb7s"), Some("replace"));
+        assert_eq!((done.undecided, done.lines_removed), (false, 1));
+
+        let board = h.lock().saveable().unwrap().to_record();
+        assert!(board.contains("2s hb7s") && !board.contains("2s dh7s"), "the board's lines: {board}");
+        assert!(board.contains("Sharp 53%") && !board.contains("Sharp 51%"), "the board's comment: {board}");
+        library::save_session(&b.library, &h.session, &h.saved);
+        let stored = b.library.record(db_id).unwrap().unwrap().to_record();
+        assert!(
+            !stored.contains("2s dh7s") && !stored.contains("Sharp 51%"),
+            "after the board's save: {stored}"
+        );
+        // The board's save leaves the new line Sharp's, for the next analysis.
+        let third = import(analysis("Sharp 55%", "2s cc7s"), None);
+        assert_eq!(third.earlier.iter().map(|e| e.moves).sum::<i64>(), 1, "{:?}", third.earlier);
     }
 
     #[test]

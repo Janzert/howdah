@@ -2216,6 +2216,32 @@ pub struct LibraryImportView {
     /// Evals replaced by deeper ones.
     #[ts(type = "number")]
     pub evals_replaced: i64,
+    /// Nothing was imported: games here have earlier lines from the
+    /// file's source (`earlier`), and the import asks what to do with
+    /// them (`library_import` again with `earlier`).
+    pub undecided: bool,
+    /// Games here with lines from the file's source that the file's own
+    /// lines don't include, such as an earlier analysis by the same engine.
+    pub earlier: Vec<EarlierLinesView>,
+    /// Moves of earlier lines removed, when asked to replace them.
+    #[ts(type = "number")]
+    pub lines_removed: i64,
+}
+
+/// A game here with earlier lines from an import's source.
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct EarlierLinesView {
+    #[ts(type = "number")]
+    pub game: i64,
+    /// The players, as "gold v silver".
+    pub title: String,
+    /// The source's name: the engine that analysed it, or the file.
+    pub source: String,
+    /// The moves replacing them would remove.
+    #[ts(type = "number")]
+    pub moves: i64,
 }
 
 /// A database the game database's contents came from: this computer,
@@ -2253,6 +2279,9 @@ pub struct LibraryRemoveView {
     pub games_kept: i64,
     #[ts(type = "number")]
     pub annotations: i64,
+    /// Moves of its lines removed from games kept here.
+    #[ts(type = "number")]
+    pub moves: i64,
     #[ts(type = "number")]
     pub evals: i64,
 }

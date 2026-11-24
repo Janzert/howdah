@@ -815,7 +815,10 @@ the Games panel's Import…, Export… and Sources….
   database's own data coming back from an export of it is its own again
   (origin 1). An unnamed origin takes the name the import was given
   (the file's name). A user's edit of an imported annotation or eval
-  makes it origin 1.
+  makes it origin 1. Variations keep their origin too (`nodes.origin`,
+  migration 5; none is this database's own, as origin 1): saves carry
+  it, and the origin of the user's annotations, across the renumbering
+  of variations by matching nodes by their moves from the start.
 - **Import** (`Database::import_file`): the file is copied beside the
   database with `VACUUM INTO` (so a file in WAL mode comes whole),
   brought up to this schema there, merged and the copy removed; the
@@ -825,8 +828,18 @@ the Games panel's Import…, Export… and Sources….
     lacks become variations (`nodes` rows after the existing siblings).
     Only games whose moves, variations or annotations differ are
     looked at, so re-importing the whole archive takes 1.7 s;
+  - lines a game here already has from the import's own sources (its
+    lines' and comments' origins) that the import's lines don't reach
+    are **earlier lines**, such as an earlier analysis by the same
+    engine. `EarlierLines` says what to do: `Keep` (beside the new
+    ones, as before; the base download and `merge_from`), `Replace`
+    (removed, but only lines wholly from those sources: a line the user
+    extended or commented on stays), or `Ask` (nothing changes if a game
+    has any; `MergeReport::earlier` lists them and `undecided` is set, so
+    the caller asks and imports again). Only `Replace` ever deletes;
   - annotations by node, kind and author: added where missing; where
-    both differ, the newer edit wins if both come from the same origin,
+    both differ, the newer edit (the import's on a tie) wins if both
+    come from the same origin,
     otherwise this database's stays and the other's is kept beside it
     under its origin's name as the author (`conflict_author`; not shown
     yet, as other authors' evals aren't). Source kinds (times, chat,
@@ -841,23 +854,40 @@ the Games panel's Import…, Export… and Sources….
   joins its variations and comments into it. Record games have made-up
   ids, so for them only, games are also matched by fingerprint (moves
   and start) with the same players' names. Matching shared databases by
-  fingerprint would join different games with the same moves.
+  fingerprint would join different games with the same moves. Records
+  with an `Annotator` tag come from that annotator rather than the file:
+  a scratch database each, whose uuid comes from the annotator's name
+  (`annotator_uuid`), so every analysis by one engine is one source and
+  a newer one finds the earlier one's lines. An analysis should name
+  the engine alone (not its version or net), so a newer version's is
+  still the same analysis to ask about. With `Ask` the groups
+  are only looked at first, and imported only if none has earlier lines.
 - **Sources** (`Database::origins`, `remove_origin`, `Filter::from_db`):
   each origin with its counts; the list can be narrowed to what came
   from one (the games it brought or annotated). Removing one deletes its
   annotations, its evals and its games, except games with annotations
-  from elsewhere (which become this database's); variations it added
-  stay, since nodes don't record an origin. Its row stays, so a second
-  import is still known.
+  from elsewhere (which become this database's), and its lines on games
+  kept here, except those someone else extended or commented on, which
+  become this database's. Its row stays, so a second import is still
+  known.
 - **The app**: `tauri-plugin-dialog` for the system's Open and Save
   dialogs (`lib/files.ts`; the browser preview has none, so it asks for
   a path). Import… takes a game database or a record file (told apart
-  by SQLite's header) and says what it did (`importWords`); Export…
+  by SQLite's header) and says what it did (`importWords`). An import
+  that finds earlier lines stops and asks in the panel ("a newer
+  analysis by <source> of a game you already have"): Replace earlier lines,
+  Keep both or Cancel (`library_import` again with `earlier`). Boards
+  showing a joined game take the stored game in (`Session::take_stored`):
+  its new lines, and, when the board hasn't changed since the save
+  before the import, its newer comments and the removal of replaced
+  lines; an edited board only takes in what was added. Export…
   (`ExportDialog.svelte`) exports the list's games with the choices
   above and the user's name (kept in localStorage); Sources…
   (`SourcesDialog.svelte`) lists the sources with Games and Remove; the
   Source filter offers each imported source.
-- CLI: `export`, `import-db`, `import-records`, `origins`,
+- CLI: `export`, `import-db`, `import-records` (both with
+  `--replace-lines` or `--keep-lines`; without either an import that
+  finds earlier lines stops and lists them), `origins`,
   `remove-origin`.
 
 Checked in the browser preview on the bridge's copy of the archive: a
@@ -868,6 +898,19 @@ an eval, its origins as expected; a source removed, keeping the game
 another source had annotated. In the real app (Xephyr): Import… and
 Export… open the GTK Open and Save dialogs with their filters and name
 (cancelled; nothing written).
+
+Earlier lines (2026-11-24), checked in the browser preview on the
+bridge's copy of the archive with an engine's quick and final analyses
+of one game (`Annotator` set, a line at every move), with a board open on
+it: the first joined (260 moves); the second asked in the Games panel
+(73 moves of earlier lines); replacing removed those and added the new
+ones; switching back and forth twice more did the same each time, and
+the board and the database ended with exactly the final analysis's
+lines, every line still the engine's.
+
+**Published game database:** a base built at schema 5 is refused by
+releases at schema 4 ("needs a newer Howdah"), so the game database's
+`howdah-rev` stays before this change until a release with it is out.
 
 Not done: other authors' annotations kept from conflicts aren't shown
 or chosen anywhere yet; a board showing a game while an import joins

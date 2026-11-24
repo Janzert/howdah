@@ -1062,8 +1062,9 @@ pub async fn library_export(
 pub async fn library_import(
     state: State<'_, Backend>,
     path: String,
+    earlier: Option<String>,
 ) -> Result<crate::dto::LibraryImportView, ApiError> {
-    state.library_import(path).await
+    state.library_import(path, earlier).await
 }
 
 #[tauri::command]

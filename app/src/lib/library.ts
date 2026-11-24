@@ -167,6 +167,7 @@ export function importWords(r: LibraryImportView): string {
     parts.push(
       `${count(r.annotationConflicts, 'comment', 'comments')} you'd both changed kept beside yours, under the file's name`,
     );
+  if (r.linesRemoved > 0) parts.push(`${count(r.linesRemoved, 'move', 'moves')} of earlier lines replaced`);
   if (r.evalsAdded > 0) parts.push(`${count(r.evalsAdded, 'eval', 'evals')} added`);
   if (r.evalsReplaced > 0) parts.push(`${count(r.evalsReplaced, 'eval', 'evals')} replaced by deeper ones`);
   return `${r.name}: ${parts.length ? parts.join(', ') : 'nothing new'}.`;

@@ -144,7 +144,11 @@ function makeApi(sid: () => SessionId | null) {
     libraryExport: (spec: LibraryExportSpec, path: string) =>
       invoke<LibraryExportView>('library_export', { spec, path }),
     /** Imports a game database file (exported or shared) or a record file. */
-    libraryImport: (path: string) => invoke<LibraryImportView>('library_import', { path }),
+    /** `earlier`: what to do with lines a game here already has from the
+     * file's source (an earlier analysis by the same engine); without it
+     * the import stops and lists them (`undecided`) if there are any. */
+    libraryImport: (path: string, earlier?: 'replace' | 'keep') =>
+      invoke<LibraryImportView>('library_import', { path, earlier: earlier ?? null }),
     /** Where the game database's contents came from. */
     librarySources: () => invoke<LibrarySourceView[]>('library_sources'),
     /** Takes out what came from a source. */

@@ -662,8 +662,12 @@ pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache, mode
             notes.push((0, "times", codec::encode_times(&times)));
         }
     }
+    let mut renumbered = None;
     if let Some(old) = &old_tree {
-        renumber_others(tx, id, old, encoded.as_ref(), (start_ply, board.as_deref()))?;
+        let map = node_map(id, old, encoded.as_ref(), (start_ply, board.as_deref()))?;
+        renumber_others(tx, id, &map)?;
+        keep_node_origins(tx, id, old, &map)?;
+        renumbered = Some(map);
     }
     if let Some(chat) = &g.chat {
         notes.push((0, "chat", chat.clone().into_bytes()));
@@ -675,17 +679,17 @@ pub(crate) fn save(tx: &Transaction, g: &GameData, cache: &mut PlayerCache, mode
         notes.retain(|(_, kind, _)| SOURCE_KINDS.contains(kind));
     }
     let scope: &[&str] = if keep_user { &SOURCE_KINDS } else { &[] };
-    write_annotations(tx, id, existing.is_some(), &notes, scope, t)?;
+    write_annotations(tx, id, existing.is_some(), &notes, scope, t, renumbered.as_ref())?;
     Ok(id)
 }
 
 /// A game's tree as stored: where it starts, its main line's moves and its
-/// variation rows (id, parent reference, move).
+/// variation rows (id, parent reference, move, origin).
 struct StoredTree {
     start_ply: usize,
     board: Option<String>,
     moves: Vec<u8>,
-    nodes: Vec<(i64, i64, Vec<u8>)>,
+    nodes: Vec<(i64, i64, Vec<u8>, Option<i64>)>,
 }
 
 impl StoredTree {
@@ -695,27 +699,25 @@ impl StoredTree {
             .query_row([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .optional()?;
         let Some((Some(moves), start_ply, board)) = row else { return Ok(None) };
-        let mut q = tx.prepare_cached("SELECT id, parent, move FROM nodes WHERE game = ?1 ORDER BY id")?;
-        let nodes =
-            q.query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<_>>()?;
+        let mut q =
+            tx.prepare_cached("SELECT id, parent, move, origin FROM nodes WHERE game = ?1 ORDER BY id")?;
+        let nodes = q
+            .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .collect::<rusqlite::Result<_>>()?;
         Ok(Some(StoredTree { start_ply: start_ply as usize, board, moves, nodes }))
     }
 }
 
-/// Moves the annotations of authors other than the user (the user's are
-/// written afresh) from the stored tree's node references to the new
-/// ones', matching nodes by their moves from the start, since variations
-/// are numbered afresh on every save. Those on a node the new tree lacks
-/// go with it, as do all but the start's when the game is saved without
-/// its moves (`new` is `None`).
-fn renumber_others(
-    tx: &Transaction,
+/// The stored tree's node references and the new tree's, matching nodes
+/// by their moves from the start, since variations are numbered afresh on
+/// every save. A node the new tree lacks isn't in it; with no new tree
+/// (the game saved without its moves) only the start is.
+fn node_map(
     game: i64,
     old: &StoredTree,
     new: Option<&Encoded>,
     (start_ply, board): (usize, Option<&str>),
-) -> Result<()> {
-    // The old references and the new, by node.
+) -> Result<HashMap<i64, i64>> {
     let mut map: HashMap<i64, i64> = HashMap::from([(0, 0)]);
     if let Some(new) = new
         && (old.start_ply, old.board.as_deref()) == (start_ply, board)
@@ -729,7 +731,7 @@ fn renumber_others(
             edges.insert((*parent, mv.as_slice()), -vid);
         }
         let old_main = codec::split_line(&old.moves, old.start_ply).map_err(|e| Error::Moves(game, e))?;
-        let old_rows = old.nodes.iter().map(|(vid, parent, mv)| (-vid, *parent, mv.as_slice()));
+        let old_rows = old.nodes.iter().map(|(vid, parent, mv, _)| (-vid, *parent, mv.as_slice()));
         let old_main = old_main.into_iter().enumerate().map(|(i, mv)| (i as i64 + 1, i as i64, mv));
         // Parents come before their children: the main line, then rows
         // by id.
@@ -739,6 +741,28 @@ fn renumber_others(
             }
         }
     }
+    Ok(map)
+}
+
+/// Keeps each variation's origin (where it came from) on its node in the
+/// new numbering ([`node_map`]); new nodes are the user's (none).
+fn keep_node_origins(tx: &Transaction, game: i64, old: &StoredTree, map: &HashMap<i64, i64>) -> Result<()> {
+    let mut set = tx.prepare_cached("UPDATE nodes SET origin = ?3 WHERE game = ?1 AND id = ?2")?;
+    for (vid, _, _, origin) in &old.nodes {
+        if let (Some(origin), Some(&at)) = (origin, map.get(&-vid))
+            && at < 0
+        {
+            set.execute(params![game, -at, origin])?;
+        }
+    }
+    Ok(())
+}
+
+/// Moves the annotations of authors other than the user (the user's are
+/// written afresh) to the new node references ([`node_map`]). Those on a
+/// node the new tree lacks go with it, as do all but the start's when the
+/// game is saved without its moves.
+fn renumber_others(tx: &Transaction, game: i64, map: &HashMap<i64, i64>) -> Result<()> {
     type Note = (i64, String, String, i64, i64, i64, Vec<u8>);
     let moved: Vec<Note> = {
         let mut q = tx.prepare_cached(
@@ -773,9 +797,12 @@ fn renumber_others(
     Ok(())
 }
 
-/// Writes the user's own annotations on a game (author ''), keeping the
-/// creation time of the ones that stay and dropping the ones gone: of
-/// every kind, or only of the kinds in `scope` when it isn't empty.
+/// Writes the user's own annotations on a game (author ''), dropping the
+/// ones gone: of every kind, or only of the kinds in `scope` when it isn't
+/// empty. One unchanged since it was stored (on the same node, by
+/// `renumbered`'s old references and new when the variations were
+/// numbered afresh) keeps its times and origin, such as an imported
+/// analysis's comment; a changed one is this database's.
 fn write_annotations(
     tx: &Transaction,
     game: i64,
@@ -783,38 +810,56 @@ fn write_annotations(
     notes: &[(i64, &str, Vec<u8>)],
     scope: &[&str],
     t: i64,
+    renumbered: Option<&HashMap<i64, i64>>,
 ) -> Result<()> {
-    let mut upsert = tx.prepare_cached(
+    let in_scope = |k: &str| scope.is_empty() || scope.contains(&k);
+    // The stored ones, by the node they're on now.
+    type Prior = (i64, i64, i64, Vec<u8>);
+    let mut prior: HashMap<(i64, String), Prior> = HashMap::new();
+    if existed {
+        let mut q = tx.prepare_cached(
+            "SELECT node, kind, origin, created_at, modified_at, payload FROM annotations
+             WHERE game = ?1 AND author = ''",
+        )?;
+        let rows = q.query_map([game], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, (r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
+        })?;
+        for row in rows {
+            let (node, kind, p) = row?;
+            if !in_scope(&kind) {
+                continue;
+            }
+            let at = match renumbered {
+                Some(map) => match map.get(&node) {
+                    Some(&at) => at,
+                    None => continue,
+                },
+                None => node,
+            };
+            prior.insert((at, kind), p);
+        }
+        let mut delete =
+            tx.prepare_cached("DELETE FROM annotations WHERE game = ?1 AND author = '' AND kind = ?2")?;
+        let kinds: Vec<String> = {
+            let mut q =
+                tx.prepare_cached("SELECT DISTINCT kind FROM annotations WHERE game = ?1 AND author = ''")?;
+            q.query_map([game], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+        };
+        for k in kinds.iter().filter(|k| in_scope(k)) {
+            delete.execute(params![game, k])?;
+        }
+    }
+    let mut insert = tx.prepare_cached(
         "INSERT INTO annotations (game, node, kind, author, origin, created_at, modified_at, payload)
-         VALUES (?1, ?2, ?3, '', 1, ?4, ?4, ?5)
-         ON CONFLICT (game, node, kind, author) DO UPDATE SET
-           modified_at = CASE WHEN payload = excluded.payload THEN modified_at ELSE excluded.modified_at END,
-           origin = CASE WHEN payload = excluded.payload THEN origin ELSE 1 END,
-           payload = excluded.payload",
+         VALUES (?1, ?2, ?3, '', ?4, ?5, ?6, ?7)",
     )?;
     for (node, kind, payload) in notes {
-        upsert.execute(params![game, node, kind, t, payload])?;
-    }
-    if existed {
-        let kept: HashSet<(i64, &str)> = notes.iter().map(|(n, k, _)| (*n, *k)).collect();
-        let mut stale = Vec::new();
-        {
-            let mut q =
-                tx.prepare_cached("SELECT node, kind FROM annotations WHERE game = ?1 AND author = ''")?;
-            let rows = q.query_map([game], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
-            for row in rows {
-                let (n, k) = row?;
-                if !kept.contains(&(n, k.as_str())) && (scope.is_empty() || scope.contains(&k.as_str())) {
-                    stale.push((n, k));
-                }
-            }
-        }
-        let mut delete = tx.prepare_cached(
-            "DELETE FROM annotations WHERE game = ?1 AND node = ?2 AND kind = ?3 AND author = ''",
-        )?;
-        for (n, k) in stale {
-            delete.execute(params![game, n, k])?;
-        }
+        let (origin, created, modified) = match prior.get(&(*node, kind.to_string())) {
+            Some((o, c, m, p)) if p == payload => (*o, *c, *m),
+            Some((_, c, _, _)) => (1, *c, t),
+            None => (1, t, t),
+        };
+        insert.execute(params![game, node, kind, origin, created, modified, payload])?;
     }
     Ok(())
 }

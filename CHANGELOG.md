@@ -9,6 +9,14 @@ young).
 
 ### Added
 
+- Importing a newer analysis of a game you already have, by the same
+  engine (records naming it as their `Annotator`), asks what to do with
+  the earlier analysis's lines that the new one doesn't have: replace
+  them (keeping any you've gone on from or commented on) or keep both.
+  The moves' comments become the newer ones either way, unless you've
+  edited them. Boards showing the game follow along.
+- Removing a source in the Games panel's Sources… also removes the
+  lines it added, except those you've gone on from or commented on.
 - The game record can carry the engine's analysis: the Record dialog's
   "Evals" option writes each analysed move's eval in its comment as
   `[%eval]`, from gold's side, as chess's PGN tools write them, and

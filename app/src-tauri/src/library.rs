@@ -17,15 +17,15 @@ use std::collections::HashMap;
 
 use howdah_arimaa::{Color, GameRecord, NodeId, Position};
 use howdah_db::{
-    ARIMAA_COM, Database, Filter, GameData, Origin, Outcome, PositionDatum, PositionQuery, SaveMode,
-    SetupLevel, Tally,
+    ARIMAA_COM, Database, EarlierLines, Filter, GameData, Origin, Outcome, PositionDatum, PositionQuery,
+    SaveMode, SetupLevel, Tally,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dto::{
-    AnalysisLine, ApiError, Eval, ExplorerMoveView, ExplorerView, LibraryEngineView, LibraryExportSpec,
-    LibraryExportView, LibraryFilter, LibraryGameView, LibraryImportView, LibraryPageView, LibraryRemoveView,
-    LibrarySourceView, PositionSpec, PvTurn, ResultsView, SetupStatView, SetupStatsView,
+    AnalysisLine, ApiError, EarlierLinesView, Eval, ExplorerMoveView, ExplorerView, LibraryEngineView,
+    LibraryExportSpec, LibraryExportView, LibraryFilter, LibraryGameView, LibraryImportView, LibraryPageView,
+    LibraryRemoveView, LibrarySourceView, PositionSpec, PvTurn, ResultsView, SetupStatView, SetupStatsView,
 };
 use crate::session::Session;
 
@@ -201,7 +201,15 @@ impl Library {
     /// or a record file of one or more games. The file is left as it is.
     /// Also returns the games here the import joined into, as they are
     /// right after it, for the boards showing them ([`Session::join_stored`]).
-    pub fn import(&self, path: &Path) -> Result<(LibraryImportView, Vec<(i64, GameRecord)>), ApiError> {
+    /// `earlier` says what to do with lines a game here already has from
+    /// the file's source (an earlier analysis by the same engine); with
+    /// [`EarlierLines::Ask`] nothing is imported if there are any, and
+    /// the view lists them (`undecided`).
+    pub fn import(
+        &self,
+        path: &Path,
+        earlier: EarlierLines,
+    ) -> Result<(LibraryImportView, Vec<(i64, GameRecord)>), ApiError> {
         // Read under the same lock as the import, before any board's save
         // can write its older copy over a joined game.
         fn joined(
@@ -226,7 +234,7 @@ impl Library {
                 "database",
                 None,
                 self.try_with(|db| {
-                    let report = db.import_file(path, &name)?;
+                    let report = db.import_file_with(path, &name, earlier)?;
                     joined(db, report)
                 })?,
             )
@@ -247,11 +255,27 @@ impl Library {
                 "records",
                 Some(n),
                 self.try_with(|db| {
-                    let report = db.import_records(&games, &name)?;
+                    let report = db.import_records_with(&games, &name, earlier)?;
                     joined(db, report)
                 })?,
             )
         };
+        let earlier_view = self.try_with(|db| {
+            report
+                .earlier
+                .iter()
+                .map(|e| {
+                    let g = db.load_header(e.game)?;
+                    let name = |i: usize| g.players[i].name.clone().unwrap_or_else(|| "?".into());
+                    Ok(EarlierLinesView {
+                        game: e.game,
+                        title: format!("{} v {}", name(0), name(1)),
+                        source: e.source.clone(),
+                        moves: e.moves,
+                    })
+                })
+                .collect::<howdah_db::Result<Vec<_>>>()
+        })?;
         let view = LibraryImportView {
             kind: kind.into(),
             name,
@@ -264,6 +288,9 @@ impl Library {
             annotation_conflicts: report.annotation_conflicts,
             evals_added: report.position_data_added,
             evals_replaced: report.position_data_replaced,
+            undecided: report.undecided,
+            earlier: earlier_view,
+            lines_removed: report.lines_removed,
         };
         Ok((view, joined))
     }
@@ -297,6 +324,7 @@ impl Library {
             games: r.games,
             games_kept: r.games_kept,
             annotations: r.annotations,
+            moves: r.moves,
             evals: r.position_data,
         })
     }

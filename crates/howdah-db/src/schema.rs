@@ -51,6 +51,11 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         step: Step::Sql(include_str!("../migrations/0004_arimaa_com_site.sql")),
         readable_before: true,
     },
+    Migration {
+        name: "0005_node_origins",
+        step: Step::Sql(include_str!("../migrations/0005_node_origins.sql")),
+        readable_before: true,
+    },
 ];
 
 /// The schema version this build writes.

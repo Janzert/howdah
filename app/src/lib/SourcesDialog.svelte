@@ -61,7 +61,8 @@
     try {
       const r = await api.libraryRemoveSource(s.id);
       removed =
-        `Removed ${n(r.games, 'game', 'games')}, ${n(r.annotations, 'annotation', 'annotations')} and ` +
+        `Removed ${n(r.games, 'game', 'games')}, ${n(r.annotations, 'annotation', 'annotations')}, ` +
+        `${n(r.moves, 'move', 'moves')} of its lines and ` +
         `${n(r.evals, 'eval', 'evals')} from ${sourceName(s)}` +
         (r.gamesKept > 0 ? `; ${n(r.gamesKept, 'game', 'games')} with comments from elsewhere stayed.` : '.');
       onChanged();

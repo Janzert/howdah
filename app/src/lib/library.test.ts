@@ -79,8 +79,14 @@ describe('library', () => {
       annotationConflicts: 0,
       evalsAdded: 0,
       evalsReplaced: 0,
+      undecided: false,
+      earlier: [],
+      linesRemoved: 0,
     };
     expect(importWords(none)).toBe('games.txt: nothing new.');
+    expect(importWords({ ...none, gamesKept: 1, movesAdded: 3, linesRemoved: 2 })).toBe(
+      'games.txt: 1 game already here (3 moves added to them), 2 moves of earlier lines replaced.',
+    );
     expect(importWords({ ...none, gamesAdded: 1, gamesKept: 2, movesAdded: 1, annotationsAdded: 3 })).toBe(
       'games.txt: 1 game added, 2 games already here (1 move and 3 comments added to them).',
     );

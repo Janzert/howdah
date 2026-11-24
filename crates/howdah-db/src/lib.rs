@@ -29,7 +29,7 @@ pub use explore::{Explorer, MoveStat, PositionMatch, PositionQuery, Replay, Tall
 pub use game::{
     ARIMAA_COM, ARIMAA_COM_SITE, GameData, PlayerInfo, SaveMode, SourceKey, StoredResult, gid_for,
 };
-pub use merge::MergeReport;
+pub use merge::{Earlier, EarlierLines, MergeReport};
 pub use positions::PositionDatum;
 pub use search::{Filter, GameSummary, Origin, Outcome, SearchPage};
 pub use setups::{Setup, SetupLevel, SetupStat, SetupStats};

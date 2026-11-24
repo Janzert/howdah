@@ -696,6 +696,65 @@ impl Session {
         true
     }
 
+    /// Takes in the database's copy of this game (`db_id`) after an import
+    /// joined into it: its other moves as variations and the annotations
+    /// missing here, as [`Session::join_stored`] does. When `unedited`
+    /// (nothing changed here since the save before the import), the
+    /// stored annotations also replace these where they differ (a newer
+    /// analysis's comments), and with `replaced` the lines the import
+    /// removed go here too. Returns whether anything changed.
+    pub fn take_stored(&mut self, id: i64, stored: &GameTree, unedited: bool, replaced: bool) -> bool {
+        if self.db_id != Some(id) {
+            return false;
+        }
+        let mut changed = self.tree.join(stored) > 0;
+        if unedited {
+            let mut gone = Vec::new();
+            let mut stack = vec![(GameTree::ROOT, GameTree::ROOT)];
+            while let Some((mine, theirs)) = stack.pop() {
+                if self.tree[mine].annotation() != stored[theirs].annotation()
+                    && let Ok(a) = self.tree.annotation_mut(mine)
+                {
+                    *a = stored[theirs].annotation().clone();
+                    changed = true;
+                }
+                for &c in self.tree[mine].children() {
+                    // As the tree adds moves: a setup by its position, since it
+                    // can list its pieces in any order; a turn by its steps.
+                    let twin = stored[theirs].children().iter().copied().find(|&t| {
+                        match (stored[t].mv(), self.tree[c].mv()) {
+                            (Some(Move::Setup(_)), Some(Move::Setup(_))) => {
+                                stored[t].position() == self.tree[c].position()
+                            }
+                            (a, b) => a == b,
+                        }
+                    });
+                    match twin {
+                        Some(t) => stack.push((c, t)),
+                        None if replaced => gone.push(c),
+                        None => {}
+                    }
+                }
+            }
+            if !gone.is_empty()
+                && self
+                    .edit_lines(|t| {
+                        for &n in &gone {
+                            t.delete(n)?;
+                        }
+                        Ok(())
+                    })
+                    .is_ok()
+            {
+                changed = true;
+            }
+        }
+        if changed {
+            self.refresh();
+        }
+        changed
+    }
+
     /// The game as a record to save in the database, or `None` when it
     /// isn't saved: an empty board, a puzzle (its solution stays out of
     /// the tree until found), or an engine test's game (tests keep their

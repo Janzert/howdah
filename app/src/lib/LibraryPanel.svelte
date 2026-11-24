@@ -9,6 +9,7 @@
   import type { BaseStatus } from './bindings/BaseStatus';
   import { on } from './events';
   import type { LibraryGameView } from './bindings/LibraryGameView';
+  import type { LibraryImportView } from './bindings/LibraryImportView';
   import Icon from './Icon.svelte';
   import Matchup from './gameroom/Matchup.svelte';
   import SetupDiagram from './SetupDiagram.svelte';
@@ -186,15 +187,25 @@
     if (path) await importFrom(path);
   }
 
-  async function importFrom(path: string) {
+  /** An import that stopped at earlier lines from the file's source (an
+   * earlier analysis by the same engine), waiting for the user's choice. */
+  let askEarlier = $state<{ path: string; view: LibraryImportView } | null>(null);
+
+  async function importFrom(path: string, earlier?: 'replace' | 'keep') {
     if (!path.trim()) return;
     importing = true;
     importError = null;
+    askEarlier = null;
     try {
-      imported = importWords(await api.libraryImport(path.trim()));
-      importPath = null;
-      void load();
-      void loadSources();
+      const view = await api.libraryImport(path.trim(), earlier);
+      if (view.undecided) {
+        askEarlier = { path: path.trim(), view };
+      } else {
+        imported = importWords(view);
+        importPath = null;
+        void load();
+        void loadSources();
+      }
     } catch (e) {
       importError = errorMessage(e);
     }
@@ -351,6 +362,33 @@
       <button class="primary" disabled={importing || !importPath.trim()}>{importing ? 'Importing…' : 'Import'}</button>
       <button type="button" onclick={() => (importPath = null)}>Cancel</button>
     </form>
+  {/if}
+  {#if askEarlier}
+    {@const games = askEarlier.view.earlier}
+    {@const sources = [...new Set(games.map((g) => g.source))].join(', ')}
+    <section class="card earlier" role="alert" aria-label="Earlier lines">
+      <p>
+        {askEarlier.view.name} has a newer analysis by {sources} of {games.length === 1
+          ? 'a game'
+          : `${games.length} games`} you already have, whose lines differ from the earlier one's:
+      </p>
+      <ul>
+        {#each games as g (g.game)}
+          <li>{g.title}: {g.moves} {g.moves === 1 ? 'move' : 'moves'} of earlier lines</li>
+        {/each}
+      </ul>
+      <p class="hint">
+        Replacing removes the earlier lines, except any you've gone on from or commented on. Either way the moves'
+        comments become the newer ones, unless you've edited them.
+      </p>
+      <p class="actions">
+        <button class="primary" disabled={importing} onclick={() => importFrom(askEarlier!.path, 'replace')}
+          >Replace earlier lines</button
+        >
+        <button disabled={importing} onclick={() => importFrom(askEarlier!.path, 'keep')}>Keep both</button>
+        <button disabled={importing} onclick={() => (askEarlier = null)}>Cancel</button>
+      </p>
+    </section>
   {/if}
   {#if imported}<p class="hint done" role="status">Imported {imported}</p>{/if}
   {#if importError}<p class="error" role="alert">{importError}</p>{/if}
@@ -691,6 +729,19 @@
   }
   .more {
     margin-top: 10px;
+  }
+  .earlier p {
+    margin: 0 0 0.4rem;
+  }
+  .earlier ul {
+    margin: 0 0 0.4rem;
+    padding-left: 1.2rem;
+  }
+  .earlier .actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 0;
   }
   .import-path {
     display: flex;

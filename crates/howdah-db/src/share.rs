@@ -111,6 +111,8 @@ pub struct RemoveReport {
     /// Games from it kept, since they have annotations from elsewhere.
     pub games_kept: i64,
     pub annotations: i64,
+    /// Moves of its lines removed from games kept here.
+    pub moves: i64,
     pub position_data: i64,
 }
 
@@ -217,8 +219,14 @@ impl Database {
             [],
         )?;
         if o.variations {
+            // This database's own lines (no origin) are its origin's there.
             tx.execute(
-                "INSERT INTO dst.nodes SELECT * FROM main.nodes WHERE game IN (SELECT id FROM temp.xsel)",
+                &format!(
+                    "INSERT INTO dst.nodes (game, id, parent, ord, move, origin)
+                     SELECT game, id, parent, ord, move, {} FROM main.nodes
+                     WHERE game IN (SELECT id FROM temp.xsel)",
+                    origin("coalesce(origin, 1)"),
+                ),
                 [],
             )?;
         }
@@ -291,7 +299,8 @@ impl Database {
         tx.execute_batch(
             "DELETE FROM dst.origins WHERE id != 1 AND id NOT IN (
                SELECT origin FROM dst.games UNION SELECT origin FROM dst.annotations
-               UNION SELECT origin FROM dst.position_data)",
+               UNION SELECT origin FROM dst.position_data
+               UNION SELECT origin FROM dst.nodes WHERE origin IS NOT NULL)",
         )?;
         tx.execute(
             "INSERT INTO dst.meta (key, value) VALUES ('exported_from', ?1), ('exported_at', ?2)",
@@ -402,9 +411,9 @@ impl Database {
 
     /// Takes out what came from origin `id`: its games (except those with
     /// annotations from elsewhere, which stay with what came from it
-    /// removed), its annotations on other games and its data on
-    /// positions. Variations it added to games kept here stay, since
-    /// moves don't record where they came from. The origin itself stays
+    /// removed), its annotations and lines on other games, and its data
+    /// on positions. A line of its that someone else extended or
+    /// commented on stays, as this database's. The origin itself stays
     /// listed, so importing it again is known. This database's own data
     /// (`id` 1) can't be removed this way.
     pub fn remove_origin(&mut self, id: i64) -> Result<RemoveReport> {
@@ -422,6 +431,7 @@ impl Database {
         report.games = tx
             .execute("DELETE FROM games WHERE origin = ?1 AND id NOT IN (SELECT id FROM temp.xkeep)", [id])?
             as i64;
+        report.moves = remove_lines(&tx, id)?;
         // The games kept are this database's now.
         tx.execute("UPDATE games SET origin = 1 WHERE id IN (SELECT id FROM temp.xkeep)", [])?;
         report.position_data = tx.execute("DELETE FROM position_data WHERE origin = ?1", [id])? as i64;
@@ -429,6 +439,50 @@ impl Database {
         tx.commit()?;
         Ok(report)
     }
+}
+
+/// Removes origin `origin`'s variations (after its annotations): those
+/// with nothing on them and nothing after them from anyone else. The
+/// rest become this database's. Returns the moves removed.
+fn remove_lines(tx: &rusqlite::Transaction, origin: i64) -> Result<i64> {
+    use std::collections::{HashMap, HashSet};
+    let games: Vec<i64> = {
+        let mut q = tx.prepare("SELECT DISTINCT game FROM nodes WHERE origin = ?1")?;
+        q.query_map([origin], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+    };
+    let mut removed = 0;
+    for game in games {
+        let rows: Vec<(i64, i64, Option<i64>)> = {
+            let mut q = tx.prepare("SELECT id, parent, origin FROM nodes WHERE game = ?1 ORDER BY id")?;
+            q.query_map([game], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<rusqlite::Result<_>>()?
+        };
+        let noted: HashSet<i64> = {
+            let mut q = tx.prepare("SELECT DISTINCT node FROM annotations WHERE game = ?1 AND node < 0")?;
+            q.query_map([game], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+        };
+        let mut children: HashMap<i64, Vec<i64>> = HashMap::new();
+        for (id, parent, _) in &rows {
+            children.entry(*parent).or_default().push(-id);
+        }
+        let mut gone: HashSet<i64> = HashSet::new();
+        for (id, _, o) in rows.iter().rev() {
+            let r = -id;
+            if *o == Some(origin)
+                && !noted.contains(&r)
+                && children.get(&r).is_none_or(|kids| kids.iter().all(|k| gone.contains(k)))
+            {
+                gone.insert(r);
+            }
+        }
+        let mut delete = tx.prepare("DELETE FROM nodes WHERE game = ?1 AND id = ?2")?;
+        for r in &gone {
+            delete.execute(rusqlite::params![game, -r])?;
+        }
+        removed += gone.len() as i64;
+    }
+    tx.execute("UPDATE nodes SET origin = NULL WHERE origin = ?1", [origin])?;
+    Ok(removed)
 }
 
 #[cfg(test)]

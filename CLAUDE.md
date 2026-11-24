@@ -417,9 +417,20 @@ plans the engine test and tournament runner.
   is) with origins mapped by uuid, trees of games both have joined by
   move path (`join_game`; only games that differ are looked at), an
   annotation both changed kept beside under its origin's name
-  (`conflict_author`; same origin: newer wins), and evals replaced when
-  deeper; `import_records` saves records into a scratch database and
-  merges it, matching games by fingerprint too (records only).
+  (`conflict_author`; same origin: newer wins, the import's on a tie),
+  and evals replaced when deeper; `import_records` saves records into a
+  scratch database and merges it, matching games by fingerprint too
+  (records only), records with an `Annotator` each in a scratch database
+  whose uuid comes from the name (`annotator_uuid`), so one engine's
+  analyses are one source. Variations keep their origin
+  (`nodes.origin`, none for this database's own; `save` carries it and
+  the user's annotations' origins across renumbering, `node_map`).
+  Lines a game has from the import's sources that the import's don't
+  reach are earlier lines (`Earlier`): `import_file_with` and
+  `import_records_with` take `EarlierLines` (`Keep`, `Replace`: removes
+  those wholly from the sources, `Ask`: changes nothing if any, setting
+  `MergeReport::undecided`); `remove_origin` removes a source's lines
+  the same way.
   `origins`, `remove_origin` and `Filter::from_db` are the sources.
   `howdah-db export|import-db|import-records|origins|remove-origin`.
   `setups.rs`: the setup explorer. A `Setup` key is 16 letters, a1 …
@@ -821,7 +832,13 @@ plans the engine test and tournament runner.
     `GameTree::join` and `MergeReport::games_joined`, or its next save
     would write over what the import added),
     `library_sources`, `library_remove_source` and
-    `library_eval_engines`, on blocking threads; the file dialogs are
+    `library_eval_engines`, on blocking threads; an import that finds
+    earlier lines (`library_import` without `earlier`) changes nothing and
+    returns them (`LibraryImportView.undecided`, `earlier`), and the
+    Games panel asks: Replace earlier lines, Keep both or Cancel. Boards
+    showing a joined game take it in with `Session::take_stored` (newer
+    comments and removed lines only when unchanged since the save before
+    the import); the file dialogs are
     `tauri-plugin-dialog`'s (`dialog:allow-open`/`allow-save`; keep the
     npm package on the crate's minor, which `tauri dev` checks), from
     `lib/files.ts`, which in the

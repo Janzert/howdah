@@ -18,6 +18,9 @@
 //!                                       this schema in place: a base database's copy)
 //! howdah-db import-db DB FILE [NAME]    imports a shared database file, leaving it as it is
 //! howdah-db import-records DB FILE...   imports record files' games
+//!     (both: --replace-lines or --keep-lines for lines a game here already
+//!     has from the import's source, such as an earlier analysis by the same
+//!     engine; without either, an import that finds any stops and says so)
 //! howdah-db export DB OUT [--player NAME] [--ids 1,2,..] [--no-variations] [--no-comments]
 //!                  [--no-times] [--chat] [--evals none|games|all] [--engine AUTHOR]... [--author NAME]
 //!                                       writes a selection as a new database file
@@ -30,11 +33,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use howdah_db::{ARIMAA_COM, Database, archive, base};
+use howdah_db::{ARIMAA_COM, Database, EarlierLines, archive, base};
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | setups DB [gold|silver|KEY] [PLAYER] | explore DB [--pieces] [MOVES|POSITION] | publish OUTDIR PATH... [--new-base] [--cap PCT] | merge DB OTHER | import-db DB FILE [NAME] | import-records DB FILE... | export DB OUT [options] | origins DB | remove-origin DB ID"
+        "usage: howdah-db import DB PATH... [-j N] | stats DB | show DB ID|arimaa:ID | verify DB | list DB [PLAYER [OPPONENT]] | setups DB [gold|silver|KEY] [PLAYER] | explore DB [--pieces] [MOVES|POSITION] | publish OUTDIR PATH... [--new-base] [--cap PCT] | merge DB OTHER | import-db DB FILE [NAME] [--replace-lines|--keep-lines] | import-records DB FILE... [--replace-lines|--keep-lines] | export DB OUT [options] | origins DB | remove-origin DB ID"
     );
     ExitCode::from(2)
 }
@@ -48,7 +51,7 @@ fn main() -> ExitCode {
         Some("verify") if args.len() == 2 => verify(&args[1]),
         Some("publish") if args.len() >= 3 => publish(&args[1], &args[2..]),
         Some("merge") if args.len() == 3 => merge(&args[1], &args[2]),
-        Some("import-db") if (3..=4).contains(&args.len()) => import_db(&args[1], &args[2], args.get(3)),
+        Some("import-db") if (3..=5).contains(&args.len()) => import_db(&args[1], &args[2..]),
         Some("import-records") if args.len() >= 3 => import_records(&args[1], &args[2..]),
         Some("export") if args.len() >= 3 => export(&args[1], &args[2], &args[3..]),
         Some("origins") if args.len() == 2 => origins(&args[1]),
@@ -345,22 +348,54 @@ fn merge(db: &str, other: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn import_db(db: &str, file: &str, name: Option<&String>) -> Result<(), Box<dyn std::error::Error>> {
+/// `--replace-lines` or `--keep-lines` taken out of `args`: what to do
+/// with lines a game here already has from an import's source; without
+/// either, an import that finds any stops and says so.
+fn earlier_lines(args: &[String]) -> (EarlierLines, Vec<&String>) {
+    let mut how = EarlierLines::Ask;
+    let mut rest = Vec::new();
+    for a in args {
+        match a.as_str() {
+            "--replace-lines" => how = EarlierLines::Replace,
+            "--keep-lines" => how = EarlierLines::Keep,
+            _ => rest.push(a),
+        }
+    }
+    (how, rest)
+}
+
+/// Says what an import found and stopped at, if it did.
+fn undecided(report: &howdah_db::MergeReport) -> Result<(), Box<dyn std::error::Error>> {
+    if !report.undecided {
+        return Ok(());
+    }
+    for e in &report.earlier {
+        eprintln!("game {} has {} moves of earlier lines from {}", e.game, e.moves, e.source);
+    }
+    Err("nothing imported: pass --replace-lines or --keep-lines".into())
+}
+
+fn import_db(db: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let (how, rest) = earlier_lines(args);
+    let Some(file) = rest.first() else { return Err("import-db needs a file".into()) };
     let mut db = Database::open(db)?;
     let start = Instant::now();
-    let name = name.cloned().unwrap_or_else(|| file_name(file));
-    let report = db.import_file(std::path::Path::new(file), &name)?;
+    let name = rest.get(1).map_or_else(|| file_name(file), |n| n.to_string());
+    let report = db.import_file_with(std::path::Path::new(file.as_str()), &name, how)?;
+    undecided(&report)?;
     println!("{report:?} in {:.1}s", start.elapsed().as_secs_f64());
     Ok(())
 }
 
-fn import_records(db: &str, files: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+fn import_records(db: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let (how, files) = earlier_lines(args);
     let mut db = Database::open(db)?;
     for file in files {
         let text = std::fs::read_to_string(file)?;
         let records = howdah_arimaa::GameRecord::parse_all(&text)?;
         let start = Instant::now();
-        let report = db.import_records(&records, &file_name(file))?;
+        let report = db.import_records_with(&records, &file_name(file), how)?;
+        undecided(&report)?;
         println!("{file}: {} records, {report:?} in {:.1}s", records.len(), start.elapsed().as_secs_f64());
     }
     Ok(())
