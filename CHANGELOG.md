@@ -7,6 +7,8 @@ young).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-25
+
 ### Added
 
 - Importing a newer analysis of a game you already have, by the same
@@ -27,6 +29,12 @@ young).
   small board beside the log: the players, their clocks and the
   position, its moves animated as they're played, with Watch to open it
   on a full board.
+- Declining an invitation can carry a message, which the inviter sees
+  as the reason: Decline opens a box for it in the invitation's row
+  (Enter sends, Esc or Back closes it).
+- The record by opponent on a player's page sorts by any column, and
+  shows each opponent's rating at their newest game. The ratings show
+  only once the game database holds the whole archive.
 
 ### Changed
 
@@ -42,6 +50,11 @@ young).
   setup (Clew) gives the setups an eval on the move list and the eval
   graph. Engines that don't (Sharp, OpFor) answer at once, so it costs
   nothing; setups still get no move marks.
+- New sounds for an invitation (also a takeback request and a postal
+  move due), a short two-note chime in place of a click too brief to
+  notice, and for a chat line, a louder click that's easier to hear.
+- Bots in the arimaa.com online lists are shaded instead of tagged,
+  since their names already start with `bot_`.
 
 ### Fixed
 
@@ -56,6 +69,14 @@ young).
 - In the arimaa.com game lists, a short player name beside a long one
   is no longer cut to a few letters: only a name too long for its half
   of the row is shortened.
+- An invitation's message is shown whole, on a line of its own, instead
+  of cut off at the end of the row.
+- A game whose opponent never joined (arimaa.com ends it as abandoned,
+  with no winner) no longer stops the watch with an error: the board
+  shows the game as over, with a note.
+- The chat room's log keeps its place: at the end when lines are
+  rewritten (yesterday's lines getting their date at midnight), and at
+  the line it was scrolled to when the log is made narrower or wider.
 
 ## [0.8.0] - 2026-11-20
 
@@ -193,9 +214,6 @@ young).
   Games played here, measured to the millisecond, add it to the
   millisecond, so a fast game no longer gains up to half a second a
   move from the rounding.
-- New sounds for an invitation (also a takeback request and a postal
-  move due), a short two-note chime in place of a click too brief to
-  notice, and for a chat line, a louder click that's easier to hear.
 - Building Howdah needs Rust 1.100 or later. Tauri is 2.12.7.
 
 ### Fixed
@@ -763,7 +781,8 @@ Gatekeeper.
 - Keeps playing through network drops and sleep, and resumes games in
   progress.
 
-[Unreleased]: https://github.com/Janzert/howdah/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Janzert/howdah/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Janzert/howdah/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Janzert/howdah/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Janzert/howdah/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Janzert/howdah/compare/v0.6.1...v0.7.0
