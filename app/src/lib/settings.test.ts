@@ -30,6 +30,7 @@ describe('settings parse', () => {
         chatFontSize: 18,
         timeFormat: '24',
         checkForUpdates: false,
+        autoUpdateGames: false,
       }),
       none,
     );
@@ -52,6 +53,7 @@ describe('settings parse', () => {
       chatFontSize: 18,
       timeFormat: '24',
       checkForUpdates: false,
+      autoUpdateGames: false,
     });
     const bad = parse(
       JSON.stringify({

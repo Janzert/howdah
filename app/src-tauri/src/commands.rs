@@ -1045,6 +1045,11 @@ pub async fn install_base(state: State<'_, Backend>) -> Result<String, ApiError>
 }
 
 #[tauri::command]
+pub async fn auto_update_base(state: State<'_, Backend>) -> Result<Option<String>, ApiError> {
+    state.auto_update_base().await
+}
+
+#[tauri::command]
 pub fn delete_library_game(state: State<'_, Backend>, game: i64) -> Result<(), ApiError> {
     state.delete_library_game(game)
 }

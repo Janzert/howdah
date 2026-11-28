@@ -222,6 +222,7 @@ pub fn run() {
             commands::library_eval_engines,
             commands::base_status,
             commands::install_base,
+            commands::auto_update_base,
             commands::open_gameroom_game,
             commands::tourney_status,
             commands::tourney_tests,

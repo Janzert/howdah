@@ -1431,6 +1431,12 @@ impl Backend {
         self.base.install(self.library.clone(), self.events.clone()).await
     }
 
+    /// Installs new games from the base game database by itself, when
+    /// that's only small deltas onto an installed base (`Base::auto_update`).
+    pub async fn auto_update_base(&self) -> Result<Option<String>, ApiError> {
+        self.base.auto_update(self.library.clone(), self.events.clone()).await
+    }
+
     /// Exports a selection of the game database to a new file at `path`.
     /// Runs on a blocking thread.
     pub async fn library_export(
@@ -1935,6 +1941,7 @@ impl Backend {
             "library_eval_engines" => ok(self.library_eval_engines()?),
             "base_status" => ok(self.base_status(arg::<Option<bool>>(args, "check")?.unwrap_or(false)).await),
             "install_base" => ok(self.install_base().await?),
+            "auto_update_base" => ok(self.auto_update_base().await?),
             "open_gameroom_game" => ok(self
                 .open_gameroom_game(
                     sid()?,

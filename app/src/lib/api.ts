@@ -138,6 +138,10 @@ function makeApi(sid: () => SessionId | null) {
     /** Downloads the newest base game database and merges it in, sending
      * `library://base` events; resolves to what was added. */
     installBase: () => invoke<string>('install_base'),
+    /** Installs new games from the base game database by itself when
+     * that's only small deltas onto an installed base; resolves to what
+     * was added, or null when it left it alone. */
+    autoUpdateBase: () => invoke<string | null>('auto_update_base'),
     /** Deletes a game from the game database. */
     deleteLibraryGame: (game: number) => invoke<void>('delete_library_game', { game }),
     /** Writes a selection of the game database to a new file at `path`. */

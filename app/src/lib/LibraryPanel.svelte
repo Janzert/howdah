@@ -235,7 +235,20 @@
   }
   void loadBase();
 
+  // Every install ends with an event, the daily one (`baseUpdate.svelte.ts`)
+  // too: what it added shows, and the list and the card catch up.
+  let wasInstalled = false;
   const stop = on('library://base', (p) => {
+    if (p.phase === 'done') {
+      baseDone =
+        p.detail === 'nothing new'
+          ? "There's nothing new in arimaa.com's game archive."
+          : `${wasInstalled ? "New games from arimaa.com's archive" : "arimaa.com's game archive is in"}: ${p.detail}.`;
+      void load();
+      void loadBase();
+    } else if (p.phase !== 'failed') {
+      wasInstalled = base?.installed != null;
+    }
     progress = p.phase === 'done' || p.phase === 'failed' ? null : p;
   });
   onDestroy(() => void stop.then((u) => u()));
@@ -243,15 +256,15 @@
   async function installBase() {
     baseError = null;
     baseDone = null;
+    wasInstalled = base?.installed != null;
     progress = { phase: 'downloading', done: 0, total: base?.available?.size ?? 0, detail: null };
     try {
-      baseDone = await api.installBase();
-      void load();
+      await api.installBase();
     } catch (e) {
       baseError = errorMessage(e);
+      void loadBase();
     }
     progress = null;
-    void loadBase();
   }
 
   const mb = (n: number) => `${Math.round(n / 1e6)} MB`;
@@ -426,7 +439,7 @@
       {#if baseError}<p class="error" role="alert">{baseError}</p>{/if}
     </section>
   {:else if baseDone}
-    <p class="hint done" role="status">arimaa.com's game archive is in: {baseDone}.</p>
+    <p class="hint done" role="status">{baseDone}</p>
   {/if}
 
   <form class="filters" aria-label="Filter games" onsubmit={(e) => e.preventDefault()}>

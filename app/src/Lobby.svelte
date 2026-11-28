@@ -66,6 +66,7 @@
   import { findTheme } from '@howdah/board/theme';
   import { tourney } from './lib/tourney.svelte';
   import { update } from './lib/update.svelte';
+  import { followBaseUpdates } from './lib/baseUpdate.svelte';
   import { matchGoesOn } from './lib/windowList';
   import { focusGameWindow, inTauri, openBoard, openWindowFor, showBoard, type HandOff } from './lib/windows';
   import './lobby.css';
@@ -224,6 +225,7 @@
   $effect(() => setMuted(!settings.sound));
   $effect(() => setVolume(settings.volume));
   $effect(() => update.follow(settings.checkForUpdates));
+  $effect(() => followBaseUpdates(settings.autoUpdateGames));
 
   // The live game beside the chat goes when the user leaves the room or
   // logs out.

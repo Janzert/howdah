@@ -57,6 +57,9 @@ export interface SettingsData {
   timeFormat: TimeFormat;
   /** Ask GitHub whether a newer release of Howdah is out. */
   checkForUpdates: boolean;
+  /** Add new games from arimaa.com's archive by themselves, once the
+   * archive is in (`baseUpdate.svelte.ts`). */
+  autoUpdateGames: boolean;
 }
 
 const KEY = 'settings';
@@ -80,6 +83,7 @@ export const DEFAULTS: SettingsData = {
   chatFontSize: 14,
   timeFormat: 'system',
   checkForUpdates: true,
+  autoUpdateGames: true,
 };
 
 function read(key: string): string | null {
@@ -131,6 +135,7 @@ export function parse(stored: string | null, legacy: { theme: string | null; mut
     s.timeFormat = raw.timeFormat;
   }
   if (typeof raw.checkForUpdates === 'boolean') s.checkForUpdates = raw.checkForUpdates;
+  if (typeof raw.autoUpdateGames === 'boolean') s.autoUpdateGames = raw.autoUpdateGames;
   if (raw.hoverArrows === true) s.hoverInput = 'arrows'; // before step mode existed
   if (raw.hoverInput === 'off' || raw.hoverInput === 'arrows' || raw.hoverInput === 'step') {
     s.hoverInput = raw.hoverInput;
@@ -245,6 +250,13 @@ class Settings {
   }
   set checkForUpdates(v: boolean) {
     this.update({ checkForUpdates: v });
+  }
+
+  get autoUpdateGames() {
+    return this.#data.autoUpdateGames;
+  }
+  set autoUpdateGames(v: boolean) {
+    this.update({ autoUpdateGames: v });
   }
 
   get analysisEngine() {

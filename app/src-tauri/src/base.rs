@@ -13,6 +13,12 @@
 //! restarting doesn't ask GitHub again; the panel's refresh button
 //! checks at once, and installing always fetches it afresh.
 //!
+//! Once a base is in, `Base::auto_update` (the lobby's daily check,
+//! unless the `autoUpdateGames` setting is off) installs what's new by
+//! itself when that's only deltas under `AUTO_MAX_BYTES`. A new base, or
+//! deltas too big after a long time away, still waits for the panel's
+//! Update button.
+//!
 //! `HOWDAH_BASE_URL` names another manifest in debug builds, and may be
 //! plain http to this computer, for checking the app against a local
 //! server; `off` checks nothing, as the end-to-end tests do.
@@ -48,6 +54,8 @@ const MAX_UNPACKED_BYTES: u64 = 8 << 30;
 
 /// How often the manifest is fetched, at most, unless asked.
 const CHECK_EVERY: i64 = 24 * 60 * 60;
+/// The most `auto_update` downloads without asking.
+const AUTO_MAX_BYTES: u64 = 16 << 20;
 
 /// The `meta` keys the last manifest fetched is kept under, with when
 /// and from where.
@@ -274,6 +282,19 @@ impl Base {
         status
     }
 
+    /// Installs what's new without asking, when `auto_installs` says
+    /// so: returns what was added, or `None` when it left it alone.
+    pub async fn auto_update(
+        &self,
+        library: Arc<Library>,
+        events: Events,
+    ) -> Result<Option<String>, ApiError> {
+        if !auto_installs(&self.status(&library, false).await) {
+            return Ok(None);
+        }
+        self.install(library, events).await.map(Some)
+    }
+
     /// Downloads, checks, unpacks and merges the newest base, sending
     /// [`BASE_PROGRESS`] events. Returns what was added, in words.
     pub async fn install(&self, library: Arc<Library>, events: Events) -> Result<String, ApiError> {
@@ -293,6 +314,17 @@ impl Base {
         emit(&events, BASE_PROGRESS, progress);
         result
     }
+}
+
+/// Whether `auto_update` installs what `status` offers: only once a base
+/// is in, and only deltas (a plan from no time reached starts with the
+/// base) small enough to fetch unasked.
+fn auto_installs(status: &BaseStatus) -> bool {
+    let small_deltas = status
+        .available
+        .as_ref()
+        .is_some_and(|a| a.new_games.is_some() && a.size.is_some_and(|s| s <= AUTO_MAX_BYTES));
+    status.installed.is_some() && status.offer && !status.installing && small_deltas
 }
 
 /// The packs the library needs, refusing any this build can't read.
@@ -481,6 +513,25 @@ mod tests {
         assert!(allowed("https://github.com/x"));
         assert!(!allowed("http://example.com/x"));
         assert_eq!(allowed("http://127.0.0.1:8000/base.json"), cfg!(debug_assertions));
+    }
+
+    #[test]
+    fn only_small_deltas_onto_an_installed_base_install_by_themselves() {
+        let info = |size, new_games| BaseInfo { games: 10, through: None, size: Some(size), new_games };
+        let status = BaseStatus {
+            installed: Some(BaseInfo { games: 9, through: None, size: None, new_games: None }),
+            available: Some(info(30_000, Some(1))),
+            offer: true,
+            ..Default::default()
+        };
+        assert!(auto_installs(&status));
+        assert!(!auto_installs(&BaseStatus { offer: false, ..status.clone() }));
+        assert!(!auto_installs(&BaseStatus { installing: true, ..status.clone() }));
+        assert!(!auto_installs(&BaseStatus { installed: None, ..status.clone() }));
+        // The base itself, or deltas too big to fetch unasked.
+        assert!(!auto_installs(&BaseStatus { available: Some(info(30_000, None)), ..status.clone() }));
+        let big = info(AUTO_MAX_BYTES + 1, Some(5_000));
+        assert!(!auto_installs(&BaseStatus { available: Some(big), ..status }));
     }
 
     #[test]

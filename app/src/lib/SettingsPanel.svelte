@@ -232,9 +232,9 @@
         starts. You can enter again during the game.
       </p>
     </section>
-    {#if update.builtIn}
-      <section>
-        <h3>Updates</h3>
+    <section>
+      <h3>Updates</h3>
+      {#if update.builtIn}
         <label class="check">
           <input type="checkbox" bind:checked={settings.checkForUpdates} />
           Check for new versions of Howdah
@@ -242,8 +242,16 @@
         <p class="hint">
           Asks GitHub for the newest release when Howdah starts and once a day, and says on Home when there's a new one.
         </p>
-      </section>
-    {/if}
+      {/if}
+      <label class="check" class:gap={update.builtIn}>
+        <input type="checkbox" bind:checked={settings.autoUpdateGames} />
+        Add new games from arimaa.com's archive
+      </label>
+      <p class="hint">
+        Once the archive is in, looks for new games once a day and adds them by itself. A new copy of the whole archive
+        still waits for Update in Games.
+      </p>
+    </section>
   </div>
 </div>
 

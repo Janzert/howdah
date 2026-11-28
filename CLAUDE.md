@@ -876,7 +876,13 @@ plans the engine test and tournament runner.
     `games.db` (`base-download/`, removed after), checks size and
     SHA-256, unpacks, and `Library::merge_base`s it, recording the
     time reached after each, sending `library://base` (`BaseProgress`,
-    one download count over all the files) as it goes.
+    one download count over all the files) as it goes. `auto_update`
+    (command `auto_update_base`) installs without asking when
+    `auto_installs`: a base is in and only deltas under `AUTO_MAX_BYTES`
+    are needed; the lobby asks it hourly, the first time a minute
+    after it opens, while the `autoUpdateGames` setting is on
+    (`lib/baseUpdate.svelte.ts`), and the Games panel shows what an
+    install added from the `done` event, whoever started it.
   - `clock_format.rs`: whether the system writes times on a 12- or a
     24-hour clock (`system_clock`, `SystemClock`), which the webview's
     own formatting misses: the desktop's GSettings clock key on Cinnamon,
@@ -1527,6 +1533,7 @@ plans the engine test and tournament runner.
     with one human side starts, `boardsInWindows`, where the lobby
     opens new boards, and `chatFontSize`, which `appearance.ts`'s
     `setChatFontSize` passes to the chat panels as `--chat-font`, and
+    `autoUpdateGames`, the base database's daily updates, and
     `timeFormat`: system, 12- or 24-hour; `lib/clock.svelte.ts`'s
     `clock.options` are the `toLocaleTimeString` options for it, with
     the system's clock asked from `system_clock` at first use and on
