@@ -10,10 +10,10 @@ young).
 ### Added
 
 - Once arimaa.com's game archive is in the game database, Howdah adds
-  its new games by itself: it looks once a day and downloads the day's
-  small update, saying in the Games panel what it added. A new copy of
-  the whole archive still waits for Update. Settings, under Updates,
-  can turn it off.
+  its new games by itself: it looks soon after each day's update is
+  published and downloads it, saying in the Games panel what it added.
+  A new copy of the whole archive still waits for Update. Settings,
+  under Updates, can turn it off.
 
 ## [0.9.0] - 2026-11-25
 

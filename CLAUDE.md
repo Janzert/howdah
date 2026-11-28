@@ -866,9 +866,12 @@ plans the engine test and tournament runner.
     howdah-game-database repository's `current` release, whose assets
     are swapped; in debug builds `HOWDAH_BASE_URL` instead, which may be
     plain http to this computer, or `off`, as the e2e tests set it),
-    at most once a day (`CHECK_EVERY`; the manifest is kept in `meta`
-    as `base_manifest`, with when and from where, so restarts don't ask
-    again; `base_status` with `check`, the panel's refresh button,
+    only when a newer one is due (`manifest_due`: a day after the kept
+    one's `at` plus `PUBLISH_MARGIN`, since the job publishes at the
+    same time each day, then every `RETRY_EVERY` while none comes, and
+    at least daily; `FAILED_PAUSE` after a failed fetch; the manifest is
+    kept in `meta` as `base_manifest`, with when and from where, so
+    restarts don't ask again; `base_status` with `check`, the panel's refresh button,
     fetches at once, as `install` always does), and `meta`'s `base_at`
     (the time reached),
     and offers what `base::plan` says is needed (`BaseInfo.newGames`
@@ -879,8 +882,8 @@ plans the engine test and tournament runner.
     one download count over all the files) as it goes. `auto_update`
     (command `auto_update_base`) installs without asking when
     `auto_installs`: a base is in and only deltas under `AUTO_MAX_BYTES`
-    are needed; the lobby asks it hourly, the first time a minute
-    after it opens, while the `autoUpdateGames` setting is on
+    are needed; the lobby asks it every 10 minutes, the first time a
+    minute after it opens, while the `autoUpdateGames` setting is on
     (`lib/baseUpdate.svelte.ts`), and the Games panel shows what an
     install added from the `done` event, whoever started it.
   - `clock_format.rs`: whether the system writes times on a 12- or a

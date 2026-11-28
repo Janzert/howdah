@@ -8,12 +8,16 @@
 //! unpacks it beside the game database and merges it in, and remembers
 //! the time reached after each, so only newer games are offered later.
 //!
-//! The manifest is fetched at most once a day (`CHECK_EVERY`) and kept
-//! in the database's `meta` between, so opening the Games panel or
-//! restarting doesn't ask GitHub again; the panel's refresh button
+//! The manifest is kept in the database's `meta`, and fetched again only
+//! when a newer one is due (`manifest_due`): the job publishes at the
+//! same time each day, so a day after the kept one's `at` (and a margin),
+//! then every `RETRY_EVERY` while it doesn't come, and at least once a
+//! day. So opening the Games panel or restarting doesn't ask GitHub
+//! again, and a running app sees a publish soon after it. A failed fetch
+//! waits `FAILED_PAUSE` before the next. The panel's refresh button
 //! checks at once, and installing always fetches it afresh.
 //!
-//! Once a base is in, `Base::auto_update` (the lobby's daily check,
+//! Once a base is in, `Base::auto_update` (the lobby's check,
 //! unless the `autoUpdateGames` setting is off) installs what's new by
 //! itself when that's only deltas under `AUTO_MAX_BYTES`. A new base, or
 //! deltas too big after a long time away, still waits for the panel's
@@ -25,7 +29,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 use howdah_db::base::{self, Manifest, Pack};
 use serde::Serialize;
@@ -52,8 +56,14 @@ const MAX_MANIFEST_BYTES: usize = 64 << 10;
 const MAX_DOWNLOAD_BYTES: u64 = 2 << 30;
 const MAX_UNPACKED_BYTES: u64 = 8 << 30;
 
-/// How often the manifest is fetched, at most, unless asked.
-const CHECK_EVERY: i64 = 24 * 60 * 60;
+/// The publishing job's period, and how stale a kept manifest may get.
+const DAY: i64 = 24 * 60 * 60;
+/// How long after the time of day of the last publish the next is looked for.
+const PUBLISH_MARGIN: i64 = 20 * 60;
+/// How often the manifest is fetched while an expected publish hasn't come.
+const RETRY_EVERY: i64 = 6 * 60 * 60;
+/// How long after a failed fetch the kept manifest is used without asking.
+const FAILED_PAUSE: i64 = 60 * 60;
 /// The most `auto_update` downloads without asking.
 const AUTO_MAX_BYTES: u64 = 16 << 20;
 
@@ -218,18 +228,20 @@ fn file_url(manifest_url: &str, file: &str) -> String {
 
 pub struct Base {
     installing: AtomicBool,
+    /// When a fetch last failed (0: not since starting).
+    failed_at: AtomicI64,
 }
 
 impl Default for Base {
     fn default() -> Self {
-        Base { installing: AtomicBool::new(false) }
+        Base { installing: AtomicBool::new(false), failed_at: AtomicI64::new(0) }
     }
 }
 
 impl Base {
     /// What's installed and what's available: from the manifest kept
-    /// from the last check if that was under a day ago and not `check`,
-    /// else fetched (falling back on the kept one if that fails).
+    /// from the last check unless `check` or a newer one is due, else
+    /// fetched (falling back on the kept one if that fails).
     pub async fn status(&self, library: &Library, check: bool) -> BaseStatus {
         let installed = library.meta(BASE_GAMES).and_then(|g| g.parse().ok()).map(|games| BaseInfo {
             games,
@@ -249,11 +261,18 @@ impl Base {
         let Some(url) = manifest_url() else { return status };
         let kept = kept_manifest(library, &url);
         let manifest = match kept {
-            Some((m, checked)) if !check && now() - checked < CHECK_EVERY => Ok(m),
+            Some((m, checked))
+                if !check
+                    && (!manifest_due(m.at, checked, now())
+                        || now() - self.failed_at.load(Ordering::Relaxed) < FAILED_PAUSE) =>
+            {
+                Ok(m)
+            }
             _ => match fetch_and_keep(library, &url).await {
                 Ok(m) => Ok(m),
                 Err(e) => match kept {
                     Some((m, _)) => {
+                        self.failed_at.store(now(), Ordering::Relaxed);
                         status.problem = Some(e.message);
                         Ok(m)
                     }
@@ -314,6 +333,24 @@ impl Base {
         emit(&events, BASE_PROGRESS, progress);
         result
     }
+}
+
+/// Whether to fetch the manifest again, when the kept one was published
+/// at `at` and fetched at `checked`. The job publishes at about the same
+/// time each day, so one is expected `PUBLISH_MARGIN` past each whole
+/// day after `at`: due once nothing was fetched since the latest of
+/// those, then every `RETRY_EVERY` (a day it skipped, a late run), and
+/// always when the kept one is a day old.
+fn manifest_due(at: i64, checked: i64, now: i64) -> bool {
+    if now - checked >= DAY {
+        return true;
+    }
+    let first = at + DAY + PUBLISH_MARGIN;
+    if now < first {
+        return false;
+    }
+    let expected = first + (now - first) / DAY * DAY;
+    checked < expected || now - checked >= RETRY_EVERY
 }
 
 /// Whether `auto_update` installs what `status` offers: only once a base
@@ -513,6 +550,30 @@ mod tests {
         assert!(allowed("https://github.com/x"));
         assert!(!allowed("http://example.com/x"));
         assert_eq!(allowed("http://127.0.0.1:8000/base.json"), cfg!(debug_assertions));
+    }
+
+    #[test]
+    fn the_manifest_is_due_after_each_days_publish() {
+        let (h, at) = (60 * 60, 1_000 * DAY + 7 * 60 * 60);
+        let due = |checked, now| manifest_due(at, checked, now);
+        // Fetched an hour after the publish: kept until a day after it.
+        assert!(!due(at + h, at + 20 * h));
+        assert!(!due(at + h, at + DAY + PUBLISH_MARGIN - 1));
+        assert!(due(at + h, at + DAY + PUBLISH_MARGIN));
+        // No newer one then: again only after `RETRY_EVERY`.
+        let tried = at + DAY + PUBLISH_MARGIN + 60;
+        assert!(!due(tried, tried + RETRY_EVERY - 1));
+        assert!(due(tried, tried + RETRY_EVERY));
+        // A day skipped: the next day's publish is looked for at its time.
+        let next = at + 2 * DAY + PUBLISH_MARGIN;
+        assert!(!due(next - 2 * h, next - 1));
+        assert!(due(next - 2 * h, next));
+        // Asleep across days: due at once.
+        assert!(due(at + h, at + 5 * DAY));
+        // Never kept for over a day, whatever `at` says.
+        assert!(due(at + h, at + h + DAY));
+        assert!(!manifest_due(at + 10 * DAY, at, at + h));
+        assert!(manifest_due(at + 10 * DAY, at, at + DAY));
     }
 
     #[test]
